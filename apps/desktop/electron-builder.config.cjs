@@ -25,7 +25,11 @@ module.exports = {
   asar: true,
   extraResources: [
     { from: payload, to: "payload", filter: ["**/*", "!uv-cache/**", "!**/__pycache__/**", "!payload.prepare.lock"] },
+    // electron-builder silently skips dot-folders and node_modules inside a resource folder, so the
+    // standalone server's own `.next` and `node_modules` are listed explicitly.
     { from: path.join(repo, "apps", "web", ".next", "standalone"), to: "web", filter: ["**/*"] },
+    { from: path.join(repo, "apps", "web", ".next", "standalone", ".next"), to: "web/.next", filter: ["**/*"] },
+    { from: path.join(repo, "apps", "web", ".next", "standalone", "node_modules"), to: "web/node_modules", filter: ["**/*"] },
     { from: path.join(repo, "hermes", "plugins"), to: "plugins", filter: ["**/*", "!**/__pycache__/**", "!**/.token"] },
     { from: path.join(repo, "backup", "chief_backup"), to: "backup/chief_backup", filter: ["**/*.py"] },
     { from: path.join(__dirname, "python"), to: "python", filter: ["*.py"] },

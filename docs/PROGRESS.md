@@ -218,3 +218,9 @@
 - `apps/desktop/build/appxmanifest.xml`: file and registry write virtualization are off (`unvirtualizedResources`), so the app's data lives in the real `%LOCALAPPDATA%\ChiefCommandCenter` and survives an uninstall (PLAN §5). Upstream Hermes Desktop does the same.
 - Built `Chief Command Center 0.1.0.appx` (835 MB). The signature verifies apart from the untrusted test root, which is the owner's one-time trust step.
 - Held by the owner: migrating the existing install (Phase 9) and going public (Phase 12). The installed app is used as a separate fresh build for testing.
+- Installed on this PC (the owner trusted the test certificate).
+  - The first install found electron-builder had dropped the standalone server's `.next` and `node_modules` (it skips them inside a resource folder silently); they are now listed explicitly. The payload was checked file by file: complete.
+  - `--quit` stopped the installed app cleanly ("Gateway stopped").
+  - Remove and reinstall kept the app's data (write virtualization off works).
+  - The installed app runs: dashboard 200 on 3001, and its own gateway healthy on 7791 with `profile: chief`, waiting for a model (onboarding).
+  - The existing install was untouched throughout: 401 on 7790, its gateway start count unchanged at 40, no new log lines.
