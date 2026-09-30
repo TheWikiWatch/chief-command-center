@@ -135,6 +135,23 @@ def _voice_config_inner() -> dict[str, Any]:
     }
 
 
+def _local_model_missing() -> bool:
+    """Hermes's local STT would download its model from the Hub on first use; the app asks first instead."""
+    try:
+        from tools.transcription_tools import _get_provider, _load_stt_config
+
+        from .speech_model import local_model_ready
+
+        with chief_config_scope():
+            cfg = _load_stt_config()
+            if _get_provider(cfg) != "local":
+                return False
+        return not local_model_ready(cfg)
+    except Exception:
+        logger.debug("local model probe failed", exc_info=True)
+        return False
+
+
 def transcribe(body: dict[str, Any]) -> dict[str, Any]:
     data_url = str(body.get("data_url") or body.get("dataUrl") or "").strip()
     mime_type = str(body.get("mime_type") or body.get("mimeType") or "").strip()
@@ -156,6 +173,10 @@ def transcribe(body: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "Audio recording is empty"}
     if len(audio_bytes) > MAX_UPLOAD_BYTES:
         return {"ok": False, "error": "Audio recording is too large"}
+
+    if _local_model_missing():
+        return {"ok": False, "code": "model_missing",
+                "error": "Voice typing needs its speech model. Download it in Settings, then Voice (Check my system)."}
 
     temp_path = ""
     try:

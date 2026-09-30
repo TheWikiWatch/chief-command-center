@@ -5,12 +5,13 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { SecondBrainSetup } from "@/components/second-brain/setup";
+import { CheckMySystem } from "@/components/voice/check-my-system";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
 import { secondBrain, setup, type SetupStatus } from "@/lib/setup-client";
 
 /**
- * First-run steps, in order: connect a model, then the Second Brain; "Check my system" joins in Phase 5.
+ * First-run steps, in order: connect a model, the Second Brain, then Check my system.
  * An optional step can be skipped; `complete` marks it done so the footer says Continue instead of Skip.
  */
 export type OnboardingStep = { id: string; label: string; optional?: boolean; render: (complete: () => void) => ReactNode };
@@ -80,6 +81,22 @@ export function Onboarding({
       label: "Your Second Brain",
       optional: true,
       render: (complete) => <SecondBrainSetup onBusy={setBusy} onDone={complete} onAskChief={onAskChief} />,
+    },
+    {
+      id: "system",
+      label: "Check my system",
+      optional: true,
+      render: (complete) => (
+        <section className="space-y-4">
+          <div>
+            <h2 className="text-title text-fg">Check my system</h2>
+            <p className="mt-1 text-callout text-fg-3">
+              Make sure {assistant} can hear you and you can hear {assistant}. Everything here is optional; typing always works.
+            </p>
+          </div>
+          <CheckMySystem onResult={complete} />
+        </section>
+      ),
     },
     ...extraSteps,
   ];

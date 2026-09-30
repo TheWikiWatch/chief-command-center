@@ -22,6 +22,7 @@ from . import push
 from . import vapid
 from . import persona
 from . import second_brain
+from . import speech_model
 from . import providers
 from . import settings as hermes_settings
 from . import voice
@@ -526,7 +527,7 @@ def _guarded(fn) -> dict[str, Any]:
     """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
     try:
         return fn()
-    except (persona.PersonaError, second_brain.SecondBrainError) as exc:
+    except (persona.PersonaError, second_brain.SecondBrainError, speech_model.SpeechModelError) as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:  # the adapter maps expected failures itself
         logger.warning("bridge action failed: %s", type(exc).__name__)
@@ -650,6 +651,9 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/setup/second-brain":
                 self._json(_guarded(second_brain.status))
+                return
+            if path == "/voice/model":
+                self._json(_guarded(speech_model.status))
                 return
             if path == "/setup/providers":
                 self._json(_guarded(lambda: providers.catalog(refresh=_flag(qs, "refresh"))))
@@ -837,6 +841,19 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/setup/second-brain":
                 self._act(path, started, _guarded(lambda: second_brain.setup(str(body.get("path") or ""), str(body.get("mode") or ""))))
+                return
+            if path == "/voice/model/download":
+                self._act(path, started, _guarded(lambda: speech_model.download(str(body.get("id") or speech_model.DEFAULT_MODEL))))
+                return
+            if path == "/voice/model/cancel":
+                self._act(path, started, _guarded(speech_model.cancel))
+                return
+            if path == "/voice/model/delete":
+                self._act(path, started, _guarded(lambda: speech_model.delete(str(body.get("id") or ""))))
+                return
+            if path == "/voice/model/use":
+                model_id = str(body.get("id") or "")
+                self._act(path, started, _guarded(lambda: (lambda err: {"ok": not err, "error": err} if err else {"ok": True})(speech_model.use(model_id))))
                 return
             if path == "/setup/soul/seed":
                 self._act(path, started, _guarded(second_brain.seed_soul))

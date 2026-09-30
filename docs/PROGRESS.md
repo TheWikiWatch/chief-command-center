@@ -62,3 +62,26 @@
 - Not yet verified: a real agent round-trip (capture → Inbox, daily note, tick a task). The e2e model is a stub that cannot call tools; this needs a real provider and is in the Phase 13 acceptance sweep.
 - Tests: web 247 passed (4 live skipped), Python 56 passed, privacy scan clean.
 
+**Phase 5: voice defaults and Check my system.**
+
+- Spoken replies: Hermes's own default for a new profile is already Edge with `en-US-AriaNeural` (no key), so nothing is written for new installs and existing voice choices are untouched.
+- Voice typing (Q3 option 3): added `speech_model.py` in the bridge (contract `chief.speech_model.v1`).
+  - It manages Systran's faster-whisper `base` (148 MB, default) and `tiny` (78 MB), pinned to a commit with a SHA-256 for every file.
+  - Downloads are resumable (Range), cancellable, and verified; a corrupt file is discarded.
+  - On completion it sets `stt.provider: local` and `stt.local.model: <folder>`, so Hermes loads from disk.
+  - Models live in `<chief home>/models/`.
+- No silent downloads: with local STT and no model on disk, `/transcribe` answers `model_missing` before Hermes's first-use Hub download can start. A model already in the Hugging Face cache (an existing install) still counts as ready.
+- Check my system (`components/voice/check-my-system.tsx`), step 3 of onboarding (skippable) and in Settings → Voice ("Run", with the last result on this device):
+  - Microphone: a device picker, saved per device and now used by the mic button too; access; a live level; silence after 4 s.
+  - Speakers: a test phrase through `/speak`, then "Did you hear it?".
+  - Voice typing: consent with the size and source, progress, Cancel/Resume, and a smaller-model option. After that, "Say a short phrase" goes through `/transcribe`, which never reaches the conversation.
+  - Error states for denied, missing and busy mics (with the Windows `ms-settings:privacy-microphone` link), unsupported browser, playback blocked or voice service failing, no speech, and a missing model. Voice problems never block text chat.
+- Evidence:
+  - Speech-model contract against the real Hermes payload: 20 checks passed. Covered: the guard refuses instead of downloading; checksum mismatch; cancel then resume with a Range request; a server that ignores Range; idempotent re-download; Hermes config; delete.
+  - With the network on, the real `tiny` model downloaded and verified (78 MB). Edge spoke "Please remind me to call the plumber tomorrow morning." with no key, and the local model transcribed it word for word, offline. This answers the no-key STT checkpoint.
+  - Browser, on the e2e gateway with an empty Hugging Face cache: status "not ready", then Download in Settings → Check my system. The 148 MB model was verified, and `config.yaml` then had `stt.provider: local`. "Play a test phrase" reached "Did you hear it?".
+  - Through the app's own proxy, Edge audio for "Add oat milk to my shopping list for Saturday." came back from the gateway's local model exactly (2.8 s).
+  - The in-app browser blocks microphones, so the live mic check showed the denied state with the settings link. A real microphone test waits for the desktop shell (Phase 7) and the phone.
+- Unit tests: nine for Check my system (every error state, consent, progress, cancel/resume, smaller model, Not now, no-speech, missing model) and one for the three-step onboarding (model required; Second Brain and Check my system skippable; SOUL seeded once; nothing downloads without a tap).
+- Tests: web 257 passed (4 live skipped), Python 56 passed, privacy scan clean.
+

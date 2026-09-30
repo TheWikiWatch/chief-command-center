@@ -39,6 +39,8 @@ import { useAssistantName, ownerName } from "@/lib/identity";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { PersonaEditor } from "@/components/persona/persona-editor";
 import { SecondBrainSetup } from "@/components/second-brain/setup";
+import { CheckMySystem } from "@/components/voice/check-my-system";
+import { loadVoiceCheck, type VoiceCheckResult } from "@/lib/mic-device";
 import { secondBrain, setup, type SecondBrainStatus, type SetupStatus } from "@/lib/setup-client";
 import { useAppConfig } from "@/lib/app-config";
 
@@ -131,6 +133,43 @@ function ConnectionGroup() {
         </Row>
       )}
     </Group>
+  );
+}
+
+/* ------------------------------------------------------------------ Check my system */
+
+function describeCheck(r: VoiceCheckResult | null): string {
+  if (!r) return "Not run on this device yet.";
+  const parts = [
+    r.mic === "ok" ? "microphone works" : r.mic === "skipped" ? "" : "microphone needs attention",
+    r.speaker === "heard" ? "speakers work" : r.speaker === "skipped" ? "" : "speakers need attention",
+    r.typing === "ok" ? "voice typing works" : r.typing === "not-set-up" ? "voice typing not set up" : r.typing === "skipped" ? "" : "voice typing needs attention",
+  ].filter(Boolean);
+  const when = new Date(r.at).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return parts.length ? `${when}: ${parts.join(", ")}.` : `${when}: skipped.`;
+}
+
+function SystemCheckRow() {
+  const [open, setOpen] = useState(false);
+  const [last, setLast] = useState<VoiceCheckResult | null>(null);
+  useEffect(() => setLast(loadVoiceCheck()), [open]);
+  return (
+    <div className="rounded-ctl bg-white/[0.03] px-3 py-2.5">
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-body text-fg">Check my system</p>
+          <p className="mt-0.5 text-caption text-fg-3">{describeCheck(last)}</p>
+        </div>
+        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 shrink-0 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+          {open ? "Close" : "Run"}
+        </button>
+      </div>
+      {open ? (
+        <div className="mt-3">
+          <CheckMySystem onResult={setLast} />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -286,6 +325,7 @@ function VoiceGroup() {
       }
     >
       <div className="space-y-4 p-3">
+        <SystemCheckRow />
         {loading && !data ? (
           <div className="space-y-2" role="status" aria-label="Loading Hermes…">
             <div className="h-11 rounded-ctl bg-white/[0.04]" />

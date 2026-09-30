@@ -133,7 +133,7 @@ export async function patchSettings(body: {
   return data;
 }
 export const transcribeAudio = (dataUrl: string, mimeType: string) =>
-  write<{ ok: boolean; transcript?: string; error?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);
+  write<{ ok: boolean; transcript?: string; error?: string; code?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);
 export async function speakText(text: string, timeoutMs = 185_000) {
   const res = await write<{ ok: boolean; data_url?: string; data_urls?: string[]; error?: string; fallback?: boolean; fallback_reason?: string }>(
     "speak",

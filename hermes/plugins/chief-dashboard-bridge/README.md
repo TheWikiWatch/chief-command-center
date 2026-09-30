@@ -44,7 +44,7 @@ All require `Authorization: Bearer …` (a `?token=` query is not accepted). Loo
 | GET | `/approvals` | Pending exec-approval card (`once` / `session` / `always` / `deny`) |
 | GET | `/transcript?after=` | Messages and attachments, plus `generating`, the pending `approval` and `longpoll: true`. `&wait=N&gen=0\|1&approval=<id>` (N ≤ 25) holds the request until something changes (see Long-poll). `?before=<id>` is Load earlier, archived history included, with `more` and `cursor`. |
 | POST | `/send` | `{ text, attachments?, client_id? }` queues a user turn. A repeated `client_id` within 24 hours returns `{ ok, duplicate: true }` without a second turn. |
-| POST | `/transcribe` | `{ data_url, mime_type }` → Hermes STT: `{ ok, transcript, provider }` |
+| POST | `/transcribe` | `{ data_url, mime_type }` → Hermes STT: `{ ok, transcript, provider }`. Never touches the conversation. With local STT and no model on disk it answers `code: model_missing` instead of letting Hermes download one. |
 | POST | `/speak` | `{ text }` → Hermes TTS: `{ ok, data_url, mime_type, provider }` |
 | GET | `/voice-config`, `/settings` | STT/TTS catalog and current choice (never keys) |
 | PATCH | `/settings` | `{ stt?, tts?, secrets? }` writes the chief's `config.yaml` / `.env`. Keys are never returned. |
@@ -58,6 +58,8 @@ All require `Authorization: Bearer …` (a `?token=` query is not accepted). Loo
 | GET | `/setup/second-brain` | The Second Brain (`second_brain.py`, contract `chief.second_brain.v1`): folder, mode, skill installed, the default `Documents\Second Brain` |
 | POST | `/setup/second-brain/inspect` | `{ path }` → what the folder holds and exactly what each setup choice would create. Writes nothing. |
 | POST | `/setup/second-brain` | `{ path, mode: new \| keep \| reorganize }` writes the template create-only, sets `OBSIDIAN_VAULT_PATH` / `WIKI_PATH` in the profile `.env` and installs the `second-brain` skill |
+| GET | `/voice/model` | The on-device speech model (`speech_model.py`, contract `chief.speech_model.v1`): models with sizes, installed or not, the running download, and whether voice typing is ready without a download |
+| POST | `/voice/model/download`, `/voice/model/cancel`, `/voice/model/delete` | `{ id }` starts a resumable, checksum-verified download (then points `stt.local.model` at it); cancel keeps the partial file; delete removes the folder |
 | POST | `/setup/soul/seed` | Replaces an untouched stock Hermes SOUL with Chief's default (history kept); an edited SOUL is never touched |
 | GET | `/persona?profile=`, `/persona/soul/version?profile=&id=` | SOUL, memory and user profile for editing (`persona.py`, contract `chief.persona.v1`); an older SOUL version |
 | POST | `/persona/soul`, `/persona/soul/restore`, `/persona/memory` | Save SOUL against the hash it was read at, restore a version, apply a pinned memory batch |
