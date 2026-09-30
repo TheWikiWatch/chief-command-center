@@ -155,3 +155,48 @@
 - Test note: the in-app browser used for checks pauses `requestAnimationFrame` while its pane is hidden, which holds onboarding's step animation until it paints. Not an app bug; a visible window always paints.
 - Tests: web 263 passed (4 live skipped), desktop 18, Python 56 + 20, privacy scan clean.
 
+**Incident, 2026-09-30 ~15:53: a test stopped the live install's gateway.**
+
+- What happened: the first version of the compatibility suite (below) stopped its throwaway gateway with `hermes -p chief gateway stop`. On Windows that command isn't scoped to `HERMES_HOME`. It ends the per-user scheduled task named after the profile (`Hermes_Gateway_chief`) and sweeps gateway processes. It stopped the live install's gateway and an unrelated test gateway.
+- Impact: the live install's guard restarted its gateway at 15:54:18, about 1–2 minutes of downtime. It had been idle since 11:18, so no turn was cut off. Cron jobs due in that window may have run late.
+- Fix: nothing in this repo calls `gateway stop` any more. The desktop shell and the compatibility suite write Hermes's own planned-stop marker in their own profile home for their own gateway pid (waiting for `gateway.pid`, which appears after `/health`). Only then, if needed, do they end their own process tree. Takeover of another launcher's gateway uses the same scoped marker.
+- Verified: a clean drain ("Gateway stopped", exit 0) on a throwaway home, twice, with the live install as control. Its `gateway-starts.log` count stayed at 40 and it stayed healthy. Written up in `docs/FRAGILE_SEAMS.md`.
+
+**Phase 8: packaging (partly done; needs your go-ahead for the rest).**
+
+- `apps/desktop/electron-builder.config.cjs` builds an MSIX: Electron app plus resources (the Hermes payload without its offline uv cache, the dashboard standalone server, bundled plugins, backup engine, provisioning script).
+  - Signing is an allow-list (`build/sign.cjs`): only the app's own executable and the package are signed. Every payload binary stays as its publisher shipped it, as SignPath will require.
+  - The test certificate is made with OpenSSL (`packaging/msix/make-test-cert.sh`) into a `.pfx` outside the repo. Nothing is added to a Windows certificate store.
+- The shell now runs the payload's own Python with its site-packages on PYTHONPATH (upstream's approach), not the venv's `python.exe`, whose `pyvenv.cfg` names the build folder and would break once installed.
+- Built: `Chief Command Center 0.1.0.appx`, 836 MB (from about 1.9 GB of payload). The app executable carries the test signature.
+- Blocked: electron-builder's bundled `signtool` (2017) can't sign an MSIX on this Windows 11 PC ("A required function is not present"). A current `signtool` from Microsoft's SDK build tools on nuget.org is needed; that download is waiting for your OK. An unsigned MSIX can't be installed at all.
+- Blocked: the clean-install test (Acceptance 1) needs Windows Sandbox (not enabled here), or this PC trusting the test certificate. Both are admin/security changes for you to make.
+- Found and noted: electron-builder prints the certificate password in its failure output. The local log was deleted, and the test certificate will be regenerated before any build is shared.
+
+**Phase 10: updater and signed release manifest (code and tests; the install hand-off needs the packaged app).**
+
+- `packaging/release/release-tool.mjs`: `keygen` (Ed25519, private key refused inside the repo), `make` and `verify`.
+  - `make` writes `release.json`: version, package size and SHA-256, Electron, the Hermes pin and patch hashes, plugin versions, and data schema and minimum reader. It signs over the exact bytes into `release.json.sig`.
+  - The closed-phase public key is pinned in `apps/desktop/src/release-key.ts`. It is to be replaced by your offline key before going public.
+- `apps/desktop/src/updater.ts`:
+  - Check: a folder feed. A failed check says why and never claims "up to date".
+  - Signature check: verified against the pinned key before anything is downloaded.
+  - Download: with resume, SHA-256 verified; a mismatch or an oversize file is deleted. Disk space is checked first.
+  - Install: never interrupts a turn unless the owner picks "Install now". A backup comes first and a failed backup stops the install. Then Chief is stopped, and the hand-off to Windows is `Add-AppxPackage` plus relaunch, via `-EncodedCommand`.
+- First start of a new version: a local backup before Hermes starts (`chief_backup --kind pre-update --local`), and `lastVersion`/`dataSchema` are recorded. An older app refuses data with a newer schema and points to the pre-update backup.
+- UI: the "Update available — install?" card (versions, size, notes; Install / Later / Skip this version; busy choices: wait, Install now, Later) floats over the dashboard and sits in Settings → Updates with the update source. It is shown only in the desktop app.
+- Tests: updater 10 cases (success, up to date, skip, offline, bad signature, tampered manifest, truncated then resumed, checksum mismatch deleted, oversize, disk full, busy policy, failed backup, failed Windows install); update card 5.
+- Not yet shown: the real Windows install and relaunch, and locked-file or interrupted-apply behavior. These need the signed package installed (see Phase 8).
+
+**Phase 11: upstream tracking (tooling and workflow; no upstream release newer than the pin yet).**
+
+- Adjusted from the plan: no public fork while the repo is closed. A GitHub fork of a public repo is public, so this repo's `hermes/pin.json` plus `hermes/patches/` act as the fork.
+- Tools:
+  - `packaging/upstream/candidate.py`: the latest upstream stable release versus the pin.
+  - `prepare_source.py --commit`: a candidate plus the patch queue; a failing patch exits 3 and is named.
+  - `packaging/upstream/compat.py`: the compatibility suite on a built payload. It covers plugin import (with private Hermes names listed for review), the providers, persona, Second Brain and speech-model contracts, the bridge unit tests on the payload interpreter, and a gateway smoke on a free port with its own lock (health, snapshot, transcript, setup, voice, persona, token enforcement, scoped graceful stop).
+  - `update_pin.py`.
+- `.github/workflows/upstream.yml`: a daily poll. A newer release that no PR or issue covers yet is patched, built on Windows, and run through the suite. It passes as a candidate PR moving the pin, or fails as a "Blocked Hermes upgrade" issue that keeps the last good pin.
+- Evidence: the suite passed 8/8 on the current payload. The one private name used is `hermes_cli.default_soul._normalize_soul`, listed for review. `candidate.py` reports v2026.9.24 = the pinned base, so nothing is newer.
+- Tests: web 268 passed (4 live skipped), desktop 28, Python 56 + 20, privacy scan clean.
+

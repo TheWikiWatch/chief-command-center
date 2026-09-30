@@ -1,10 +1,12 @@
 """Check out the pinned upstream Hermes commit and apply the app's patch queue (hermes/pin.json).
 
-    python packaging/payload/prepare_source.py --dest <dir>
+    python packaging/payload/prepare_source.py --dest <dir> [--commit <sha>]
 
 Creates <dir> as a git checkout on a local branch `chief/<short sha>` with one commit holding the
 patches, so the payload build (stage.py) snapshots exactly the pinned, patched tree. Refuses to touch an
-existing directory unless it is already that checkout at the expected commit.
+existing directory unless it is already that checkout at the expected commit. `--commit` prepares another
+upstream commit (an upgrade candidate, packaging/upstream/); a patch that no longer applies exits with code 3
+and names it.
 """
 from __future__ import annotations
 
@@ -24,9 +26,10 @@ def git(*args: str, cwd: Path | None = None) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dest", required=True)
+    parser.add_argument("--commit", default="")
     args = parser.parse_args(argv)
     dest = Path(args.dest).resolve()
-    commit = PIN["commit"]
+    commit = args.commit or PIN["commit"]
     branch = f"chief/{commit[:7]}"
     if dest.exists():
         base = git("rev-parse", "HEAD~1", cwd=dest)
@@ -38,7 +41,11 @@ def main(argv: list[str] | None = None) -> int:
     git("checkout", "-q", "-b", branch, commit, cwd=dest)
     for patch in PIN["patches"]:
         path = REPO / "hermes" / "patches" / patch["file"]
-        git("apply", "--check", str(path), cwd=dest)
+        try:
+            git("apply", "--check", str(path), cwd=dest)
+        except subprocess.CalledProcessError as exc:
+            print(f"PATCH FAILED {patch['file']}: {exc.stderr.strip()[:2000]}")
+            return 3
         git("apply", str(path), cwd=dest)
         print(f"applied {patch['file']}")
     git("add", "-A", cwd=dest)

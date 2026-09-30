@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -19,14 +20,34 @@ const PASS_THROUGH = [
   "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy", "SSL_CERT_FILE", "REQUESTS_CA_BUNDLE",
 ];
 
-export type PayloadLayout = { root: string; launcher: string; python: string; toolDirs: string[] };
+export type PayloadLayout = {
+  root: string;
+  launcher: string;
+  /** The payload's own Python. Run it with `pythonPath` on PYTHONPATH: unlike the venv's python.exe (whose
+   * pyvenv.cfg names the folder it was built in), this keeps working when the payload is installed elsewhere. */
+  python: string;
+  pythonPath: string[];
+  toolDirs: string[];
+};
 
-/** Where things are inside a Hermes PM payload (packaging/payload/stage.py). */
-export function payloadLayout(root: string, toolNames: string[] = []): PayloadLayout {
+type Manifest = { runtime?: { repoDir?: string; storePython?: string; sitePackages?: string; commands?: { hermes?: string } } };
+
+/** Where things are inside a Hermes PM payload, from its manifest.json (packaging/payload/stage.py). */
+export function payloadLayout(root: string, toolNames: string[] = [], manifest?: Manifest): PayloadLayout {
+  let runtime: Manifest["runtime"] = manifest?.runtime;
+  if (!runtime) {
+    try {
+      runtime = (JSON.parse(readFileSync(path.join(root, "manifest.json"), "utf8")) as Manifest).runtime;
+    } catch {
+      runtime = undefined;
+    }
+  }
+  const rel = (p: string | undefined, fallback: string) => path.join(root, p || fallback);
   return {
     root,
-    launcher: path.join(root, "bin", "hermes.exe"),
-    python: path.join(root, "venv", "Scripts", "python.exe"),
+    launcher: rel(runtime?.commands?.hermes, "bin/hermes.exe"),
+    python: rel(runtime?.storePython, "venv/Scripts/python.exe"),
+    pythonPath: [rel(runtime?.sitePackages, "venv/Lib/site-packages"), rel(runtime?.repoDir, "hermes-agent")],
     toolDirs: [path.join(root, "bin"), path.join(root, "venv", "Scripts"), ...toolNames.map((t) => path.join(root, "tools", t))],
   };
 }

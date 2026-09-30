@@ -38,6 +38,7 @@ import { useUnseenFleetFlags } from "@/lib/use-fleet-flags";
 import { useAppConfig } from "@/lib/app-config";
 import { Onboarding, useNeedsOnboarding } from "@/components/onboarding/onboarding";
 import { SecondBrainSheet } from "@/components/second-brain/sheet";
+import { UpdateCard } from "@/components/updates/update-card";
 import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunchTarget, type OpenTarget } from "@/lib/open-target";
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
 
@@ -108,6 +109,7 @@ export function CommandShell() {
   const registerSender = useCallback((send: ChatSend | null) => { chatSender.current = send; }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [secondBrainOpen, setSecondBrainOpen] = useState(false);
+  const [updateLater, setUpdateLater] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [lastChief, setLastChief] = useState<Person | null>(null);
   useEffect(() => setLastChief(loadChief()), []);
@@ -424,6 +426,11 @@ export function CommandShell() {
       {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} onAskChief={sendFromToday} /> : null}
       <SettingsPanel open={settingsOpen} phone={phone} onClose={() => setSettingsOpen(false)} onAskChief={sendFromToday} />
       <SecondBrainSheet open={secondBrainOpen} phone={phone} onClose={() => setSecondBrainOpen(false)} onAskChief={sendFromToday} />
+      {updateLater || onboarding.needed ? null : (
+        <div className="fixed bottom-4 right-4 z-50 w-[min(24rem,calc(100vw-2rem))]">
+          <UpdateCard compact onLater={() => setUpdateLater(true)} />
+        </div>
+      )}
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
       <ToastViewport />
     </>

@@ -35,3 +35,12 @@ npm run test:bridge  # three live checks; see README "Check" for the enable flag
 ```
 
 Live checks need `CHIEF_BRIDGE_SMOKE=1` and `CHIEF_BRIDGE_TOKEN` (same secret as `CHIEF_DASHBOARD_TOKEN`, process environment only). Optional `CHIEF_BRIDGE_URL` overrides `http://127.0.0.1:7790`.
+
+## Stopping a gateway when more than one Hermes install is on the PC
+
+`hermes -p <profile> gateway stop` on Windows is not scoped to `HERMES_HOME`. It ends the per-user scheduled task named after the profile (`Hermes_Gateway_<profile>`), and it sweeps gateway processes. On 2026-09-30 a test run of it, against a throwaway home, stopped the live install's gateway on the same PC; its guard restarted it within about a minute.
+
+This app never calls it. To stop its own gateway, it writes Hermes's own planned-stop marker in its own profile home for its own gateway pid; the gateway drains and exits. Only then, if needed, does it end its own process tree. The code is `requestScopedStop` in `apps/desktop/src/gateway.ts`, and `gateway_smoke` in `packaging/upstream/compat.py`.
+
+The gateway's `gateway.pid` appears a few seconds after `/health` answers, so a stop right after start must wait for it. A test that stops its own gateway should check that a live install on the same PC is unaffected: its `gateway-starts.log` line count doesn't change.
+

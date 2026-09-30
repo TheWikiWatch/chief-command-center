@@ -54,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument(name)
     parser.add_argument("--keep", type=int, default=0)
     parser.add_argument("--passphrase-stdin", action="store_true")
+    # Only for backups the app keeps next to the live data (before an update): like the live files, they
+    # hold secrets unencrypted. Backups a person carries elsewhere never use this.
+    parser.add_argument("--local", action="store_true")
     args = parser.parse_args(argv)
     parts = [p.strip() for p in (args.parts or "").split(",") if p.strip()]
     version = args.app_version or "0.0.0"
@@ -62,7 +65,8 @@ def main(argv: list[str] | None = None) -> int:
             dest = Path(args.dest)
             result = archive.create(dest, parts=parts, hermes_root=_path(args.hermes_root), app_dir=_path(args.app_dir),
                                     second_brain=_path(args.second_brain), passphrase=_passphrase(args), app_version=version,
-                                    hermes_version=args.hermes_version or "", kind=args.kind or "manual", progress=_progress)
+                                    hermes_version=args.hermes_version or "", kind=args.kind or "manual", progress=_progress,
+                                    secrets_plain=args.local)
             if args.kind == "auto" and args.keep:
                 result["pruned"] = archive.prune(dest, args.keep)
         elif args.command == "list":

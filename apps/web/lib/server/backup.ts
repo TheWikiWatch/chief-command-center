@@ -8,7 +8,8 @@ import { secondBrain } from "@/lib/server/second-brain";
 /**
  * Backups through the engine in `backup/chief_backup` (Python; the payload's Python in the app).
  *
- *   CHIEF_PYTHON          Python that runs the engine (the payload venv's python.exe)
+ *   CHIEF_PYTHON          Python that runs the engine (the payload's own Python)
+ *   CHIEF_PYTHONPATH      extra import paths for it (the payload's site-packages), separated by ;
  *   CHIEF_BACKUP_ENGINE   folder that contains chief_backup/ (default: the repo's backup/)
  *   CHIEF_HERMES_ROOT     the Hermes root to back up (every profile)
  *   CHIEF_APP_VERSION     this app's version (default: apps/web/package.json)
@@ -61,7 +62,7 @@ export function runEngine(args: string[], opts: { passphrase?: string; onProgres
     const child = spawn(cfg.python, ["-B", "-m", "chief_backup", ...args, ...(opts.passphrase !== undefined ? ["--passphrase-stdin"] : [])], {
       cwd: cfg.engine,
       windowsHide: true,
-      env: { ...process.env, PYTHONPATH: cfg.engine, PYTHONIOENCODING: "utf-8" },
+      env: { ...process.env, PYTHONPATH: [cfg.engine, ...(process.env.CHIEF_PYTHONPATH || "").split(";").filter(Boolean)].join(";"), PYTHONIOENCODING: "utf-8" },
     });
     const timer = setTimeout(() => child.kill(), opts.timeoutMs ?? 6 * 3600 * 1000);
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));

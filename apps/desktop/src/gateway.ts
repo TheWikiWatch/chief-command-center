@@ -7,10 +7,23 @@ import type { ChildHandle } from "./supervisor";
 /**
  * The chief's Hermes gateway (PLAN §4): the payload launcher in the foreground (`hermes -p chief gateway run`),
  * with an explicit HERMES_HOME, this install's own gateway lock directory (unless adopted), the bridge port
- * and token, and HERMES_BIN pointing at the payload launcher. Stopping asks Hermes first (`gateway stop`,
- * 25 s) and only then ends the process tree.
+ * and token, and HERMES_BIN pointing at the payload launcher.
+ *
+ * Stopping NEVER uses `hermes gateway stop`: on Windows it ends the per-user scheduled task named after the
+ * profile (`Hermes_Gateway_chief`) and sweeps gateway processes without regard to HERMES_HOME, so it can stop
+ * another install's gateway on the same PC (it did, on 2026-09-30). Instead the app writes Hermes's own
+ * planned-stop marker in THIS profile's home for THIS gateway's pid (the gateway drains and exits), waits
+ * 25 s, and then ends only its own process tree.
  */
-export type GatewayConfig = { launcher: string; hermesRoot: string; profile: string; env: Record<string, string>; logFile: string };
+export type GatewayConfig = {
+  launcher: string;
+  python: string;
+  pythonPath: string[];
+  hermesRoot: string;
+  profile: string;
+  env: Record<string, string>;
+  logFile: string;
+};
 
 export function profileHome(hermesRoot: string, profile = "chief"): string {
   return path.join(hermesRoot, "profiles", profile);
@@ -34,6 +47,27 @@ export function killTree(pid: number) {
     } catch {
       /* gone */
     }
+  }
+}
+
+/** Ask one gateway, in one profile home, to drain and exit (Hermes's own marker). Nothing else is touched. */
+export function requestScopedStop(cfg: Pick<GatewayConfig, "python" | "pythonPath" | "hermesRoot" | "profile" | "env">, gatewayPid: number): boolean {
+  const script = "import sys\nfrom gateway.status import write_planned_stop_marker\nsys.exit(0 if write_planned_stop_marker(int(sys.argv[1])) else 1)";
+  const res = spawnSync(cfg.python, ["-B", "-c", script, String(gatewayPid)], {
+    env: { ...cfg.env, HERMES_HOME: profileHome(cfg.hermesRoot, cfg.profile), PYTHONPATH: cfg.pythonPath.join(";") },
+    windowsHide: true,
+    timeout: 20_000,
+  });
+  return res.status === 0;
+}
+
+/** The gateway's own pid (the Python process), from this profile's pid file. */
+export function profileGatewayPid(hermesRoot: string, profile = "chief"): number {
+  try {
+    const text = readFileSync(path.join(profileHome(hermesRoot, profile), "gateway.pid"), "utf8").trim();
+    return Number((text.startsWith("{") ? JSON.parse(text).pid : text) || 0);
+  } catch {
+    return 0;
   }
 }
 
@@ -70,8 +104,15 @@ export function launchGateway(cfg: GatewayConfig, onExit: (code: number | null, 
     process: child,
     stop: async (graceful: boolean) => {
       if (graceful) {
-        spawn(cfg.launcher, ["-p", cfg.profile, "gateway", "stop"], { env: cfg.env, windowsHide: true, stdio: "ignore" });
-        if (await waitExit(child, 25_000)) return;
+        // The pid file appears a few seconds after the bridge answers; the marker watcher may start later still.
+        let gatewayPid = 0;
+        for (let i = 0; i < 30 && !gatewayPid && child.exitCode === null; i++) {
+          gatewayPid = profileGatewayPid(cfg.hermesRoot, cfg.profile);
+          if (!gatewayPid) await new Promise((r) => setTimeout(r, 1000));
+        }
+        for (let attempt = 0; attempt < 2 && gatewayPid && child.exitCode === null; attempt++) {
+          if (requestScopedStop(cfg, gatewayPid) && (await waitExit(child, attempt ? 15_000 : 12_000))) return;
+        }
       }
       if (pid) killTree(pid);
       await waitExit(child, 5_000);

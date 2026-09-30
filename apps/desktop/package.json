@@ -9,11 +9,13 @@
     "build": "tsc -p tsconfig.json",
     "start": "npm run build && electron .",
     "test": "vitest run",
-    "check": "tsc -p tsconfig.json --noEmit && vitest run"
+    "check": "tsc -p tsconfig.json --noEmit && vitest run",
+    "dist:msix": "npm run build && electron-builder --config electron-builder.config.cjs --win appx --publish never"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "electron": "44.5.1",
+    "electron-builder": "^26.15.3",
     "typescript": "^5.9.2",
     "vitest": "^5.0.1"
   }

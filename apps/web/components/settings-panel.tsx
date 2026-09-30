@@ -19,6 +19,7 @@ import {
   HardDriveDownloadIcon,
 } from "@/components/icons";
 import { BackupPanel } from "@/components/backup/backup-panel";
+import { UpdatesPanel, useUpdates } from "@/components/updates/update-card";
 import { Sheet } from "@/components/ui/sheet";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
 import { FONT_STEPS, notifyVoiceConfig, useDashboardPrefs } from "@/lib/dashboard-prefs";
@@ -84,6 +85,7 @@ function SettingsBody({ phone, onAskChief }: { phone: boolean; onAskChief?: (tex
       <ConnectionGroup />
       <SecondBrainGroup onAskChief={onAskChief} />
       <BackupGroup />
+      <UpdatesGroup />
       <IdentityGroup />
       <VoiceGroup />
       <AppGroup phone={phone} />
@@ -135,6 +137,20 @@ function ConnectionGroup() {
           ) : null}
         </Row>
       )}
+    </Group>
+  );
+}
+
+/* ------------------------------------------------------------------ Updates (desktop app only) */
+
+function UpdatesGroup() {
+  const { api } = useUpdates();
+  if (!api) return null;
+  return (
+    <Group icon={<RefreshCwIcon className="size-4" />} title="Updates" hint="New versions of the app, including its tested Hermes.">
+      <div className="px-3 py-3">
+        <UpdatesPanel />
+      </div>
     </Group>
   );
 }

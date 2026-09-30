@@ -8,11 +8,15 @@ import { spawn } from "node:child_process";
  */
 export type EngineRunner = (args: string[]) => Promise<{ ok: boolean; error?: string; [key: string]: unknown }>;
 
-export function engineRunner(python: string, engineDir: string, env: Record<string, string>): EngineRunner {
+export function engineRunner(python: string, engineDir: string, env: Record<string, string>, pythonPath: string[] = []): EngineRunner {
   return (args) =>
     new Promise((resolve) => {
       let out = "";
-      const child = spawn(python, ["-B", "-m", "chief_backup", ...args], { cwd: engineDir, env: { ...env, PYTHONPATH: engineDir, PYTHONIOENCODING: "utf-8" }, windowsHide: true });
+      const child = spawn(python, ["-B", "-m", "chief_backup", ...args], {
+        cwd: engineDir,
+        env: { ...env, PYTHONPATH: [engineDir, ...pythonPath].join(";"), PYTHONIOENCODING: "utf-8" },
+        windowsHide: true,
+      });
       child.stdout.setEncoding("utf8").on("data", (c: string) => (out += c));
       child.on("error", () => resolve({ ok: false, error: "The backup tool couldn't start." }));
       child.on("close", () => {

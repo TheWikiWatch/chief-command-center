@@ -17,6 +17,12 @@ export type DesktopSettings = {
   webEnv: Record<string, string>;
   closeNoticeShown: boolean;
   startAtLogin: boolean;
+  /** Where updates come from: a release folder while the repo is closed (PLAN §8a). Empty = no checks. */
+  updateFeed: string;
+  skippedVersions: string[];
+  /** The app version that last opened this data, and the data schema it wrote. */
+  lastVersion: string;
+  dataSchema: number;
 };
 
 export const DEFAULTS: DesktopSettings = {
@@ -27,6 +33,10 @@ export const DEFAULTS: DesktopSettings = {
   webEnv: {},
   closeNoticeShown: false,
   startAtLogin: true,
+  updateFeed: "",
+  skippedVersions: [],
+  lastVersion: "",
+  dataSchema: 0,
 };
 
 export class Store {

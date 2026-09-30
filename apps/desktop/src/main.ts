@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statfsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -6,7 +6,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, s
 
 import { activeWork, fromBridgeSnapshot } from "./active-work";
 import { curatedEnv, payloadLayout } from "./env";
-import { bridgeHealth, gatewayOwner, killTree, launchGateway, profileHome, waitFor } from "./gateway";
+import { bridgeHealth, gatewayOwner, killTree, launchGateway, profileHome, requestScopedStop, waitFor } from "./gateway";
 import { Notifier } from "./notifier";
 import { missing, resolvePaths, type DesktopPaths } from "./paths";
 import { isFree, pickPort } from "./ports";
@@ -15,6 +15,12 @@ import { bridgeToken } from "./secrets";
 import { Store } from "./store";
 import { Supervisor } from "./supervisor";
 import { launchWeb, webHealth } from "./web";
+import { RELEASE_PUBLIC_KEY } from "./release-key";
+import { compareVersions, Updater, type Release } from "./updater";
+
+/** The data layout this version writes. A later version that changes it raises this, and an older app
+ * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
+const DATA_SCHEMA = 1;
 
 /**
  * Chief Command Center's desktop shell (PLAN §4). The only supervisor of the chief's gateway and the
@@ -34,6 +40,7 @@ let notifier: Notifier | null = null;
 let quitting = false;
 let externalGateway = false;
 let steps: Step[] = [];
+let updater: Updater;
 
 const STEPS: Step[] = [
   { id: "runtime", label: "Runtime", state: "waiting" },
@@ -102,6 +109,7 @@ function envFor(kind: "gateway" | "web"): Record<string, string> {
       CHIEF_APP_DATA: paths.appDir,
       CHIEF_HERMES_ROOT: hermesRoot,
       CHIEF_PYTHON: layout.python,
+      CHIEF_PYTHONPATH: layout.pythonPath.join(";"),
       CHIEF_BACKUP_ENGINE: paths.backupEngine,
       CHIEF_APP_VERSION: app.getVersion(),
       CHIEF_HERMES_VERSION: hermesVersion(),
@@ -156,16 +164,31 @@ async function boot() {
   setStep("runtime", "done");
 
   setStep("prepare", "working");
+  if ((store.value.dataSchema || 0) > DATA_SCHEMA) {
+    return setStep(
+      "prepare",
+      "error",
+      `This data was last opened by a newer version of the app (${store.value.lastVersion || "unknown"}). Install that version again, or restore the backup made before the update (Settings, then Backup & restore).`,
+    );
+  }
   await choosePorts();
-  const engine = engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, envFor("web"));
+  const engine = engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, envFor("web"), payloadLayout(paths.payload).pythonPath);
   const recovered = await engine(["recover", "--state-dir", path.join(paths.appDir, "restore")]);
   if (recovered.ok && recovered.action === "rolled-back") setStep("prepare", "working", "An interrupted restore was undone.");
   const provisioned = await runPython(paths.provision, ["--plugins-src", paths.plugins, "--bridge-port", String(store.value.ports.bridge)], {
     ...envFor("gateway"),
     HERMES_HOME: profileHome(hermesRoot),
-    PYTHONPATH: path.join(paths.payload, "hermes-agent"),
+    PYTHONPATH: payloadLayout(paths.payload).pythonPath.join(";"),
   });
   if (!provisioned.ok) return setStep("prepare", "error", provisioned.error || "Preparing Hermes failed.");
+  // First launch of a new version: a local backup before Hermes starts and migrates anything.
+  const previous = store.value.lastVersion;
+  if (previous && compareVersions(app.getVersion(), previous) > 0 && existsSync(path.join(hermesRoot, "profiles"))) {
+    setStep("prepare", "working", `Backing up before the first start of ${app.getVersion()}…`);
+    const saved = await preUpdateBackup();
+    if (!saved.ok) return setStep("prepare", "error", `The backup before this version's first start failed: ${saved.error}. Chief wasn't started, so nothing changed.`);
+  }
+  store.save({ lastVersion: app.getVersion(), dataSchema: DATA_SCHEMA });
   setStep("prepare", "done");
 
   setStep("gateway", "working");
@@ -184,7 +207,9 @@ async function boot() {
     });
     if (choice.response === 2) return app.exit(0);
     if (choice.response === 0) {
-      spawn(payloadLayout(paths.payload).launcher, ["-p", "chief", "gateway", "stop"], { env: envFor("gateway"), windowsHide: true });
+      // Only that gateway, in this profile home (never `hermes gateway stop`; see gateway.ts).
+      const layout = payloadLayout(paths.payload);
+      requestScopedStop({ python: layout.python, pythonPath: layout.pythonPath, hermesRoot, profile: "chief", env: envFor("gateway") }, owner.pid);
       await waitFor(async () => ({ ok: gatewayOwner(hermesRoot, "").state === "none" }), 25_000);
       if (gatewayOwner(hermesRoot, "").state !== "none") killTree(owner.pid);
     } else externalGateway = true;
@@ -213,6 +238,37 @@ async function boot() {
     },
   });
   notifier.start();
+  void updater.check();
+}
+
+function preUpdateBackup(): Promise<{ ok: boolean; error?: string }> {
+  const layout = payloadLayout(paths.payload);
+  return engineRunner(layout.python, paths.backupEngine, envFor("web"), layout.pythonPath)([
+    "backup", "--dest", path.join(paths.data, "backups"), "--parts", "setup", "--kind", "pre-update", "--local",
+    "--hermes-root", hermesRoot, "--app-dir", path.join(paths.appDir, "settings-backup"), "--app-version", app.getVersion(),
+  ]).then((r) => ({ ok: !!r.ok, error: r.error }));
+}
+
+/** Windows installs the verified package (its signature is checked again by Windows) and relaunches the app. */
+function installPackage(file: string): Promise<{ ok: boolean; error?: string }> {
+  if (!app.isPackaged) return Promise.resolve({ ok: false, error: "Updates install only in the installed app." });
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `Add-AppxPackage -Path '${file.replace(/'/g, "''")}' -ForceApplicationShutdown -ForceUpdateFromAnyVersion`,
+    "$p = Get-AppxPackage -Name ChiefCommandCenter",
+    "Start-Process ('shell:AppsFolder\\' + $p.PackageFamilyName + '!ChiefCommandCenter')",
+  ].join("\n");
+  // -EncodedCommand (UTF-16LE base64) avoids every command-line quoting pitfall.
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+  });
+  child.unref();
+  quitting = true;
+  setTimeout(() => app.exit(0), 1500);
+  return Promise.resolve({ ok: true });
 }
 
 /* ------------------------------------------------------------------ window, tray, quit */
@@ -315,6 +371,19 @@ async function quit() {
 /* ------------------------------------------------------------------ IPC for the dashboard */
 
 function registerIpc() {
+  ipcMain.handle("updates:state", () => updater.state);
+  ipcMain.handle("updates:check", () => updater.check());
+  ipcMain.handle("updates:download", () => updater.download());
+  ipcMain.handle("updates:install", (_e, force: boolean) => updater.install(!!force));
+  ipcMain.handle("updates:skip", (_e, version: string) => {
+    store.save({ skippedVersions: [...new Set([...store.value.skippedVersions, String(version)])] });
+    return updater.check();
+  });
+  ipcMain.handle("updates:feed", () => store.value.updateFeed);
+  ipcMain.handle("updates:setFeed", (_e, folder: string) => {
+    store.save({ updateFeed: String(folder || "").trim() });
+    return updater.check();
+  });
   ipcMain.handle("boot:retry", () => boot());
   ipcMain.handle("boot:logs", () => shell.openPath(paths.logs));
   ipcMain.handle("desktop:pickFolder", async (_e, opts: { title?: string; defaultPath?: string } = {}) => {
@@ -339,7 +408,7 @@ function registerIpc() {
     }
     notifier?.stop();
     const result = await applyRestore({
-      engine: engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, envFor("web")),
+      engine: engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, envFor("web"), payloadLayout(paths.payload).pythonPath),
       stateDir: path.join(paths.appDir, "restore"),
       safetyDir: path.join(paths.appDir, "safety-backups"),
       appVersion: app.getVersion(),
@@ -373,7 +442,11 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     store = new Store(paths.appDir);
     const layout = payloadLayout(paths.payload);
     gateway = new Supervisor({
-      launch: async () => launchGateway({ launcher: layout.launcher, hermesRoot, profile: "chief", env: envFor("gateway"), logFile: path.join(paths.logs, "gateway.log") }, (code, pid) => gateway.exited(code, pid)),
+      launch: async () =>
+        launchGateway(
+          { launcher: layout.launcher, python: layout.python, pythonPath: layout.pythonPath, hermesRoot, profile: "chief", env: envFor("gateway"), logFile: path.join(paths.logs, "gateway.log") },
+          (code, pid) => gateway.exited(code, pid),
+        ),
       ready: async () => {
         const up = await waitFor(() => bridgeHealth(store.value.ports.bridge, token), 90_000);
         if (!up.ok) throw new Error(up.detail || "Chief didn't answer.");
@@ -390,6 +463,27 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         if (!up.ok) throw new Error(up.detail || "The dashboard didn't answer.");
       },
     });
+    updater = new Updater({
+      feed: () => store.value.updateFeed,
+      currentVersion: app.getVersion(),
+      publicKey: RELEASE_PUBLIC_KEY,
+      updatesDir: path.join(paths.data, "updates"),
+      skipped: () => store.value.skippedVersions,
+      freeBytes: async (dir) => {
+        const s = statfsSync(existsSync(dir) ? dir : paths.data);
+        return s.bavail * s.bsize;
+      },
+      activeWork: () => currentWork(),
+      backup: (_release: Release) => preUpdateBackup(),
+      stopChief: async () => {
+        notifier?.stop();
+        await web.stop(true).catch(() => undefined);
+        if (!externalGateway) await gateway.stop(true).catch(() => undefined);
+      },
+      install: (file) => installPackage(file),
+      onState: (state) => window?.webContents.send("updates:state", state),
+    });
+    setInterval(() => void updater.check(), 24 * 3600 * 1000).unref();
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
       const ours = wc.getURL().startsWith(uiUrl());
       callback(ours && ["media", "notifications", "clipboard-sanitized-write", "fullscreen"].includes(permission));

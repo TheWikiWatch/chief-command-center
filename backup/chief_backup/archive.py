@@ -191,7 +191,7 @@ def _profiles(plan: Plan) -> list[str]:
 
 def backup_name(kind: str = "manual", when: Optional[float] = None) -> str:
     stamp = time.strftime("%Y-%m-%d %H%M%S", time.localtime(when or time.time()))
-    label = {"auto": " (auto)", "safety": " (before restore)"}.get(kind, "")
+    label = {"auto": " (auto)", "safety": " (before restore)", "pre-update": " (before update)"}.get(kind, "")
     return f"Chief backup{label} {stamp}{SUFFIX}"
 
 
