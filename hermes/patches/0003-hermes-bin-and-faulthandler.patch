@@ -1,0 +1,104 @@
+diff --git a/cron/scheduler_delivery.py b/cron/scheduler_delivery.py
+index fae39081d2..a6f1d190bb 100644
+--- a/cron/scheduler_delivery.py
++++ b/cron/scheduler_delivery.py
+@@ -880,7 +880,12 @@ def _deliver_to_bot_chat(job: dict, content: str, profile: str, *, deferred: Opt
+         found = _ilu.find_spec("hermes_cli") is not None
+     except Exception:
+         found = False
+-    if found:
++    # Fleet patch 2026-09-26: an explicit HERMES_BIN wins (PM layout: the bare store Python cannot
++    # import Hermes once served_profile_child_env strips the Hermes PYTHONPATH).
++    _env_bin = os.environ.get("HERMES_BIN", "").strip()
++    if _env_bin and os.path.isfile(_env_bin):
++        argv = [_env_bin]
++    elif found:
+         argv = [sys.executable, "-m", "hermes_cli.main"]
+     else:
+         hermes_bin = shutil.which("hermes")
+diff --git a/gateway/run.py b/gateway/run.py
+index 6c9556d10f..5ccd5f9cfa 100644
+--- a/gateway/run.py
++++ b/gateway/run.py
+@@ -2937,6 +2937,11 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
+     (exactly this install), else ``hermes`` on PATH, else None. The module argv must win: a
+     PATH-first lookup lets an attacker-planted ``hermes`` shadow the running install when
+     /update or /restart re-execs it (#111569)."""
++    # Fleet patch 2026-09-26: an explicit HERMES_BIN wins. Under the PM layout sys.executable is the
++    # bare store Python, and the restart watcher's scrubbed env drops the PYTHONPATH it needs.
++    env_bin = os.environ.get("HERMES_BIN", "").strip()
++    if env_bin and os.path.isfile(env_bin):
++        return [env_bin]
+     try:
+         import importlib.util
+         if importlib.util.find_spec("hermes_cli") is not None:
+diff --git a/gateway/run_startup.py b/gateway/run_startup.py
+index 03f113734e..11cc532add 100644
+--- a/gateway/run_startup.py
++++ b/gateway/run_startup.py
+@@ -857,7 +857,9 @@ class GatewayStartupMixin:
+             # Enable faulthandler for stack dumps on freezes/crashes (#70344). Falls back to a log file when
+             # sys.stderr is None (Windows VBS / pythonw / detached service) — otherwise the gateway would
+             # die here and take every adapter offline. See #71671.
+-            faulthandler.enable()
++            # Fleet patch 2026-09-26: keep hermes_cli._fleet_faulthandler's faulthandler.log target.
++            if not (faulthandler.is_enabled() and os.environ.get("HERMES_FAULTHANDLER_ON") == str(os.getpid())):
++                faulthandler.enable()
+         except (RuntimeError, ValueError, OSError):
+             with _log_suppressed(logging.DEBUG, "faulthandler.enable() unavailable", exc_info=True):
+                 faulthandler.enable(file=self._open_faulthandler_log(), all_threads=True)
+diff --git a/hermes_cli/_fleet_faulthandler.py b/hermes_cli/_fleet_faulthandler.py
+new file mode 100644
+index 0000000000..c733efae06
+--- /dev/null
++++ b/hermes_cli/_fleet_faulthandler.py
+@@ -0,0 +1,32 @@
++"""Fleet patch 2026-09-26: native-crash stacks into ``$HERMES_HOME/logs/faulthandler.log``.
++
++Replaces the legacy ``venv\\Lib\\site-packages\\hermes_win_faulthandler.pth`` hook, which the PM layout
++no longer loads (the gateway runs on the store Python; kanban workers run it isolated with ``-I``, which
++also ignores ``PYTHONFAULTHANDLER``). Imported from ``hermes_cli.main`` right after the bootstrap, so it
++covers the gateway, workers and the CLI. Stdlib only; never raises.
++"""
++import faulthandler
++import os
++
++#: Holds the pid of the process whose faulthandler already points at the log. A pid rather than a
++#: flag: children inherit the environment but not the enabled handler.
++MARKER = "HERMES_FAULTHANDLER_ON"
++
++
++def install() -> None:
++    home = os.environ.get("HERMES_HOME")
++    pid = str(os.getpid())
++    if not home or os.environ.get(MARKER) == pid:
++        return
++    try:
++        log_dir = os.path.join(home, "logs")
++        os.makedirs(log_dir, exist_ok=True)
++        fh = open(os.path.join(log_dir, "faulthandler.log"), "a", encoding="utf-8", buffering=1)
++        faulthandler.enable(file=fh, all_threads=True)
++        os.environ[MARKER] = pid
++        fh.write(f"\n--- faulthandler enabled pid={pid} ---\n")
++    except Exception:
++        pass
++
++
++install()
+diff --git a/hermes_cli/main.py b/hermes_cli/main.py
+index 3007cd9c4d..50b9db4097 100644
+--- a/hermes_cli/main.py
++++ b/hermes_cli/main.py
+@@ -18,6 +18,12 @@ except ModuleNotFoundError as exc:
+     if exc.name != "hermes_bootstrap":
+         raise  # the bootstrap exists but cannot load: skipping it would skip PM activation
+ 
++# Fleet patch 2026-09-26: native-crash stacks into $HERMES_HOME/logs/faulthandler.log.
++try:
++    from hermes_cli import _fleet_faulthandler  # noqa: F401
++except Exception:
++    pass
++
+ # A `hermes update` killed while git was writing the new tree leaves a mix of old and new files that
+ # fails at the next import, whichever it is — put the old tree back before importing anything else
+ # from the checkout, then rerun the command (this module may itself be one of the new files).

@@ -1,0 +1,43 @@
+{
+  "name": "@chief/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3100",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1 --port 3100",
+    "check": "npm run typecheck && npm test",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:bridge": "vitest run tests/bridge-contract.test.ts",
+    "typecheck": "tsc --noEmit --incremental false"
+  },
+  "dependencies": {
+    "@blobatar/react": "2.7.0",
+    "@paper-design/shaders-react": "0.0.68",
+    "blobatar": "2.7.0",
+    "motion": "^12.23.12",
+    "next": "^15.5.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "react-resizable-panels": "^3.0.4",
+    "streamdown": "^1.3.0"
+  },
+  "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@types/node": "^22.18.0",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@vitejs/plugin-react": "^6.1.1",
+    "autoprefixer": "^10.4.21",
+    "happy-dom": "^20.14.5",
+    "jsdom": "^29.1.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.9.2",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "^5.0.1"
+  }
+}

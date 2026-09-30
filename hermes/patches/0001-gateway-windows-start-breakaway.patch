@@ -1,0 +1,40 @@
+diff --git a/hermes_cli/gateway_windows.py b/hermes_cli/gateway_windows.py
+index 83f607a376..7605040406 100644
+--- a/hermes_cli/gateway_windows.py
++++ b/hermes_cli/gateway_windows.py
+@@ -355,6 +355,15 @@ def _gateway_run_argv(python_exe: str, profile_arg: str) -> list[str]:
+     return argv
+ 
+ 
++
++def _gateway_start_argv(python_exe: str, profile_arg: str) -> list[str]:
++    """``python -m hermes_cli.main [--profile X] gateway start`` — Windows VBS must use start for breakaway."""
++    argv = [python_exe, "-m", "hermes_cli.main"]
++    if profile_arg:
++        argv.extend(profile_arg.split())
++    argv.extend(["gateway", "start"])
++    return argv
++
+ def _launcher_settings(home: Path | None = None) -> tuple[str, str, str, str]:
+     """Return (python_path, working_dir, hermes_home, profile_arg) for generated launchers.
+     ``home`` targets another profile's HERMES_HOME (per-profile cold-start, #110959)."""
+@@ -416,7 +425,7 @@ def _build_gateway_vbs_script(python_path: str, working_dir: str, hermes_home: s
+     """
+     python_exe_path, venv_dir, extra_pythonpath = _resolve_detached_python(python_path)
+     # list2cmdline gives CreateProcess-correct quoting for WScript.Shell.Run.
+-    command_line = subprocess.list2cmdline(_gateway_run_argv(python_exe_path, profile_arg))
++    command_line = subprocess.list2cmdline(_gateway_start_argv(python_exe_path, profile_arg))
+     static_pythonpath = os.pathsep.join(_launcher_pythonpath_entries(extra_pythonpath))
+     q = _quote_vbs_string
+     lines = [
+@@ -436,8 +445,8 @@ def _build_gateway_vbs_script(python_path: str, working_dir: str, hermes_home: s
+         f"  env.Item({q('PYTHONPATH')}) = {q(static_pythonpath)}",
+         "End If",
+         f"sh.CurrentDirectory = {q(working_dir)}",
+-        # Window style 0 = hidden; bWaitOnReturn False = detached/async.
+-        f"sh.Run {q(command_line)}, 0, False",
++        # Window style 0 = hidden; Wait=True so `gateway start` can spawn the breakaway child before wscript exits.
++        f"sh.Run {q(command_line)}, 0, True",
+     ]
+     return "\r\n".join(lines) + "\r\n"
+ 

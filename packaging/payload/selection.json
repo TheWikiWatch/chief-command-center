@@ -1,0 +1,22 @@
+{
+  "tools": ["python", "uv", "node", "npm", "ripgrep", "ffmpeg", "git"],
+  "extras": [
+    "all",
+    "acp",
+    "audio-io",
+    "bedrock",
+    "discord",
+    "doc-extract",
+    "edge-tts",
+    "fal",
+    "firecrawl",
+    "google",
+    "stt-whisper",
+    "trace-upload",
+    "tts-premium",
+    "vertex",
+    "vision",
+    "web",
+    "youtube"
+  ]
+}

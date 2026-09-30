@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Python test dependencies
+        run: python -m pip install --disable-pip-version-check pyyaml cryptography requests
+      - name: Privacy scan (files and full history)
+        env:
+          PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
+        run: node scripts/privacy-scan.mjs --history
+      - name: Web dependencies
+        run: npm --prefix apps/web ci
+      - name: Web typecheck and tests
+        run: npm --prefix apps/web run check
+      - name: Python tests
+        run: python -B -m unittest discover -s hermes/tests

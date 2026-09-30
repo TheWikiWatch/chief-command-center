@@ -1,0 +1,14 @@
+﻿manifest_version: 2
+api_version: 1
+name: chief-dashboard-bridge
+version: 1.0.0
+description: Loopback bridge for Chief Command Center (Command Center chat platform, roster, kanban status, voice, approvals, phone alerts). No tools, no model.
+provides_hooks: []
+author: Chief Command Center contributors
+license: MIT
+tags: [dashboard, bridge, loopback]
+config_schema:
+  port: {type: int, default: 7790, description: "Loopback port (127.0.0.1 only)"}
+  token: {type: str, default: "", description: "Bearer token; empty reads plugin .token file"}
+  session_key: {type: str, default: "", description: "Override session_key (Command Center preferred; Discord fallback if CC disabled)"}
+

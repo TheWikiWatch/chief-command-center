@@ -1,0 +1,9 @@
+manifest_version: 2
+api_version: 1
+name: voicestudio-tts
+version: 1.0.0
+description: Speaks through a local VoiceStudio backend (OmniVoice) on 127.0.0.1:3900 — designed and cloned voices on this PC, with Edge as the fallback. No tools, no model.
+provides_hooks: []
+author: Chief Command Center contributors
+license: MIT
+tags: [tts, voice, local]

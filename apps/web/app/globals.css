@@ -1,0 +1,1065 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Design tokens: docs/VISUAL-OVERHAUL.md §2 and §3. Dark only.
+ * Colors are RGB triplets so Tailwind opacity modifiers work (bg-accent/20).
+ */
+:root {
+  color-scheme: dark;
+
+  --c-canvas: 9 9 11;
+  --c-pane: 15 15 18;
+  --c-card: 21 21 24;
+  --c-raised: 27 27 31;
+  --c-well: 35 35 40;
+
+  --c-fg: 237 237 239;
+  --c-fg-2: 161 161 170;
+  --c-fg-3: 144 144 153;
+  --c-fg-4: 90 90 99;
+
+  --c-accent: 229 72 77;
+  --c-accent-solid: 206 44 49;
+  --c-accent-text: 255 149 146;
+  --c-ok: 61 214 140;
+  --c-warn: 255 197 61;
+  --c-danger: 255 99 105;
+
+  --line-1: rgb(255 255 255 / 0.06);
+  --line-2: rgb(255 255 255 / 0.1);
+  --line-3: rgb(255 255 255 / 0.16);
+  --glass: rgb(22 22 26 / 0.72);
+  --glass-blur: blur(20px) saturate(140%);
+  --scrim: rgb(0 0 0 / 0.55);
+
+  --shadow-e3: 0 8px 32px rgb(0 0 0 / 0.45), 0 1px 0 rgb(255 255 255 / 0.04) inset;
+  --shadow-e4: 0 -12px 48px rgb(0 0 0 / 0.6);
+
+  --dur-press: 80ms;
+  --dur-fast: 140ms;
+  --dur-base: 220ms;
+  --dur-medium: 320ms;
+  --dur-sheet: 480ms;
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --ui-scale: 1;
+  font-size: calc(16px * var(--ui-scale));
+}
+
+/* Ambient Low / Off: no blur anywhere (§2.3). */
+:root[data-ambient="low"],
+:root[data-ambient="off"] {
+  --glass: rgb(22 22 26 / 0.96);
+  --glass-blur: none;
+}
+
+html,
+body {
+  height: 100%;
+  height: 100dvh;
+  background: rgb(var(--c-canvas));
+  color: rgb(var(--c-fg));
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  font-feature-settings: "cv11", "ss01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.h-app {
+  height: 100%;
+  height: 100dvh;
+  height: var(--vv-height, 100dvh);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: rgb(var(--c-accent) / 0.35);
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-fg-4) / 0.6);
+  border-radius: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* One focus language for every control (§8). */
+:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.glass {
+  background: var(--glass);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--line-2);
+  box-shadow: var(--shadow-e3);
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Press feedback for any control (§3.2): 0.96 on press, springs back via the transition. */
+.press {
+  transition: transform var(--dur-medium) cubic-bezier(0.34, 1.56, 0.64, 1), background-color var(--dur-fast) var(--ease-enter),
+    color var(--dur-fast) var(--ease-enter), opacity var(--dur-fast) var(--ease-enter);
+}
+
+.press:active:not(:disabled) {
+  transform: scale(0.96);
+  transition-duration: var(--dur-press);
+  transition-timing-function: var(--ease-enter);
+}
+
+/* Press-and-hold fill (HoldButton). Registered so the browser can animate it. */
+@property --hold {
+  syntax: "<number>";
+  inherits: false;
+  initial-value: 0;
+}
+
+.hold-fill {
+  background: conic-gradient(from -90deg, rgb(var(--c-warn) / 0.32) calc(var(--hold) * 360deg), transparent 0);
+}
+
+.speak-bar {
+  height: 100%;
+  transform-origin: bottom;
+  animation: speak-bar 0.9s var(--ease-move) infinite alternate;
+}
+
+@keyframes speak-bar {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* Chief's presence (§4.3). --s is the face size, --level the live voice level (0..1). */
+.presence {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  --level: 0;
+  --spin: 18s;
+  --orbit: 7s;
+}
+
+.pr-layer {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  border-radius: 999px;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.pr-bloom {
+  width: calc(var(--s) * 2.1);
+  height: calc(var(--s) * 2.1);
+  background: radial-gradient(circle, color-mix(in srgb, var(--chief) 42%, transparent) 0%, rgb(var(--c-accent) / 0.22) 38%, transparent 68%);
+  opacity: calc(0.28 + var(--level) * 0.6);
+  transition: opacity 400ms var(--ease-enter);
+}
+
+.pr-ring {
+  width: calc(var(--s) * 1.3);
+  height: calc(var(--s) * 1.3);
+  background: conic-gradient(from 0deg, rgb(var(--c-accent)), var(--chief), transparent 58%, rgb(var(--c-accent)));
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
+  animation: pr-spin var(--spin) linear infinite;
+  /* The ring means "Chief is doing something": hidden (and not spinning) while he is idle or offline. */
+  opacity: 0;
+  animation-play-state: paused;
+  transition: opacity 400ms var(--ease-enter);
+}
+
+.presence[data-mood="thinking"] .pr-ring,
+.presence[data-mood="working"] .pr-ring,
+.presence[data-mood="speaking"] .pr-ring,
+.presence[data-mood="listening"] .pr-ring,
+.presence[data-mood="approval"] .pr-ring,
+.presence[data-mood="celebrating"] .pr-ring {
+  opacity: 0.8;
+  animation-play-state: running;
+}
+
+.presence[data-mood="paused"] .pr-ring {
+  opacity: 0.4;
+}
+
+/* Getting voice: the ring wakes up slowly while the reply is turned into audio (no sound yet). */
+.presence[data-mood="preparing"] {
+  --spin: 6s;
+}
+.presence[data-mood="preparing"] .pr-ring {
+  opacity: 0.45;
+  animation-play-state: running;
+}
+.presence[data-mood="preparing"] .pr-bloom {
+  opacity: 0.3;
+}
+
+/* Idle: only a soft glow, so Chief looks present but clearly not busy. */
+.presence[data-mood="online"] .pr-bloom {
+  opacity: 0.16;
+}
+
+.pr-voice {
+  width: calc(var(--s) * 1.3);
+  height: calc(var(--s) * 1.3);
+  border: 2px solid rgb(var(--c-accent) / 0.75);
+  transform: translate(-50%, -50%) scale(calc(1 + var(--level) * 0.38));
+  opacity: 0;
+}
+
+.pr-orbit {
+  width: calc(var(--s) * 1.72);
+  height: calc(var(--s) * 1.72);
+  animation: pr-spin var(--orbit) linear infinite;
+  opacity: 0;
+  transition: opacity 500ms var(--ease-enter);
+}
+
+.pr-orbit-tilt {
+  animation-name: pr-spin-tilt;
+  animation-duration: calc(var(--orbit) * 1.4);
+  animation-direction: reverse;
+}
+
+.pr-orbit i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(2.5px, calc(var(--s) * 0.065));
+  height: max(2.5px, calc(var(--s) * 0.065));
+  margin: calc(max(2.5px, calc(var(--s) * 0.065)) / -2);
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 6px var(--chief), 0 0 10px rgb(var(--c-accent) / 0.6);
+  transform: rotate(var(--a)) translateX(calc(var(--s) * 0.86));
+}
+
+@keyframes pr-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
+}
+
+@keyframes pr-spin-tilt {
+  from {
+    transform: translate(-50%, -50%) rotateX(66deg) rotate(0deg);
+  }
+  to {
+    transform: translate(-50%, -50%) rotateX(66deg) rotate(360deg);
+  }
+}
+
+.presence[data-mood="thinking"] {
+  --spin: 3.2s;
+  --orbit: 4.5s;
+}
+
+.presence[data-mood="thinking"] .pr-orbit,
+.presence[data-mood="working"] .pr-orbit {
+  opacity: 1;
+}
+
+.presence[data-mood="thinking"] .pr-bloom {
+  opacity: 0.6;
+}
+
+.presence[data-mood="working"] {
+  --spin: 7s;
+}
+
+.presence[data-mood="speaking"],
+.presence[data-mood="listening"] {
+  --spin: 8s;
+}
+
+.presence[data-mood="speaking"] .pr-voice,
+.presence[data-mood="listening"] .pr-voice {
+  opacity: calc(0.15 + var(--level) * 1.1);
+}
+
+.presence[data-mood="listening"] .pr-bloom {
+  background: radial-gradient(circle, rgb(var(--c-accent) / 0.45) 0%, rgb(var(--c-accent) / 0.18) 40%, transparent 68%);
+}
+
+.presence[data-mood="approval"] .pr-ring {
+  background: conic-gradient(from 0deg, rgb(var(--c-warn)), rgb(var(--c-warn) / 0.2), rgb(var(--c-warn)));
+  animation: pr-spin 6s linear infinite, pr-pulse 1.6s var(--ease-move) infinite;
+}
+
+.presence[data-mood="approval"] .pr-bloom {
+  background: radial-gradient(circle, rgb(var(--c-warn) / 0.35) 0%, transparent 65%);
+}
+
+.presence[data-mood="offline"] .pr-ring,
+.presence[data-mood="offline"] .pr-bloom {
+  opacity: 0;
+}
+
+.presence[data-mood="celebrating"] .pr-orbit {
+  opacity: 1;
+  --orbit: 1.6s;
+}
+
+@keyframes pr-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* Mint moment (§3.2): sparkle burst around a freshly minted seat, a glow on its list row. */
+.mint-burst {
+  position: absolute;
+  left: 50%;
+  top: 29px;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 999px;
+  pointer-events: none;
+  background:
+    radial-gradient(circle, rgb(var(--c-ok) / 0.45) 0 12%, transparent 13%),
+    conic-gradient(from 0deg, transparent 0 8%, rgb(255 255 255 / 0.9) 9% 10%, transparent 11% 33%, rgb(var(--c-ok) / 0.9) 34% 35%, transparent 36% 58%,
+      rgb(255 255 255 / 0.9) 59% 60%, transparent 61% 83%, rgb(var(--c-ok) / 0.9) 84% 85%, transparent 86%);
+  -webkit-mask: radial-gradient(circle, transparent 30%, #000 32% 60%, transparent 62%);
+  mask: radial-gradient(circle, transparent 30%, #000 32% 60%, transparent 62%);
+  animation: mint-burst 1.1s var(--ease-enter) 0.5s both;
+}
+
+@keyframes mint-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotate(0deg);
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.35) rotate(40deg);
+  }
+}
+
+.mint-row {
+  animation: mint-row 2.2s var(--ease-enter);
+}
+
+@keyframes mint-row {
+  0%,
+  30% {
+    background-color: rgb(var(--c-ok) / 0.14);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+/* Approval sheet arrival: amber glow twice, then settle (§3.2). */
+.approval-glow {
+  animation: approval-glow 1.2s var(--ease-move) 2;
+}
+
+@keyframes approval-glow {
+  0%,
+  100% {
+    box-shadow: var(--shadow-e4), 0 0 0 0 rgb(var(--c-warn) / 0);
+  }
+  50% {
+    box-shadow: var(--shadow-e4), 0 0 0 2px rgb(var(--c-warn) / 0.55), 0 -8px 40px rgb(var(--c-warn) / 0.25);
+  }
+}
+
+/* Shimmer label for "Chief is thinking" and "Transcribing" (§3.2). */
+.shimmer-text {
+  background: linear-gradient(90deg, rgb(var(--c-fg-3)) 0%, rgb(var(--c-fg)) 45%, rgb(var(--c-fg-3)) 90%);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: shimmer 1.6s linear infinite;
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 110% 0;
+  }
+  to {
+    background-position: -110% 0;
+  }
+}
+
+/* Chat markdown (Streamdown tags every node with data-streamdown). */
+.chat-md {
+  line-height: 1.6;
+  letter-spacing: -0.006em;
+  color: rgb(var(--c-fg) / 0.92);
+  overflow-wrap: anywhere;
+}
+
+.chat-md > * + * {
+  margin-top: 0.7em;
+}
+
+.chat-md [data-streamdown^="heading"] {
+  color: rgb(var(--c-fg));
+  font-weight: 600;
+  letter-spacing: -0.014em;
+  line-height: 1.3;
+  margin-top: 1.1em;
+}
+
+.chat-md [data-streamdown="heading-1"] {
+  font-size: 1.3em;
+}
+
+.chat-md [data-streamdown="heading-2"] {
+  font-size: 1.15em;
+}
+
+.chat-md [data-streamdown="heading-3"],
+.chat-md [data-streamdown="heading-4"] {
+  font-size: 1.02em;
+}
+
+.chat-md [data-streamdown="strong"] {
+  color: rgb(var(--c-fg));
+  font-weight: 600;
+}
+
+.chat-md [data-streamdown="unordered-list"],
+.chat-md [data-streamdown="ordered-list"] {
+  padding-left: 1.25em;
+}
+
+.chat-md [data-streamdown="unordered-list"] {
+  list-style: disc;
+}
+
+.chat-md [data-streamdown="ordered-list"] {
+  list-style: decimal;
+}
+
+.chat-md [data-streamdown="list-item"] + [data-streamdown="list-item"] {
+  margin-top: 0.3em;
+}
+
+.chat-md li::marker {
+  color: rgb(var(--c-fg-3));
+}
+
+.chat-md [data-streamdown="inline-code"] {
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 0.86em;
+  padding: 0.1em 0.38em;
+  border-radius: 6px;
+  background: rgb(var(--c-well));
+  border: 1px solid var(--line-1);
+}
+
+.chat-md [data-streamdown="link"] {
+  color: rgb(var(--c-accent-text));
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--c-accent) / 0.4);
+  text-underline-offset: 2px;
+}
+
+.chat-md [data-streamdown="blockquote"] {
+  border-left: 2px solid rgb(var(--c-accent) / 0.6);
+  padding-left: 0.85em;
+  color: rgb(var(--c-fg-2));
+}
+
+.chat-md [data-streamdown="horizontal-rule"] {
+  border-color: var(--line-2);
+  margin: 1.2em 0;
+}
+
+.chat-md [data-streamdown="code-block"] {
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+  background: rgb(var(--c-card));
+  overflow: hidden;
+  max-width: 100%;
+}
+
+.chat-md [data-streamdown="code-block-header"] {
+  border-bottom: 1px solid var(--line-1);
+  color: rgb(var(--c-fg-3));
+  font-size: 12px;
+}
+
+.chat-md [data-streamdown="code-block-body"],
+.chat-md [data-streamdown="code-block"] pre {
+  overflow-x: auto;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.55;
+  background: transparent !important;
+}
+
+.chat-md [data-streamdown="code-block-copy-button"],
+.chat-md [data-streamdown="code-block-download-button"] {
+  color: rgb(var(--c-fg-3));
+  border-radius: 8px;
+  padding: 6px;
+}
+
+.chat-md [data-streamdown="code-block-copy-button"]:hover,
+.chat-md [data-streamdown="code-block-download-button"]:hover {
+  color: rgb(var(--c-fg));
+  background: rgb(255 255 255 / 0.06);
+}
+
+.chat-md [data-streamdown="table-wrapper"] {
+  overflow-x: auto;
+  border: 1px solid var(--line-2);
+  border-radius: 14px;
+}
+
+.chat-md [data-streamdown="table"] {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+}
+
+.chat-md [data-streamdown="table-header-cell"],
+.chat-md [data-streamdown="table-cell"] {
+  padding: 0.5em 0.8em;
+  border-bottom: 1px solid var(--line-1);
+  text-align: left;
+}
+
+.chat-md [data-streamdown="table-header-cell"] {
+  color: rgb(var(--c-fg-2));
+  font-weight: 600;
+  background: rgb(255 255 255 / 0.02);
+}
+
+/* Phone tab change: 12px slide in the travel direction + fade (§3.2). Panels stay mounted. */
+.tab-in-r {
+  animation: tab-in-r var(--dur-base) var(--ease-enter);
+}
+
+.tab-in-l {
+  animation: tab-in-l var(--dur-base) var(--ease-enter);
+}
+
+@keyframes tab-in-r {
+  from {
+    opacity: 0.35;
+    transform: translateX(12px);
+  }
+}
+
+@keyframes tab-in-l {
+  from {
+    opacity: 0.35;
+    transform: translateX(-12px);
+  }
+}
+
+.chief-chat {
+  --chat-fs: 14px;
+  font-size: var(--chat-fs);
+}
+
+.chief-chat textarea,
+.chief-chat .chat-md {
+  font-size: inherit;
+}
+
+.chief-chat textarea {
+  font-size: max(16px, var(--chat-fs));
+}
+
+.chat-emoji {
+  display: inline;
+  height: 1.2em;
+  width: 1.2em;
+  margin: 0 0.05em;
+  vertical-align: -0.2em;
+  object-fit: contain;
+}
+
+.chat-md img {
+  display: inline;
+  height: 1.2em;
+  width: auto;
+  max-height: 1.35em;
+  margin: 0 0.05em;
+  vertical-align: -0.2em;
+}
+
+.chat-type-btn {
+  border-radius: 10px;
+  border: 1px solid var(--line-2);
+  background: rgb(255 255 255 / 0.04);
+  padding: 0.2rem 0.45rem;
+  font-size: 12px;
+  line-height: 1.2;
+  color: rgb(var(--c-fg-2));
+  transition: border-color var(--dur-fast) var(--ease-enter), color var(--dur-fast) var(--ease-enter),
+    transform var(--dur-press) var(--ease-enter);
+}
+
+.chat-type-btn:hover:not(:disabled) {
+  border-color: rgb(var(--c-accent) / 0.55);
+  color: rgb(var(--c-fg));
+}
+
+.chat-type-btn:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.chat-type-btn:disabled {
+  opacity: 0.4;
+}
+
+.await-pulse {
+  animation: await-glow 1.6s ease-in-out infinite;
+}
+
+.speak-stop-btn {
+  color: rgb(var(--c-accent-text));
+  border-color: rgb(var(--c-accent) / 0.55);
+  background: rgb(var(--c-accent) / 0.14);
+}
+
+.speak-stop-btn:hover:not(:disabled) {
+  border-color: rgb(var(--c-accent) / 0.9);
+  color: rgb(var(--c-fg));
+  background: rgb(var(--c-accent) / 0.22);
+}
+
+@keyframes await-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 0 transparent);
+  }
+  50% {
+    filter: drop-shadow(0 0 8px rgb(var(--c-accent) / 0.55));
+  }
+}
+
+.think-dot {
+  display: inline-block;
+  width: 0.42em;
+  height: 0.42em;
+  border-radius: 999px;
+  background: rgb(var(--c-accent));
+  animation: think-bounce 1s ease-in-out infinite;
+}
+
+.think-dot-2 {
+  animation-delay: 0.15s;
+}
+
+.think-dot-3 {
+  animation-delay: 0.3s;
+}
+
+@keyframes think-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-0.28em);
+    opacity: 1;
+  }
+}
+
+.orbit-bot-name {
+  display: -webkit-box;
+  max-width: 10.5rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  text-align: center;
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.75), 0 0 12px rgba(9, 9, 11, 0.9);
+}
+
+.bot-tip {
+  border-radius: 14px;
+  border: 1px solid var(--line-2);
+  background: rgb(var(--c-raised) / 0.94);
+  backdrop-filter: blur(12px);
+  padding: 0.65rem 0.85rem;
+  box-shadow: var(--shadow-e3);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.bot-tip-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bot-tip-in {
+  animation: bot-tip-fade var(--dur-fast) var(--ease-enter);
+}
+
+@keyframes bot-tip-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.orbit-stars-static {
+  background-color: rgb(var(--c-canvas));
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(255, 244, 220, 0.7), transparent),
+    radial-gradient(1px 1px at 28% 72%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 61% 24%, rgba(255, 220, 200, 0.5), transparent),
+    radial-gradient(1px 1px at 81% 64%, rgba(255, 255, 255, 0.35), transparent),
+    radial-gradient(1px 1px at 44% 48%, rgba(255, 200, 180, 0.35), transparent),
+    radial-gradient(1.5px 1.5px at 73% 12%, rgba(255, 255, 255, 0.4), transparent);
+}
+
+.mic-rec::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border-radius: 999px;
+  border: 2px solid rgb(var(--c-accent));
+  animation: mic-pulse 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes mic-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.mic-spin {
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 999px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: #fff;
+  animation: mic-spin 0.7s linear infinite;
+}
+
+@keyframes mic-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Approval buttons (restyled in Phase 2) */
+.approve-once,
+.approve-session,
+.approve-always,
+.approve-deny {
+  border-radius: 10px;
+  min-height: 2.75rem;
+  padding: 0.35rem 0.8rem;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background var(--dur-fast) var(--ease-enter), transform var(--dur-press) var(--ease-enter);
+}
+
+.approve-once {
+  background: rgb(var(--c-fg));
+  color: rgb(var(--c-canvas));
+  font-weight: 600;
+}
+
+.approve-session {
+  border: 1px solid var(--line-3);
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(var(--c-fg));
+}
+
+.approve-always {
+  border: 1px solid rgb(var(--c-warn) / 0.35);
+  background: transparent;
+  color: rgb(var(--c-warn));
+}
+
+.approve-always-armed {
+  border-color: rgb(var(--c-warn) / 0.8);
+  background: rgb(var(--c-warn) / 0.14);
+  font-weight: 600;
+}
+
+.approve-deny {
+  border: 1px solid rgb(var(--c-danger) / 0.45);
+  background: rgb(var(--c-danger) / 0.1);
+  color: rgb(var(--c-danger));
+  font-weight: 600;
+}
+
+.approve-once:active:not(:disabled),
+.approve-session:active:not(:disabled),
+.approve-always:active:not(:disabled),
+.approve-deny:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+/* Chat aurora (§4.4): two slow gradient clouds behind the top of the thread, in Chief's colors. */
+.chat-aurora {
+  --au: 0.1;
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: min(46%, 380px);
+  overflow: hidden;
+  pointer-events: none;
+  opacity: var(--au);
+  transition: opacity 900ms var(--ease-enter);
+  -webkit-mask: linear-gradient(to bottom, #000 30%, transparent);
+  mask: linear-gradient(to bottom, #000 30%, transparent);
+}
+.chat-aurora span {
+  position: absolute;
+  border-radius: 999px;
+  will-change: transform;
+}
+.chat-aurora .au-a {
+  width: 80%;
+  height: 150%;
+  left: -18%;
+  top: -80%;
+  background: radial-gradient(closest-side, var(--chief, rgb(var(--c-accent))), transparent);
+  animation: au-drift-a 24s ease-in-out infinite alternate;
+}
+.chat-aurora .au-b {
+  width: 70%;
+  height: 130%;
+  right: -16%;
+  top: -70%;
+  background: radial-gradient(closest-side, rgb(var(--c-accent)), transparent);
+  animation: au-drift-b 31s ease-in-out infinite alternate;
+}
+.chat-aurora[data-mood="thinking"] { --au: 0.2; }
+.chat-aurora[data-mood="speaking"],
+.chat-aurora[data-mood="listening"] { --au: 0.24; }
+.chat-aurora[data-mood="approval"] { --au: 0.16; }
+.chat-aurora[data-mood="approval"] .au-b { background: radial-gradient(closest-side, rgb(var(--c-warn)), transparent); }
+.chat-aurora[data-mood="offline"] { --au: 0.035; }
+.chat-aurora[data-mood="thinking"] span,
+.chat-aurora[data-mood="speaking"] span { animation-duration: 9s, 12s; }
+@keyframes au-drift-a {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(22%, 8%, 0) scale(1.15); }
+}
+@keyframes au-drift-b {
+  from { transform: translate3d(0, 4%, 0) scale(1.1); }
+  to { transform: translate3d(-24%, -2%, 0) scale(0.95); }
+}
+:root[data-ambient="low"] .chat-aurora span { animation: none; }
+:root[data-ambient="low"] .chat-aurora { --au: 0.06; }
+:root[data-ambient="off"] .chat-aurora { display: none; }
+
+/* Voice mode: the aurora fills the screen and centers on Chief. */
+.voice-aurora {
+  --au: 0.22;
+  height: 100%;
+  -webkit-mask: radial-gradient(ellipse 90% 70% at 50% 42%, #000 20%, transparent 75%);
+  mask: radial-gradient(ellipse 90% 70% at 50% 42%, #000 20%, transparent 75%);
+}
+.voice-aurora .au-a { width: 110%; height: 70%; left: -30%; top: 5%; }
+.voice-aurora .au-b { width: 100%; height: 60%; right: -30%; top: 25%; }
+.voice-aurora[data-mood="thinking"] { --au: 0.34; }
+.voice-aurora[data-mood="speaking"],
+.voice-aurora[data-mood="listening"] { --au: 0.42; }
+.voice-aurora[data-mood="offline"] { --au: 0.06; }
+:root[data-ambient="low"] .voice-aurora { --au: 0.14; }
+
+/* Vault links (PLAN-2026-09-23 §4). In chat they read as file chips; inside notes, as quiet links. */
+.chat-md a[href^="#vault="] {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  max-width: 100%;
+  padding: 0.05em 0.5em 0.05em 0.4em;
+  border: 1px solid var(--line-2);
+  border-radius: 7px;
+  background: rgb(255 255 255 / 0.05);
+  color: rgb(var(--c-fg));
+  font-weight: 500;
+  text-decoration: none;
+  vertical-align: baseline;
+  transition: background-color 140ms var(--ease-enter), border-color 140ms var(--ease-enter);
+}
+.chat-md a[href^="#vault="]::before {
+  content: "";
+  flex: none;
+  width: 0.95em;
+  height: 0.95em;
+  background: rgb(var(--c-accent-text));
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 7v14'/%3E%3Cpath d='M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12 7v14'/%3E%3Cpath d='M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.chat-md a[href^="#vault="]:hover {
+  background: rgb(255 255 255 / 0.09);
+  border-color: var(--line-3);
+}
+.vault-md a[href^="#vault="] {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgb(var(--c-accent-text));
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: rgb(var(--c-accent-text) / 0.35);
+  text-underline-offset: 3px;
+}
+.vault-md a[href^="#vault="]::before {
+  display: none;
+}
+.vault-md a[href^="#vault="]:hover {
+  background: none;
+  text-decoration-color: rgb(var(--c-accent-text));
+}
+.vault-md [data-streamdown="heading-1"] {
+  font-size: 1.6em;
+  margin-top: 0.4em;
+}
+.vault-md img {
+  border-radius: 12px;
+  max-width: 100%;
+}
+
+/* Settings volume slider. */
+.fx-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+}
+.fx-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(to right, rgb(var(--c-fg)) var(--fill, 50%), rgb(255 255 255 / 0.14) var(--fill, 50%));
+}
+.fx-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.14);
+}
+.fx-range::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: rgb(var(--c-fg));
+}
+.fx-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  margin-top: -8px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.45);
+  transition: transform 140ms var(--ease-enter);
+}
+.fx-range:active::-webkit-slider-thumb { transform: scale(1.15); }
+.fx-range::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+}
+.fx-range:disabled { cursor: not-allowed; }
+
+/* Full-screen icon (PLAN-2026-09-26 §1): each maximize corner turns 180° about its own centre into the
+   minimize corner, so the icon morphs. Hover nudges the corners the way a click would move them. */
+.fs-corner {
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: rotate var(--dur-medium) cubic-bezier(0.34, 1.3, 0.64, 1), translate var(--dur-fast) var(--ease-enter);
+}
+.fs-icon[data-active] .fs-corner {
+  rotate: 180deg;
+}
+.fs-btn:hover .fs-corner,
+.fs-btn:focus-visible .fs-corner {
+  translate: calc(var(--fx) * 0.9px) calc(var(--fy) * 0.9px);
+}
+.fs-btn:hover .fs-icon[data-active] .fs-corner,
+.fs-btn:focus-visible .fs-icon[data-active] .fs-corner {
+  translate: calc(var(--fx) * -0.9px) calc(var(--fy) * -0.9px);
+}
+
+/* Reduced motion: OS setting or the in-app Motion override (§3.3). */
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-motion="full"]) *,
+  :root:not([data-motion="full"]) *::before,
+  :root:not([data-motion="full"]) *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+:root[data-motion="reduced"] *,
+:root[data-motion="reduced"] *::before,
+:root[data-motion="reduced"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* Blobatar mouth (PLAN-2026-09-26 §2): wears the library's eye colour, so expression tints reach it,
+   and trails the gaze a little so the whole face turns together. */
+.bf-mouth {
+  fill: var(--mo-eye);
+  stroke: var(--mo-eye);
+  transition: fill var(--mo-morph, 0.3s) var(--mo-morph-ease, ease-in-out), stroke var(--mo-morph, 0.3s) var(--mo-morph-ease, ease-in-out);
+  translate: calc((var(--mo-gz-dx1, 0) + var(--mo-gz-dx2, 0)) * 0.28px) calc((var(--mo-gz-dy1, 0) + var(--mo-gz-dy2, 0)) * 0.22px);
+}

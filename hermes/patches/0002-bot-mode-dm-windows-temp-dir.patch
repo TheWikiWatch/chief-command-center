@@ -1,0 +1,92 @@
+diff --git a/tests/tools/test_bot_mode_dm.py b/tests/tools/test_bot_mode_dm.py
+index 17707bec9d..b88e820797 100644
+--- a/tests/tools/test_bot_mode_dm.py
++++ b/tests/tools/test_bot_mode_dm.py
+@@ -1014,6 +1014,26 @@ def test_dm_dir_repairs_restrictive_owner_mode(tmp_path, monkeypatch):
+     assert dm_dir.stat().st_mode & 0o777 == 0o700
+ 
+ 
++@pytest.mark.platforms("windows")
++def test_windows_dm_dir_lives_under_hermes_home_not_shared_temp(tmp_path, monkeypatch):
++    """A poisoned %TEMP%\\hermes-dm must not be the DM payload directory."""
++    poison = tmp_path / bot_mode_dm._DM_DIR_NAME
++    poison.mkdir()
++    (poison / "blocker.txt").write_text("nope", encoding="utf-8")
++    home = tmp_path / "hermes-home"
++    monkeypatch.setattr(bot_mode_dm.tempfile, "gettempdir", lambda: str(tmp_path))
++    monkeypatch.setenv("HERMES_HOME", str(home))
++
++    dm_dir = bot_mode_dm._dm_dir()
++    written = Path(bot_mode_dm._write_dm_file("kickoff"))
++
++    assert dm_dir == home / "tmp" / bot_mode_dm._DM_DIR_NAME
++    assert written.parent == dm_dir
++    assert written.read_text(encoding="utf-8") == "kickoff"
++    assert list(poison.glob("dm-*.txt")) == []
++    written.unlink()
++
++
+ @pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX ownership contract")
+ def test_dm_dir_rejects_precreated_symlink(tmp_path, monkeypatch):
+     target = tmp_path / "attacker-controlled"
+diff --git a/tools/bot_mode_dm.py b/tools/bot_mode_dm.py
+index 2b595ac526..0da6081e4e 100644
+--- a/tools/bot_mode_dm.py
++++ b/tools/bot_mode_dm.py
+@@ -338,11 +338,33 @@ def _try_relay_delivery(root: Path, raw_target: str, content: str, me: str, *,
+         return None
+ 
+ 
++def _dm_dir_path() -> Path:
++    """Directory for DM payload files.
++
++    POSIX: per-uid folder under the shared temp root (``hermes-dm-<uid>``).
++    Windows has no ``getuid`` and ``chmod(0o700)`` is not a privacy control;
++    ``%TEMP%\\hermes-dm`` is also first-creator-wins across sandboxes (Codex,
++    etc.), so an unopenable leftover there takes out every Bot Chat DM. Keep
++    payloads under the calling Hermes home instead.
++    """
++    uid_getter = getattr(os, "getuid", None)
++    uid = uid_getter() if callable(uid_getter) else None
++    if uid is not None:
++        return Path(tempfile.gettempdir()) / f"{_DM_DIR_NAME}-{uid}"
++    home = os.getenv("HERMES_HOME")
++    if home:
++        return Path(home) / "tmp" / _DM_DIR_NAME
++    local = os.getenv("LOCALAPPDATA")
++    if local:
++        return Path(local) / "hermes" / "tmp" / _DM_DIR_NAME
++    return Path(tempfile.gettempdir()) / _DM_DIR_NAME
++
++
+ def _dm_dir() -> Path:
+     uid_getter = getattr(os, "getuid", None)
+     uid = uid_getter() if callable(uid_getter) else None
+-    path = Path(tempfile.gettempdir()) / (f"{_DM_DIR_NAME}-{uid}" if uid is not None else _DM_DIR_NAME)
+-    path.mkdir(mode=0o700, exist_ok=True)
++    path = _dm_dir_path()
++    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+     # Shared POSIX temp roots need a per-user directory. Fail closed if an
+     # attacker pre-created the expected path or replaced it with a symlink.
+     info = path.lstat()
+@@ -350,7 +372,9 @@ def _dm_dir() -> Path:
+         raise PermissionError(f"DM temp path is not a directory: {path}")
+     if uid is not None and info.st_uid != uid:
+         raise PermissionError(f"DM temp directory is owned by another user: {path}")
+-    if stat.S_IMODE(info.st_mode) != 0o700:
++    # Windows reports 0o777 and chmod(0o700) is either a no-op or WinError 5
++    # on a directory another identity created. POSIX-only.
++    if uid is not None and stat.S_IMODE(info.st_mode) != 0o700:
+         path.chmod(0o700)
+     return path
+ 
+@@ -369,6 +393,9 @@ def cleanup_bot_dm_cache(max_age_hours: float = _DM_STALE_SECONDS / 3600, *, now
+         # their runner on purpose — a retry replays the same delivery id from them — so the
+         # orphans of runners that never settled are swept here too.
+         locations.append((dm_dir, "*.live.json"))
++    # Pre-fix Windows used the shared %TEMP%\hermes-dm (no uid suffix). glob
++    # on an unopenable leftover is swallowed by unlink_files_older_than.
++    locations.append((temp_root / _DM_DIR_NAME, "*.txt"))
+     from tools.bot_relay import unlink_files_older_than
+ 
+     return sum(unlink_files_older_than(d, pattern, cutoff) for d, pattern in locations)

@@ -1,0 +1,37 @@
+# dependencies / build
+node_modules/
+.next/
+out/
+dist/
+release/
+*.tsbuildinfo
+next-env.d.ts
+
+# secrets & local env
+.env
+.env.*
+!.env.example
+**/.token
+.privacy-denylist
+
+# logs & OS
+*.log
+.DS_Store
+Thumbs.db
+
+# local scratch / backups
+*.bak
+*.bak-*
+*.bak_*
+
+# Python
+__pycache__/
+*.py[cod]
+hermes/tests/.runtime/
+
+# build outputs
+/build/
+/payload/
+
+# UI capture galleries can contain real chats
+apps/web/scripts/captures/

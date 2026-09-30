@@ -1,0 +1,23 @@
+{
+  "upstream": "https://github.com/NousResearch/hermes-agent.git",
+  "commit": "41cd3117ae62a689c2b37a137e78eee21bc7650c",
+  "baseVersion": "2026.9.24",
+  "note": "main after v2026.9.24 (the version the first app build was validated against)",
+  "patches": [
+    {
+      "file": "0001-gateway-windows-start-breakaway.patch",
+      "why": "Windows: `gateway start` from a scheduled task or VBS spawns a breakaway, detached gateway so a job object cannot kill it.",
+      "upstream": "not upstream; drop when upstream gateway_windows handles breakaway"
+    },
+    {
+      "file": "0002-bot-mode-dm-windows-temp-dir.patch",
+      "why": "Windows: Bot Chat DMs no longer write into a poisoned temp directory.",
+      "upstream": "not upstream"
+    },
+    {
+      "file": "0003-hermes-bin-and-faulthandler.patch",
+      "why": "Under the PM layout, restarts and cron bot-chat delivery honor HERMES_BIN (the bare store Python cannot import Hermes once the child env drops its path); native-crash stacks go to logs/faulthandler.log.",
+      "upstream": "not upstream"
+    }
+  ]
+}

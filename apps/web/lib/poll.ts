@@ -1,0 +1,50 @@
+/**
+ * While the app is hidden, polls run no faster than this. Returning to the app refreshes at once,
+ * so a hidden phone or background tab stops spending battery and data on 0.8s polls.
+ */
+export const HIDDEN_MIN_MS = 5_000;
+
+/** One request per resource, with immediate refresh after returning to the app. */
+export function poll(
+  run: (signal: AbortSignal) => Promise<void>,
+  interval: number | (() => number),
+): () => void {
+  let stopped = false;
+  let inFlight = false;
+  let rerun = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let controller: AbortController | undefined;
+  const next = () => {
+    const base = typeof interval === "function" ? interval() : interval;
+    return document.visibilityState === "hidden" ? Math.max(base, HIDDEN_MIN_MS) : base;
+  };
+  const tick = async () => {
+    if (stopped) return;
+    if (inFlight) { rerun = true; return; }
+    clearTimeout(timer);
+    inFlight = true;
+    controller = new AbortController();
+    try { await run(controller.signal); } catch { /* resource owner reports errors */ }
+    finally {
+      inFlight = false;
+      if (!stopped) {
+        const delay = rerun ? 0 : next();
+        rerun = false;
+        timer = setTimeout(() => void tick(), delay);
+      }
+    }
+  };
+  const resume = () => {
+    if (document.visibilityState !== "hidden") void tick();
+  };
+  document.addEventListener("visibilitychange", resume);
+  window.addEventListener("online", resume);
+  void tick();
+  return () => {
+    stopped = true;
+    controller?.abort();
+    clearTimeout(timer);
+    document.removeEventListener("visibilitychange", resume);
+    window.removeEventListener("online", resume);
+  };
+}

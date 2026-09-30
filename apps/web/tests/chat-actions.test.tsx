@@ -1,0 +1,113 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { ChiefChat } from "@/components/chief-chat";
+const api=vi.hoisted(()=>({send:vi.fn(),approve:vi.fn()}));
+vi.mock("@blobatar/react/gaze",()=>({useGaze:()=>({ref:null,lookAt:()=>{}})}));
+vi.mock("@/lib/dashboard-prefs",()=>({VOICE_EVENT:"voice",fullPhotosOn:()=>true,useDashboardPrefs:()=>({fontPx:16,speakOn:false,compactChat:false})}));
+vi.mock("@/lib/bridge",()=>({fetchTranscript:async()=>({sessionKey:"s",lastId:0,messages:[],generating:false}),fetchVoiceConfig:async()=>({ok:true}),sendToChief:api.send,resolveApproval:api.approve}));
+vi.mock("@/components/bot-face",()=>({BotFace:()=>null,FaceRing:({children}:any)=>children}));
+vi.mock("@/components/emoji-picker",()=>({EmojiPicker:()=>null}));
+vi.mock("@/components/mic-button",()=>({MicButton:()=>null}));
+vi.mock("streamdown",()=>({Streamdown:({children}:any)=>children}));
+/** Refused with a reason (400): a retry would fail the same way. A plain error is the network. */
+const refused=(message:string)=>Object.assign(new Error(message),{status:400});
+beforeEach(()=>{vi.clearAllMocks();localStorage.clear();});afterEach(()=>{cleanup();vi.useRealTimers();});
+it("keeps the draft and re-enables sending after rejection",async()=>{
+  api.send.mockRejectedValueOnce(refused("Chief refused it")).mockResolvedValue({ok:true});
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  const input=screen.getByPlaceholderText("Message Chief");fireEvent.change(input,{target:{value:"keep my draft"}});fireEvent.click(screen.getByRole("button",{name:"Send"}));
+  await waitFor(()=>expect(input).toBeEnabled());expect(input).toHaveValue("keep my draft");
+  fireEvent.click(screen.getByRole("button",{name:"Send"}));await screen.findByText("Sent to Chief.");expect(api.send).toHaveBeenCalledTimes(2);
+});
+it("sends several files with the caption and keeps them when Chief rejects",async()=>{
+  api.send.mockRejectedValueOnce(refused("network lost"));
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  const input=document.querySelector("input[type=file]") as HTMLInputElement;
+  const file=new File(["hello"],"notes.txt",{type:"text/plain"});
+  fireEvent.change(input,{target:{files:[file]}});
+  expect(await screen.findByLabelText("Remove notes.txt")).toBeInTheDocument();
+  fireEvent.change(screen.getByPlaceholderText("Message Chief"),{target:{value:"see this"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send"}));
+  await screen.findByText(/network lost/);
+  expect(await screen.findByLabelText("Remove notes.txt")).toBeInTheDocument();
+  expect(api.send).toHaveBeenCalledWith("see this", [expect.objectContaining({name:"notes.txt",mime:"text/plain"})], expect.any(String));
+});
+it("recovers approval buttons after a failed request and reports stale approval",async()=>{
+  api.approve.mockRejectedValueOnce(new Error("network lost")).mockResolvedValue({ok:true,resolved:0});
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected approval={{requestId:"id",command:"synthetic",reason:"test",allowSession:true,allowPermanent:true}}/>);
+  fireEvent.click(screen.getByText("Allow once"));await screen.findByText("network lost");expect(screen.getByText("Deny")).toBeEnabled();
+  fireEvent.click(screen.getByText("Deny"));await screen.findByText(/no longer pending/);expect(screen.getByText("Allow once")).toBeEnabled();
+});
+it("needs a full press-and-hold before permanently allowing a command",async()=>{
+  api.approve.mockResolvedValue({ok:true,resolved:1});
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected approval={{requestId:"id",command:"synthetic",reason:"test",allowSession:true,allowPermanent:true}}/>);
+  const always=screen.getByRole("button",{name:"Always allow (press and hold)"});
+  fireEvent.pointerDown(always);fireEvent.pointerUp(always);
+  await new Promise(r=>setTimeout(r,1000));
+  expect(api.approve).not.toHaveBeenCalled();
+  fireEvent.pointerDown(always);
+  await new Promise(r=>setTimeout(r,1000));
+  await waitFor(()=>expect(api.approve).toHaveBeenCalledWith("id","always"));
+  expect(api.approve).toHaveBeenCalledTimes(1);
+});
+it("refuses an attachment that would push the message past the size limit",async()=>{
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  const input=document.querySelector("input[type=file]") as HTMLInputElement;
+  const big=new File(["x"],"huge.mov",{type:"video/quicktime"});Object.defineProperty(big,"size",{value:26*1024*1024});
+  fireEvent.change(input,{target:{files:[big]}});
+  expect(await screen.findByText(/huge.mov is over 25 MB/)).toBeInTheDocument();
+  expect(screen.queryByLabelText("Remove huge.mov")).toBeNull();
+});
+it("a send that fails on the network waits in the outbox and retries with the same id",async()=>{
+  vi.useFakeTimers({shouldAdvanceTime:true});
+  api.send.mockRejectedValueOnce(new Error("Request timed out")).mockResolvedValue({ok:true});
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  const input=screen.getByPlaceholderText("Message Chief");fireEvent.change(input,{target:{value:"once only"}});
+  fireEvent.click(screen.getByRole("button",{name:"Send"}));
+  expect(await screen.findByText(/Couldn't reach Chief · retrying/)).toBeInTheDocument();
+  expect(input).toHaveValue("");
+  expect(api.send).toHaveBeenCalledTimes(1);
+  await vi.advanceTimersByTimeAsync(16_000);
+  await waitFor(()=>expect(api.send).toHaveBeenCalledTimes(2));
+  const [first,second]=api.send.mock.calls.map(call=>call[2]);
+  expect(first).toBeTruthy();expect(second).toBe(first);
+  await waitFor(()=>expect(screen.queryByText(/Couldn't reach Chief · retrying/)).toBeNull());
+  fireEvent.change(input,{target:{value:"a new message"}});fireEvent.click(screen.getByRole("button",{name:"Send"}));
+  await waitFor(()=>expect(api.send).toHaveBeenCalledTimes(3));expect(api.send.mock.calls[2][2]).not.toBe(first);
+});
+it("while Chief is offline a message queues, survives a reload, and goes when he is back",async()=>{
+  api.send.mockResolvedValue({ok:true});
+  const view=render(<ChiefChat chief={undefined} lookAtEl={null} connected={false} compact/>);
+  const input=screen.getByPlaceholderText("Chief is offline · it will wait");
+  fireEvent.change(input,{target:{value:"for later"}});
+  fireEvent.click(screen.getByRole("button",{name:"Queue for Chief"}));
+  expect(await screen.findByText("Queued · sends when Chief is back")).toBeInTheDocument();
+  expect(api.send).not.toHaveBeenCalled();
+  view.unmount();
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  await waitFor(()=>expect(api.send).toHaveBeenCalledWith("for later",[],expect.any(String)));
+  await waitFor(()=>expect(localStorage.getItem("chief-outbox")).toBeNull());
+});
+it("Cancel takes a queued message back into the draft",async()=>{
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected={false} compact/>);
+  const input=screen.getByPlaceholderText("Chief is offline · it will wait");
+  fireEvent.change(input,{target:{value:"never mind"}});
+  fireEvent.click(screen.getByRole("button",{name:"Queue for Chief"}));
+  fireEvent.click(await screen.findByRole("button",{name:"Cancel"}));
+  await waitFor(()=>expect(input).toHaveValue("never mind"));
+  expect(screen.queryByText("Queued · sends when Chief is back")).toBeNull();
+  expect(localStorage.getItem("chief-outbox")).toBeNull();
+});
+it("opens voice mode from the header and closes it with the button or Escape",async()=>{
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  fireEvent.click(screen.getByRole("button",{name:"Voice mode"}));
+  const dialog=await screen.findByRole("dialog",{name:"Voice mode"});
+  expect(dialog).toHaveTextContent("Hold to talk");
+  expect(screen.getByRole("button",{name:/Replies are silent/})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button",{name:"Close voice mode"}));
+  await waitFor(()=>expect(screen.queryByRole("dialog",{name:"Voice mode"})).toBeNull());
+  fireEvent.click(screen.getByRole("button",{name:"Voice mode"}));
+  await screen.findByRole("dialog",{name:"Voice mode"});
+  fireEvent.keyDown(window,{key:"Escape"});
+  await waitFor(()=>expect(screen.queryByRole("dialog",{name:"Voice mode"})).toBeNull());
+});
