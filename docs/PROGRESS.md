@@ -200,3 +200,13 @@
 - Evidence: the suite passed 8/8 on the current payload. The one private name used is `hermes_cli.default_soul._normalize_soul`, listed for review. `candidate.py` reports v2026.9.24 = the pinned base, so nothing is newer.
 - Tests: web 268 passed (4 live skipped), desktop 28, Python 56 + 20, privacy scan clean.
 
+
+**Phase 9: migration, read-only preflight only.**
+
+- `packaging/migrate/preflight.py` reads an existing install and changes nothing. It covers profiles and databases, backup size against free space, scheduled tasks, Startup items and processes, ports, plugin copies the bundled ones would replace, and absolute paths in config and routines. The report names personal paths, so the tool refuses to write it inside the repo.
+- Run against the existing install (report kept outside the repo):
+  - 15 profiles; the live gateway is up.
+  - One guard task and four Startup items to hand over.
+  - About 2.2 GB to back up. E: has room; C: is tight at about 11 GB free.
+  - A 12.4 GB `crash-dumps` folder, now always left out of backups (machine-local diagnostics; not touched).
+- The migration itself waits for a time the owner picks. It starts with a full backup and changes supervision only with consent.

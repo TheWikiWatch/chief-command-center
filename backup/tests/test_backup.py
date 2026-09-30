@@ -53,6 +53,8 @@ def make_home(base: Path, vault: Path) -> Path:
     (chief / "gateway.lock").write_text("", encoding="utf-8")
     (chief / "models_dev_cache.json").write_text("{}", encoding="utf-8")
     (root / "bin" / "hermes.cmd").write_text("@echo off", encoding="utf-8")
+    (root / "crash-dumps").mkdir()
+    (root / "crash-dumps" / "gateway.dmp").write_bytes(b"d" * 1000)
     db = sqlite3.connect(chief / "state.db")
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("CREATE TABLE messages (id INTEGER PRIMARY KEY, body TEXT)")
@@ -107,7 +109,7 @@ class BackupContents(Case):
                      "second-brain/AGENTS.md", "second-brain/00 Inbox/Idea.md", "second-brain/.obsidian/app.json", "manifest.json"):
             self.assertIn(kept, names)
         for left_out in ("auth.json", "command_center_vapid.json", "cache/big.bin", "logs/gateway.log", "models/faster-whisper-base/model.bin",
-                         "gateway.lock", "models_dev_cache.json", "hermes/bin/hermes.cmd", "installs", "state.db-wal"):
+                         "gateway.lock", "models_dev_cache.json", "hermes/bin/hermes.cmd", "installs", "state.db-wal", "crash-dumps"):
             self.assertFalse(any(left_out in n for n in names), left_out)
         with zipfile.ZipFile(result["path"]) as zf:
             env = zf.read("hermes/profiles/chief/.env").decode()

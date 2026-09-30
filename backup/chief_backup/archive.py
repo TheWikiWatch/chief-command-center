@@ -40,7 +40,7 @@ PARTS = ("setup", "second-brain")
 
 # Anywhere in the Hermes root.
 _SKIP_DIRS = {"cache", "image_cache", "audio_cache", "logs", "hf-cache", "runtime", "__pycache__", "node_modules", ".git",
-              "pm-runtime", "uv-cache"}
+              "pm-runtime", "uv-cache", "crash-dumps"}
 _SKIP_FILES = ["*.lock", "*.pid", "*.db-wal", "*.db-shm", "*.db-journal", "*.tmp", "*.part", "gateway_state.json",
                "gateway.heartbeat", "*_cache.json", "models_dev_cache.*", "provider_models_cache.json", "install_id"]
 # Only at the top of the Hermes root: launchers and install records belong to this PC's app install.
