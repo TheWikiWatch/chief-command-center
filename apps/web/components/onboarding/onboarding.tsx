@@ -4,12 +4,16 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { ConnectModel } from "@/components/onboarding/connect-model";
+import { SecondBrainSetup } from "@/components/second-brain/setup";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
-import { setup, type SetupStatus } from "@/lib/setup-client";
+import { secondBrain, setup, type SetupStatus } from "@/lib/setup-client";
 
-/** First-run steps, in order. Later phases add "Your Second Brain" and "Check my system". */
-export type OnboardingStep = { id: string; label: string; render: (done: () => void) => ReactNode };
+/**
+ * First-run steps, in order: connect a model, then the Second Brain; "Check my system" joins in Phase 5.
+ * An optional step can be skipped; `complete` marks it done so the footer says Continue instead of Skip.
+ */
+export type OnboardingStep = { id: string; label: string; optional?: boolean; render: (complete: () => void) => ReactNode };
 
 const LATER_KEY = "chief-onboarding-later";
 
@@ -49,18 +53,41 @@ export function useNeedsOnboarding(connected: boolean): { needed: boolean; later
   };
 }
 
-export function Onboarding({ extraSteps = [], onLater, onFinished }: { extraSteps?: OnboardingStep[]; onLater: () => void; onFinished: (s: SetupStatus) => void }) {
+export function Onboarding({
+  extraSteps = [],
+  onLater,
+  onFinished,
+  onAskChief,
+}: {
+  extraSteps?: OnboardingStep[];
+  onLater: () => void;
+  onFinished: (s: SetupStatus) => void;
+  onAskChief?: (text: string) => Promise<void>;
+}) {
   const assistant = useAssistantName();
   const [index, setIndex] = useState(0);
   const [connected, setConnected] = useState<SetupStatus | null>(null);
+  const [completed, setCompleted] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
+  // A fresh profile still has Hermes's stock persona: give it the chief's default (never touches an edited SOUL).
+  useEffect(() => {
+    void secondBrain.seedSoul().catch(() => undefined);
+  }, []);
   const steps: OnboardingStep[] = [
     { id: "model", label: "Connect a model", render: () => <ConnectModel onBusy={setBusy} onDone={setConnected} /> },
+    {
+      id: "second-brain",
+      label: "Your Second Brain",
+      optional: true,
+      render: (complete) => <SecondBrainSetup onBusy={setBusy} onDone={complete} onAskChief={onAskChief} />,
+    },
     ...extraSteps,
   ];
   const step = steps[index];
   const last = index === steps.length - 1;
   const canContinue = step.id !== "model" || !!connected?.ready;
+  const skipping = !!step.optional && !completed.has(step.id);
+  const complete = (id: string) => () => setCompleted((prev) => new Set(prev).add(id));
   const next = () => {
     if (last) onFinished(connected ?? { ready: true, provider: "", model: "", error: "" });
     else setIndex((i) => i + 1);
@@ -73,7 +100,7 @@ export function Onboarding({ extraSteps = [], onLater, onFinished }: { extraStep
           <h1 id="onboarding-title" className="mt-1 text-display text-fg">
             Set up {assistant === "Chief" ? "your chief" : assistant}
           </h1>
-          <ol className="mt-4 flex gap-2" aria-label="Steps">
+          <ol className="mt-4 flex flex-wrap gap-x-3 gap-y-2" aria-label="Steps">
             {steps.map((s, i) => (
               <li key={s.id} className="flex items-center gap-2 text-caption" aria-current={i === index ? "step" : undefined}>
                 <span className={`grid size-5 place-items-center rounded-full font-mono text-[11px] ${i < index ? "bg-ok/20 text-ok" : i === index ? "bg-fg text-canvas" : "bg-white/[0.06] text-fg-3"}`}>{i + 1}</span>
@@ -90,7 +117,7 @@ export function Onboarding({ extraSteps = [], onLater, onFinished }: { extraStep
             animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE.enter } }}
             exit={{ opacity: 0, y: -6, transition: { duration: 0.14, ease: EASE.exit } }}
           >
-            {step.render(next)}
+            {step.render(complete(step.id))}
           </motion.div>
         </AnimatePresence>
         <footer className="mt-6 flex items-center justify-between gap-3">
@@ -103,7 +130,7 @@ export function Onboarding({ extraSteps = [], onLater, onFinished }: { extraStep
             disabled={!canContinue || busy}
             className="press min-h-11 rounded-full bg-fg px-6 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-4"
           >
-            {last ? "Start" : "Continue"}
+            {skipping ? "Skip for now" : last ? "Start" : "Continue"}
           </button>
         </footer>
       </div>

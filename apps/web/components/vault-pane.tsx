@@ -63,13 +63,13 @@ type Open = { path: string; kind: VaultKind; heading?: string };
  * Wide panes show the folder list and the reader side by side; narrow ones (the phone, the rail)
  * show one at a time with a back step.
  */
-type VaultPaneProps = { phone: boolean; surface: Surface; onSurface: (next: Surface) => void; trailing?: ReactNode };
+type VaultPaneProps = { phone: boolean; surface: Surface; onSurface: (next: Surface) => void; trailing?: ReactNode; onSetUpSecondBrain?: () => void };
 
 /** The Vault browses the Second Brain folder when one is configured. */
 export function VaultPane(props: VaultPaneProps) {
   const config = useAppConfig();
   if (!config.features.vault) {
-    return <SecondBrainNotSetUp title="Vault" surface={props.surface} onSurface={props.onSurface} hideTabs={props.phone} trailing={props.trailing} />;
+    return <SecondBrainNotSetUp title="Vault" surface={props.surface} onSurface={props.onSurface} hideTabs={props.phone} trailing={props.trailing} onSetUp={props.onSetUpSecondBrain} />;
   }
   return <VaultBrowser {...props} />;
 }
@@ -79,6 +79,11 @@ function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
   const [wide, setWide] = useState(!phone);
   const [dir, setDir] = useState("");
   const [entries, setEntries] = useState<VaultEntry[] | null>(null);
+  // The start page: a Second Brain made by the app has Home.md; other vaults often keep an index.md.
+  const [startNote, setStartNote] = useState("index.md");
+  useEffect(() => {
+    if (dir === "" && entries) setStartNote(entries.some((e) => !e.dir && e.path === "Home.md") ? "Home.md" : "index.md");
+  }, [dir, entries]);
   const [treeError, setTreeError] = useState("");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<VaultHit[] | null>(null);
@@ -209,7 +214,7 @@ function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
       }}
     />
   ) : wide ? (
-    <EmptyReader recents={recents} onOpen={(path) => show({ path, kind: kindOfName(path) })} />
+    <EmptyReader home={startNote} recents={recents} onOpen={(path) => show({ path, kind: kindOfName(path) })} />
   ) : null;
 
   return (
@@ -513,7 +518,7 @@ function KindIcon({ kind }: { kind: VaultKind }) {
 
 /* ------------------------------------------------------------------ reader */
 
-function EmptyReader({ recents, onOpen }: { recents: Recent[]; onOpen: (path: string) => void }) {
+function EmptyReader({ home, recents, onOpen }: { home: string; recents: Recent[]; onOpen: (path: string) => void }) {
   const assistant = useAssistantName();
   return (
     <div className="grid h-full place-items-center p-8">
@@ -524,8 +529,8 @@ function EmptyReader({ recents, onOpen }: { recents: Recent[]; onOpen: (path: st
         <h2 className="mt-4 text-title text-fg">Your Second Brain</h2>
         <p className="mt-1.5 text-callout text-fg-3">Pick a note on the left, search for anything, or tap a file {assistant} links in chat.</p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
-          <button type="button" className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas" onClick={() => onOpen("index.md")}>
-            Open index
+          <button type="button" className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas" onClick={() => onOpen(home)}>
+            {home === "Home.md" ? "Open Home" : "Open index"}
           </button>
           {recents[0] ? (
             <button type="button" className="press flex min-h-10 items-center gap-1.5 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg" onClick={() => onOpen(recents[0].path)}>

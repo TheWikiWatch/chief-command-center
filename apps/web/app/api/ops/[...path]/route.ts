@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { permittedOperation, validMutationOrigin } from "@/lib/proxy-policy";
 import { opsUrl } from "@/lib/server/app-config";
+import { secondBrain } from "@/lib/server/second-brain";
+import { vaultToday } from "@/lib/server/today-routes";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -10,9 +12,14 @@ function opsBase() {
 }
 
 async function proxy(req: NextRequest, path: string[]) {
-  if (!opsBase()) return Response.json({ ok: false, error: "Today is not connected to a task service on this install.", setup: true }, { status: 404 });
   if (!permittedOperation("ops", req.method, path)) return Response.json({ ok: false, error: "Unsupported operation" }, { status: 404 });
   if (req.method !== "GET" && !validMutationOrigin(req.headers, req.url)) return Response.json({ ok: false, error: "Invalid request origin" }, { status: 403 });
+  if (!opsBase()) {
+    // No task service: Today reads the Second Brain itself.
+    const brain = await secondBrain();
+    if (!brain.path) return Response.json({ ok: false, error: "Set up your Second Brain to see Today.", setup: true }, { status: 404 });
+    return vaultToday(req, path, brain.path);
+  }
   const rel = path.join("/");
   const url = new URL(req.url);
   const target =

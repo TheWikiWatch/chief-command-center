@@ -61,12 +61,13 @@ describe("proxy trust boundary", () => {
     vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({ok:false},{status:404})));
     expect((await GET(new NextRequest("http://127.0.0.1:3000/api/bridge/thumb?path=v.mp4"),context("thumb"))).headers.get("cache-control")).toBe("private, no-store");
   });
-  it("says Today is not connected when no Ops service is configured", async () => {
-    const fetcher=vi.fn(); vi.stubGlobal("fetch",fetcher);
+  it("says Today needs a Second Brain when neither Ops nor a Second Brain folder is configured", async () => {
+    // The only call is to the chief's bridge, asking which Second Brain folder it was set up with.
+    const fetcher=vi.fn().mockResolvedValue(Response.json({ok:true,configured:false,path:""})); vi.stubGlobal("fetch",fetcher);
     const res=await opsPut(new NextRequest("http://127.0.0.1:3000/api/ops/settings",{method:"PUT",headers:{host:"127.0.0.1:3000",origin:"http://127.0.0.1:3000","content-type":"application/json"},body:JSON.stringify({vault_path:"x"})}),{params:Promise.resolve({path:["settings"]})});
     expect(res.status).toBe(404);
     expect((await res.json()).setup).toBe(true);
-    expect(fetcher).not.toHaveBeenCalled();
+    expect(fetcher.mock.calls.map((c)=>String(c[0]))).toEqual(["http://127.0.0.1:7790/setup/second-brain"]);
   });
   it("forwards only vault_path to Ops settings", async () => {
     process.env.CHIEF_OPS_URL="http://127.0.0.1:8790";

@@ -2,7 +2,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { deniedFilePath } from "@/lib/proxy-policy";
-import { opsUrl, vaultPath } from "@/lib/server/app-config";
+import { opsUrl } from "@/lib/server/app-config";
+import { secondBrain } from "@/lib/server/second-brain";
 
 /**
  * Read-only access to the Second Brain vault for the Vault tab (PLAN-2026-09-23 §4).
@@ -37,11 +38,12 @@ export const mimeOf = (name: string) => MIME[extOf(name)] || (kindOf(name) === "
 let rootCache: { at: number; root: string } | null = null;
 
 /**
- * The vault folder: CHIEF_VAULT_PATH, else an Ops-compatible service's vault_path (cached for a minute).
- * Neither configured: there is no vault, and every vault route says so.
+ * The vault folder: the Second Brain (CHIEF_VAULT_PATH, else the folder Chief was set up with), else an
+ * Ops-compatible service's vault_path (cached for a minute). None of these: there is no vault, and every
+ * vault route says so.
  */
 export async function vaultRoot(): Promise<string> {
-  const configured = vaultPath();
+  const configured = (await secondBrain()).path;
   if (configured) return configured;
   const base = opsUrl();
   if (!base) throw new VaultPathError("not configured");

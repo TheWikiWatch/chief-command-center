@@ -754,6 +754,16 @@ def _allow_roots() -> list[Path]:
     for rel in ("Documents", "Downloads", "Pictures", "Desktop"):
         roots.append(home / rel)
     roots.append(install_root())
+    # The Second Brain (set up through the app; Hermes publishes its .env into the environment) and the real
+    # Documents folder, which Windows may redirect (e.g. to OneDrive).
+    if (os.environ.get("OBSIDIAN_VAULT_PATH") or "").strip():
+        roots.append(Path(os.environ["OBSIDIAN_VAULT_PATH"].strip()))
+    try:
+        from .second_brain import default_folder
+
+        roots.append(Path(default_folder()).parent)
+    except Exception:
+        pass
     # Extra folders the owner lets the app show files from (CHIEF_FILE_ROOTS, separated by ';').
     for extra in (os.environ.get("CHIEF_FILE_ROOTS") or "").split(os.pathsep):
         if extra.strip():

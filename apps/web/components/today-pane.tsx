@@ -46,19 +46,29 @@ type TodayPaneProps = {
   onSendToChief: (text: string) => Promise<void>;
   hideTabs?: boolean;
   trailing?: React.ReactNode;
+  onSetUpSecondBrain?: () => void;
 };
 
-/** Today reads a task service when one is configured; otherwise the Second Brain isn't set up yet. */
+/**
+ * Today reads the Second Brain's tasks (the built-in indexer, lib/server/today-index.ts) or, on an install
+ * that has one, a task service. Neither: the Second Brain isn't set up yet.
+ */
 export function TodayPane(props: TodayPaneProps) {
   const config = useAppConfig();
   if (!config.features.today) {
-    return <SecondBrainNotSetUp title="Today" surface={props.surface} onSurface={props.onSurface} hideTabs={props.hideTabs} trailing={props.trailing} />;
+    return <SecondBrainNotSetUp title="Today" surface={props.surface} onSurface={props.onSurface} hideTabs={props.hideTabs} trailing={props.trailing} onSetUp={props.onSetUpSecondBrain} />;
   }
-  return <OpsTodayPane {...props} />;
+  return <OpsTodayPane {...props} builtin={config.secondBrain.today === "vault"} />;
 }
 
-function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, trailing }: TodayPaneProps) {
+function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, trailing, onSetUpSecondBrain, builtin }: TodayPaneProps & { builtin: boolean }) {
   const assistant = useAssistantName();
+  // With the built-in indexer the folder is the Second Brain's, chosen in Settings; with a task service, its own setting.
+  const openFolderSettings = () => {
+    setLaunch(null);
+    if (builtin && onSetUpSecondBrain) onSetUpSecondBrain();
+    else setSettingsOpen(true);
+  };
   const [meta, setMeta] = useState<Meta | null>(null);
   const [boards, setBoards] = useState<Board[]>([]);
   const [focusCards, setFocusCards] = useState<FocusCard[]>([]);
@@ -81,7 +91,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
     const health = await fetchOpsHealth(signal);
     if (!health.ok) {
       setOnline(false);
-      setError("Ops API is down. Start it on 127.0.0.1:8790.");
+      setError(builtin ? "Couldn't read your Second Brain." : "The task service isn't answering.");
       return;
     }
     setOnline(true);
@@ -236,11 +246,8 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
     <button
       type="button"
       className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg"
-      aria-label="Vault settings"
-      onClick={() => {
-        setLaunch(null);
-        setSettingsOpen(true);
-      }}
+      aria-label={builtin ? "Second Brain folder" : "Vault settings"}
+      onClick={openFolderSettings}
     >
       <SlidersHorizontalIcon size={19} />
     </button>
@@ -274,7 +281,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-10 pt-4">
         {!meta && !online ? (
-          <OpsDown error={error} onRetry={() => setTick((n) => n + 1)} />
+          <OpsDown builtin={builtin} error={error} onRetry={() => setTick((n) => n + 1)} />
         ) : (
           <>
             <StatTiles open={meta?.open_total} overdue={meta?.overdue_total} waiting={meta ? waitingTotal : undefined} animate={morning} />
@@ -297,8 +304,10 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
 
             {error ? <Banner tone="danger">{error}</Banner> : null}
             {meta && !meta.vault_exists ? (
-              <button type="button" className="press mb-3 block w-full text-left" onClick={() => setSettingsOpen(true)}>
-                <Banner tone="danger">Vault path not found. Open settings and point it at the second brain folder.</Banner>
+              <button type="button" className="press mb-3 block w-full text-left" onClick={openFolderSettings}>
+                <Banner tone="danger">
+                  {builtin ? "Your Second Brain folder is missing. Choose it again." : "Vault path not found. Open settings and point it at the second brain folder."}
+                </Banner>
               </button>
             ) : null}
             {meta?.lock_present ? <Banner tone="warn">Vault write lock is on. Wait before asking {assistant} to update boards.</Banner> : null}
@@ -499,14 +508,16 @@ function Banner({ tone, children }: { tone: "danger" | "warn" | "neutral"; child
   );
 }
 
-function OpsDown({ error, onRetry }: { error: string | null; onRetry: () => void }) {
+function OpsDown({ builtin, error, onRetry }: { builtin: boolean; error: string | null; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center px-6 py-16 text-center">
       <span className="flex h-16 w-16 items-center justify-center rounded-full border border-line-2 bg-card text-fg-3">
         <WifiOffIcon size={28} />
       </span>
       <h2 className="mt-5 text-title text-fg">Your vault is out of reach</h2>
-      <p className="mt-2 max-w-xs text-body text-fg-3">Today reads tasks through your task service, and it isn&apos;t answering.</p>
+      <p className="mt-2 max-w-xs text-body text-fg-3">
+        {builtin ? "Today reads tasks from your Second Brain folder, and it couldn't be read." : "Today reads tasks through your task service, and it isn't answering."}
+      </p>
       {error ? <p className="mt-2 max-w-xs text-caption text-fg-3">{error}</p> : null}
       <button type="button" className="press mt-6 flex min-h-11 items-center gap-2 rounded-full border border-line-2 bg-card px-5 text-callout font-medium text-fg hover:border-line-3" onClick={onRetry}>
         <RefreshCwIcon size={16} />
@@ -788,7 +799,7 @@ function IntentBody({
         ) : null}
       </AnimatePresence>
       <label className="mb-4 block text-callout text-fg-2">
-        Note for Chief
+        Note for {assistant}
         <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Optional context" className={`${field} resize-none`} />
       </label>
       <div className="flex flex-wrap gap-2">

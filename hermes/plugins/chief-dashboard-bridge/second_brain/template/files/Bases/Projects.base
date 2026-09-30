@@ -1,0 +1,33 @@
+filters:
+  and:
+    - file.inFolder("10 Projects")
+    - 'type == "project"'
+properties:
+  file.name:
+    displayName: Project
+  status:
+    displayName: Status
+  due:
+    displayName: Due
+  area:
+    displayName: Area
+views:
+  - type: table
+    name: Active
+    filters:
+      and:
+        - 'status == "active"'
+    order:
+      - file.name
+      - due
+      - area
+    sort:
+      - property: due
+        direction: ASC
+  - type: table
+    name: All
+    order:
+      - file.name
+      - status
+      - due
+      - area

@@ -15,6 +15,7 @@ import {
   Volume2Icon,
   ZapIcon,
   BotIcon,
+  BookOpenIcon,
 } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
@@ -37,7 +38,9 @@ import { enableWebPush, pushCapability, pushStatus, type PushStatus } from "@/li
 import { useAssistantName, ownerName } from "@/lib/identity";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { PersonaEditor } from "@/components/persona/persona-editor";
-import { setup, type SetupStatus } from "@/lib/setup-client";
+import { SecondBrainSetup } from "@/components/second-brain/setup";
+import { secondBrain, setup, type SecondBrainStatus, type SetupStatus } from "@/lib/setup-client";
+import { useAppConfig } from "@/lib/app-config";
 
 type ApplyBody = {
   stt?: { provider?: string; model?: string; api_key?: string };
@@ -46,7 +49,17 @@ type ApplyBody = {
 };
 
 /** App and Hermes voice settings in a sheet (bottom on the phone, side panel on desktop). */
-export function SettingsPanel({ open, phone, onClose }: { open: boolean; phone: boolean; onClose: () => void }) {
+export function SettingsPanel({
+  open,
+  phone,
+  onClose,
+  onAskChief,
+}: {
+  open: boolean;
+  phone: boolean;
+  onClose: () => void;
+  onAskChief?: (text: string) => Promise<void>;
+}) {
   return (
     <Sheet
       open={open}
@@ -56,15 +69,16 @@ export function SettingsPanel({ open, phone, onClose }: { open: boolean; phone: 
       side={phone ? "bottom" : "right"}
       tall
     >
-      <SettingsBody phone={phone} />
+      <SettingsBody phone={phone} onAskChief={onAskChief} />
     </Sheet>
   );
 }
 
-function SettingsBody({ phone }: { phone: boolean }) {
+function SettingsBody({ phone, onAskChief }: { phone: boolean; onAskChief?: (text: string) => Promise<void> }) {
   return (
     <div className="space-y-6 px-4 pb-10 pt-1">
       <ConnectionGroup />
+      <SecondBrainGroup onAskChief={onAskChief} />
       <IdentityGroup />
       <VoiceGroup />
       <AppGroup phone={phone} />
@@ -115,6 +129,66 @@ function ConnectionGroup() {
             <span className={`rounded-full px-2 py-0.5 text-caption ${status.ready ? "bg-ok/15 text-ok" : "bg-warn/15 text-warn"}`}>{status.ready ? "Ready" : "Needs setup"}</span>
           ) : null}
         </Row>
+      )}
+    </Group>
+  );
+}
+
+/* ------------------------------------------------------------------ Second Brain */
+
+const MODE_LABEL: Record<string, string> = { new: "The Second Brain layout", keep: "Your own folders", reorganize: "Being reorganized" };
+
+function SecondBrainGroup({ onAskChief }: { onAskChief?: (text: string) => Promise<void> }) {
+  const config = useAppConfig();
+  const [status, setStatus] = useState<SecondBrainStatus | null>(null);
+  const [error, setError] = useState("");
+  const [changing, setChanging] = useState(false);
+  const load = () => {
+    setError("");
+    secondBrain
+      .status()
+      .then(setStatus)
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Couldn't read the Second Brain."));
+  };
+  useEffect(load, []);
+  const fromEnv = config.secondBrain.source === "env";
+  const path = fromEnv ? config.vaultRoot : status?.path || "";
+  return (
+    <Group
+      icon={<BookOpenIcon className="size-4" />}
+      title="Second Brain"
+      hint="Your notes folder. Today reads its tasks; Vault browses it."
+      action={
+        fromEnv ? null : (
+          <button
+            type="button"
+            onClick={() => {
+              setChanging((v) => !v);
+              if (changing) load();
+            }}
+            className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg"
+          >
+            {changing ? "Close" : status?.configured ? "Change" : "Set up"}
+          </button>
+        )
+      }
+    >
+      {changing ? (
+        <div className="px-1 py-2">
+          <SecondBrainSetup onAskChief={onAskChief} onDone={load} />
+        </div>
+      ) : (
+        <Row
+          label={path ? <span className="break-all font-mono text-code">{path}</span> : status ? "Not set up" : "…"}
+          hint={
+            error ||
+            (fromEnv
+              ? "Set by this install's configuration (CHIEF_VAULT_PATH)."
+              : status?.configured
+                ? `${status.exists ? MODE_LABEL[status.mode || ""] || "Connected" : "The folder is missing"}${config.secondBrain.today === "ops" ? " · Today uses your task service" : ""}`
+                : "Choose a folder to keep notes and tasks with your chief.")
+          }
+        />
       )}
     </Group>
   );
@@ -800,11 +874,11 @@ function Row({
   dim,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   hint?: string;
   stacked?: boolean;
   dim?: boolean;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   return (
     <div className={`px-3.5 py-3 transition-opacity duration-fast ${dim ? "opacity-45" : ""}`}>

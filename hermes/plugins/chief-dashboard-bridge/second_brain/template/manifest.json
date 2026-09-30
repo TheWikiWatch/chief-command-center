@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "folders": [
+    "00 Inbox",
+    "10 Projects",
+    "20 Areas",
+    "30 Resources",
+    "40 Knowledge",
+    "40 Knowledge/raw/articles",
+    "40 Knowledge/raw/papers",
+    "40 Knowledge/raw/transcripts",
+    "40 Knowledge/raw/assets",
+    "40 Knowledge/entities",
+    "40 Knowledge/concepts",
+    "40 Knowledge/comparisons",
+    "40 Knowledge/queries",
+    "90 Archive",
+    "Journal/Daily",
+    "Journal/Weekly",
+    "Templates",
+    "Bases",
+    "Attachments"
+  ],
+  "files": [
+    "AGENTS.md",
+    "Home.md",
+    "00 Inbox/Welcome.md",
+    "10 Projects/Example project.md",
+    "20 Areas/Home and life.md",
+    "40 Knowledge/SCHEMA.md",
+    "40 Knowledge/index.md",
+    "40 Knowledge/log.md",
+    "Templates/Daily note.md",
+    "Templates/Weekly review.md",
+    "Templates/Project.md",
+    "Templates/Area.md",
+    "Templates/Meeting.md",
+    "Templates/Person.md",
+    "Templates/Source.md",
+    "Bases/Projects.base",
+    "Bases/Inbox.base"
+  ],
+  "keepExisting": {
+    "folders": [
+      "00 Inbox",
+      "40 Knowledge",
+      "40 Knowledge/raw/articles",
+      "40 Knowledge/raw/papers",
+      "40 Knowledge/raw/transcripts",
+      "40 Knowledge/raw/assets",
+      "40 Knowledge/entities",
+      "40 Knowledge/concepts",
+      "40 Knowledge/comparisons",
+      "40 Knowledge/queries",
+      "Templates"
+    ],
+    "files": [
+      "AGENTS.md",
+      "00 Inbox/Welcome.md",
+      "40 Knowledge/SCHEMA.md",
+      "40 Knowledge/index.md",
+      "40 Knowledge/log.md",
+      "Templates/Daily note.md",
+      "Templates/Weekly review.md",
+      "Templates/Project.md",
+      "Templates/Area.md",
+      "Templates/Meeting.md",
+      "Templates/Person.md",
+      "Templates/Source.md"
+    ]
+  }
+}

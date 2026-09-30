@@ -37,6 +37,7 @@ import { refreshServiceWorker } from "@/lib/web-push";
 import { useUnseenFleetFlags } from "@/lib/use-fleet-flags";
 import { useAppConfig } from "@/lib/app-config";
 import { Onboarding, useNeedsOnboarding } from "@/components/onboarding/onboarding";
+import { SecondBrainSheet } from "@/components/second-brain/sheet";
 import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunchTarget, type OpenTarget } from "@/lib/open-target";
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
 
@@ -106,6 +107,7 @@ export function CommandShell() {
   const chatSender = useRef<ChatSend | null>(null);
   const registerSender = useCallback((send: ChatSend | null) => { chatSender.current = send; }, []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [secondBrainOpen, setSecondBrainOpen] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
   const [lastChief, setLastChief] = useState<Person | null>(null);
   useEffect(() => setLastChief(loadChief()), []);
@@ -356,9 +358,12 @@ export function CommandShell() {
       onSendToChief={sendFromToday}
       hideTabs={phone}
       trailing={phone ? headerStatus : null}
+      onSetUpSecondBrain={() => setSecondBrainOpen(true)}
     />
   );
-  const vault = <VaultPane phone={phone} surface={surface} onSurface={changeSurface} trailing={phone ? headerStatus : null} />;
+  const vault = (
+    <VaultPane phone={phone} surface={surface} onSurface={changeSurface} trailing={phone ? headerStatus : null} onSetUpSecondBrain={() => setSecondBrainOpen(true)} />
+  );
   const viewSwitch = fleetHealthOn ? <FleetViewSwitch view={fleetView} onChange={changeFleetView} flags={fleetView === "health" ? 0 : fleetFlags} /> : null;
   const fleet = (
     <>
@@ -416,8 +421,9 @@ export function CommandShell() {
   const dim = `transition-[filter] duration-[600ms] ease-enter ${offline ? "[filter:saturate(.55)_brightness(.85)]" : ""}`;
   const sheets = (
     <>
-      {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} /> : null}
-      <SettingsPanel open={settingsOpen} phone={phone} onClose={() => setSettingsOpen(false)} />
+      {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} onAskChief={sendFromToday} /> : null}
+      <SettingsPanel open={settingsOpen} phone={phone} onClose={() => setSettingsOpen(false)} onAskChief={sendFromToday} />
+      <SecondBrainSheet open={secondBrainOpen} phone={phone} onClose={() => setSecondBrainOpen(false)} onAskChief={sendFromToday} />
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
       <ToastViewport />
     </>

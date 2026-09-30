@@ -21,6 +21,7 @@ from . import media
 from . import push
 from . import vapid
 from . import persona
+from . import second_brain
 from . import providers
 from . import settings as hermes_settings
 from . import voice
@@ -525,7 +526,7 @@ def _guarded(fn) -> dict[str, Any]:
     """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
     try:
         return fn()
-    except persona.PersonaError as exc:
+    except (persona.PersonaError, second_brain.SecondBrainError) as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:  # the adapter maps expected failures itself
         logger.warning("bridge action failed: %s", type(exc).__name__)
@@ -646,6 +647,9 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/setup/status":
                 self._json({"ok": True, "contract": providers.CONTRACT, **providers.status()})
+                return
+            if path == "/setup/second-brain":
+                self._json(_guarded(second_brain.status))
                 return
             if path == "/setup/providers":
                 self._json(_guarded(lambda: providers.catalog(refresh=_flag(qs, "refresh"))))
@@ -827,6 +831,15 @@ def _make_handler(bridge: BridgeServer):
             if path == "/setup/endpoint/save":
                 self._act(path, started, _guarded(lambda: providers.save_endpoint(
                     str(body.get("name") or ""), str(body.get("base_url") or ""), str(body.get("model") or ""), str(body.get("api_key") or ""))))
+                return
+            if path == "/setup/second-brain/inspect":
+                self._act(path, started, _guarded(lambda: second_brain.inspect(str(body.get("path") or ""))))
+                return
+            if path == "/setup/second-brain":
+                self._act(path, started, _guarded(lambda: second_brain.setup(str(body.get("path") or ""), str(body.get("mode") or ""))))
+                return
+            if path == "/setup/soul/seed":
+                self._act(path, started, _guarded(second_brain.seed_soul))
                 return
             if path == "/setup/test":
                 self._act(path, started, _guarded(providers.test_message))

@@ -53,6 +53,14 @@ All require `Authorization: Bearer …` (a `?token=` query is not accepted). Loo
 | GET | `/profile/{id}`, `/avatar/{id}` | A bot's profile (soul, memory, tools, job) and photo avatar |
 | GET | `/push/vapidPublicKey`, `/push/subscriptions` | Phone-alert key (created on first use) and subscribed-device count |
 | POST | `/push/subscribe`, `/push/unsubscribe`, `/push/test` | Manage this device's subscription; `/push/test` sends one alert |
+| GET | `/setup/status`, `/setup/providers`, `/setup/models?provider=` | Model connection (`providers.py`, contract `chief.providers.v1`): readiness, Hermes's provider catalog, a provider's models |
+| POST | `/setup/key`, `/setup/model`, `/setup/endpoint/check`, `/setup/endpoint/save`, `/setup/test` | Save a key (never echoed), choose a model (expensive-model guard), probe and save a custom/local endpoint, one test completion |
+| GET | `/setup/second-brain` | The Second Brain (`second_brain.py`, contract `chief.second_brain.v1`): folder, mode, skill installed, the default `Documents\Second Brain` |
+| POST | `/setup/second-brain/inspect` | `{ path }` → what the folder holds and exactly what each setup choice would create. Writes nothing. |
+| POST | `/setup/second-brain` | `{ path, mode: new \| keep \| reorganize }` writes the template create-only, sets `OBSIDIAN_VAULT_PATH` / `WIKI_PATH` in the profile `.env` and installs the `second-brain` skill |
+| POST | `/setup/soul/seed` | Replaces an untouched stock Hermes SOUL with Chief's default (history kept); an edited SOUL is never touched |
+| GET | `/persona?profile=`, `/persona/soul/version?profile=&id=` | SOUL, memory and user profile for editing (`persona.py`, contract `chief.persona.v1`); an older SOUL version |
+| POST | `/persona/soul`, `/persona/soul/restore`, `/persona/memory` | Save SOUL against the hash it was read at, restore a version, apply a pinned memory batch |
 
 ### Long-poll
 
@@ -74,7 +82,7 @@ Hermes archives the session at each context compaction (rows go `active = 0`) an
 
 ### `/file` allowlist
 
-Allowed roots: the user's Documents, Downloads, Pictures and Desktop, the Hermes home, `CHIEF_FILE_ROOTS`, and paths that appeared in recent messages. Denied everywhere: `.env*`, `auth.json`, `credentials.json`, `.netrc`, `.token`, key material (`.pem`, `.key`, `.p12`, `.pfx`, `.kdbx`, `.ssh`, `.gnupg`), SQLite files and their side files, and NTFS stream paths. The app's server applies the same path checks first.
+Allowed roots: the user's Documents (including a redirected one), Downloads, Pictures and Desktop, the Hermes home, the Second Brain (`OBSIDIAN_VAULT_PATH`), `CHIEF_FILE_ROOTS`, and paths that appeared in recent messages. Denied everywhere: `.env*`, `auth.json`, `credentials.json`, `.netrc`, `.token`, key material (`.pem`, `.key`, `.p12`, `.pfx`, `.kdbx`, `.ssh`, `.gnupg`), SQLite files and their side files, and NTFS stream paths. The app's server applies the same path checks first.
 
 ### Approval payload
 

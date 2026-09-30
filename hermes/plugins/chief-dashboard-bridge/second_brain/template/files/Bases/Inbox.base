@@ -1,0 +1,17 @@
+filters:
+  and:
+    - file.inFolder("00 Inbox")
+properties:
+  file.name:
+    displayName: Note
+  file.ctime:
+    displayName: Captured
+views:
+  - type: table
+    name: Inbox
+    order:
+      - file.name
+      - file.ctime
+    sort:
+      - property: file.ctime
+        direction: DESC

@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { deniedFilePath, permittedOperation, protectFileHeaders, validMutationOrigin } from "@/lib/proxy-policy";
 import { bridgeUrl } from "@/lib/server/app-config";
+import { invalidateSecondBrain } from "@/lib/server/second-brain";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -71,6 +72,8 @@ async function proxy(req: NextRequest, path: string[]) {
   } catch {
     return Response.json({ ok: false, error: "bridge unreachable" }, { status: 502 });
   }
+  // A new Second Brain folder takes effect in Today and Vault on the next request.
+  if (req.method === "POST" && rel === "setup/second-brain") invalidateSecondBrain();
 
   const out = new Headers();
   const pass = [

@@ -12,10 +12,16 @@ import { requestJson } from "@/lib/request";
  * features in and out while the request is in flight.
  */
 export type AppFeatures = { fleetHealth: boolean; today: boolean; vault: boolean };
-export type ClientAppConfig = { ownerName: string; vaultRoot: string; features: AppFeatures };
+export type SecondBrainInfo = { source: "env" | "chief" | "none"; today: "vault" | "ops" | null };
+export type ClientAppConfig = { ownerName: string; vaultRoot: string; features: AppFeatures; secondBrain: SecondBrainInfo };
 
 const KEY = "chief-app-config";
-const NONE: ClientAppConfig = { ownerName: "", vaultRoot: "", features: { fleetHealth: false, today: false, vault: false } };
+const NONE: ClientAppConfig = {
+  ownerName: "",
+  vaultRoot: "",
+  features: { fleetHealth: false, today: false, vault: false },
+  secondBrain: { source: "none", today: null },
+};
 
 let current: ClientAppConfig = readCached() ?? NONE;
 let started = false;
@@ -25,7 +31,9 @@ function readCached(): ClientAppConfig | null {
   try {
     if (typeof localStorage === "undefined") return null;
     const raw = JSON.parse(localStorage.getItem(KEY) || "null") as ClientAppConfig | null;
-    return raw && typeof raw === "object" && raw.features ? { ...NONE, ...raw, features: { ...NONE.features, ...raw.features } } : null;
+    return raw && typeof raw === "object" && raw.features
+      ? { ...NONE, ...raw, features: { ...NONE.features, ...raw.features }, secondBrain: { ...NONE.secondBrain, ...raw.secondBrain } }
+      : null;
   } catch {
     return null;
   }
@@ -49,6 +57,7 @@ export async function loadAppConfig(): Promise<ClientAppConfig> {
     ownerName: String(data.ownerName || ""),
     vaultRoot: String(data.vaultRoot || ""),
     features: { ...NONE.features, ...(data.features || {}) },
+    secondBrain: { ...NONE.secondBrain, ...(data.secondBrain || {}) },
   };
   set(next);
   return next;
