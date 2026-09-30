@@ -18,6 +18,12 @@ describe("proxy trust boundary", () => {
   it("permits only explicit routes and rejects encoded traversal and extra segments", () => {
     expect(permittedOperation("bridge", "GET", ["profile", "dave-dev"])).toBe(true);
     for (const p of [["profile", ".."], ["file", "extra"], ["profile", "%2f"], ["outbox"], ["settings", "delete"]]) expect(permittedOperation("bridge", "GET", p)).toBe(false);
+    // Provider setup: reads by GET, changes by POST only; nothing else under setup/.
+    for (const p of [["setup", "status"], ["setup", "providers"], ["setup", "models"]]) expect(permittedOperation("bridge", "GET", p)).toBe(true);
+    for (const p of [["setup", "key"], ["setup", "model"], ["setup", "endpoint", "check"], ["setup", "endpoint", "save"], ["setup", "test"]]) expect(permittedOperation("bridge", "POST", p)).toBe(true);
+    expect(permittedOperation("bridge", "GET", ["setup", "key"])).toBe(false);
+    expect(permittedOperation("bridge", "POST", ["setup", "status"])).toBe(false);
+    expect(permittedOperation("bridge", "POST", ["setup", "secrets"])).toBe(false);
     expect(permittedOperation("ops", "PUT", ["settings"])).toBe(true);
     expect(permittedOperation("ops", "PUT", ["boards"])).toBe(false);
   });

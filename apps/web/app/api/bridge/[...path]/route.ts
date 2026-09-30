@@ -41,8 +41,11 @@ async function proxy(req: NextRequest, path: string[]) {
 
   // A long-poll (/transcript?wait=N) is held by the bridge for up to N seconds (at most 25).
   const wait = path[0] === "transcript" ? Math.min(25, Math.max(0, Number(url.searchParams.get("wait")) || 0)) : 0;
+  // Provider setup can fetch catalogs and run one test completion: allow a minute.
   const timeoutMs = wait
     ? (wait + 10) * 1000
+    : path[0] === "setup"
+      ? 60000
     : path[0] === "file" || path[0] === "preview" || path[0] === "thumb" || path[0] === "transcribe" || path[0] === "speak"
       ? 180000
       : path[0] === "snapshot"

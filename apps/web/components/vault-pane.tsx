@@ -53,6 +53,8 @@ import {
   type VaultKind,
 } from "@/lib/vault-client";
 import { useAssistantName } from "@/lib/identity";
+import { useAppConfig } from "@/lib/app-config";
+import { SecondBrainNotSetUp } from "@/components/second-brain/not-set-up";
 
 type Open = { path: string; kind: VaultKind; heading?: string };
 
@@ -61,17 +63,18 @@ type Open = { path: string; kind: VaultKind; heading?: string };
  * Wide panes show the folder list and the reader side by side; narrow ones (the phone, the rail)
  * show one at a time with a back step.
  */
-export function VaultPane({
-  phone,
-  surface,
-  onSurface,
-  trailing,
-}: {
-  phone: boolean;
-  surface: Surface;
-  onSurface: (next: Surface) => void;
-  trailing?: ReactNode;
-}) {
+type VaultPaneProps = { phone: boolean; surface: Surface; onSurface: (next: Surface) => void; trailing?: ReactNode };
+
+/** The Vault browses the Second Brain folder when one is configured. */
+export function VaultPane(props: VaultPaneProps) {
+  const config = useAppConfig();
+  if (!config.features.vault) {
+    return <SecondBrainNotSetUp title="Vault" surface={props.surface} onSurface={props.onSurface} hideTabs={props.phone} trailing={props.trailing} />;
+  }
+  return <VaultBrowser {...props} />;
+}
+
+function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
   const root = useRef<HTMLDivElement>(null);
   const [wide, setWide] = useState(!phone);
   const [dir, setDir] = useState("");

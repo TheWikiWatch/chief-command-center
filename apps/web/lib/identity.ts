@@ -16,6 +16,8 @@ export const DEFAULT_ASSISTANT_NAME = "Chief";
 const NAME_KEY = "chief-assistant-name";
 
 type Identity = { assistant: string; owner: string };
+/** What the server render sees: one constant object (React requires a stable server snapshot). */
+const SERVER_IDENTITY: Identity = { assistant: DEFAULT_ASSISTANT_NAME, owner: "" };
 
 let state: Identity = { assistant: readStoredName() || DEFAULT_ASSISTANT_NAME, owner: "" };
 const listeners = new Set<() => void>();
@@ -70,7 +72,7 @@ function subscribe(listener: () => void) {
 }
 
 export function useIdentity(): Identity {
-  return useSyncExternalStore(subscribe, () => state, () => ({ assistant: DEFAULT_ASSISTANT_NAME, owner: "" }));
+  return useSyncExternalStore(subscribe, () => state, () => SERVER_IDENTITY);
 }
 
 export function useAssistantName(): string {

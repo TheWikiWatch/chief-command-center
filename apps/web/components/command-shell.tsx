@@ -36,6 +36,7 @@ import { holdWakeLock, releaseWakeLock } from "@/lib/voice-client";
 import { refreshServiceWorker } from "@/lib/web-push";
 import { useUnseenFleetFlags } from "@/lib/use-fleet-flags";
 import { useAppConfig } from "@/lib/app-config";
+import { Onboarding, useNeedsOnboarding } from "@/components/onboarding/onboarding";
 import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunchTarget, type OpenTarget } from "@/lib/open-target";
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
 
@@ -60,6 +61,7 @@ export function CommandShell() {
   const approvalHealth = useResourceHealth("Approvals", approvalsViaChat ? 60_000 : 8_000);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(true);
+  const onboarding = useNeedsOnboarding(connected);
   const [authFailed, setAuthFailed] = useState(false);
   const [leftSize, setLeftSize] = useState(60);
   const [looking, setLooking] = useState<Person | null>(null);
@@ -414,6 +416,7 @@ export function CommandShell() {
   const dim = `transition-[filter] duration-[600ms] ease-enter ${offline ? "[filter:saturate(.55)_brightness(.85)]" : ""}`;
   const sheets = (
     <>
+      {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} /> : null}
       <SettingsPanel open={settingsOpen} phone={phone} onClose={() => setSettingsOpen(false)} />
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} />
       <ToastViewport />

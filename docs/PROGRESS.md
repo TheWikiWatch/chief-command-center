@@ -19,3 +19,14 @@
 - Fixed: a long-poll on an empty conversation answered at once instead of holding (fresh installs).
 - Privacy scan added, locally and in CI.
 - Tests: web 220 passed (4 live skipped), Python 56 passed, privacy scan clean.
+
+**Phase 2: connecting a model.**
+
+- Added `providers.py` in the bridge (contract `chief.providers.v1`). It takes the provider catalog from Hermes's own model inventory and saves keys through Hermes's credential lifecycle. Model choice goes through Hermes's dashboard handler, which includes the expensive-model guard. Custom and local endpoints use Hermes's endpoint probe and save, and the test message uses `call_llm`.
+- Added the `/setup/*` bridge routes and proxy permissions.
+- Added onboarding: "Connect a model" appears only while the chief has no working model; "Set up later" is available. A Settings → Connection row shows the model and a Change button.
+- Today and Vault show a calm "Your Second Brain isn't set up yet" state instead of an error when nothing is configured.
+- Contract run against the real Hermes payload: 20 checks passed. Covered: catalog, key storage in the profile `.env` without echo, refusals, and an unreachable endpoint. Also covered: a keyless local endpoint end to end (probe, save, ready, test reply, no Authorization header), and a made-up key against a real provider reported as rejected.
+- Browser end to end on a fresh home with the bundled gateway: onboarding, then a local model, "Connected", then the first chat message answered by the chief.
+- Found for the supervisor phase: on a fresh home Hermes picks up ambient credentials (the `gh` CLI login appeared as GitHub Copilot). New installs will run the gateway with a curated PATH and environment.
+- Tests: web 227 passed (4 live skipped), Python 56 passed, privacy scan clean.

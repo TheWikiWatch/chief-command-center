@@ -20,6 +20,7 @@ from . import identity
 from . import media
 from . import push
 from . import vapid
+from . import providers
 from . import settings as hermes_settings
 from . import voice
 
@@ -519,6 +520,19 @@ class BridgeServer:
             asyncio.run_coroutine_threadsafe(_send(), loop)
 
 
+def _guarded(fn) -> dict[str, Any]:
+    """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
+    try:
+        return fn()
+    except Exception as exc:  # the adapter maps expected failures itself
+        logger.warning("setup action failed: %s", type(exc).__name__)
+        return {"ok": False, "error": providers._plain(exc)}
+
+
+def _flag(qs: dict, name: str) -> bool:
+    return str((qs.get(name) or [""])[0]).lower() in ("1", "true", "yes")
+
+
 def _cc_push():
     """Phone-alert keys and subscriptions (vapid.py)."""
     return vapid
@@ -617,6 +631,16 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/voice-config":
                 self._json(voice.voice_config())
+                return
+            if path == "/setup/status":
+                self._json({"ok": True, "contract": providers.CONTRACT, **providers.status()})
+                return
+            if path == "/setup/providers":
+                self._json(_guarded(lambda: providers.catalog(refresh=_flag(qs, "refresh"))))
+                return
+            if path == "/setup/models":
+                slug = str((qs.get("provider") or [""])[0])
+                self._json(_guarded(lambda: providers.provider_models(slug)))
                 return
             if path == "/settings":
                 self._json(hermes_settings.get_settings())
@@ -764,6 +788,23 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/transcribe":
                 self._act(path, started, voice.transcribe(body))
+                return
+            if path == "/setup/key":
+                self._act(path, started, _guarded(lambda: providers.save_key(str(body.get("provider") or ""), str(body.get("key") or ""))))
+                return
+            if path == "/setup/model":
+                self._act(path, started, _guarded(lambda: providers.choose_model(
+                    str(body.get("provider") or ""), str(body.get("model") or ""), confirm_expensive=bool(body.get("confirm")))))
+                return
+            if path == "/setup/endpoint/check":
+                self._act(path, started, _guarded(lambda: providers.check_endpoint(str(body.get("base_url") or ""), str(body.get("api_key") or ""))))
+                return
+            if path == "/setup/endpoint/save":
+                self._act(path, started, _guarded(lambda: providers.save_endpoint(
+                    str(body.get("name") or ""), str(body.get("base_url") or ""), str(body.get("model") or ""), str(body.get("api_key") or ""))))
+                return
+            if path == "/setup/test":
+                self._act(path, started, _guarded(providers.test_message))
                 return
             if path == "/speak":
                 self._act(path, started, voice.speak(str(body.get("text") or "")))

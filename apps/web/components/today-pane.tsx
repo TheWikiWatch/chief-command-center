@@ -23,6 +23,8 @@ import {
   type TodayItem,
 } from "@/lib/ops";
 import { useAssistantName } from "@/lib/identity";
+import { useAppConfig } from "@/lib/app-config";
+import { SecondBrainNotSetUp } from "@/components/second-brain/not-set-up";
 
 const OPEN_COLS = ["In Progress", "This Week", "Waiting On", "Next Week", "Backlog"];
 
@@ -38,19 +40,24 @@ const FOCUS_INTENTS: { id: Intent; label: string }[] = [
   { id: "area.brief", label: "What's outstanding?" },
 ];
 
-export function TodayPane({
-  surface,
-  onSurface,
-  onSendToChief,
-  hideTabs = false,
-  trailing,
-}: {
+type TodayPaneProps = {
   surface: Surface;
   onSurface: (next: Surface) => void;
   onSendToChief: (text: string) => Promise<void>;
   hideTabs?: boolean;
   trailing?: React.ReactNode;
-}) {
+};
+
+/** Today reads a task service when one is configured; otherwise the Second Brain isn't set up yet. */
+export function TodayPane(props: TodayPaneProps) {
+  const config = useAppConfig();
+  if (!config.features.today) {
+    return <SecondBrainNotSetUp title="Today" surface={props.surface} onSurface={props.onSurface} hideTabs={props.hideTabs} trailing={props.trailing} />;
+  }
+  return <OpsTodayPane {...props} />;
+}
+
+function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, trailing }: TodayPaneProps) {
   const assistant = useAssistantName();
   const [meta, setMeta] = useState<Meta | null>(null);
   const [boards, setBoards] = useState<Board[]>([]);
@@ -499,7 +506,7 @@ function OpsDown({ error, onRetry }: { error: string | null; onRetry: () => void
         <WifiOffIcon size={28} />
       </span>
       <h2 className="mt-5 text-title text-fg">Your vault is out of reach</h2>
-      <p className="mt-2 max-w-xs text-body text-fg-3">Today reads tasks through Second Brain Ops on 127.0.0.1:8790, and it isn&apos;t answering.</p>
+      <p className="mt-2 max-w-xs text-body text-fg-3">Today reads tasks through your task service, and it isn&apos;t answering.</p>
       {error ? <p className="mt-2 max-w-xs text-caption text-fg-3">{error}</p> : null}
       <button type="button" className="press mt-6 flex min-h-11 items-center gap-2 rounded-full border border-line-2 bg-card px-5 text-callout font-medium text-fg hover:border-line-3" onClick={onRetry}>
         <RefreshCwIcon size={16} />

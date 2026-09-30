@@ -1,4 +1,5 @@
-const bridgeGet = new Set(["health", "snapshot", "transcript", "approvals", "voice-config", "settings", "file", "preview", "thumb", "events", "push/vapidPublicKey"]);
+const bridgeGet = new Set(["health", "snapshot", "transcript", "approvals", "voice-config", "settings", "file", "preview", "thumb", "events", "push/vapidPublicKey", "setup/status", "setup/providers", "setup/models"]);
+const bridgePost = new Set(["send", "approve", "transcribe", "speak", "push/subscribe", "setup/key", "setup/model", "setup/endpoint/check", "setup/endpoint/save", "setup/test"]);
 const opsGet = new Set(["health", "meta", "boards", "focus", "today", "pulse", "attention", "settings"]);
 
 export function permittedOperation(service: "bridge" | "ops", method: string, path: string[]): boolean {
@@ -6,7 +7,7 @@ export function permittedOperation(service: "bridge" | "ops", method: string, pa
   const route = path.join("/");
   if (service === "ops") return method === "GET" ? opsGet.has(route) : method === "POST" ? route === "launch" : method === "PUT" && route === "settings";
   if (method === "GET") return bridgeGet.has(route) || (path.length === 2 && ["profile", "avatar"].includes(path[0]) && /^[\w-]+$/.test(path[1]));
-  if (method === "POST") return ["send", "approve", "transcribe", "speak", "push/subscribe"].includes(route);
+  if (method === "POST") return bridgePost.has(route);
   return method === "PATCH" && route === "settings";
 }
 
