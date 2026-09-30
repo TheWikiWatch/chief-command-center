@@ -49,5 +49,6 @@ module.exports = {
     languages: ["en-US"],
     minVersion: "10.0.19041.0",
     addAutoLaunchExtension: false,
+    customManifestPath: path.join(__dirname, "build", "appxmanifest.xml"),
   },
 };

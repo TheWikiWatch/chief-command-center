@@ -1,7 +1,11 @@
 // Sign only this app's own executable and the package itself (PLAN §8a: "only our own binaries are signed;
 // third-party ones ship unsigned" or with their publishers' signatures). An allow-list, so every file of
 // the Hermes payload (Python, Git, Node, ffmpeg…) stays exactly as its publisher shipped it.
-const { execFileSync } = require("node:child_process");
+//
+// SIGNTOOL_PATH should point at a current signtool (Microsoft.Windows.SDK.BuildTools): the 2017 one that
+// electron-builder bundles can't sign an MSIX on Windows 11. Errors never repeat the command line, because
+// it holds the certificate password.
+const { spawnSync } = require("node:child_process");
 const { readdirSync, existsSync } = require("node:fs");
 const path = require("node:path");
 
@@ -24,6 +28,17 @@ function signtool() {
 }
 
 module.exports = async function sign(configuration) {
-  if (!OWN.test(path.basename(configuration.path))) return;
-  execFileSync(signtool(), configuration.computeSignToolArgs(true), { stdio: "inherit", windowsHide: true });
+  const file = path.basename(configuration.path);
+  if (!OWN.test(file)) return;
+  // One SHA-256 signature, timestamped. electron-builder's extra SHA-1 pass is for Windows 7-era loaders.
+  if (configuration.hash && configuration.hash !== "sha256") return;
+  const info = configuration.cscInfo || {};
+  if (!info.file) throw new Error("No signing certificate file (CHIEF_SIGN_PFX).");
+  const args = ["sign", "/fd", "sha256", "/tr", "http://timestamp.digicert.com", "/td", "sha256", "/f", info.file];
+  if (info.password) args.push("/p", info.password);
+  args.push(configuration.path);
+  const res = spawnSync(signtool(), args, { encoding: "utf8", windowsHide: true });
+  const output = `${res.stdout || ""}${res.stderr || ""}`.split(/\r?\n/).filter((l) => !/\/p\s/i.test(l)).join("\n");
+  if (res.status !== 0) throw new Error(`Signing ${file} failed:\n${output.trim().slice(-2000)}`);
+  console.log(`  signed ${file}`);
 };

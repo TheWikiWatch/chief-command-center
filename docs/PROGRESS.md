@@ -210,3 +210,11 @@
   - About 2.2 GB to back up. E: has room; C: is tight at about 11 GB free.
   - A 12.4 GB `crash-dumps` folder, now always left out of backups (machine-local diagnostics; not touched).
 - The migration itself waits for a time the owner picks. It starts with a full backup and changes supervision only with consent.
+
+**Phase 8 continued (2026-09-30, with the owner's go-ahead for the SDK tools).**
+
+- Signing uses `signtool` from Microsoft's `Microsoft.Windows.SDK.BuildTools` 10.0.28000.2705 (nuget.org, Microsoft-signed), via `SIGNTOOL_PATH`. The hook builds its own arguments: one timestamped SHA-256 signature, on the app executable and the package only. Its errors never echo the command line.
+- The test certificate was regenerated, because the old password had reached a local log. The new build log contains no password.
+- `apps/desktop/build/appxmanifest.xml`: file and registry write virtualization are off (`unvirtualizedResources`), so the app's data lives in the real `%LOCALAPPDATA%\ChiefCommandCenter` and survives an uninstall (PLAN §5). Upstream Hermes Desktop does the same.
+- Built `Chief Command Center 0.1.0.appx` (835 MB). The signature verifies apart from the untrusted test root, which is the owner's one-time trust step.
+- Held by the owner: migrating the existing install (Phase 9) and going public (Phase 12). The installed app is used as a separate fresh build for testing.
