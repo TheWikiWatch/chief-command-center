@@ -36,3 +36,5 @@ jobs:
         run: npm --prefix apps/web run check
       - name: Python tests
         run: python -B -m unittest discover -s hermes/tests
+      - name: Backup engine tests
+        run: python -B -m unittest discover -s backup/tests

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { ArrowLeftIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, FolderIcon } from "@/components/icons";
 import { desktop } from "@/lib/desktop";
@@ -48,6 +48,7 @@ export function SecondBrainSetup({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const heading = useRef<HTMLHeadingElement>(null);
+  const folderId = useId();
 
   useEffect(() => {
     secondBrain
@@ -106,10 +107,11 @@ export function SecondBrainSetup({
           </span>
         </p>
       ) : null}
-      <label className="block text-callout text-fg-2">
-        Folder
+      <div className="text-callout text-fg-2">
+        <label htmlFor={folderId}>Folder</label>
         <div className="mt-1.5 flex gap-2">
           <input
+            id={folderId}
             value={folder}
             onChange={(e) => setFolder(e.target.value)}
             onKeyDown={(e) => {
@@ -133,7 +135,7 @@ export function SecondBrainSetup({
             </button>
           ) : null}
         </div>
-      </label>
+      </div>
       <p className="text-caption text-fg-3">
         A new folder gets a ready-made layout. An existing notes folder (an Obsidian vault, for example) keeps your notes; you&apos;ll see your options next.
       </p>

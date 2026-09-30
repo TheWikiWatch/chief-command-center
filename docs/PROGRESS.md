@@ -85,3 +85,43 @@
 - Unit tests: nine for Check my system (every error state, consent, progress, cancel/resume, smaller model, Not now, no-speech, missing model) and one for the three-step onboarding (model required; Second Brain and Check my system skippable; SOUL seeded once; nothing downloads without a tap).
 - Tests: web 257 passed (4 live skipped), Python 56 passed, privacy scan clean.
 
+**Phase 6: backup and restore.**
+
+- Engine `backup/chief_backup` (Python, runs on the payload's Python; see `backup/README.md`).
+  - Parts: setup (the Hermes root, every profile, plus the app's shared settings) and Second Brain.
+  - Never included: caches, logs, locks, the speech model, launchers, install records.
+  - SQLite is copied with the online backup API. Every file is SHA-256'd into the manifest and verified before the file is renamed into place.
+  - Secrets go in only when encrypted: scrypt plus a passphrase check value, then AES-256-GCM chunks bound to their index and a final flag. Unencrypted backups keep settings like paths and ports and list the key names left out.
+  - Restore steps: inspect (a newer app's backup is refused), stage (next to each target; unsafe paths refused; every hash verified), apply (refused while a gateway runs), finish, rollback, recover.
+  - Apply takes a local safety backup, then does a journaled swap.
+  - It remaps OBSIDIAN_VAULT_PATH, WIKI_PATH, the Second Brain record and the skill; other old paths are listed for review.
+  - It carries over secrets a backup left out when this PC has them, and carries machine-local pieces (speech model, launchers) across a same-PC restore and back on rollback.
+- Web:
+  - `lib/server/app-settings.ts` holds shared app settings in `CHIEF_APP_DATA/settings.json`.
+  - `lib/server/backup.ts` runs the engine (passphrase on stdin; one job at a time; progress) and the weekly schedule. The schedule runs from `instrumentation.ts` and does nothing until a folder is chosen.
+  - `/api/backup/*` covers status, list, settings, run, inspect, and restore stage/discard/finish; every write is origin-checked.
+- UI:
+  - Settings → Backup & restore: last backup and a 30-day reminder; the folder the owner chooses (a suggestion is shown, applied only on click; Browse in the desktop app); weekly, keeping N; Everything / Setup / Second Brain; optional passphrase (the "can't be recovered" warning is shown); Back up now with progress; the folder's backups with Restore.
+  - Restore flow: file, passphrase, preview (date, versions, bots, notes, size), parts, where the Second Brain goes, verified staging. The desktop app then applies it; a browser says so.
+  - Onboarding's first screen has "New PC? Restore from a backup".
+- Also fixed: fields with a Browse button now keep the button outside their `<label>`, in Second Brain setup, backup and restore. Labels had given those buttons a wrong accessible name and could activate the input.
+- Evidence:
+  - Engine: 20 tests pass on Python 3.13 and on the payload's 3.14. Covered:
+    - What's excluded, and secrets only when encrypted.
+    - Tamper and truncation detection.
+    - Round trip to a new PC with other paths, with remapping, a review list and missing keys.
+    - Same-PC restore with a safety backup, secret carry-over, machine-local carry-over and rollback.
+    - Second Brain only into a new folder (a non-empty other folder is refused).
+    - An encrypted restore, and a wrong passphrase.
+    - A corrupted file changes nothing; a newer app's backup is refused; zip-slip is refused.
+    - Refused while the gateway runs.
+    - Failure mid-swap rolls back, and a process killed mid-swap (`os._exit`) is recovered at the next start.
+    - Disk full leaves no partial file, and a backup taken during continuous SQLite writes passes `integrity_check`.
+    - Retention never removes manual backups, and the CLI keeps passphrases off argv.
+  - Web: two route tests drive the real engine: no schedule without a folder, 403 on a foreign origin, manual and encrypted backups (the passphrase never lands in settings), a wrong passphrase, the weekly run a week later, "off", and restore staging and discard. Four UI tests cover the panel and restore flow.
+  - Live on the e2e home with its gateway running:
+    - Backup: Settings → folder → Back up now gave 1.3 MB, 414 files and 5 databases, with auth and alert keys left out.
+    - Restore: the SOUL was changed, the restore was staged from the UI, and the gateway was stopped with me standing in for Phase 7's supervisor. Apply, then rollback (live), then re-apply with the carry-over fix. After the gateway restarted: health ok, model ready, voice typing ready, and a chat message answered. Finish removed the old folders and kept this PC's backup folder setting.
+- Not yet done: applying a restore from the app itself (Phase 7 supervisor, `window.chiefDesktop.applyRestore`); restore under another Windows user in Windows Sandbox (with the Phase 8 package); real disk-full (simulated in tests).
+- Tests: web 263 passed (4 live skipped), Python 56 + 20 passed, privacy scan clean.
+

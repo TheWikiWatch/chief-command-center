@@ -6,6 +6,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { SecondBrainSetup } from "@/components/second-brain/setup";
 import { CheckMySystem } from "@/components/voice/check-my-system";
+import { RestoreFlow } from "@/components/backup/restore-flow";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
 import { secondBrain, setup, type SetupStatus } from "@/lib/setup-client";
@@ -70,6 +71,7 @@ export function Onboarding({
   const [connected, setConnected] = useState<SetupStatus | null>(null);
   const [completed, setCompleted] = useState<Set<string>>(() => new Set());
   const [busy, setBusy] = useState(false);
+  const [restoring, setRestoring] = useState(false);
   // A fresh profile still has Hermes's stock persona: give it the chief's default (never touches an edited SOUL).
   useEffect(() => {
     void secondBrain.seedSoul().catch(() => undefined);
@@ -126,15 +128,20 @@ export function Onboarding({
             ))}
           </ol>
         </header>
+        {index === 0 && !restoring ? (
+          <button type="button" onClick={() => setRestoring(true)} className="press -mt-4 mb-4 min-h-10 text-callout text-fg-3 underline-offset-2 hover:text-fg-2 hover:underline">
+            New PC? Restore from a backup
+          </button>
+        ) : null}
         <AnimatePresence mode="wait">
           <motion.div
-            key={step.id}
+            key={restoring ? "restore" : step.id}
             className="rounded-sheet border border-line bg-pane p-4 sm:p-6"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE.enter } }}
             exit={{ opacity: 0, y: -6, transition: { duration: 0.14, ease: EASE.exit } }}
           >
-            {step.render(complete(step.id))}
+            {restoring ? <RestoreFlow onClose={() => setRestoring(false)} /> : step.render(complete(step.id))}
           </motion.div>
         </AnimatePresence>
         <footer className="mt-6 flex items-center justify-between gap-3">

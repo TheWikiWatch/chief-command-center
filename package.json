@@ -6,7 +6,7 @@
   "scripts": {
     "check": "npm --prefix apps/web run check && npm run test:python && npm run privacy",
     "test:web": "npm --prefix apps/web test",
-    "test:python": "python -B -m unittest discover -s hermes/tests",
+    "test:python": "python -B -m unittest discover -s hermes/tests && python -B -m unittest discover -s backup/tests",
     "privacy": "node scripts/privacy-scan.mjs",
     "privacy:history": "node scripts/privacy-scan.mjs --history",
     "hermes:source": "python packaging/payload/prepare_source.py",

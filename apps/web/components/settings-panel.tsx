@@ -16,7 +16,9 @@ import {
   ZapIcon,
   BotIcon,
   BookOpenIcon,
+  HardDriveDownloadIcon,
 } from "@/components/icons";
+import { BackupPanel } from "@/components/backup/backup-panel";
 import { Sheet } from "@/components/ui/sheet";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
 import { FONT_STEPS, notifyVoiceConfig, useDashboardPrefs } from "@/lib/dashboard-prefs";
@@ -81,6 +83,7 @@ function SettingsBody({ phone, onAskChief }: { phone: boolean; onAskChief?: (tex
     <div className="space-y-6 px-4 pb-10 pt-1">
       <ConnectionGroup />
       <SecondBrainGroup onAskChief={onAskChief} />
+      <BackupGroup />
       <IdentityGroup />
       <VoiceGroup />
       <AppGroup phone={phone} />
@@ -134,6 +137,47 @@ function ConnectionGroup() {
       )}
     </Group>
   );
+}
+
+/* ------------------------------------------------------------------ Backup & restore */
+
+function BackupGroup() {
+  const [open, setOpen] = useState(false);
+  return (
+    <Group
+      icon={<HardDriveDownloadIcon className="size-4" />}
+      title="Backup & restore"
+      hint="Your setup and Second Brain, to a folder you choose."
+      action={
+        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+          {open ? "Close" : "Open"}
+        </button>
+      }
+    >
+      {open ? (
+        <div className="px-3 py-3">
+          <BackupPanel />
+        </div>
+      ) : (
+        <BackupSummaryRow />
+      )}
+    </Group>
+  );
+}
+
+function BackupSummaryRow() {
+  const [line, setLine] = useState("…");
+  useEffect(() => {
+    import("@/lib/backup-client").then(({ backups, agoLabel }) =>
+      backups
+        .status()
+        .then((s) =>
+          setLine(!s.ok ? s.error || "Not available on this install." : s.lastBackup ? `Last backup: ${agoLabel(s.lastBackup.at)}${s.remind ? " — time for a new one" : ""}` : s.settings.folder ? "No backups yet." : "Not set up yet."),
+        )
+        .catch(() => setLine("Not available right now.")),
+    );
+  }, []);
+  return <Row label={line} />;
 }
 
 /* ------------------------------------------------------------------ Check my system */
