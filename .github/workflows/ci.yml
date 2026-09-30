@@ -20,7 +20,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
+          cache-dependency-path: |
+            apps/web/package-lock.json
+            apps/desktop/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
@@ -34,6 +36,12 @@ jobs:
         run: npm --prefix apps/web ci
       - name: Web typecheck and tests
         run: npm --prefix apps/web run check
+      - name: Desktop shell typecheck and tests
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: |
+          npm --prefix apps/desktop ci
+          npm --prefix apps/desktop run check
       - name: Python tests
         run: python -B -m unittest discover -s hermes/tests
       - name: Backup engine tests

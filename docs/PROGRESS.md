@@ -125,3 +125,33 @@
 - Not yet done: applying a restore from the app itself (Phase 7 supervisor, `window.chiefDesktop.applyRestore`); restore under another Windows user in Windows Sandbox (with the Phase 8 package); real disk-full (simulated in tests).
 - Tests: web 263 passed (4 live skipped), Python 56 + 20 passed, privacy scan clean.
 
+**Phase 7: the desktop shell (unpackaged, throwaway data).**
+
+- `apps/desktop` (Electron 44, TypeScript; see its README) is the only supervisor.
+  - Single instance, with `--hidden` and `--quit`, and a boot screen showing each step with Try again and Open logs.
+  - First-run provisioning through Hermes's own config code (`python/provision.py`: bundled plugin sync, enable, port and platform env; idempotent).
+  - The gateway runs in the foreground with an explicit HERMES_HOME and its own lock folder, supervised with 1/5/30 s backoff and a crash-loop limit (5 in 10 minutes).
+  - A gateway run by another launcher gets Take over / Use it as is; our own orphans are ended.
+  - The Next standalone server runs under Electron's Node (`utilityProcess`).
+  - Child processes get a curated environment (no ambient keys, tokens or HERMES_*; PATH = payload tools + system).
+  - Ports: saved, with free-port fallback.
+  - The bridge token is sealed with DPAPI (`safeStorage`).
+  - Tray, hide-on-close, graceful quit with an active-work prompt, and native notifications while hidden.
+  - `window.chiefDesktop` exposes folder/file pickers and applyRestore (stop, apply, start, health check, then finish or roll back).
+- `apps/web`: `npm run build:standalone` builds and copies static assets next to `server.js`. The output was checked for leaked values: no `.env` files, and no dev token.
+- Evidence:
+  - 18 unit tests: supervisor backoff, crash-loop limit and window, stale exits, intentional stops, launch/ready failures; environment allow-list (drops OPENAI/GH/ANTHROPIC/HERMES_HOME/NODE_OPTIONS; keeps proxies); ports; active-work reasons; notifier (history never announced; replies and approvals only while hidden); restore sequence (success, rollback when Chief doesn't come back, refused apply); gateway ownership; DPAPI token; settings.
+  - The real app, on a throwaway data folder, with this PC's live install still running on 3000/7790:
+    - Boot: it picked 3001/7792, provisioned a fresh profile and started both processes (gateway in about 5 s, dashboard in 162 ms).
+    - Onboarding: the full three steps in the browser against the app-managed runtime (local test model, a new Second Brain, system check skipped). Today then showed the template's tasks.
+    - The default Chief SOUL replaced the stock one, which was kept in history, and the install used its own gateway lock folder.
+    - Chat round trip.
+    - Killing the gateway: the supervisor restarted it after 1 s, and it was healthy again.
+    - A second launch exited in 1 s with no second gateway.
+    - Hard-killing Electron's main process left no orphaned gateway or server.
+    - Relaunch reused the saved ports.
+    - `--quit`: Hermes logged "Gateway stopped", the pid file was removed, and the app exited in 5 s.
+- Not verified yet, because they need hands on the desktop or come with packaging: clicking the tray and the busy-quit dialog, the Windows notification appearing, applyRestore from the real window, the microphone in the Electron window, start at sign-in (registered only when packaged). These are on the Phase 8/13 checklist.
+- Test note: the in-app browser used for checks pauses `requestAnimationFrame` while its pane is hidden, which holds onboarding's step animation until it paints. Not an app bug; a visible window always paints.
+- Tests: web 263 passed (4 live skipped), desktop 18, Python 56 + 20, privacy scan clean.
+
