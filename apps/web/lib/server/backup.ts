@@ -130,18 +130,20 @@ export async function startBackup({ kind, parts, passphrase }: { kind: "manual" 
       current.total = total;
     },
   }).then(async (res) => {
+    // The record is saved before the job reports done, so "done" always comes with "Last backup".
     if (res.ok) {
-      current.state = "done";
       current.result = { path: String(res.path), bytes: Number(res.bytes), encrypted: !!res.encrypted, dropped_secrets: (res.dropped_secrets as string[]) || [] };
       await updateAppSettings((s) => ({
         ...s,
         lastBackup: { at: Date.now(), path: String(res.path), kind, bytes: Number(res.bytes), encrypted: !!res.encrypted },
         lastBackupError: null,
       })).catch(() => undefined);
+      current.state = "done";
     } else {
+      const error = res.error || "The backup failed.";
+      await updateAppSettings((s) => ({ ...s, lastBackupError: { at: Date.now(), error, kind } })).catch(() => undefined);
+      current.error = error;
       current.state = "error";
-      current.error = res.error || "The backup failed.";
-      await updateAppSettings((s) => ({ ...s, lastBackupError: { at: Date.now(), error: current.error!, kind } })).catch(() => undefined);
     }
   });
   return current;
