@@ -1,5 +1,5 @@
-const bridgeGet = new Set(["health", "snapshot", "transcript", "approvals", "voice-config", "settings", "file", "preview", "thumb", "events", "push/vapidPublicKey", "setup/status", "setup/providers", "setup/models"]);
-const bridgePost = new Set(["send", "approve", "transcribe", "speak", "push/subscribe", "setup/key", "setup/model", "setup/endpoint/check", "setup/endpoint/save", "setup/test"]);
+const bridgeGet = new Set(["health", "snapshot", "transcript", "approvals", "voice-config", "settings", "file", "preview", "thumb", "events", "push/vapidPublicKey", "setup/status", "setup/providers", "setup/models", "persona", "persona/soul/version"]);
+const bridgePost = new Set(["send", "approve", "transcribe", "speak", "push/subscribe", "setup/key", "setup/model", "setup/endpoint/check", "setup/endpoint/save", "setup/test", "persona/soul", "persona/soul/restore", "persona/memory"]);
 const opsGet = new Set(["health", "meta", "boards", "focus", "today", "pulse", "attention", "settings"]);
 
 export function permittedOperation(service: "bridge" | "ops", method: string, path: string[]): boolean {

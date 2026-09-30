@@ -79,7 +79,7 @@ export function ConnectionDot({ connected, authFailed, onOpen, quiet = false }: 
   );
 }
 
-export function StatusSheet({ open, onClose, connected, authFailed, phone }: LinkState & { open: boolean; onClose: () => void; phone: boolean }) {
+export function StatusSheet({ open, onClose, connected, authFailed, phone, deepseek = false }: LinkState & { open: boolean; onClose: () => void; phone: boolean; deepseek?: boolean }) {
   const entries = useHealthEntries();
   const assistant = useAssistantName();
   return (
@@ -109,12 +109,14 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone }: Lin
           </ul>
         </section>
         <VoiceLog />
+        {deepseek ? (
         <section>
           <h3 className="mb-2 px-1 text-callout font-medium text-fg-2">DeepSeek pricing</h3>
           <div className="rounded-card border border-line bg-card px-4 py-3">
             <DeepseekChip detail />
           </div>
         </section>
+        ) : null}
       </div>
     </Sheet>
   );

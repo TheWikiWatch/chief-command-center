@@ -6,6 +6,7 @@ import { Streamdown } from "streamdown";
 
 import { BotFace, faceProps } from "@/components/bot-face";
 import { UserMinusIcon } from "@/components/icons";
+import { PersonaEditor } from "@/components/persona/persona-editor";
 import { ChiefPresence } from "@/components/presence";
 import { Sheet } from "@/components/ui/sheet";
 import { StatusPill } from "@/components/workforce-pane";
@@ -55,6 +56,8 @@ export function LookDrawer({
 function LookBody({ person, name, role, retired, onClose }: { person: Person; name: string; role: string; retired: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>("Job");
   const [peek, setPeek] = useState<Peek | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -70,11 +73,23 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
     return () => {
       alive = false;
     };
-  }, [person.id]);
+  }, [person.id, reload]);
 
   return (
     <div className="flex h-full flex-col">
       <div className="relative flex flex-col items-center px-5 pb-4 pt-3 text-center">
+        {!retired ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (editing) setReload((n) => n + 1);
+              setEditing((v) => !v);
+            }}
+            className="press absolute left-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-white/[0.06] hover:text-fg"
+          >
+            {editing ? "Done" : "Edit"}
+          </button>
+        ) : null}
         <button type="button" onClick={onClose} className="press absolute right-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-white/[0.06] hover:text-fg">
           Close
         </button>
@@ -101,6 +116,12 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
         </AnimatePresence>
       </div>
 
+      {editing ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-2">
+          <PersonaEditor profile={person.id} name={name} />
+        </div>
+      ) : (
+      <>
       <div className="px-4">
         <div className="flex gap-1 rounded-full border border-line bg-card p-1" role="tablist" aria-label="Details">
           {TABS.map((t) => (
@@ -126,6 +147,8 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
           </motion.div>
         </AnimatePresence>
       </div>
+      </>
+      )}
     </div>
   );
 }

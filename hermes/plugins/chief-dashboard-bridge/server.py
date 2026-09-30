@@ -20,6 +20,7 @@ from . import identity
 from . import media
 from . import push
 from . import vapid
+from . import persona
 from . import providers
 from . import settings as hermes_settings
 from . import voice
@@ -524,8 +525,10 @@ def _guarded(fn) -> dict[str, Any]:
     """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
     try:
         return fn()
+    except persona.PersonaError as exc:
+        return {"ok": False, "error": str(exc)}
     except Exception as exc:  # the adapter maps expected failures itself
-        logger.warning("setup action failed: %s", type(exc).__name__)
+        logger.warning("bridge action failed: %s", type(exc).__name__)
         return {"ok": False, "error": providers._plain(exc)}
 
 
@@ -631,6 +634,15 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/voice-config":
                 self._json(voice.voice_config())
+                return
+            if path == "/persona":
+                profile = str((qs.get("profile") or ["chief"])[0])
+                self._json(_guarded(lambda: persona.read_all(profile)))
+                return
+            if path == "/persona/soul/version":
+                profile = str((qs.get("profile") or ["chief"])[0])
+                version = str((qs.get("id") or [""])[0])
+                self._json(_guarded(lambda: {"ok": True, **persona.read_version(profile, version)}))
                 return
             if path == "/setup/status":
                 self._json({"ok": True, "contract": providers.CONTRACT, **providers.status()})
@@ -788,6 +800,19 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/transcribe":
                 self._act(path, started, voice.transcribe(body))
+                return
+            if path == "/persona/soul":
+                self._act(path, started, _guarded(lambda: persona.write_soul(
+                    str(body.get("profile") or "chief"), str(body.get("text") or ""), str(body.get("base_hash") or ""))))
+                return
+            if path == "/persona/soul/restore":
+                self._act(path, started, _guarded(lambda: persona.restore_version(
+                    str(body.get("profile") or "chief"), str(body.get("id") or ""), str(body.get("base_hash") or ""))))
+                return
+            if path == "/persona/memory":
+                ops = body.get("ops") if isinstance(body.get("ops"), list) else []
+                self._act(path, started, _guarded(lambda: persona.edit_memory(
+                    str(body.get("profile") or "chief"), str(body.get("target") or ""), ops)))
                 return
             if path == "/setup/key":
                 self._act(path, started, _guarded(lambda: providers.save_key(str(body.get("provider") or ""), str(body.get("key") or ""))))

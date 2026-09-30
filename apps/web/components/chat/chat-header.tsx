@@ -107,7 +107,8 @@ export function ChatHeader({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h1 className="min-w-[2.75rem] truncate text-headline text-fg">{name}</h1>
-          <DeepseekChip peakOnly />
+          {/* DeepSeek's peak/off-peak pricing only matters when the chief runs on DeepSeek. */}
+          {chief?.provider === "deepseek" ? <DeepseekChip peakOnly /> : null}
         </div>
         <AnimatePresence mode="wait" initial={false}>
           <motion.p

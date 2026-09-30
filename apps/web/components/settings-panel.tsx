@@ -14,6 +14,7 @@ import {
   VibrateIcon,
   Volume2Icon,
   ZapIcon,
+  BotIcon,
 } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
@@ -35,6 +36,7 @@ import { stopSpeech } from "@/lib/voice-client";
 import { enableWebPush, pushCapability, pushStatus, type PushStatus } from "@/lib/web-push";
 import { useAssistantName, ownerName } from "@/lib/identity";
 import { ConnectModel } from "@/components/onboarding/connect-model";
+import { PersonaEditor } from "@/components/persona/persona-editor";
 import { setup, type SetupStatus } from "@/lib/setup-client";
 
 type ApplyBody = {
@@ -63,6 +65,7 @@ function SettingsBody({ phone }: { phone: boolean }) {
   return (
     <div className="space-y-6 px-4 pb-10 pt-1">
       <ConnectionGroup />
+      <IdentityGroup />
       <VoiceGroup />
       <AppGroup phone={phone} />
       <SoundGroup />
@@ -113,6 +116,31 @@ function ConnectionGroup() {
           ) : null}
         </Row>
       )}
+    </Group>
+  );
+}
+
+/* ------------------------------------------------------------------ Identity and memory */
+
+function IdentityGroup() {
+  const assistant = useAssistantName();
+  const [open, setOpen] = useState(false);
+  return (
+    <Group
+      icon={<BotIcon className="size-4" />}
+      title={`${assistant}'s identity and memory`}
+      hint="SOUL.md (who they are), their own notes, and what they know about you."
+      action={
+        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+          {open ? "Close" : "Edit"}
+        </button>
+      }
+    >
+      {open ? (
+        <div className="px-1 py-2">
+          <PersonaEditor profile="chief" name={assistant} />
+        </div>
+      ) : null}
     </Group>
   );
 }

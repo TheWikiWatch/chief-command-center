@@ -418,7 +418,7 @@ export function CommandShell() {
     <>
       {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} /> : null}
       <SettingsPanel open={settingsOpen} phone={phone} onClose={() => setSettingsOpen(false)} />
-      <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} />
+      <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
       <ToastViewport />
     </>
   );
