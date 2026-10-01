@@ -411,3 +411,4 @@
   - The brief, run on the throwaway gateway, reached the chat session and showed once, as a scheduled notice.
   - Compatibility suite 12/12 on the payload.
   - Tests: web 326, desktop 28, Python 89 + 20, privacy clean.
+- Built `Chief Command Center 0.1.7.appx`. The signature verifies, the build log holds no password, and the package carries the wiki template, its five skills and the drop gate. It installs over 0.1.6 with data kept; an existing Second Brain learns its format at first start.
