@@ -474,3 +474,15 @@
 - **Found and fixed: every update started with a minutes-long backup.** On the owner's install it was 2.5 GB and about six minutes, on each update. The backup before a new version guards against Hermes migrating the data, which can only happen when the bundled Hermes changes. The app now records the Hermes build that last opened the data (the payload's install stamp) and takes that backup only when the build differs. It keeps the two newest backups of that kind.
 - **0.1.9 published** to the releases repository. With the app's own code against GitHub: the latest release found, its manifest verified against the pinned key, and the end of the package downloaded as a resumed range through GitHub's redirect.
 - Built and published `0.1.10` (signature verified, no password in the logs) as the latest release in the releases repository; the owner's 0.1.9 offers it once its update key is set.
+
+**The first in-app update, and what it turned up (0.1.11).**
+
+- **Found and fixed: an in-app install could leave the app closed.**
+  - 0.1.10 was downloaded from the releases repository with a key, and its backup ran. Then the app stopped Chief and handed the package to Windows, but the package wasn't installed and the app wasn't reopened.
+  - The installer had been started as the app's own child process. Windows shuts the app's processes down to replace the package, and that took the installer with it.
+  - The installer is now started through WMI (`Win32_Process.Create`), so it runs as its own process, confirmed under `WmiPrvSE.exe`.
+  - It logs to `logs\update-install.log`, and in a `finally` it always reopens the app, updated or not.
+  - The same package installed by hand without trouble.
+- **The backup before installing is skipped when the release carries the same upstream Hermes** (`release.hermes.commit`). Different app patches on the same Hermes are still backed up at first start.
+- **Settings → About shows the Hermes build** from the payload's install stamp ("2026.9.24 · upstream 41cd311 · 3 app patches"). The desktop app passes it, and the bridge reports it for development builds. A new row explains Hermes updates: Hermes is built into the app and never updates itself; a newer Hermes arrives as an app update after the compatibility suite passes, with a backup before its first start. About also finds an adopted install's own toolkit version.
+- **The floating update card** has its own surface and sits at the top right, clear of the message box. Before, its "installing" line was drawn as bare text over the composer.
