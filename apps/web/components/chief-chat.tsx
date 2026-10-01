@@ -640,6 +640,23 @@ export function ChiefChat({
       }
       return;
     }
+    // A gateway command ("/new", "/approve"): Hermes answers it with a notice and never stores it as a
+    // message, so it gets no bubble that would wait forever for its stored copy.
+    if (connected && !files.length && /^\/[a-z][\w-]*(\s|$)/i.test(trimmed)) {
+      busyRef.current = true;
+      setBusy(true);
+      setSendError("");
+      try {
+        const result = await sendToChief(trimmed, [], newSendId());
+        if (!result.ok) throw new Error(result.error || `${assistantName()} did not accept the command.`);
+        showNotice(`Sent ${trimmed.split(/\s/)[0]}.`);
+        fx("send");
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+      return;
+    }
     if (!connected) {
       // Chief is unreachable: the message waits in the outbox and goes when he is back.
       await outbox.enqueue(newSendId(), trimmed, files.map(file => ({ name: file.name, mime: file.mime, blob: file.file })));
@@ -928,6 +945,7 @@ export function ChiefChat({
         activity={activity}
         question={question}
         onAnswer={answerOpenQuestion}
+        onQuickReply={sendBody}
       />
       <form onSubmit={onSubmit} className="shrink-0">
         <div className="px-4 pb-2 empty:hidden">

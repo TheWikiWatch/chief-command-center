@@ -196,8 +196,29 @@ export function AskedRow({ items }: { items: AskedQuestion[] }) {
   );
 }
 
-/** A scheduled job's result or a gateway notice: not a reply to anything you said. */
-export function NoticeBody({ notice }: { notice: ChatNotice }) {
+const QUICK_LABELS: Record<string, string> = {
+  "/approve": "Approve once",
+  "/always": "Always approve",
+  "/cancel": "Cancel",
+  "/deny": "Deny",
+  "/yes": "Yes",
+  "/no": "No",
+};
+
+/** The commands a gateway prompt offers as its text fallback ("reply `/approve`, `/always`, or `/cancel`"). */
+export function quickReplies(text: string): string[] {
+  const line = text.split("\n").find((l) => /\breply\b/i.test(l) && /`\/[a-z][\w-]*`/i.test(l));
+  if (!line) return [];
+  return [...new Set([...line.matchAll(/`(\/[a-z][\w-]*)`/gi)].map((m) => m[1].toLowerCase()))].slice(0, 4);
+}
+
+/** A scheduled job's result or a gateway notice: not a reply to anything you said. A notice that asks for
+ * an answer (Hermes's text fallback, e.g. confirming /new) gets its answers as buttons while it is the newest
+ * thing in the chat. */
+export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQuickReply?: (text: string) => Promise<void> }) {
+  const [sent, setSent] = useState("");
+  const [error, setError] = useState("");
+  const replies = onQuickReply ? quickReplies(notice.text) : [];
   const scheduled = notice.source === "scheduled";
   const Icon = scheduled ? ClockIcon : BellIcon;
   return (
@@ -207,6 +228,37 @@ export function NoticeBody({ notice }: { notice: ChatNotice }) {
         {scheduled ? "Scheduled job" : "Notice"}
       </p>
       <Streamdown className="chat-md mt-1 max-w-none">{linkifyVaultRefs(notice.text)}</Streamdown>
+      {replies.length ? (
+        <div className="mt-2.5 flex flex-wrap gap-2">
+          {replies.map((cmd) => (
+            <button
+              key={cmd}
+              type="button"
+              disabled={!!sent}
+              onClick={async () => {
+                setSent(cmd);
+                setError("");
+                try {
+                  await onQuickReply!(cmd);
+                } catch (e) {
+                  setSent("");
+                  setError(e instanceof Error ? e.message : "That didn't send.");
+                }
+              }}
+              className={`press min-h-10 rounded-full px-4 text-callout font-medium disabled:opacity-60 ${
+                cmd === "/cancel" || cmd === "/deny" || cmd === "/no" ? "border border-line-2 text-fg-2 hover:text-fg" : "bg-fg text-canvas"
+              }`}
+            >
+              {sent === cmd ? "Sending…" : QUICK_LABELS[cmd] || cmd}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-callout text-danger">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

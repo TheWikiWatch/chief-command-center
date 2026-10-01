@@ -206,7 +206,7 @@ export function FleetHealth({
         </Section>
       )}
 
-      <Section title="Runtime" hint="Native crashes, from the Windows event log">
+      <Section title="Runtime" hint="Crashes of Hermes and the app, from the Windows event log">
         <RuntimeCard health={data} />
       </Section>
 

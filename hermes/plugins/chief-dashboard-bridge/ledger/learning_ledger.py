@@ -638,8 +638,13 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
 # --------------------------------------------------------------------------- runtime
 
 
+# Only the app's own processes count: Python and Hermes (the gateway, bots, tools), Node (the dashboard)
+# and the app itself. Other programs' crashes on the PC are none of Fleet Health's business.
+RUNTIME_APPS = re.compile(r"^(pythonw?[\d.]*|hermes[\w-]*|node|chief command center|electron)\.exe$", re.I)
+
+
 def crashes(days: int = 7) -> list[dict]:
-    """Application Error events (native crashes) from the Windows event log."""
+    """Application Error events (native crashes) of the app's own processes, from the Windows event log."""
     query = f"*[System[Provider[@Name='Application Error'] and TimeCreated[timediff(@SystemTime) <= {days * 86400000}]]]"
     try:
         raw = subprocess.run(["wevtutil", "qe", "Application", f"/q:{query}", "/f:xml", "/c:500"], capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace").stdout
@@ -659,7 +664,7 @@ def crashes(days: int = 7) -> list[dict]:
             t = calendar.timegm(time.strptime(stamp[:19], "%Y-%m-%dT%H:%M:%S"))  # event times are UTC
         except ValueError:
             continue
-        if len(data) > 7:
+        if len(data) > 7 and RUNTIME_APPS.match(data[0].strip()):
             out.append({"at": t, "app": data[0], "module": data[3], "code": data[6]})
     return out
 

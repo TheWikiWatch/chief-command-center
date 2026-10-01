@@ -89,6 +89,10 @@ class Handler(BaseHTTPRequestHandler):
         if not self.path.rstrip("/").endswith("/chat/completions"):
             self.send_error(404)
             return
+        # FAKE_MODEL_DUMP=<file>: one JSON line per request's messages, to check what the agent sends.
+        if os.environ.get("FAKE_MODEL_DUMP"):
+            with open(os.environ["FAKE_MODEL_DUMP"], "a", encoding="utf-8") as dump:
+                dump.write(json.dumps(request.get("messages") or [], ensure_ascii=False) + "\n")
         messages = request.get("messages") or []
         stream = bool(request.get("stream"))
         opener, turn = _turn(messages)

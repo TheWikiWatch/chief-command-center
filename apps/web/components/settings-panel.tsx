@@ -316,26 +316,30 @@ function RoutineRow({ routine: r, busy, onChange }: { routine: Routine; busy: st
     if (time && time !== r.time) onChange({ time });
   };
   return (
-    <li className={`flex items-center gap-3 py-2.5 ${busy === r.id ? "opacity-60" : ""}`}>
-      <div className="min-w-0 flex-1">
-        <p className="text-callout text-fg">{r.title}</p>
-        <p className="text-caption text-fg-3">{r.about}</p>
+    <li className={`py-3 ${busy === r.id ? "opacity-60" : ""}`}>
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-callout text-fg">{r.title}</p>
+          <p className="mt-0.5 text-caption text-fg-3">{r.about}</p>
+        </div>
+        <Switch label={`${r.title} ${r.enabled ? "on" : "off"}`} checked={r.enabled} disabled={!!busy} onChange={(on) => onChange({ enabled: on })} />
       </div>
-      <label className="sr-only" htmlFor={`routine-${r.id}`}>
-        {r.title} time
-      </label>
-      <input
-        id={`routine-${r.id}`}
-        type="time"
-        value={time}
-        disabled={!!busy}
-        onChange={(e) => setTime(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => e.key === "Enter" && commit()}
-        className="min-h-9 w-[6.5rem] shrink-0 rounded-ctl border border-line-2 bg-canvas px-2 text-callout text-fg outline-none focus:border-line-3 disabled:opacity-60"
-      />
-      <span className="hidden w-16 shrink-0 text-caption text-fg-3 sm:block">{r.days}</span>
-      <Switch label={`${r.title} ${r.enabled ? "on" : "off"}`} checked={r.enabled} disabled={!!busy} onChange={(on) => onChange({ enabled: on })} />
+      <div className={`mt-2 flex items-center gap-2 ${r.enabled ? "" : "opacity-50"}`}>
+        <label className="sr-only" htmlFor={`routine-${r.id}`}>
+          {r.title} time
+        </label>
+        <input
+          id={`routine-${r.id}`}
+          type="time"
+          value={time}
+          disabled={!!busy}
+          onChange={(e) => setTime(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => e.key === "Enter" && commit()}
+          className="min-h-9 w-[8rem] rounded-ctl border border-line-2 bg-canvas px-2 text-callout text-fg outline-none focus:border-line-3 disabled:opacity-60"
+        />
+        <span className="text-caption text-fg-3">{r.days}</span>
+      </div>
     </li>
   );
 }

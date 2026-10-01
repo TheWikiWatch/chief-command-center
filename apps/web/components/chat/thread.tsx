@@ -142,6 +142,7 @@ export function Thread({
   activity,
   question,
   onAnswer,
+  onQuickReply,
 }: {
   messages: ChatMessage[];
   chief: Person | undefined;
@@ -163,6 +164,8 @@ export function Thread({
   /** The chief's open question (the turn waits for the answer), and how to answer it. */
   question?: PendingQuestion | null;
   onAnswer?: (id: string, answer: string | string[]) => Promise<void>;
+  /** Sends a gateway prompt's answer (e.g. "/approve") from the buttons on the newest notice. */
+  onQuickReply?: (text: string) => Promise<void>;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   // Pinned / idle rules live in lib/stick-to-bottom.ts.
@@ -174,6 +177,7 @@ export function Thread({
   // Sticky per message: once a message animates in, it keeps the same props so a re-render never cuts it short.
   const animated = useRef(new Set<number>());
   const rows = useMemo(() => buildRows(withNotices(messages, notices)), [messages, notices]);
+  const lastMsgRow = [...rows].reverse().find((r) => r.kind === "msg");
   // The oldest message id shown, and the scroll height before the last change (Load earlier anchoring).
   const oldest = useRef(0);
   const heightBefore = useRef(0);
@@ -292,7 +296,16 @@ export function Thread({
             {rows.map((row) => {
               if (row.kind === "day") return <DaySeparator key={row.key} label={row.label} />;
               if (row.kind === "tools") return <ToolRun key={row.key} items={row.items} animate={row.items.some((m) => animated.current.has(m.id))} />;
-              return <MessageRow key={row.key} row={row} chief={chief} animate={animated.current.has(row.m.id)} onCancelQueued={onCancelQueued} />;
+              return (
+                <MessageRow
+                  key={row.key}
+                  row={row}
+                  chief={chief}
+                  animate={animated.current.has(row.m.id)}
+                  onCancelQueued={onCancelQueued}
+                  onQuickReply={row.m.notice && row === lastMsgRow ? onQuickReply : undefined}
+                />
+              );
             })}
             <AnimatePresence>
               {question && onAnswer ? (
@@ -376,9 +389,10 @@ type RowProps = {
   chief: Person | undefined;
   animate: boolean;
   onCancelQueued?: (queueId: string) => void;
+  onQuickReply?: (text: string) => Promise<void>;
 };
 
-const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueued }: RowProps) {
+const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueued, onQuickReply }: RowProps) {
   const { m, first, last, mine } = row;
   const tone = chatTone(m);
   const text = stripMediaTags(m.content || "");
@@ -390,7 +404,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
       <motion.div {...motionProps} className="mt-5 flex gap-2.5">
         <div className="w-7 shrink-0" />
         <div className="min-w-0 flex-1">
-          {m.notice ? <NoticeBody notice={m.notice} /> : <AskedRow items={m.asked!} />}
+          {m.notice ? <NoticeBody notice={m.notice} onQuickReply={onQuickReply} /> : <AskedRow items={m.asked!} />}
           {time ? <span className="mt-1 block text-caption text-fg-3">{time}</span> : null}
         </div>
       </motion.div>
@@ -453,6 +467,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
 function sameRow(a: RowProps, b: RowProps) {
   return (
     a.onCancelQueued === b.onCancelQueued &&
+    a.onQuickReply === b.onQuickReply &&
     a.row.m === b.row.m &&
     a.row.first === b.row.first &&
     a.row.last === b.row.last &&

@@ -312,3 +312,23 @@
 - Evidence:
   - The Fleet Health contract passes 9/9 on the payload: jobs armed once, a first report, a skill edit recorded, and the copied script run the way the cron job runs it. It is in the compatibility suite.
   - Tests: web 289, desktop 28, Python 83 + 20, privacy clean.
+
+**End-to-end check on a throwaway gateway, and what it turned up.**
+
+- **Upgrade from the old template.** A home set up under template 1 was upgraded at bridge start:
+  - the new vault files and the Folder Map were added;
+  - the unedited old default SOUL was refreshed;
+  - the four routines and three Fleet jobs were armed;
+  - a first Fleet Health report was written.
+- **A fresh conversation's prompt**, captured at the scripted model, carries:
+  - the SOUL's "Your Second Brain" section;
+  - the auto-loaded `second-brain` skill (folder path, "Look here first", the critical facts, the write-gate rule).
+  The system prompt grew from about 14.5k to 24.1k characters, mostly cached after the first turn.
+- **Hermes's scheduler ran the ledger job** on its own (`status ok`), and a routine switched off in Settings paused its cron job.
+- **Found and fixed: command confirmations.** Hermes asks before commands like `/new`, with a text fallback ("reply `/approve`, `/always`, or `/cancel`"). The newest such notice now shows those answers as buttons.
+- **Found and fixed: stuck command bubbles.** A typed slash command is never a stored message, so it no longer leaves a "Sent" bubble waiting forever.
+- **Found and fixed: unrelated crashes.** Fleet Health's runtime section counts only the app's own processes (Python, Hermes, Node, the app), not every program that crashed on the PC.
+- **Polish:** the routine rows were restacked for the narrow Settings sheet.
+- **Evidence:**
+  - Compatibility suite 11/11 on the payload.
+  - Tests: web 291, desktop 28, Python 83 + 20, privacy clean.
