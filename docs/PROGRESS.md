@@ -487,3 +487,9 @@
 - **Settings → About shows the Hermes build** from the payload's install stamp ("2026.9.24 · upstream 41cd311 · 3 app patches"). The desktop app passes it, and the bridge reports it for development builds. A new row explains Hermes updates: Hermes is built into the app and never updates itself; a newer Hermes arrives as an app update after the compatibility suite passes, with a backup before its first start. About also finds an adopted install's own toolkit version.
 - **The floating update card** has its own surface and sits at the top right, clear of the message box. Before, its "installing" line was drawn as bare text over the composer.
 - Built 0.1.11 (signature verified, no password in the logs), installed it on the owner's PC by hand (0.1.10's own installer still had the flaw), checked About and Chief, then published it as the latest release.
+
+**One-command releases and working notes (2026-10-01).**
+
+- `npm run release -- --notes "…"` (`scripts/release.mjs`) does the whole release: checks, version bump, dashboard and signed MSIX builds, signature and password-in-log checks, signed manifest, commit and push, publish to the releases repository. `npm run release:plan` checks the setup without changing anything. Machine paths live in the git-ignored `release.local.json`.
+- It refuses a payload whose Hermes (its install stamp) differs from `hermes/pin.json`, since the manifest describes Hermes from the pin while the package carries the payload.
+- `CLAUDE.md` holds the rules, the release steps and the Hermes upgrade path for anyone (or any agent) working in the repo; this PC's specifics go in the git-ignored `CLAUDE.local.md`.

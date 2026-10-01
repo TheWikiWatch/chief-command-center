@@ -35,3 +35,7 @@ hermes/tests/.runtime/
 
 # UI capture galleries can contain real chats
 apps/web/scripts/captures/
+
+# this PC's release setup and Claude notes (paths, signing files, the live install)
+release.local.json
+CLAUDE.local.md

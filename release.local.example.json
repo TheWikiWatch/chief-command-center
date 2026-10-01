@@ -1,0 +1,11 @@
+{
+  "payloadDir": "D:\ChiefBuild\payload",
+  "releaseDir": "D:\ChiefBuild\release",
+  "releasesDir": "D:\ChiefBuild\releases",
+  "feedDir": "D:\ChiefBuild\release-feed",
+  "signtool": "C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe",
+  "pfx": "D:\ChiefBuild\signing\package-signing.pfx",
+  "pfxPasswordFile": "D:\ChiefBuild\signing\package-signing.password",
+  "releaseKey": "D:\ChiefBuild\signing\release-ed25519.pem",
+  "releasesRepo": "<owner>/chief-command-center-releases"
+}

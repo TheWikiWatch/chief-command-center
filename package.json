@@ -4,6 +4,8 @@
   "description": "One Windows app: the Hermes agent as the engine, the Chief dashboard as the interface.",
   "license": "MIT",
   "scripts": {
+    "release": "node scripts/release.mjs",
+    "release:plan": "node scripts/release.mjs --plan",
     "check": "npm --prefix apps/web run check && npm --prefix apps/desktop run check && npm run test:python && npm run privacy",
     "test:web": "npm --prefix apps/web test",
     "test:python": "python -B -m unittest discover -s hermes/tests && python -B -m unittest discover -s backup/tests",

@@ -17,20 +17,26 @@ package's signature. A key only lets someone download the releases.
 
 ## Maintainer: each release
 
-1. Bump `apps/desktop/package.json` (and the two lines in `package-lock.json`), build the standalone web and the signed MSIX (see PROGRESS for the command).
-2. Write the manifest and its signature:
+One command, from a clean, pushed `main` (paths for this PC in `release.local.json`, copied from
+`release.local.example.json`):
 
-   ```
-   node packaging/release/release-tool.mjs make --msix "<release>\Chief Command Center X.Y.Z.appx" --version X.Y.Z --key <release-ed25519.pem> --out <release folder> --notes <notes.txt>
-   ```
+```
+npm run release:plan                                   # checks the setup; changes nothing
+npm run release -- --notes "What changed, in a sentence or two"
+```
 
-3. Publish it to the releases repository (uses the `gh` login, marks it latest):
-
-   ```
-   node packaging/release/release-tool.mjs publish --dir <release folder> --repo <owner>/chief-command-center-releases
-   ```
+`scripts/release.mjs` runs every check, bumps the patch version (`--version X.Y.Z` to choose), builds the dashboard
+and the signed MSIX, verifies the signature, checks the password never reached the build log, writes the signed
+manifest (`release-tool.mjs make` + `verify`), commits and pushes the bump, and publishes it to the releases
+repository (`release-tool.mjs publish`, marked latest; uses the `gh` login). `--no-publish` stops before publishing.
+It refuses to ship a payload whose Hermes differs from `hermes/pin.json`.
 
 Testers' apps find it within a day (they check at launch and daily), or at once with **Check now**.
+
+**A newer Hermes ships the same way.** The daily `Upstream Hermes` workflow opens an "Upgrade Hermes to <tag>" PR
+(or a "Blocked Hermes upgrade" issue). Merge it, rebuild the payload locally (`prepare_source.py`, `stage.py`), run
+`packaging/upstream/compat.py` on it, point `payloadDir` at it, and release. The app backs up testers' data before
+the new Hermes first starts. Step by step: `CLAUDE.md`, "Hermes updates".
 
 ## Maintainer: a key for each tester
 
