@@ -16,7 +16,14 @@ import path from "node:path";
  */
 export type AppFeatures = { fleetHealth: boolean; today: boolean; vault: boolean };
 export type SecondBrainInfo = { source: "env" | "chief" | "none"; today: "vault" | "ops" | null };
-export type PublicAppConfig = { ownerName: string; vaultRoot: string; features: AppFeatures; secondBrain: SecondBrainInfo };
+export type PublicAppConfig = {
+  ownerName: string;
+  vaultRoot: string;
+  features: AppFeatures;
+  secondBrain: SecondBrainInfo;
+  /** The app's and the bundled Hermes's versions (Settings → About); empty when not set. */
+  versions: { app: string; hermes: string };
+};
 
 const env = (name: string) => (process.env[name] || "").trim();
 
@@ -59,5 +66,6 @@ export async function publicAppConfig(): Promise<PublicAppConfig> {
     vaultRoot: brain.path,
     features: { fleetHealth: !!ledgerConfig(), today: ops || !!brain.path, vault: !!(brain.path || ops) },
     secondBrain: { source: brain.source, today: ops ? "ops" : brain.path ? "vault" : null },
+    versions: { app: env("CHIEF_APP_VERSION"), hermes: env("CHIEF_HERMES_VERSION") },
   };
 }

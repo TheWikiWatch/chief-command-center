@@ -7,6 +7,7 @@ function openTarget(data) {
     tab: typeof open.tab === 'string' ? open.tab : 'chat',
     approval: typeof open.approval === 'string' ? open.approval : '',
     view: typeof open.view === 'string' ? open.view : '',
+    ...(typeof open.thread === 'string' && open.thread ? { thread: open.thread } : {}),
   };
 }
 
@@ -50,6 +51,7 @@ self.addEventListener('notificationclick', (event) => {
       url.searchParams.set('open', target.tab);
       if (target.approval) url.searchParams.set('approval', target.approval);
       if (target.view) url.searchParams.set('view', target.view);
+      if (target.thread) url.searchParams.set('thread', target.thread);
       return clients.openWindow ? clients.openWindow(url.href) : undefined;
     }
     // Bring the open app forward as it is and tell it where to go. Navigating it would reload the

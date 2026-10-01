@@ -34,7 +34,7 @@ beforeEach(() => localStorage.clear());
 afterEach(cleanup);
 
 it("switches each sound and haptic on or off, and the master disables the rows", async () => {
-  render(<SettingsPanel open phone onClose={() => {}} />);
+  render(<SettingsPanel open phone onClose={() => {}} category="notifications" />);
   const reply = screen.getByRole("switch", { name: "Chief replies sound" });
   expect(reply).toHaveAttribute("aria-checked", "true");
   fireEvent.click(reply);
@@ -48,24 +48,24 @@ it("switches each sound and haptic on or off, and the master disables the rows",
   expect(stored().sound.master).toBe(false);
   expect(screen.getByRole("switch", { name: "Approval needed sound" })).toBeDisabled();
   expect(screen.getByRole("switch", { name: "Approval needed vibration" })).not.toBeDisabled();
-  await waitFor(() => expect(screen.getByRole("radio", { name: /Edge/ })).toBeInTheDocument());
 });
 
 it("keeps text size adjustable and sets interface size, motion and ambience", async () => {
-  render(<SettingsPanel open phone onClose={() => {}} />);
+  render(<SettingsPanel open phone onClose={() => {}} category="general" />);
   fireEvent.click(screen.getByRole("radio", { name: "18" }));
   expect(localStorage.getItem(FONT_KEY)).toBe("18");
   fireEvent.click(screen.getByRole("radio", { name: "Large" }));
   fireEvent.click(screen.getByRole("radio", { name: "Reduced" }));
   fireEvent.click(screen.getByRole("radio", { name: "Low" }));
   expect(stored()).toMatchObject({ uiScale: "large", motion: "reduced", ambient: "low" });
+  cleanup();
+  render(<SettingsPanel open phone onClose={() => {}} category="notifications" />);
   fireEvent.click(screen.getByRole("switch", { name: "Fleet change toasts" }));
   expect(stored().fleetToasts).toBe(false);
-  await waitFor(() => expect(screen.getByRole("radio", { name: /Edge/ })).toBeInTheDocument());
 });
 
 it("still picks Chief's voice engine through Hermes", async () => {
-  render(<SettingsPanel open phone onClose={() => {}} />);
+  render(<SettingsPanel open phone onClose={() => {}} category="voice" />);
   const edge = await screen.findByRole("radio", { name: /Edge/ });
   expect(edge).toHaveAttribute("aria-checked", "true");
   fireEvent.click(screen.getByRole("radio", { name: /OpenAI/ }));
@@ -73,7 +73,7 @@ it("still picks Chief's voice engine through Hermes", async () => {
 });
 
 it("a provider's key box opens only when that provider is picked", async () => {
-  render(<SettingsPanel open phone onClose={() => {}} />);
+  render(<SettingsPanel open phone onClose={() => {}} category="voice" />);
   const eleven = await screen.findByRole("radio", { name: /ElevenLabs/ });
   expect(screen.queryByPlaceholderText("API key")).toBeNull();
   fireEvent.click(eleven);

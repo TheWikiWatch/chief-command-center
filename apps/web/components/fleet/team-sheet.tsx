@@ -3,23 +3,55 @@
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import { RoutinesTab } from "@/components/fleet/routines-tab";
 import { CircleAlertIcon, CircleCheckIcon, PlusIcon, UsersIcon } from "@/components/icons";
+import { Segmented } from "@/components/ui/controls";
 import { Sheet } from "@/components/ui/sheet";
 import { fleetApi, type Archive } from "@/lib/fleet-client";
 import { useAssistantName } from "@/lib/identity";
+import { OPEN_TEAM_EVENT, type TeamTab } from "@/lib/settings-nav";
+import type { Person } from "@/lib/types";
+
+const TAB_KEY = "chief-team-tab";
 
 /**
- * Fleet → Team: ask the chief for a new specialist (it interviews, drafts a SOUL and waits for your
- * sign-off before minting), and the retired bots, which can be restored or removed for good.
+ * Fleet → Team & Routines. Team: ask the chief for a new specialist (it interviews, drafts a SOUL and waits
+ * for your sign-off before minting), and the retired bots, which can be restored or removed for good.
+ * Routines: every scheduled routine, for the chief and every bot.
  */
-export function TeamButton({ phone, onAskChief }: { phone: boolean; onAskChief: (text: string) => Promise<void> }) {
+export function TeamButton({ phone, people = [], onAskChief }: { phone: boolean; people?: Person[]; onAskChief: (text: string) => Promise<void> }) {
   const [open, setOpen] = useState(false);
+  const [tab, setTab] = useState<TeamTab>("team");
   const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  useEffect(() => {
+    setMounted(true);
+    try {
+      if (localStorage.getItem(TAB_KEY) === "routines") setTab("routines");
+    } catch {
+      /* private mode */
+    }
+  }, []);
+  useEffect(() => {
+    const onOpen = (e: Event) => {
+      const next = (e as CustomEvent<{ tab?: TeamTab }>).detail?.tab;
+      if (next) changeTab(next);
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_TEAM_EVENT, onOpen);
+    return () => window.removeEventListener(OPEN_TEAM_EVENT, onOpen);
+  }, []);
+  function changeTab(next: TeamTab) {
+    setTab(next);
+    try {
+      localStorage.setItem(TAB_KEY, next);
+    } catch {
+      /* private mode */
+    }
+  }
   return (
     <>
       {phone ? (
-        <button type="button" aria-label="Team" title="Team" onClick={() => setOpen(true)} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg">
+        <button type="button" aria-label="Team & Routines" title="Team & Routines" onClick={() => setOpen(true)} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg">
           <UsersIcon size={19} />
         </button>
       ) : (
@@ -29,20 +61,43 @@ export function TeamButton({ phone, onAskChief }: { phone: boolean; onAskChief: 
           className="press flex min-h-11 items-center gap-2 rounded-full border border-line-2 bg-pane/90 px-4 text-callout font-medium text-fg shadow-e3 backdrop-blur hover:border-line-3"
         >
           <UsersIcon size={17} />
-          Team
+          Team &amp; Routines
         </button>
       )}
       {/* The button sits inside the Fleet pane's header layer; the sheet goes to the body so it covers the whole window. */}
       {!mounted
         ? null
         : createPortal(
-            <Sheet open={open} onClose={() => setOpen(false)} title="Team" subtitle="Your specialists, new and retired." side={phone ? "bottom" : "right"} tall>
-              <TeamBody
-                onAskChief={async (text) => {
-                  await onAskChief(text);
-                  setOpen(false);
-                }}
-              />
+            <Sheet
+              open={open}
+              onClose={() => setOpen(false)}
+              title="Team & Routines"
+              subtitle={tab === "team" ? "Your specialists, new and retired." : "Scheduled work, run by any bot."}
+              side={phone ? "bottom" : "right"}
+              tall
+              wide
+            >
+              <div className="px-4 pt-1">
+                <Segmented
+                  label="Team or routines"
+                  value={tab}
+                  options={[
+                    ["team", "Team"],
+                    ["routines", "Routines"],
+                  ]}
+                  onChange={changeTab}
+                />
+              </div>
+              {tab === "team" ? (
+                <TeamBody
+                  onAskChief={async (text) => {
+                    await onAskChief(text);
+                    setOpen(false);
+                  }}
+                />
+              ) : (
+                <RoutinesTab people={people} />
+              )}
             </Sheet>,
             document.body,
           )}

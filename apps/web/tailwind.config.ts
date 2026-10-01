@@ -18,6 +18,7 @@ const config: Config = {
         fg: { DEFAULT: rgb("fg"), 2: rgb("fg-2"), 3: rgb("fg-3"), 4: rgb("fg-4") },
         line: { DEFAULT: "var(--line-1)", 2: "var(--line-2)", 3: "var(--line-3)" },
         accent: { DEFAULT: rgb("accent"), solid: rgb("accent-solid"), text: rgb("accent-text") },
+        data: rgb("data"),
         ok: rgb("ok"),
         warn: rgb("warn"),
         danger: rgb("danger"),

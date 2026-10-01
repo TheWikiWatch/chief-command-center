@@ -94,6 +94,9 @@ export type ChatNotice = { id: string; at: number; text: string; source: "schedu
 /** What the running turn is doing: since when (epoch seconds), how many steps, and the current one. */
 export type TurnActivity = { since: number; steps: number; label: string };
 
+/** A thread's earlier conversation (before a fresh start). Times are epoch seconds. */
+export type PreviousConversation = { id: string; title: string; started: number; ended: number; messages: number };
+
 export type Transcript = {
   sessionKey: string;
   messages: ChatMessage[];
@@ -107,9 +110,12 @@ export type Transcript = {
   activity?: TurnActivity | null;
   notices?: ChatNotice[];
   noticeHead?: string;
+  /** The thread's earlier conversations (first load only). */
+  previous?: PreviousConversation[];
+  thread?: string;
   /** The bridge can hold `?wait=` requests until something changes. */
   longpoll?: boolean;
-  /** Load earlier (`?before=`): older rows are left, and the next `before` to ask for. */
+  /** Load earlier (`?before=`, and the first load): older rows are left. `cursor`: the next `before` to ask for. */
   more?: boolean;
   cursor?: number;
 };

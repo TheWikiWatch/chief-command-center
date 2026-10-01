@@ -42,7 +42,7 @@ afterEach(() => {
 
 it("lists the Second Brain's routines; each turns off and moves to another time", async () => {
   const posts = route();
-  render(<SettingsPanel open phone={false} onClose={() => {}} />);
+  render(<SettingsPanel open phone={false} onClose={() => {}} category="second-brain" />);
   const nightly = await screen.findByRole("switch", { name: "Nightly tidy on" });
   fireEvent.click(nightly);
   await waitFor(() => expect(screen.getByRole("switch", { name: "Nightly tidy off" })).toHaveAttribute("aria-checked", "false"));

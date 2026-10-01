@@ -1,6 +1,7 @@
 import type { ApprovalChoice, ExecApproval, Person, Snapshot, Transcript, Peek } from "@/lib/types";
 import { requestJson, RequestError } from "@/lib/request";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
+import { currentChatThread } from "@/lib/chat-thread";
 export { poll as subscribeBridge } from "@/lib/poll";
 
 const PREFIX = "/api/bridge";
@@ -8,6 +9,13 @@ const get = <T>(path: string, signal?: AbortSignal, timeout = 10_000) =>
   requestJson<T>(`${PREFIX}/${path}`, { cache: "no-store", signal }, timeout);
 const write = <T>(path: string, body: unknown, timeout = 10_000, method = "POST") =>
   requestJson<T>(`${PREFIX}/${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, timeout);
+
+// The chat's requests carry the thread it shows (lib/chat-thread.ts).
+const withThread = <T extends Record<string, unknown>>(body: T): T => {
+  const thread = currentChatThread();
+  return thread === "main" ? body : { ...body, thread };
+};
+const threadQuery = () => (currentChatThread() === "main" ? "" : `&thread=${encodeURIComponent(currentChatThread())}`);
 
 export type HealthResult = {
   ok: boolean;
@@ -91,6 +99,7 @@ export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: Tr
     q.set("notice", live.notice);
   }
   if (noticeSince) q.set("nsince", String(noticeSince));
+  if (currentChatThread() !== "main") q.set("thread", currentChatThread());
   const data = await get<Transcript>(`transcript?${q}`, signal, hold && live ? (live.wait + 15) * 1000 : 10_000);
   if (!Array.isArray(data.messages) || typeof data.lastId !== "number" || typeof data.sessionKey !== "string") throw new Error("Invalid transcript");
   return data;
@@ -98,25 +107,38 @@ export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: Tr
 
 /** Load earlier: the page of rows before `before` (oldest first), and whether older ones remain. */
 export async function fetchEarlier(before: number, signal?: AbortSignal): Promise<Transcript> {
-  const data = await get<Transcript>(`transcript?before=${before}`, signal, 15_000);
+  const data = await get<Transcript>(`transcript?before=${before}${threadQuery()}`, signal, 15_000);
   if (!Array.isArray(data.messages)) throw new Error("Invalid transcript");
+  return data;
+}
+/** One of the thread's earlier conversations (before a fresh start), read-only. */
+export async function fetchPreviousConversation(session: string): Promise<Transcript> {
+  const data = await get<Transcript>(`transcript?after=0&session=${encodeURIComponent(session)}${threadQuery()}`, undefined, 20_000);
+  if (!Array.isArray(data.messages)) throw new Error("That conversation couldn't be read.");
   return data;
 }
 export const fetchPeek = (id: string) => get<Peek>(`profile/${encodeURIComponent(id)}`);
 export async function fetchApprovals(signal?: AbortSignal): Promise<{ ok: boolean; approval: ExecApproval | null }> {
-  const data = await get<{ ok: boolean; approval: ExecApproval | null }>("approvals", signal);
+  const data = await get<{ ok: boolean; approval: ExecApproval | null }>(`approvals?x=1${threadQuery()}`, signal);
   if (!data.ok) throw new Error("Approvals unavailable");
   return data;
 }
 /** Answer the chief's open question: a choice's text, several choices (multi-select), or the owner's own words. */
 export const answerQuestion = (id: string, answer: string | string[]) =>
-  write<{ ok: boolean; error?: string; code?: string }>("clarify", { id, answer });
+  write<{ ok: boolean; error?: string; code?: string }>("clarify", withThread({ id, answer }));
+/** Rename a bot (the chief too): its title, and unless `updateSoul` is false, its SOUL's "You are …". */
+export const renameProfile = (profile: string, name: string, role: string, updateSoul = true) =>
+  write<{ ok: boolean; error?: string; title?: string; name?: string; role?: string; soul?: string }>(
+    "profile/rename",
+    { profile, name, role, update_soul: updateSoul },
+    20_000,
+  );
 export const resolveApproval = (requestId: string, choice: ApprovalChoice) =>
-  write<{ ok: boolean; resolved?: number; error?: string }>("approve", { request_id: requestId, choice });
+  write<{ ok: boolean; resolved?: number; error?: string }>("approve", withThread({ request_id: requestId, choice }));
 export type OutboundAttachment = { name: string; mime: string; data_url: string };
 /** `clientId` lets the bridge drop a retry of a send that already reached Chief before timing out. */
 export const sendToChief = (text: string, attachments: OutboundAttachment[] = [], clientId = "") =>
-  write<{ ok: boolean; error?: string; duplicate?: boolean }>("send", { text, attachments, client_id: clientId }, attachments.length ? 120_000 : 20_000);
+  write<{ ok: boolean; error?: string; duplicate?: boolean }>("send", withThread({ text, attachments, client_id: clientId }), attachments.length ? 120_000 : 20_000);
 
 export async function fetchVoiceConfig(): Promise<VoiceConfig> {
   try { return await get<VoiceConfig>("voice-config"); }
@@ -140,9 +162,9 @@ export async function patchSettings(body: {
   return data;
 }
 /** Stop what the chief is doing now (Hermes's own /stop for this chat). */
-export const stopTurn = () => write<{ ok: boolean; error?: string; generating?: boolean }>("stop", {}, 15_000);
+export const stopTurn = () => write<{ ok: boolean; error?: string; generating?: boolean }>("stop", withThread({}), 15_000);
 /** Queue a message for after the current turn (Hermes's /queue). */
-export const queueTurn = (text: string) => write<{ ok: boolean; error?: string }>("queue", { text }, 15_000);
+export const queueTurn = (text: string) => write<{ ok: boolean; error?: string }>("queue", withThread({ text }), 15_000);
 export const transcribeAudio = (dataUrl: string, mimeType: string) =>
   write<{ ok: boolean; transcript?: string; error?: string; code?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);
 export async function speakText(text: string, timeoutMs = 185_000) {

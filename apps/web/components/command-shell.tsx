@@ -6,7 +6,7 @@ import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelGroupHandle }
 
 import { FxRoot } from "@/components/fx-root";
 import { HeaderStatus, StatusSheet } from "@/components/connection-status";
-import { ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
+import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { useResourceHealth } from "@/components/resource-status";
 import { share } from "@/lib/share";
 import { ToastViewport } from "@/components/ui/toasts";
@@ -14,6 +14,12 @@ import { LookDrawer } from "@/components/look-drawer";
 import { ChiefChat, type ChatSend } from "@/components/chief-chat";
 import { PHONE_TABS, PhoneNav, type PhoneTab } from "@/components/phone-nav";
 import { SettingsPanel } from "@/components/settings-panel";
+import { OPEN_SETTINGS_EVENT, type SettingsCategory } from "@/lib/settings-nav";
+import { UsageStrip } from "@/components/usage/usage-strip";
+import { readStripPref, writeStripPref } from "@/lib/usage-client";
+import { ThreadSwitcher } from "@/components/chat/thread-switcher";
+import { setChatThread } from "@/lib/chat-thread";
+import { markSeen, readCurrentThread, writeCurrentThread } from "@/lib/threads-client";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
 import { VaultPane } from "@/components/vault-pane";
 import { useVaultOpenSignal } from "@/lib/vault-client";
@@ -108,7 +114,35 @@ export function CommandShell() {
   };
   const chatSender = useRef<ChatSend | null>(null);
   const registerSender = useCallback((send: ChatSend | null) => { chatSender.current = send; }, []);
+  // The chat's thread (separate conversations with the chief), remembered on this device. The chat remounts
+  // per thread; `fresh` bumps after a fresh start so the thread reloads.
+  const [thread, setThread] = useState("main");
+  const [fresh, setFresh] = useState(0);
+  const changeThread = useCallback((id: string) => {
+    setChatThread(id);
+    writeCurrentThread(id);
+    markSeen(id);
+    setThread(id);
+  }, []);
+  useEffect(() => changeThread(readCurrentThread()), [changeThread]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | null>(null);
+  useEffect(() => {
+    const open = (e: Event) => {
+      setSettingsCategory((e as CustomEvent<{ category?: SettingsCategory }>).detail?.category ?? null);
+      setSettingsOpen(true);
+    };
+    window.addEventListener(OPEN_SETTINGS_EVENT, open);
+    return () => window.removeEventListener(OPEN_SETTINGS_EVENT, open);
+  }, []);
+  // The usage strip under the galaxy: on or off per device.
+  const [usageStrip, setUsageStrip] = useState(false);
+  useEffect(() => setUsageStrip(readStripPref()), []);
+  const toggleUsageStrip = () =>
+    setUsageStrip((on) => {
+      writeStripPref(!on);
+      return !on;
+    });
   const [secondBrainOpen, setSecondBrainOpen] = useState(false);
   const [updateLater, setUpdateLater] = useState(false);
   const [statusOpen, setStatusOpen] = useState(false);
@@ -286,6 +320,7 @@ export function CommandShell() {
   const goTo = useRef<(target: OpenTarget) => void>(() => {});
   goTo.current = (target) => {
     changePhoneTab(target.tab as PhoneTab);
+    if (target.thread) changeThread(target.thread);
     if (target.view === "health") changeFleetView("health");
     if (target.approval) window.dispatchEvent(new CustomEvent(SHOW_APPROVAL_EVENT, { detail: target.approval }));
   };
@@ -333,12 +368,17 @@ export function CommandShell() {
   const specialists = people.filter((p) => !p.isChief);
   const workingCount = specialists.filter((p) => p.ring === "working").length;
   const openStatus = () => setStatusOpen(true);
-  const openSettings = () => setSettingsOpen(true);
+  const openSettings = () => {
+    setSettingsCategory(null);
+    setSettingsOpen(true);
+  };
   const headerStatus = (
     <HeaderStatus connected={connected} authFailed={authFailed} onOpenStatus={openStatus} onOpenSettings={openSettings} />
   );
   const chat = (
     <ChiefChat
+      key={`${thread}:${fresh}`}
+      threadSwitcher={<ThreadSwitcher current={thread} onChange={changeThread} onFresh={() => setFresh((n) => n + 1)} phone={phone} />}
       chief={chief}
       people={people}
       lookAtEl={lookEl}
@@ -368,19 +408,33 @@ export function CommandShell() {
     <VaultPane phone={phone} surface={surface} onSurface={changeSurface} trailing={phone ? headerStatus : null} onSetUpSecondBrain={() => setSecondBrainOpen(true)} />
   );
   const viewSwitch = fleetHealthOn ? <FleetViewSwitch view={fleetView} onChange={changeFleetView} flags={fleetView === "health" ? 0 : fleetFlags} /> : null;
+  const usageToggle = (
+    <button
+      type="button"
+      onClick={toggleUsageStrip}
+      aria-pressed={usageStrip}
+      aria-label={usageStrip ? "Hide usage" : "Show usage"}
+      title={usageStrip ? "Hide usage" : "Show usage"}
+      className={`press grid size-11 shrink-0 place-items-center rounded-full ${
+        phone ? "" : "border border-line-2 bg-pane/90 shadow-e3 backdrop-blur hover:border-line-3"
+      } ${usageStrip ? "text-fg" : "text-fg-3 hover:text-fg"}`}
+    >
+      <ChartColumnIcon size={phone ? 19 : 17} />
+    </button>
+  );
   const fleet = (
     <>
       {phone ? (
         <header className="relative z-20 flex shrink-0 items-center gap-3 border-b border-line px-4 py-2">
-          <div className="min-w-0 flex-1">
-            <h1 className="text-headline text-fg">Fleet</h1>
-            <p className="truncate text-caption text-fg-3">
-              {specialists.length} {specialists.length === 1 ? "specialist" : "specialists"}
-              {workingCount ? <span className="text-accent-text"> · {workingCount} working</span> : null}
-            </p>
-          </div>
+          {/* The tab bar already says Fleet; the header keeps its controls on one line at phone width. */}
+          <h1 className="sr-only">
+            Fleet: {specialists.length} {specialists.length === 1 ? "specialist" : "specialists"}
+            {workingCount ? `, ${workingCount} working` : ""}
+          </h1>
           {viewSwitch}
-          <TeamButton phone onAskChief={sendFromToday} />
+          <div className="flex-1" />
+          {fleetView === "health" ? null : usageToggle}
+          <TeamButton phone people={people} onAskChief={sendFromToday} />
           {headerStatus}
         </header>
       ) : (
@@ -390,7 +444,8 @@ export function CommandShell() {
           </div>
           <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
             {viewSwitch}
-            <TeamButton phone={false} onAskChief={sendFromToday} />
+            {fleetView === "health" ? null : usageToggle}
+            <TeamButton phone={false} people={people} onAskChief={sendFromToday} />
           </div>
         </>
       )}
@@ -410,6 +465,19 @@ export function CommandShell() {
           connected={connected}
           phone={phone}
         />
+        <AnimatePresence>
+          {usageStrip ? (
+            <div key="usage" className="absolute inset-x-3 bottom-3 z-20">
+              <UsageStrip
+                people={people}
+                onOpen={() => {
+                  setSettingsCategory("usage");
+                  setSettingsOpen(true);
+                }}
+              />
+            </div>
+          ) : null}
+        </AnimatePresence>
         {looking ? (
           <LookDrawer
             key={looking.id}
@@ -429,7 +497,14 @@ export function CommandShell() {
   const sheets = (
     <>
       {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} onAskChief={sendFromToday} /> : null}
-      <SettingsPanel open={settingsOpen} phone={phone} onClose={() => setSettingsOpen(false)} onAskChief={sendFromToday} />
+      <SettingsPanel
+        open={settingsOpen}
+        phone={phone}
+        onClose={() => setSettingsOpen(false)}
+        onAskChief={sendFromToday}
+        chief={chief}
+        category={settingsCategory}
+      />
       <SecondBrainSheet open={secondBrainOpen} phone={phone} onClose={() => setSecondBrainOpen(false)} onAskChief={sendFromToday} />
       {updateLater || onboarding.needed ? null : (
         <div className="fixed bottom-4 right-4 z-50 w-[min(24rem,calc(100vw-2rem))]">

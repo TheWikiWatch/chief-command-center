@@ -23,6 +23,8 @@
   --c-accent: 229 72 77;
   --c-accent-solid: 206 44 49;
   --c-accent-text: 255 149 146;
+  /* Charts: one data hue (blue, validated >= 3:1 on the raised surface); never the accent or a status colour. */
+  --c-data: 57 135 229;
   --c-ok: 61 214 140;
   --c-warn: 255 197 61;
   --c-danger: 255 99 105;

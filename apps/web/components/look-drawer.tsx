@@ -5,9 +5,11 @@ import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 
 import { BotFace, faceProps } from "@/components/bot-face";
-import { UserMinusIcon } from "@/components/icons";
+import { PencilIcon, UserMinusIcon } from "@/components/icons";
 import { PersonaEditor } from "@/components/persona/persona-editor";
 import { ModelPicker } from "@/components/fleet/model-picker";
+import { NameEditor } from "@/components/persona/name-editor";
+import { setAssistantTitle } from "@/lib/identity";
 import { fleetApi } from "@/lib/fleet-client";
 import { showToast } from "@/lib/toast-store";
 import { ChiefPresence } from "@/components/presence";
@@ -61,6 +63,10 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
   const [peek, setPeek] = useState<Peek | null>(null);
   const [editing, setEditing] = useState(false);
   const [reload, setReload] = useState(0);
+  // The name and role as just saved (the roster catches up on its next snapshot).
+  const [shown, setShown] = useState({ name, role });
+  useEffect(() => setShown({ name, role }), [name, role]);
+  const [renaming, setRenaming] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -99,8 +105,43 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
         <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1, transition: SPRING.bouncy }} className={`my-3 ${retired ? "opacity-50 grayscale" : ""}`}>
           {person.isChief ? <ChiefPresence chief={person} size={84} mood={person.ring === "working" ? "working" : "online"} /> : <BotFace {...faceProps(person)} size={88} />}
         </motion.div>
-        <h2 className="text-display text-fg">{name}</h2>
-        {role ? <p className="mt-1 text-body text-fg-3">{role}</p> : null}
+        {renaming ? (
+          <NameEditor
+            profile={person.isChief ? "chief" : person.id}
+            name={shown.name}
+            role={shown.role}
+            onCancel={() => setRenaming(false)}
+            onSaved={(res) => {
+              setShown({ name: res.name, role: res.role });
+              setRenaming(false);
+              if (person.isChief) setAssistantTitle(res.title);
+              showToast({
+                title: `Now called ${res.name}`,
+                body: res.soul.startsWith("kept") ? "The SOUL opens differently, so it was left as it is." : res.soul === "updated" ? "The SOUL uses the new name too." : undefined,
+                tone: "ok",
+                icon: "check",
+              });
+            }}
+          />
+        ) : (
+          <>
+            <div className="group flex items-center gap-1.5">
+              <h2 className="text-display text-fg">{shown.name}</h2>
+              {!retired ? (
+                <button
+                  type="button"
+                  aria-label={`Rename ${shown.name}`}
+                  title="Rename"
+                  onClick={() => setRenaming(true)}
+                  className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg"
+                >
+                  <PencilIcon size={16} />
+                </button>
+              ) : null}
+            </div>
+            {shown.role ? <p className="mt-1 text-body text-fg-3">{shown.role}</p> : null}
+          </>
+        )}
         <div className="mt-3">
           <StatusPill person={person} />
         </div>

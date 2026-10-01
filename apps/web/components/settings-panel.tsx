@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import {
@@ -18,10 +18,17 @@ import {
   BookOpenIcon,
   HardDriveDownloadIcon,
   KeyRoundIcon,
+  ChartColumnIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  InfoIcon,
+  PencilIcon,
+  XIcon,
 } from "@/components/icons";
 import { BackupPanel } from "@/components/backup/backup-panel";
 import { UpdatesPanel, useUpdates } from "@/components/updates/update-card";
 import { Sheet } from "@/components/ui/sheet";
+import { Segmented, Switch } from "@/components/ui/controls";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
 import { FONT_STEPS, notifyVoiceConfig, useDashboardPrefs } from "@/lib/dashboard-prefs";
 import { canVibrate, PREVIEW_VARIANT, previewHaptic, previewSound } from "@/lib/fx";
@@ -35,11 +42,17 @@ import {
   type MotionPref,
   type UiScale,
 } from "@/lib/fx-prefs";
-import { SPRING } from "@/lib/motion";
+import { EASE, SPRING } from "@/lib/motion";
 import { toggleFullscreen, useFullscreen } from "@/lib/use-fullscreen";
 import { stopSpeech } from "@/lib/voice-client";
 import { enableWebPush, pushCapability, pushStatus, type PushStatus } from "@/lib/web-push";
-import { useAssistantName, ownerName } from "@/lib/identity";
+import { useAssistantName, ownerName, setAssistantTitle } from "@/lib/identity";
+import { NameEditor } from "@/components/persona/name-editor";
+import { UsagePage } from "@/components/usage/usage-page";
+import { fetchAbout, type AboutInfo } from "@/lib/about-client";
+import { splitTitle } from "@/lib/names";
+import type { Person } from "@/lib/types";
+import { openTeam, type SettingsCategory } from "@/lib/settings-nav";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { PersonaEditor } from "@/components/persona/persona-editor";
 import { ModelsKeys } from "@/components/fleet/models-keys";
@@ -56,46 +69,293 @@ type ApplyBody = {
 };
 
 /** App and Hermes voice settings in a sheet (bottom on the phone, side panel on desktop). */
+const CATEGORIES: { id: SettingsCategory; label: string; blurb: string; Icon: (p: { className?: string }) => ReactNode }[] = [
+  { id: "general", label: "General", blurb: "Names, identity and how this app looks.", Icon: ({ className }) => <SlidersHorizontalIcon className={className} /> },
+  { id: "models", label: "Models & keys", blurb: "The model the chief thinks with, and the providers your bots can use.", Icon: ({ className }) => <KeyRoundIcon className={className} /> },
+  { id: "voice", label: "Voice", blurb: "How the chief speaks and listens.", Icon: ({ className }) => <AudioLinesIcon className={className} /> },
+  { id: "second-brain", label: "Second Brain", blurb: "Your notes folder and its routines.", Icon: ({ className }) => <BookOpenIcon className={className} /> },
+  { id: "notifications", label: "Notifications", blurb: "Alerts, sounds and vibration on this device.", Icon: ({ className }) => <BellIcon className={className} /> },
+  { id: "usage", label: "Usage", blurb: "Tokens and cost for the chief and every bot, and your budget.", Icon: ({ className }) => <ChartColumnIcon className={className} /> },
+  { id: "backup", label: "Backup & updates", blurb: "Copies of your setup, and new versions of the app.", Icon: ({ className }) => <HardDriveDownloadIcon className={className} /> },
+  { id: "about", label: "About", blurb: "Versions, licences and credits.", Icon: ({ className }) => <InfoIcon className={className} /> },
+];
+const CATEGORY_KEY = "chief-settings-category";
+
+function rememberedCategory(): SettingsCategory {
+  try {
+    const saved = localStorage.getItem(CATEGORY_KEY) as SettingsCategory | null;
+    return saved && CATEGORIES.some((c) => c.id === saved) ? saved : "general";
+  } catch {
+    return "general";
+  }
+}
+
+/**
+ * Settings: one window with a list of categories. Desktop: a centred window, categories down the left and
+ * the page beside them. Phone: the category list, then the page, with a back button. The category last
+ * opened on this device is remembered.
+ */
 export function SettingsPanel({
   open,
   phone,
   onClose,
   onAskChief,
+  chief,
+  category,
 }: {
   open: boolean;
   phone: boolean;
   onClose: () => void;
   onAskChief?: (text: string) => Promise<void>;
+  /** The chief's roster entry (its name and role, for General). */
+  chief?: Person;
+  /** Open at this category (otherwise the last one used on this device). */
+  category?: SettingsCategory | null;
 }) {
   return (
-    <Sheet
-      open={open}
-      onClose={onClose}
-      title="Settings"
-      subtitle="Voice lives in Hermes. The rest is this device."
-      side={phone ? "bottom" : "right"}
-      tall
-    >
-      <SettingsBody phone={phone} onAskChief={onAskChief} />
+    <Sheet open={open} onClose={onClose} side={phone ? "bottom" : "center"} tall bare labelledBy="settings-title">
+      <SettingsWindow phone={phone} onClose={onClose} onAskChief={onAskChief} chief={chief} initial={category ?? null} />
     </Sheet>
   );
 }
 
-function SettingsBody({ phone, onAskChief }: { phone: boolean; onAskChief?: (text: string) => Promise<void> }) {
+function SettingsWindow({
+  phone,
+  onClose,
+  onAskChief,
+  chief,
+  initial,
+}: {
+  phone: boolean;
+  onClose: () => void;
+  onAskChief?: (text: string) => Promise<void>;
+  chief?: Person;
+  initial: SettingsCategory | null;
+}) {
+  // Phone starts at the list unless a category was asked for; desktop always shows a page.
+  const [current, setCurrent] = useState<SettingsCategory | null>(() => initial ?? (phone ? null : rememberedCategory()));
+  const choose = (id: SettingsCategory | null) => {
+    setCurrent(id);
+    if (!id) return;
+    try {
+      localStorage.setItem(CATEGORY_KEY, id);
+    } catch {
+      /* private mode */
+    }
+  };
+  const meta = CATEGORIES.find((c) => c.id === current);
+  const page = current ? <CategoryPage id={current} phone={phone} onAskChief={onAskChief} chief={chief} /> : null;
+
+  if (phone) {
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-center gap-2 px-3 pb-2">
+          {meta ? (
+            <button type="button" onClick={() => choose(null)} className="press flex min-h-11 items-center gap-1 rounded-full pl-1 pr-3 text-callout text-fg-2 hover:text-fg" aria-label="Back to Settings">
+              <ChevronLeftIcon size={18} />
+              Settings
+            </button>
+          ) : null}
+          <h2 id="settings-title" className={`min-w-0 flex-1 truncate text-title text-fg ${meta ? "sr-only" : "pl-2"}`}>
+            {meta ? meta.label : "Settings"}
+          </h2>
+          <button type="button" onClick={onClose} aria-label="Close settings" className="press grid size-11 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg">
+            <XIcon size={18} />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <AnimatePresence mode="popLayout" initial={false}>
+            {meta ? (
+              <motion.div key={meta.id} initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1, transition: { duration: 0.22, ease: EASE.enter } }} exit={{ x: 40, opacity: 0, transition: { duration: 0.14 } }} className="px-4 pb-10">
+                <h3 className="text-display text-fg">{meta.label}</h3>
+                <p className="mb-5 mt-1 text-callout text-fg-3">{meta.blurb}</p>
+                {page}
+              </motion.div>
+            ) : (
+              <motion.ul key="list" initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1, transition: { duration: 0.2, ease: EASE.enter } }} exit={{ x: -30, opacity: 0, transition: { duration: 0.12 } }} className="mx-4 divide-y divide-[color:var(--line-1)] overflow-hidden rounded-card border border-line bg-card">
+                {CATEGORIES.map(({ id, label, blurb, Icon }) => (
+                  <li key={id}>
+                    <button type="button" onClick={() => choose(id)} className="press flex min-h-14 w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-white/[0.03]">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/[0.06] text-fg-2">
+                        <Icon className="size-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-body text-fg">{label}</span>
+                        <span className="block truncate text-caption text-fg-3">{blurb}</span>
+                      </span>
+                      <ChevronRightIcon size={16} className="shrink-0 text-fg-3" />
+                    </button>
+                  </li>
+                ))}
+              </motion.ul>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6 px-4 pb-10 pt-1">
-      <ConnectionGroup />
-      <ModelsKeysGroup />
-      <SecondBrainGroup onAskChief={onAskChief} />
-      <BackupGroup />
-      <UpdatesGroup />
-      <IdentityGroup />
-      <VoiceGroup />
-      <AppGroup phone={phone} />
-      <SoundGroup />
-      <HapticsGroup />
-      <NotificationsGroup />
+    <div className="flex min-h-0 flex-1">
+      <nav aria-label="Settings" className="flex w-[240px] shrink-0 flex-col border-r border-line bg-pane/60 p-3">
+        <h2 id="settings-title" className="px-2 pb-3 pt-1 text-title text-fg">
+          Settings
+        </h2>
+        <ul className="space-y-0.5">
+          {CATEGORIES.map(({ id, label, Icon }) => {
+            const on = current === id;
+            return (
+              <li key={id}>
+                <button
+                  type="button"
+                  aria-current={on ? "page" : undefined}
+                  onClick={() => choose(id)}
+                  className={`press relative flex min-h-10 w-full items-center gap-3 rounded-[10px] px-2.5 text-left text-callout transition-colors ${on ? "text-fg" : "text-fg-2 hover:bg-white/[0.04] hover:text-fg"}`}
+                >
+                  {on ? <motion.span layoutId="settings-nav" className="absolute inset-0 rounded-[10px] bg-white/[0.08]" transition={SPRING.snappy} /> : null}
+                  <Icon className={`relative size-4 ${on ? "text-fg" : "text-fg-3"}`} />
+                  <span className="relative">{label}</span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      </nav>
+      <section aria-labelledby="settings-page-title" className="flex min-w-0 flex-1 flex-col">
+        <header className="flex shrink-0 items-start gap-3 border-b border-line px-7 pb-4 pt-5">
+          <div className="min-w-0 flex-1">
+            <h3 id="settings-page-title" className="text-display text-fg">
+              {meta?.label}
+            </h3>
+            <p className="mt-1 text-callout text-fg-3">{meta?.blurb}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close settings" className="press -mr-2 grid size-10 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg">
+            <XIcon size={18} />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-12 pt-6">
+          <div key={current} className="mx-auto max-w-[680px]">
+            {page}
+          </div>
+        </div>
+      </section>
     </div>
+  );
+}
+
+function CategoryPage({
+  id,
+  phone,
+  onAskChief,
+  chief,
+}: {
+  id: SettingsCategory;
+  phone: boolean;
+  onAskChief?: (text: string) => Promise<void>;
+  chief?: Person;
+}) {
+  return (
+    <div className="space-y-7">
+      {id === "general" ? (
+        <>
+          <ChiefNameGroup chief={chief} />
+          <IdentityGroup />
+          <AppGroup phone={phone} />
+        </>
+      ) : id === "models" ? (
+        <>
+          <ConnectionGroup />
+          <ModelsKeysGroup />
+        </>
+      ) : id === "voice" ? (
+        <VoiceGroup />
+      ) : id === "second-brain" ? (
+        <SecondBrainGroup onAskChief={onAskChief} />
+      ) : id === "notifications" ? (
+        <>
+          <NotificationsGroup />
+          <SoundGroup />
+          <HapticsGroup />
+        </>
+      ) : id === "usage" ? (
+        <UsagePage />
+      ) : id === "backup" ? (
+        <>
+          <BackupGroup />
+          <UpdatesGroup />
+        </>
+      ) : (
+        <AboutGroup />
+      )}
+    </div>
+  );
+}
+
+/** General: the chief's name and role (any other bot is renamed from its Look drawer). */
+function ChiefNameGroup({ chief }: { chief?: Person }) {
+  const assistant = useAssistantName();
+  const parts = splitTitle(chief?.name);
+  const [shown, setShown] = useState({ name: parts.name || assistant, role: parts.role || "" });
+  useEffect(() => setShown({ name: splitTitle(chief?.name).name || assistant, role: splitTitle(chief?.name).role || "" }), [chief?.name, assistant]);
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState("");
+  return (
+    <Group
+      icon={<PencilIcon className="size-4" />}
+      title="Name"
+      hint="What the chief is called everywhere. Rename any other bot from its card in Fleet."
+      action={
+        editing ? null : (
+          <button type="button" onClick={() => setEditing(true)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+            Rename
+          </button>
+        )
+      }
+    >
+      {editing ? (
+        <div className="px-3.5 py-3">
+          <NameEditor
+            profile="chief"
+            name={shown.name}
+            role={shown.role}
+            onCancel={() => setEditing(false)}
+            onSaved={(res) => {
+              setShown({ name: res.name, role: res.role });
+              setAssistantTitle(res.title);
+              setEditing(false);
+              setNote(res.soul === "updated" ? "Saved. The SOUL uses the new name too." : res.soul.startsWith("kept") ? "Saved. The SOUL opens differently, so it was left as it is." : "Saved.");
+            }}
+          />
+        </div>
+      ) : (
+        <Row label={shown.name} hint={note || shown.role || "No role set"} />
+      )}
+    </Group>
+  );
+}
+
+/** About: what this is built from, and whose work it carries. */
+function AboutGroup() {
+  const [about, setAbout] = useState<AboutInfo | null>(null);
+  useEffect(() => {
+    void fetchAbout()
+      .then(setAbout)
+      .catch(() => setAbout(null));
+  }, []);
+  return (
+    <>
+      <Group icon={<InfoIcon className="size-4" />} title="Chief Command Center">
+        <Row label="Version" hint={about?.app || "…"} />
+        <Row label="Hermes Agent" hint={about?.hermes ? `${about.hermes}, by Nous Research (MIT)` : "…"} />
+        <Row label="Licence" hint="MIT. Your data stays on this computer unless you send it somewhere." />
+      </Group>
+      <Group icon={<BookOpenIcon className="size-4" />} title="Bundled with credit">
+        <Row
+          label={about?.toolkit ? `obsidian-second-brain ${about.toolkit.version}` : "obsidian-second-brain"}
+          hint={`The Second Brain skills and routines, by Eugeniu Ghelbur (MIT). ${about?.toolkit?.source || "github.com/eugeniughelbur/obsidian-second-brain"}`}
+        />
+      </Group>
+    </>
   );
 }
 
@@ -384,6 +644,10 @@ function RoutineRows() {
           <RoutineRow key={r.id} routine={r} busy={busy} onChange={(next) => void change(r.id, next)} />
         ))}
       </ul>
+      <button type="button" onClick={() => openTeam("routines")} className="press mt-1 flex min-h-10 items-center gap-1 text-callout font-medium text-accent-text hover:underline">
+        All routines, for every bot
+        <ChevronRightIcon size={14} />
+      </button>
     </div>
   );
 }
@@ -1117,80 +1381,6 @@ function SwitchRow({
 }
 
 /** A real switch: 44px track, spring thumb, accent when on. */
-export function Switch({
-  label,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      aria-label={label}
-      disabled={disabled}
-      onClick={() => onChange(!checked)}
-      className={`relative flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors duration-base disabled:cursor-not-allowed ${
-        checked ? "justify-end bg-accent-solid" : "justify-start bg-white/[0.14]"
-      }`}
-    >
-      <motion.span
-        layout
-        transition={SPRING.snappy}
-        className="block size-6 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.4)]"
-      />
-    </button>
-  );
-}
-
-function Segmented<T extends string>({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: T;
-  options: [T, string][];
-  onChange: (next: T) => void;
-}) {
-  const id = useId();
-  return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-full bg-well p-1">
-      {options.map(([key, text]) => {
-        const active = key === value;
-        return (
-          <button
-            key={key}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            onClick={() => onChange(key)}
-            className={`relative min-h-9 flex-1 rounded-full px-2 text-callout font-medium transition-colors duration-fast ${
-              active ? "text-fg" : "text-fg-3 hover:text-fg-2"
-            }`}
-          >
-            {active ? (
-              <motion.span
-                layoutId={`seg-${id}`}
-                transition={SPRING.snappy}
-                className="absolute inset-0 rounded-full bg-raised shadow-[0_1px_2px_rgb(0_0_0/0.35),inset_0_0_0_1px_var(--line-2)]"
-              />
-            ) : null}
-            <span className="relative">{text}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
@@ -1302,3 +1492,5 @@ function Select({
     </select>
   );
 }
+
+export { Switch };

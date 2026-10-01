@@ -333,3 +333,41 @@
   - Compatibility suite 11/11 on the payload.
   - Tests: web 291, desktop 28, Python 83 + 20, privacy clean.
 - Built `Chief Command Center 0.1.3.appx` (about 896 MB). The signature verifies, and the build log holds no password. The package was checked for the toolkit (`resources/vendor`), the ledger, the write gate, the distill skill, the command buttons and the crash filter. It installs over 0.1.1 or 0.1.2 with data kept; the bridge upgrades the Second Brain and arms the jobs at first start.
+
+## 2026-10-01
+
+**Threads with Chief, Team & Routines, a calmer Settings, names, and usage (plan `PLAN-2026-10-01-threads-routines-settings-usage.md`).**
+
+- **Threads.** The chat header has a thread switcher. Each thread is a second chat id on the Command Center platform (`owner.t-<hex>`), so Hermes gives it its own session; memory, skills and the Second Brain are shared.
+  - The menu shows each thread's state (working, a question waiting, unread) and offers New thread, Rename, Fresh start and Archive.
+  - Sending, stop, steer, queue, questions and approvals all carry the thread. Replies push to the phone with the thread, and tapping the alert opens it.
+- **Fresh start, history kept.** A fresh start sends Hermes's `/new` in that thread and answers its confirmation for the owner (the app asks first). The earlier conversation is listed under "Earlier in this thread" and opens read-only. It is refused while the thread is working.
+- **Team & Routines.** The Team button became Team & Routines, with a Routines tab (bridge contract `chief.routines.v1`):
+  - every routine for the chief and every bot, the app's own listed apart;
+  - New routine: what it does, when (daily, weekdays, weekly with days, every N hours, or custom), who runs it, which thread it reports to;
+  - edit, switch off, run now, delete (confirmed). The app's own routines can be retimed, moved or switched off, but not rewritten or deleted;
+  - the last run's result, why it failed, and the latest report.
+  Settings → Second Brain links to it.
+- **Found and fixed: a bot's routine never ran.** Hermes blocks a job whose delivery platform its own profile doesn't serve, and bots don't serve the Command Center. A bot's routine is now saved as `local`. The bridge relays each new run's answer into the chosen thread, labelled with the bot ("Routine: Sam check-in (Sam)"); silent runs are skipped.
+- **Settings** is one centred window. On desktop it has a category sidebar (General, Models & keys, Voice, Second Brain, Notifications, Usage, Backup & updates, About). On the phone it is a category list that drills into each page. It remembers the last category.
+- **Names.** Chief and every bot can be renamed (name and role) from the pencil on the Look drawer, and Chief also from Settings → General. The SOUL's opening "You are …" follows unless unticked; the earlier SOUL stays in history.
+- **Usage** (bridge contract `chief.usage.v1`):
+  - a strip under the galaxy, switched on from the Fleet header: today, the month against the budget, and the top spenders;
+  - Settings → Usage: period, spend, tokens, cache share, spend per day (with a table for screen readers), and breakdowns by bot and by model;
+  - a monthly budget. The strip turns amber at 80 %, and one phone notification is sent per month at 100 %. Nothing is stopped. Sessions without a known price are counted as unpriced, not as free.
+- **Polish found in the browser:**
+  - bot faces in the galaxy no longer draw over Settings (the galaxy is its own stacking context);
+  - the phone Fleet header keeps its controls on one line;
+  - "Load earlier" no longer shows in a conversation with nothing earlier;
+  - built-in routine names are capitalized and grouped ("Fleet Health", "Second Brain");
+  - times are 24-hour, like the schedules.
+- **Evidence:**
+  - Chat-controls contract on the payload, all passing. It covers two threads working at once with separate transcripts; a question belonging to its thread; a fresh start with the earlier conversation readable; rename, archive and refusals; a bot's routine reporting into the main thread; and the chief's routine reporting into its thread only.
+  - Routines contract on the payload, 24 checks passing, added to the compatibility suite.
+  - Browser, on the throwaway gateway (7795):
+    - created "Sam check-in" for Sam and ran it; its report arrived in the chat as a scheduled job;
+    - a new thread answered separately and kept its title;
+    - renamed Sam to Ada, with the profile title and the SOUL updated;
+    - Settings window, Usage page and strip checked at desktop and phone sizes.
+  - Compatibility suite 12/12 on the payload.
+  - Tests: web 316, desktop 28, Python 88 + 20, privacy clean.

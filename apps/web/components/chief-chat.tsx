@@ -1,7 +1,7 @@
 "use client";
 
 import { useAttentiveGaze } from "@/lib/use-attentive-gaze";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
 import "blobatar/gaze.css";
 
 import { poll } from "@/lib/poll";
@@ -14,6 +14,7 @@ import { VoiceMode } from "@/components/chat/voice-mode";
 import { FollowupCards, followupAsk, useFollowupWatch } from "@/components/chat/followup-cards";
 import { Composer, type PendingFile } from "@/components/chat/composer";
 import { Thread } from "@/components/chat/thread";
+import { PreviousConversations } from "@/components/chat/previous-conversations";
 import { CheckIcon, PaperclipIcon, XIcon } from "@/components/icons";
 import { type MicStatus } from "@/components/mic-button";
 import { meterStream } from "@/lib/audio-level";
@@ -38,7 +39,7 @@ import {
   subscribeSpeaking,
   toggleSpeechPause,
 } from "@/lib/voice-client";
-import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, Transcript, TurnActivity } from "@/lib/types";
+import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, PreviousConversation, Transcript, TurnActivity } from "@/lib/types";
 import { admitFiles } from "@/lib/upload-limits";
 import { shrinkImage } from "@/lib/image-shrink";
 import { retryable, type QueuedSend } from "@/lib/outbox";
@@ -69,6 +70,7 @@ export function ChiefChat({
   onApprovalResolved,
   onApprovalUpdate,
   onOpenSettings,
+  threadSwitcher,
   onOpenStatus,
 }: {
   chief: Person | undefined;
@@ -85,6 +87,8 @@ export function ChiefChat({
   /** The pending approval as the bridge reported it with the transcript (so the shell needn't poll it). */
   onApprovalUpdate?: (approval: ExecApproval | null) => void;
   onOpenSettings?: () => void;
+  /** The thread switcher shown in the chat header (threads: separate conversations with the chief). */
+  threadSwitcher?: ReactNode;
   onOpenStatus?: () => void;
 }) {
   const assistant = useAssistantName();
@@ -144,6 +148,7 @@ export function ChiefChat({
   const [notices, setNotices] = useState<ChatNotice[]>([]);
   const noticeSince = useRef(0);
   const [activity, setActivity] = useState<TurnActivity | null>(null);
+  const [previous, setPrevious] = useState<PreviousConversation[]>([]);
   const quickReturns = useRef(0);
   const approvalUpdate = useRef(onApprovalUpdate);
   approvalUpdate.current = onApprovalUpdate;
@@ -376,12 +381,14 @@ export function ChiefChat({
         if (!canPrime) return;
         lastIdRef.current = data.lastId || 0;
         setMessages(data.messages || []);
+        if (typeof data.more === "boolean") setEarlier((e) => ({ ...e, more: !!data.more }));
         primeFromSnapshot(data);
         return;
       }
       lastIdRef.current = data.lastId || after;
       if (!after) {
         setMessages(data.messages || []);
+        if (typeof data.more === "boolean") setEarlier((e) => ({ ...e, more: !!data.more }));
         if (data.sessionKey && data.sessionKey !== sessionKeyRef.current) primeFromSnapshot(data);
         return;
       }
@@ -425,6 +432,7 @@ export function ChiefChat({
         notice: data.noticeHead || "",
       };
       if ("clarify" in data) setQuestion(data.clarify ?? null);
+      if (Array.isArray(data.previous)) setPrevious(data.previous);
       setActivity(data.activity ?? null);
       if (Array.isArray(data.notices)) {
         const fresh = data.notices;
@@ -926,6 +934,7 @@ export function ChiefChat({
         }}
         onOpenStatus={onOpenStatus}
         onOpenSettings={onOpenSettings}
+        switcher={threadSwitcher}
         onVoiceMode={() => setVoiceOpen(true)}
         face={chiefFace}
       />
@@ -946,6 +955,7 @@ export function ChiefChat({
         question={question}
         onAnswer={answerOpenQuestion}
         onQuickReply={sendBody}
+        header={previous.length ? <PreviousConversations items={previous} chief={chief} phone={!!compact} /> : null}
       />
       <form onSubmit={onSubmit} className="shrink-0">
         <div className="px-4 pb-2 empty:hidden">

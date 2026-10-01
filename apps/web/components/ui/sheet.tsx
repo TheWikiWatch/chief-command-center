@@ -14,10 +14,12 @@ type SheetProps = {
   onClose: () => void;
   title?: ReactNode;
   subtitle?: ReactNode;
-  /** Phone: bottom sheet. Desktop: right-hand panel. */
-  side?: "bottom" | "right";
+  /** Phone: bottom sheet. Desktop: right-hand panel, or a centred window (Settings). */
+  side?: "bottom" | "right" | "center";
   /** Bottom sheets: fill most of the screen instead of hugging content. */
   tall?: boolean;
+  /** Desktop right-hand panel: wider (Team & Routines' editor). */
+  wide?: boolean;
   /** Rendered in the header, before the close button. */
   actions?: ReactNode;
   /** Hide the built-in header (the body provides its own). */
@@ -46,6 +48,7 @@ function SheetBody({
   subtitle,
   side = "bottom",
   tall = false,
+  wide = false,
   actions,
   bare = false,
   closeLabel = "Close",
@@ -60,6 +63,7 @@ function SheetBody({
   const panel = useRef<HTMLDivElement>(null);
   const drag = useDragControls();
   const bottom = side === "bottom";
+  const center = side === "center";
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const closeDisabledRef = useRef(closeDisabled);
@@ -126,11 +130,25 @@ function SheetBody({
         className={
           bottom
             ? `absolute inset-x-0 bottom-0 flex flex-col rounded-t-sheet border-t border-line-2 bg-raised pb-[env(safe-area-inset-bottom)] shadow-e4 outline-none ${tall ? "h-[92%]" : "max-h-[92%]"} ${className}`
-            : `absolute inset-y-0 right-0 flex w-[min(440px,100%)] flex-col border-l border-line-2 bg-raised shadow-e4 outline-none ${className}`
+            : center
+              ? `absolute inset-0 m-auto flex h-[min(88vh,860px)] w-[min(1000px,calc(100%-48px))] flex-col overflow-hidden rounded-[22px] border border-line-2 bg-raised shadow-e4 outline-none ${className}`
+              : `absolute inset-y-0 right-0 flex ${wide ? "w-[min(540px,100%)]" : "w-[min(440px,100%)]"} flex-col border-l border-line-2 bg-raised shadow-e4 outline-none ${className}`
         }
-        initial={bottom ? { y: "100%" } : { x: 32, opacity: 0 }}
-        animate={bottom ? { y: 0, transition: { duration: DUR.sheet, ease: EASE.sheet } } : { x: 0, opacity: 1, transition: { duration: DUR.medium, ease: EASE.enter } }}
-        exit={bottom ? { y: "100%", transition: { duration: 0.3, ease: EASE.exit } } : { x: 24, opacity: 0, transition: { duration: 0.2, ease: EASE.exit } }}
+        initial={bottom ? { y: "100%" } : center ? { opacity: 0, scale: 0.97, y: 8 } : { x: 32, opacity: 0 }}
+        animate={
+          bottom
+            ? { y: 0, transition: { duration: DUR.sheet, ease: EASE.sheet } }
+            : center
+              ? { opacity: 1, scale: 1, y: 0, transition: { duration: DUR.medium, ease: EASE.enter } }
+              : { x: 0, opacity: 1, transition: { duration: DUR.medium, ease: EASE.enter } }
+        }
+        exit={
+          bottom
+            ? { y: "100%", transition: { duration: 0.3, ease: EASE.exit } }
+            : center
+              ? { opacity: 0, scale: 0.98, transition: { duration: 0.16, ease: EASE.exit } }
+              : { x: 24, opacity: 0, transition: { duration: 0.2, ease: EASE.exit } }
+        }
         drag={bottom && !closeDisabled ? "y" : false}
         dragListener={false}
         dragControls={drag}

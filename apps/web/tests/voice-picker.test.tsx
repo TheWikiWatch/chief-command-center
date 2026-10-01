@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 it("a plugin engine with a voice list gets a grouped picker, and choosing saves through the bridge", async () => {
-  render(<SettingsPanel open phone={false} onClose={() => {}} />);
+  render(<SettingsPanel open phone={false} onClose={() => {}} category="voice" />);
   const select = (await screen.findByLabelText("VoiceStudio voice")) as HTMLSelectElement;
   expect(select.value).toBe("profile:abc");
   const groups = [...select.querySelectorAll("optgroup")].map((g) => g.label);
@@ -66,7 +66,7 @@ it("a plugin engine with a voice list gets a grouped picker, and choosing saves 
 });
 
 it("preview speaks one line through the chief's real engine and plays it", async () => {
-  render(<SettingsPanel open phone={false} onClose={() => {}} />);
+  render(<SettingsPanel open phone={false} onClose={() => {}} category="voice" />);
   const button = await screen.findByRole("button", { name: "Preview voice" });
   await act(async () => void fireEvent.click(button));
   expect(speakText).toHaveBeenCalledWith("Hi. This is how I'll sound.", 30_000);

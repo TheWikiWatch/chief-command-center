@@ -4,17 +4,18 @@
  * Where a tapped notification leads (public/sw.js): a tab, and optionally the approval sheet or the
  * Fleet Health view. An open app gets a `chief-open` message; a cold start gets `?open=` in the URL.
  */
-export type OpenTarget = { tab: string; approval?: string; view?: string };
+export type OpenTarget = { tab: string; approval?: string; view?: string; thread?: string };
 
 const TABS = new Set(["chat", "today", "fleet", "vault"]);
 
-function clean(raw: { tab?: unknown; approval?: unknown; view?: unknown }): OpenTarget | null {
+function clean(raw: { tab?: unknown; approval?: unknown; view?: unknown; thread?: unknown }): OpenTarget | null {
   const tab = typeof raw.tab === "string" && TABS.has(raw.tab) ? raw.tab : "";
   if (!tab) return null;
   return {
     tab,
     approval: typeof raw.approval === "string" && raw.approval ? raw.approval : undefined,
     view: raw.view === "health" ? "health" : undefined,
+    thread: typeof raw.thread === "string" && /^(main|t-[0-9a-f]{6,12})$/.test(raw.thread) ? raw.thread : undefined,
   };
 }
 
@@ -23,8 +24,8 @@ export function takeLaunchTarget(): OpenTarget | null {
   if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
   if (!params.has("open")) return null;
-  const target = clean({ tab: params.get("open"), approval: params.get("approval"), view: params.get("view") });
-  for (const key of ["open", "approval", "view"]) params.delete(key);
+  const target = clean({ tab: params.get("open"), approval: params.get("approval"), view: params.get("view"), thread: params.get("thread") });
+  for (const key of ["open", "approval", "view", "thread"]) params.delete(key);
   const rest = params.toString();
   try {
     window.history.replaceState(window.history.state, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
@@ -47,7 +48,7 @@ export function subscribeOpenTarget(fn: (target: OpenTarget) => void): () => voi
 }
 
 /** Replies and approvals the app now shows on screen: their notifications are old news on this device. */
-export const shownOnScreen = (tag: string) => tag === "chief-reply" || tag.startsWith("approval-");
+export const shownOnScreen = (tag: string) => tag === "chief-reply" || tag.startsWith("chief-reply-") || tag.startsWith("approval-");
 
 export async function closeNotifications(match: (tag: string) => boolean = shownOnScreen): Promise<number> {
   try {

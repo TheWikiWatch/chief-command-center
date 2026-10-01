@@ -138,6 +138,7 @@ export function Thread({
   earlier,
   onLoadEarlier,
   footer,
+  header,
   notices,
   activity,
   question,
@@ -157,6 +158,8 @@ export function Thread({
   earlier?: { more: boolean; loading: boolean; error: string };
   onLoadEarlier?: () => void;
   footer?: ReactNode;
+  /** Shown at the top of the thread, empty or not (the thread's earlier conversations). */
+  header?: ReactNode;
   /** Scheduled-job results and gateway notices, shown in time order. */
   notices?: ChatNotice[];
   /** What the running turn is doing now. */
@@ -288,10 +291,12 @@ export function Thread({
           if (stick.current.pinned && unread) setUnread(0);
         }}
       >
+        {messages.length === 0 && header ? <div className="mx-auto max-w-3xl">{header}</div> : null}
         {messages.length === 0 ? (
           <EmptyState chief={chief} connected={connected} authFailed={authFailed} onSuggestion={onSuggestion} />
         ) : (
           <div ref={content} className="mx-auto flex max-w-3xl flex-col">
+            {header}
             {earlier && onLoadEarlier ? <EarlierRow state={earlier} onLoad={onLoadEarlier} /> : null}
             {rows.map((row) => {
               if (row.kind === "day") return <DaySeparator key={row.key} label={row.label} />;
