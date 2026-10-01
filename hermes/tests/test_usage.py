@@ -154,8 +154,8 @@ class ModelSwitchTests(unittest.TestCase):
         self.assertAlmostEqual(month[("deepseek-flash", "deepseek")]["cost"], 0.030)
         self.assertEqual(month[("deepseek-flash", "deepseek")]["calls"], 3)
 
-    def test_ledger_rows_are_dated_by_their_last_call(self):
-        month = usage.summary("month", NOW)  # 1–15 October; the deepseek row last ran on 25 September
+    def test_a_row_is_spread_over_the_days_it_ran(self):
+        month = usage.summary("month", NOW)  # 1–15 October; the deepseek row ran 20–25 September
         self.assertAlmostEqual(month["totals"]["cost"], 0.021 + 0.015)
         self.assertEqual(month["totals"]["sessions"], 2)
         self.assertEqual(month["totals"]["calls"], 3 + 3)
@@ -166,6 +166,78 @@ class ModelSwitchTests(unittest.TestCase):
         self.assertEqual(p1["calls"], 3)
         self.assertAlmostEqual(p1["cost"], 0.015)
         self.assertEqual(p1["sessions"], 1)
+
+
+class JournalTests(unittest.TestCase):
+    """A long conversation's running total is spread over the days it was used, and later calls land on their day."""
+
+    def setUp(self):
+        scratch = ROOT / "hermes/tests/.runtime"
+        scratch.mkdir(exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(dir=scratch)
+        self.addCleanup(self.temp.cleanup)
+        self.chief = Path(self.temp.name) / "profiles" / "chief"
+        p = patch.object(data, "chief_home", return_value=self.chief)
+        p.start()
+        self.addCleanup(p.stop)
+        # A conversation open for ten days: four calls, 1000 input tokens, 4 cents. The chief replied three
+        # times ten days ago and once today.
+        ledger_store(self.chief, [
+            ("long", "deepseek-flash", "deepseek", at(10), 1000, 0, 0, 0, 0, 4, 0.04, None, "estimated"),
+        ], [
+            ("long", "deepseek-flash", "deepseek", "", at(10), at(0), 1000, 0, 0, 0, 0, 4, 0.04, 0.0, "estimated"),
+        ])
+        conn = sqlite3.connect(self.chief / "state.db")
+        conn.execute("CREATE TABLE messages (session_id TEXT, role TEXT, timestamp REAL)")
+        conn.executemany("INSERT INTO messages VALUES (?,?,?)", [
+            ("long", "user", at(10)), ("long", "assistant", at(10)), ("long", "assistant", at(10, 11)),
+            ("long", "assistant", at(10, 12)), ("long", "user", at(0)), ("long", "assistant", at(0)),
+        ])
+        conn.commit()
+        conn.close()
+
+    def grow(self, input_tokens, calls, cost, last):
+        conn = sqlite3.connect(self.chief / "state.db")
+        conn.execute("UPDATE session_model_usage SET input_tokens = input_tokens + ?, api_call_count = api_call_count + ?, "
+                     "estimated_cost_usd = estimated_cost_usd + ?, last_seen = ?", (input_tokens, calls, cost, last))
+        conn.execute("UPDATE sessions SET input_tokens = input_tokens + ?, api_call_count = api_call_count + ?, "
+                     "estimated_cost_usd = estimated_cost_usd + ?", (input_tokens, calls, cost))
+        conn.commit()
+        conn.close()
+
+    def test_first_sight_spreads_a_long_conversation_by_the_chiefs_replies(self):
+        today = usage.summary("today", NOW)["totals"]
+        self.assertEqual((today["input"], today["calls"]), (250, 1))  # one reply of four was today
+        self.assertAlmostEqual(today["cost"], 0.01)
+        month = usage.summary("30d", NOW)["totals"]
+        self.assertEqual((month["input"], month["calls"]), (1000, 4))  # nothing lost to the split
+        self.assertAlmostEqual(month["cost"], 0.04)
+        self.assertIsNotNone(usage.summary("today", NOW)["exactSince"])
+
+    def test_after_that_only_what_grew_is_added_on_its_day(self):
+        usage.summary("today", NOW)
+        self.grow(200, 1, 0.002, at(0, 15))
+        today = usage.summary("today", NOW)["totals"]
+        self.assertEqual((today["input"], today["calls"]), (450, 2))
+        self.assertAlmostEqual(today["cost"], 0.012)
+        self.assertEqual(usage.summary("30d", NOW)["totals"]["input"], 1200)
+        usage.summary("today", NOW)  # a sync with nothing new adds nothing
+        self.assertEqual(usage.summary("30d", NOW)["totals"]["input"], 1200)
+
+    def test_history_outlives_hermes_pruning_and_shrinking_totals(self):
+        usage.summary("today", NOW)
+        def change(*statements):
+            conn = sqlite3.connect(self.chief / "state.db")
+            for sql in statements:
+                conn.execute(sql)
+            conn.commit()
+            conn.close()
+
+        # A repaired session whose totals shrank (Hermes writes both tables together): never a negative day.
+        change("UPDATE session_model_usage SET input_tokens = 10", "UPDATE sessions SET input_tokens = 10")
+        self.assertEqual(usage.summary("30d", NOW)["totals"]["input"], 1000)
+        change("DELETE FROM session_model_usage", "DELETE FROM sessions")
+        self.assertEqual(usage.summary("30d", NOW)["totals"]["input"], 1000)
 
 
 if __name__ == "__main__":

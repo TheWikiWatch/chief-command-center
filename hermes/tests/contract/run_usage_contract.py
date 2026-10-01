@@ -83,5 +83,15 @@ check("Hermes names the provider", glm.get("providerName") not in (None, "", "za
 check("totals are not counted twice", summary["totals"]["input"] == 2500 and summary["totals"]["sessions"] == 1,
       summary["totals"])
 
+# The journal: a later call in the same long conversation adds only itself, once.
+db = SessionDB(home / "state.db")
+db.update_token_counts("switch", input_tokens=300, output_tokens=30, model="glm-5.3-flash",
+                       billing_provider="zai", estimated_cost_usd=0.002, api_call_count=1)
+db.close()
+again = usage.summary("today")
+check("a later call adds only itself", again["totals"]["input"] == 2800 and again["totals"]["calls"] == 4, again["totals"])
+check("a sync with nothing new adds nothing", usage.summary("today")["totals"]["input"] == 2800)
+check("the journal says from when its days are exact", bool(again.get("exactSince")), again.get("exactSince"))
+
 print(f"\n{len(failures)} failure(s)" if failures else "\nusage contract holds")
 sys.exit(1 if failures else 0)

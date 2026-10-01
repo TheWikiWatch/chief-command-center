@@ -23,6 +23,10 @@ export type UsageSummary = {
   ok: boolean;
   error?: string;
   period: UsagePeriod;
+  /** Unix seconds: the start of the period. */
+  since?: number;
+  /** Unix seconds from which each call counts on the day it was made; earlier days are spread from the chief's replies. */
+  exactSince?: number | null;
   totals: UsageTotals;
   today: UsageTotals;
   month: UsageTotals;

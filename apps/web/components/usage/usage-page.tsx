@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useId, useState } from "react";
 
 import { CircleAlertIcon } from "@/components/icons";
+import { useAssistantName } from "@/lib/identity";
 import { money, tokens, usageApi, type UsageDay, type UsagePeriod, type UsageSummary } from "@/lib/usage-client";
 
 const PERIODS: { id: UsagePeriod; label: string }[] = [
@@ -18,6 +19,7 @@ const PERIODS: { id: UsagePeriod; label: string }[] = [
  * provider reported the actual cost; a provider with no price is counted, never shown as free.
  */
 export function UsagePage() {
+  const assistant = useAssistantName();
   const [period, setPeriod] = useState<UsagePeriod>("month");
   const [data, setData] = useState<UsageSummary | null>(null);
   const [error, setError] = useState("");
@@ -66,6 +68,12 @@ export function UsagePage() {
           </div>
 
           {period !== "today" ? <DailyChart days={data.daily} /> : null}
+          {period !== "today" && data.exactSince && data.since !== undefined && data.since < data.exactSince ? (
+            <p className="-mt-3 px-1 text-caption text-fg-3">
+              Days before {new Date(data.exactSince * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })} are estimated from when{" "}
+              {assistant} replied; from then on each call counts on the day it was made.
+            </p>
+          ) : null}
 
           <section aria-labelledby="usage-bots" className="space-y-2">
             <h3 id="usage-bots" className="text-headline text-fg">
