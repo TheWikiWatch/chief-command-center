@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { RecordingBar } from "@/components/chat/recording-bar";
 import { EmojiPicker } from "@/components/emoji-picker";
@@ -73,13 +73,39 @@ export function Composer({
   const recording = micStatus.state === "recording";
   const showSend = hasContent && micStatus.state === "idle";
 
-  useEffect(() => {
+  // The box grows with what's typed (up to 7 lines). The hint is drawn over it on one line, so it never
+  // decides the height. Measure on every change of text, and whenever the box's width changes (the Stop and
+  // Send-after buttons slide in beside it, the pane is resized), not just when typing.
+  const fit = useCallback(() => {
     const el = field.current;
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
-    // The placeholder and the buttons beside the box change with the chief's state: measure again then too.
-  }, [text, working, answering, connected, offline]);
+  }, []);
+  useLayoutEffect(fit, [text, fit]);
+  useEffect(() => {
+    const el = field.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let width = el.clientWidth;
+    const watch = new ResizeObserver(() => {
+      if (el.clientWidth === width) return;
+      width = el.clientWidth;
+      fit();
+    });
+    watch.observe(el);
+    return () => watch.disconnect();
+  }, [fit]);
+  const hint = connected
+    ? answering
+      ? phone
+        ? `Answer ${assistant}…`
+        : `Answer ${assistant} in your own words…`
+      : working
+        ? `Add to what ${assistant} is doing…`
+        : `Message ${assistant}`
+    : offline
+      ? `${assistant} is offline · it will wait`
+      : "Gateway down";
 
   useEffect(() => {
     if (!menu) return;
@@ -207,6 +233,7 @@ export function Composer({
               ) : null}
             </AnimatePresence>
           </div>
+          <div className="relative min-w-0 flex-1">
           <textarea
             ref={field}
             value={text}
@@ -237,23 +264,19 @@ export function Composer({
               onAddFiles(files);
             }}
             enterKeyHint={phone ? "enter" : "send"}
-            placeholder={
-              connected
-                ? answering
-                  ? phone
-                    ? `Answer ${assistant}…`
-                    : `Answer ${assistant} in your own words…`
-                  : working
-                    ? `Add to what ${assistant} is doing…`
-                    : `Message ${assistant}`
-                : offline
-                  ? `${assistant} is offline · it will wait`
-                  : "Gateway down"
-            }
+            aria-label={hint}
+            title={text ? undefined : hint}
             disabled={!writable || busy}
             rows={1}
-            className="max-h-[168px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-3 leading-6 text-fg outline-none focus-visible:outline-none placeholder:text-fg-3 disabled:opacity-60"
+            className="block max-h-[168px] w-full resize-none bg-transparent px-1.5 py-3 leading-6 text-fg outline-none focus-visible:outline-none disabled:opacity-60"
           />
+          {/* The hint, on the box's own padding, size and line height: one line, shortened with "…" when narrow. */}
+          {text ? null : (
+            <span aria-hidden="true" className={`composer-hint pointer-events-none absolute inset-x-0 top-0 truncate px-1.5 py-3 leading-6 text-fg-3 ${!writable || busy ? "opacity-60" : ""}`}>
+              {hint}
+            </span>
+          )}
+          </div>
         </div>
 
         <AnimatePresence initial={false}>

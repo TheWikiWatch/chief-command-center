@@ -132,7 +132,23 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Every release description is kept as signed**, in `<appDir>/release-history/<version>.json` + `.sig`, verified before writing and again when the desktop reads it. The dashboard server reads the same files (it trusts the app's own folder and doesn't re-verify), so the phone sees the list too.
 - **GitHub feeds sync the whole list** with `GET /releases?per_page=100`, then the two small assets of each release not kept yet. A folder feed keeps only what its checks have seen. Over 100 releases, the oldest stop arriving (add paging then).
 - **Install dates** come from `update-history.json`, written on the first start of each version (`recordInstall` in `boot()`), from 0.1.13 on. Earlier installs show only their release dates.
+- **One card at a time:** while a newer version is offered (even after Later), What's new stays hidden, and notes for a version a newer update replaces are marked seen instead of waiting (`newer` from `useUpdates()` in `command-shell.tsx`).
 - **What's new** shows the running version's notes once per device (`chief-whats-new-seen` in localStorage), for 14 days after an update that replaced an older version, and only when its notes are kept.
+
+## Installing an update
+
+`install()` in `apps/desktop/src/updater.ts`, `installPackage`, `bringToFront` and `announceUpdate` in `apps/desktop/src/main.ts`. Test map: "installs once when Install is pressed again…" in `apps/desktop/tests/updater.test.ts`.
+
+- **One install at a time.** `install()` keeps the running install's promise and hands it to any second call, so a double click, the card's "install when the chief is done" retry or the same card in Settings can't give Windows the package twice (0.1.13 was installed twice, 34 s apart, before this).
+- **The reopened window must be raised.** The installer (started through WMI so it outlives the app) relaunches the app as a hidden background process, and Windows' focus-stealing protection keeps that window behind the others. The first start after an update (`lastVersion` older than this version) raises it with a brief always-on-top, flashes the taskbar button if focus is still withheld, and shows a "Chief updated to …" notification once Chief is up.
+- **`logs\update-install.log`** has the installer's lines and then the app's own: `reopened <version>`, and `ready <version>; window shown/hidden`. A graphics-process crash (a blank window) goes to `logs\desktop.log`.
+
+## The message box hint
+
+`apps/web/components/chat/composer.tsx`, `.composer-hint` in `apps/web/app/globals.css`. Test map: `apps/web/tests/composer-hint.test.tsx`.
+
+- **The hint is an overlay, not the textarea's placeholder.** A native placeholder that wraps (long hints like "Add to what <name> is doing…" beside the Stop and Send-after buttons) made the box two lines tall, misaligned it with its buttons, and could be cut off mid-line when the buttons slid in after the height was measured. The overlay copies the field's padding (`px-1.5 py-3`), line height (`leading-6`) and font size (the `.composer-hint` rule beside the textarea's), stays on one line with "…", and the field carries the full hint as its label and hover title. Changing the field's padding, line height or font size means changing the hint's too.
+- **The box re-measures on width changes** (ResizeObserver), not only on typing.
 
 ## Releases and testers
 

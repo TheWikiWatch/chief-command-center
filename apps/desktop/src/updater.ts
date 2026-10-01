@@ -197,7 +197,21 @@ export class Updater {
   }
 
   /** `force`: the owner chose "Install now" although Chief is busy. */
-  async install(force = false): Promise<UpdateState> {
+  private installing: Promise<UpdateState> | null = null;
+
+  /**
+   * One install at a time: a second click (or the card's "install when the chief is done" retry, or the
+   * same card in Settings) while one runs joins it instead of handing Windows the package twice.
+   */
+  install(force = false): Promise<UpdateState> {
+    if (this.installing) return this.installing;
+    this.installing = this.runInstall(force).finally(() => {
+      this.installing = null;
+    });
+    return this.installing;
+  }
+
+  private async runInstall(force: boolean): Promise<UpdateState> {
     const state = this.state;
     if (state.status !== "ready" && state.status !== "busy") return state;
     const { release, file } = state;

@@ -34,7 +34,7 @@ function setup(working: boolean, text = "use the blue template") {
 
 it("while the chief works: Enter adds to that work, Stop and Esc stop it, Alt+Enter sends after", () => {
   const { submit, onStop, onSendAfter } = setup(true);
-  const field = screen.getByPlaceholderText("Add to what Nova is doing…");
+  const field = screen.getByRole("textbox", { name: "Add to what Nova is doing…" });
   expect(screen.getByRole("button", { name: "Add to Nova's current work" })).toBeInTheDocument();
   fireEvent.keyDown(field, { key: "Enter" });
   expect(submit).toHaveBeenCalledTimes(1);
@@ -56,7 +56,7 @@ it("Stop shows even with an empty draft; Send after needs a draft", () => {
 
 it("when the chief is idle there is no Stop, Esc does nothing, and Alt+Enter just sends", () => {
   const { submit, onStop, onSendAfter } = setup(false);
-  const field = screen.getByPlaceholderText("Message Nova");
+  const field = screen.getByRole("textbox", { name: "Message Nova" });
   expect(screen.queryByRole("button", { name: "Stop Nova" })).toBeNull();
   fireEvent.keyDown(field, { key: "Escape" });
   expect(onStop).not.toHaveBeenCalled();

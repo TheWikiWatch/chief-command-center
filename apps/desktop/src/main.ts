@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, rmSync, statfsSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statfsSync } from "node:fs";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
@@ -46,6 +46,8 @@ let steps: Step[] = [];
 let updater: Updater;
 /** The update source this build carries (a tester's install knows its releases repository from the start). */
 let shippedFeed = "";
+/** The version this start replaced, when it is the first start after an update ("" otherwise). */
+let updatedFrom = "";
 
 const STEPS: Step[] = [
   { id: "runtime", label: "Runtime", state: "waiting" },
@@ -302,6 +304,7 @@ async function boot() {
     },
   });
   notifier.start();
+  announceUpdate();
   void updater.check().then(() => syncHistory());
 }
 
@@ -353,6 +356,48 @@ function showWindow() {
   window.focus();
 }
 
+/**
+ * The first start after an update is launched by the installer, a hidden background process, and Windows'
+ * focus-stealing protection keeps such a window behind the others (or only in the taskbar). Raise it above
+ * every window for a moment, then let the order settle; if Windows still withholds focus, flash the taskbar
+ * button until the owner looks.
+ */
+function bringToFront() {
+  if (!window) return;
+  if (window.isMinimized()) window.restore();
+  window.show();
+  window.setAlwaysOnTop(true);
+  window.moveTop();
+  window.focus();
+  setTimeout(() => {
+    window?.setAlwaysOnTop(false);
+    if (window && !window.isFocused()) window.flashFrame(true);
+  }, 800);
+}
+
+/** After an update, once Chief is up: a Windows notification that opens the app, and a line in the install log. */
+function announceUpdate() {
+  if (!updatedFrom) return;
+  const version = app.getVersion();
+  logLine("update-install.log", `ready ${version}; window ${window?.isVisible() ? "shown" : "hidden"}${window?.isFocused() ? ", in front" : ""}`);
+  const n = new Notification({ title: `Chief updated to ${version}`, body: "It's running again. Click to open it.", icon: paths.icon });
+  n.on("click", showWindow);
+  n.show();
+  updatedFrom = "";
+}
+
+/** One line in a log under logs\, with a local timestamp like the installer's. */
+function logLine(file: string, text: string) {
+  try {
+    const d = new Date();
+    const stamp = new Date(d.getTime() - d.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+    mkdirSync(paths.logs, { recursive: true });
+    appendFileSync(path.join(paths.logs, file), `${stamp} ${text}\r\n`);
+  } catch {
+    /* logging never stops the app */
+  }
+}
+
 function createWindow() {
   window = new BrowserWindow({
     width: 1280,
@@ -378,6 +423,7 @@ function createWindow() {
     if (/^https?:/i.test(url)) void shell.openExternal(url);
   });
   window.webContents.on("render-process-gone", () => window?.webContents.reload());
+  window.on("focus", () => window?.flashFrame(false));
   window.on("close", (event) => {
     if (quitting) return;
     event.preventDefault();
@@ -615,6 +661,12 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     paths = resolvePaths({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), env: process.env });
     store = new Store(paths.appDir);
     shippedFeed = builtInFeed(app.getAppPath());
+    const last = store.value.lastVersion;
+    updatedFrom = last && compareVersions(app.getVersion(), last) > 0 ? last : "";
+    // A graphics process that dies leaves a blank window behind: note it, so an empty window after an update can be told apart.
+    app.on("child-process-gone", (_e, d) => {
+      if (d.type === "GPU") logLine("desktop.log", `graphics process gone (${d.reason}, exit ${d.exitCode})`);
+    });
     const layout = payloadLayout(paths.payload);
     gateway = new Supervisor({
       launch: async () =>
@@ -683,6 +735,10 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     registerIpc();
     createWindow();
     createTray();
+    if (updatedFrom && !hiddenLaunch()) {
+      logLine("update-install.log", `reopened ${app.getVersion()} (replacing ${updatedFrom})`);
+      bringToFront();
+    }
     await boot();
   });
   app.on("before-quit", (event) => {

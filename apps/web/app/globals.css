@@ -606,7 +606,8 @@ body {
   font-size: inherit;
 }
 
-.chief-chat textarea {
+.chief-chat textarea,
+.chief-chat .composer-hint {
   font-size: max(16px, var(--chat-fs));
 }
 

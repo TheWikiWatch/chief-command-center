@@ -45,7 +45,7 @@ import { useUnseenFleetFlags } from "@/lib/use-fleet-flags";
 import { useAppConfig } from "@/lib/app-config";
 import { Onboarding, useNeedsOnboarding } from "@/components/onboarding/onboarding";
 import { SecondBrainSheet } from "@/components/second-brain/sheet";
-import { UpdateCard } from "@/components/updates/update-card";
+import { UpdateCard, useUpdates } from "@/components/updates/update-card";
 import { WhatsNewCard } from "@/components/updates/update-history";
 // Listens for Android's install offer from the first moment (Settings → Phone shows it).
 import "@/lib/install-prompt";
@@ -148,6 +148,9 @@ export function CommandShell() {
     });
   const [secondBrainOpen, setSecondBrainOpen] = useState(false);
   const [updateLater, setUpdateLater] = useState(false);
+  // A newer version on offer (even after Later) outranks "What's new" for the running one: one card at a time.
+  const { state: updateState } = useUpdates();
+  const offeredVersion = updateState && "release" in updateState && updateState.release && updateState.status !== "error" ? updateState.release.version : "";
   const [statusOpen, setStatusOpen] = useState(false);
   const [lastChief, setLastChief] = useState<Person | null>(null);
   useEffect(() => setLastChief(loadChief()), []);
@@ -513,7 +516,7 @@ export function CommandShell() {
         // Top right, under the headers: clear of the message box and the tab bar.
         <div className="fixed right-4 top-16 z-50 w-[min(24rem,calc(100vw-2rem))] space-y-2">
           {updateLater ? null : <UpdateCard compact onLater={() => setUpdateLater(true)} />}
-          <WhatsNewCard />
+          <WhatsNewCard newer={offeredVersion} />
         </div>
       )}
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />

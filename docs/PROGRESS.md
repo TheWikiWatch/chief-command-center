@@ -540,3 +540,13 @@
 - The owner's own chief is still called by its own name: that comes from its Hermes profile and SOUL, not the code.
 - Checked in the browser: the chat's styles, the chief's color in its presence and the chat aurora, Fleet with the chief at the centre; no element or text mentions the old name.
 - Tests: web 344 (3 new: the old status with any name, moving the saved chief record), desktop 48, Python 94 + 21.
+- Released 0.1.14.
+
+**Updates reopen in front, one card at a time, and a steady message box (2026-10-01).**
+
+- **"The app doesn't restart after the update."** The install log and processes showed it did (0.1.14 installed at 19:22:43; window, gateway and dashboard up within 10 s), but the installer relaunches it as a hidden background process, and Windows' focus-stealing protection keeps that window behind the others. The first start after an update now raises the window (a brief always-on-top), flashes the taskbar button if focus is still withheld, and shows a "Chief updated to …" notification once Chief is up. The install log records `reopened` and `ready … window shown`, and a graphics-process crash goes to `desktop.log`.
+- **Fixed: the update was installed twice.** 0.1.13's installer ran twice, 34 s apart: a second Install (a double click, or the card's retry) could start while the first was still checking whether Chief was busy. The updater now runs one install at a time and hands a second request the first one's result.
+- **The doubled cards.** "Update available (0.1.14)" and "Updated to 0.1.13" stacked over the chat. Now one card at a time: an offered update wins, and What's new for a version a newer update replaces is dropped rather than shown later.
+- **The message box hint.** A long hint ("Add to what <name> is doing…", "Answer <name> in your own words…") wrapped once the Stop and Send-after buttons narrowed the box: the box grew to two lines out of line with its buttons, and could be cut off mid-line when the buttons slid in after the height was measured. The hint is now drawn over the box on its own padding, line height and font size, on one line with "…"; the full hint is the box's label and hover title. The box re-measures when its width changes.
+- Checked in the browser at phone width: hint and box share top, left, font size, line height and padding at every chat text size (13–20), stay one line (48 px), and a long hint ends with "…" beside the buttons.
+- Tests: web 347 (3 new: the hint overlay, What's new giving way to an offered update), desktop 49 (1 new: Install pressed twice installs once).

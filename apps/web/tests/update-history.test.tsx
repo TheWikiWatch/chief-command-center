@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { historyEntries, UpdateHistorySheet } from "@/components/updates/update-history";
@@ -104,5 +104,14 @@ describe("What's new", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close what's new" }));
     expect(screen.queryByText("Updated to 0.1.12")).toBeNull();
     expect(localStorage.getItem("chief-whats-new-seen")).toBe("0.1.12");
+  });
+
+  it("gives way to an offered update, and drops notes a newer version replaces", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true, ...history, installs: [{ version: "0.1.12", at: new Date().toISOString(), from: "0.1.11" }] })));
+    localStorage.clear();
+    const { WhatsNewCard } = await import("@/components/updates/update-history");
+    render(<WhatsNewCard newer="0.1.13" />);
+    await waitFor(() => expect(localStorage.getItem("chief-whats-new-seen")).toBe("0.1.12"));
+    expect(screen.queryByText("Updated to 0.1.12")).toBeNull();
   });
 });

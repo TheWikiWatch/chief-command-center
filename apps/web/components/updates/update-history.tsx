@@ -1,11 +1,18 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { CircleAlertIcon, SparklesIcon, XIcon } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
 import { usePhoneShell } from "@/lib/use-phone-shell";
 import { loadUpdateHistory, markWhatsNewSeen, shortDate, whatsNewFor, type UpdateHistory } from "@/lib/update-history-client";
+
+const newerThan = (a: string, b: string) => {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let k = 0; k < 3; k++) if ((pa[k] || 0) !== (pb[k] || 0)) return (pa[k] || 0) > (pb[k] || 0);
+  return false;
+};
 
 type Entry = { version: string; published: string; notes: string; hermes: string; installedAt: string; hermesChanged: boolean; known: boolean };
 
@@ -125,9 +132,10 @@ export function UpdateHistoryButton({ className = "" }: { className?: string }) 
 
 /**
  * After an update: the new version's notes once, on each device, for two weeks. Closing it (or opening the
- * full history) marks it seen.
+ * full history) marks it seen. One card at a time: while an update is offered (`newer`) this one stays out of
+ * the way, and notes for a version a newer update replaces are dropped, not kept for later.
  */
-export function WhatsNewCard() {
+export function WhatsNewCard({ newer = "" }: { newer?: string }) {
   const [history, setHistory] = useState<UpdateHistory | null>(null);
   const [version, setVersion] = useState("");
   const [full, setFull] = useState(false);
@@ -144,11 +152,15 @@ export function WhatsNewCard() {
       alive = false;
     };
   }, []);
-  const release = history?.releases.find((r) => r.version === version);
-  const close = () => {
+  const close = useCallback(() => {
     markWhatsNewSeen(version);
     setVersion("");
-  };
+  }, [version]);
+  const superseded = !!version && !!newer && newerThan(newer, version);
+  useEffect(() => {
+    if (superseded) close();
+  }, [superseded, close]);
+  const release = newer ? undefined : history?.releases.find((r) => r.version === version);
   return (
     <>
       {release ? (

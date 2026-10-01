@@ -77,6 +77,21 @@ describe("Updater", () => {
     expect(log).toEqual(["backup", "stop", "install ChiefCommandCenter-1.1.0.msix"]);
   });
 
+  it("installs once when Install is pressed again while the first install is still checking", async () => {
+    publish("1.1.0");
+    let release: () => void = () => undefined;
+    const slowCheck = new Promise<void>((r) => (release = r));
+    const { updater, log } = make({ activeWork: async () => (await slowCheck, { busy: false, reasons: [] }) });
+    await updater.check();
+    await updater.download();
+    const first = updater.install();
+    const second = updater.install(); // a double click, or the same card in Settings
+    release();
+    await Promise.all([first, second]);
+    expect(log.filter((l) => l.startsWith("install"))).toEqual(["install ChiefCommandCenter-1.1.0.msix"]);
+    expect(log.filter((l) => l === "backup")).toHaveLength(1);
+  });
+
   it("says up to date only after a successful check, and honours Skip this version", async () => {
     publish("1.0.0");
     expect((await make().updater.check()).status).toBe("up-to-date");
