@@ -46,104 +46,115 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
 
   if (compact && !["available", "downloading", "ready", "busy", "installing"].includes(state.status)) return null;
 
-  switch (state.status) {
-    case "idle":
-    case "checking":
-      return <Line tone="idle">{state.status === "checking" ? "Checking for updates…" : "Updates haven't been checked yet."}</Line>;
-    case "up-to-date":
-      return (
-        <Row>
-          <Line tone="ok">Up to date (checked {new Date(state.checkedAt).toLocaleString()}).</Line>
-          <Button subtle disabled={acting} onClick={() => void act(() => api.check())}>
-            Check now
-          </Button>
-        </Row>
-      );
-    case "error":
-      return (
-        <div className="space-y-2">
-          <Line tone="error">{state.error}</Line>
+  const content = (() => {
+    switch (state.status) {
+      case "idle":
+      case "checking":
+        return <Line tone="idle">{state.status === "checking" ? "Checking for updates…" : "Updates haven't been checked yet."}</Line>;
+      case "up-to-date":
+        return (
           <Row>
-            <Button subtle disabled={acting} onClick={() => void act(() => (state.release ? install() : api.check()).then(() => api.state()))}>
-              {state.release ? "Try again" : "Retry"}
+            <Line tone="ok">Up to date (checked {new Date(state.checkedAt).toLocaleString()}).</Line>
+            <Button subtle disabled={acting} onClick={() => void act(() => api.check())}>
+              Check now
             </Button>
           </Row>
-        </div>
-      );
-    case "installing":
-      return <Line tone="idle">{state.step} {assistant} will be back in a moment.</Line>;
-    case "downloading":
-      return (
-        <div className="space-y-1.5">
-          <p className="text-callout text-fg-2">Downloading {state.release.version}…</p>
-          <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-label="Update download" aria-valuemin={0} aria-valuemax={state.total} aria-valuenow={state.done}>
-            <div className="h-full rounded-full bg-accent" style={{ width: `${Math.round((state.done / state.total) * 100)}%` }} />
+        );
+      case "error":
+        return (
+          <div className="space-y-2">
+            <Line tone="error">{state.error}</Line>
+            <Row>
+              <Button subtle disabled={acting} onClick={() => void act(() => (state.release ? install() : api.check()).then(() => api.state()))}>
+                {state.release ? "Try again" : "Retry"}
+              </Button>
+            </Row>
           </div>
-          <p className="font-mono text-caption tabular text-fg-3">
-            {mb(state.done)} of {mb(state.total)}
-          </p>
-        </div>
-      );
-    case "busy":
-      return (
-        <div className="space-y-2">
-          <Line tone="warn">
-            {state.reasons.join(" ")} Installing stops {assistant}.
-          </Line>
-          <Row>
-            <Button
-              disabled={acting}
-              onClick={() =>
-                void act(async () => {
-                  // Wait for the turn to finish, then install; nothing is interrupted.
-                  let s = await api.install(false);
-                  while (s.status === "busy") {
-                    await new Promise((r) => setTimeout(r, 5000));
-                    s = await api.install(false);
-                  }
-                  return s;
-                })
-              }
-            >
-              {acting ? `Waiting for ${assistant}…` : `Install when ${assistant}'s done`}
-            </Button>
-            <Button subtle disabled={acting} onClick={() => void act(async () => (await api.install(true), api.state()))}>
-              Install now
-            </Button>
-            <Button subtle disabled={acting} onClick={() => onLater?.()}>
-              Later
-            </Button>
-          </Row>
-        </div>
-      );
-    default: {
-      const release = state.release;
-      return (
-        <div className={`space-y-2 ${compact ? "rounded-card border border-line-2 bg-pane px-4 py-3 shadow-lg" : ""}`} role="region" aria-label="Update available">
-          <p className="flex items-center gap-2 text-body font-medium text-fg">
-            <DownloadIcon className="size-4 text-accent-text" />
-            Update available — install?
-          </p>
-          <p className="text-callout text-fg-3">
-            Version {release.version}
-            {release.hermes?.base_version ? ` · Hermes ${release.hermes.base_version}` : ""} · {mb(release.package.bytes)}. A backup is made first, and {assistant} restarts.
-          </p>
-          {release.notes && !compact ? <p className="whitespace-pre-wrap text-callout text-fg-2">{release.notes}</p> : null}
-          <Row>
-            <Button disabled={acting} onClick={() => void act(async () => (await install(false), api.state()))}>
-              Install
-            </Button>
-            <Button subtle disabled={acting} onClick={() => onLater?.()}>
-              Later
-            </Button>
-            <Button subtle disabled={acting} onClick={() => void act(() => api.skip(release.version))}>
-              Skip this version
-            </Button>
-          </Row>
-        </div>
-      );
+        );
+      case "installing":
+        return <Line tone="idle">{state.step} {assistant} will be back in a moment.</Line>;
+      case "downloading":
+        return (
+          <div className="space-y-1.5">
+            <p className="text-callout text-fg-2">Downloading {state.release.version}…</p>
+            <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-label="Update download" aria-valuemin={0} aria-valuemax={state.total} aria-valuenow={state.done}>
+              <div className="h-full rounded-full bg-accent" style={{ width: `${Math.round((state.done / state.total) * 100)}%` }} />
+            </div>
+            <p className="font-mono text-caption tabular text-fg-3">
+              {mb(state.done)} of {mb(state.total)}
+            </p>
+          </div>
+        );
+      case "busy":
+        return (
+          <div className="space-y-2">
+            <Line tone="warn">
+              {state.reasons.join(" ")} Installing stops {assistant}.
+            </Line>
+            <Row>
+              <Button
+                disabled={acting}
+                onClick={() =>
+                  void act(async () => {
+                    // Wait for the turn to finish, then install; nothing is interrupted.
+                    let s = await api.install(false);
+                    while (s.status === "busy") {
+                      await new Promise((r) => setTimeout(r, 5000));
+                      s = await api.install(false);
+                    }
+                    return s;
+                  })
+                }
+              >
+                {acting ? `Waiting for ${assistant}…` : `Install when ${assistant}'s done`}
+              </Button>
+              <Button subtle disabled={acting} onClick={() => void act(async () => (await api.install(true), api.state()))}>
+                Install now
+              </Button>
+              <Button subtle disabled={acting} onClick={() => onLater?.()}>
+                Later
+              </Button>
+            </Row>
+          </div>
+        );
+      default: {
+        const release = state.release;
+        return (
+          <div className={`space-y-2 ${compact ? "rounded-card border border-line-2 bg-pane px-4 py-3 shadow-lg" : ""}`} role="region" aria-label="Update available">
+            <p className="flex items-center gap-2 text-body font-medium text-fg">
+              <DownloadIcon className="size-4 text-accent-text" />
+              Update available — install?
+            </p>
+            <p className="text-callout text-fg-3">
+              Version {release.version}
+              {release.hermes?.base_version ? ` · Hermes ${release.hermes.base_version}` : ""} · {mb(release.package.bytes)}. A backup is made first, and {assistant} restarts.
+            </p>
+            {release.notes && !compact ? <p className="whitespace-pre-wrap text-callout text-fg-2">{release.notes}</p> : null}
+            <Row>
+              <Button disabled={acting} onClick={() => void act(async () => (await install(false), api.state()))}>
+                Install
+              </Button>
+              <Button subtle disabled={acting} onClick={() => onLater?.()}>
+                Later
+              </Button>
+              <Button subtle disabled={acting} onClick={() => void act(() => api.skip(release.version))}>
+                Skip this version
+              </Button>
+            </Row>
+          </div>
+        );
+      }
     }
-  }
+  })();
+  // The floating card (bottom of the app) gets its own surface; in Settings it sits inside its group.
+  return compact ? (
+    <section aria-label="App update" className="rounded-card border border-line-2 bg-raised/95 p-3.5 shadow-e4 backdrop-blur">
+      <p className="mb-2 text-caption font-medium uppercase tracking-wider text-fg-3">App update</p>
+      {content}
+    </section>
+  ) : (
+    content
+  );
 }
 
 /** `github:owner/repo` or a github.com URL: a private release repository read with a key. */

@@ -507,7 +507,8 @@ export function CommandShell() {
       />
       <SecondBrainSheet open={secondBrainOpen} phone={phone} onClose={() => setSecondBrainOpen(false)} onAskChief={sendFromToday} />
       {updateLater || onboarding.needed ? null : (
-        <div className="fixed bottom-4 right-4 z-50 w-[min(24rem,calc(100vw-2rem))]">
+        // Top right, under the headers: clear of the message box and the tab bar.
+        <div className="fixed right-4 top-16 z-50 w-[min(24rem,calc(100vw-2rem))]">
           <UpdateCard compact onLater={() => setUpdateLater(true)} />
         </div>
       )}

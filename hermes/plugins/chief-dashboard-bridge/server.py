@@ -726,14 +726,32 @@ def _guarded(fn) -> dict[str, Any]:
         return {"ok": False, "error": providers._plain(exc)}
 
 
-def _about() -> dict[str, Any]:
-    """The bundled Second Brain toolkit's version and source (Settings → About)."""
+def hermes_build() -> str:
+    """The running Hermes: its version, upstream commit and the app's patches, from the build's install stamp
+    ("2026.9.24 · upstream 41cd311 · 3 app patches"); "" when Hermes wasn't built by the app."""
     try:
-        meta = json.loads((data.chief_home() / "skills" / "obsidian-second-brain" / "vendor.json").read_text(encoding="utf-8"))
+        import hermes_cli
+
+        stamp = json.loads((Path(hermes_cli.__file__).resolve().parents[1] / "install-stamp.json").read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    parts = [str(stamp.get("baseVersion") or stamp.get("displayVersion") or "")]
+    if stamp.get("upstreamCommit"):
+        parts.append(f"upstream {str(stamp['upstreamCommit'])[:7]}")
+    patches = len(stamp.get("patches") or [])
+    if patches:
+        parts.append(f"{patches} app patch{'es' if patches != 1 else ''}")
+    return " · ".join(p for p in parts if p)
+
+
+def _about() -> dict[str, Any]:
+    """The running Hermes build and the Second Brain toolkit's version and source (Settings → About)."""
+    try:
+        meta = json.loads((second_brain.toolkit_dir(data.chief_home()) / "vendor.json").read_text(encoding="utf-8"))
         toolkit = {"version": str(meta.get("version") or ""), "source": str(meta.get("source") or "")}
     except (OSError, ValueError):
         toolkit = None
-    return {"ok": True, "toolkit": toolkit}
+    return {"ok": True, "toolkit": toolkit, "hermes": hermes_build()}
 
 
 def _thread_param(qs: dict) -> str:

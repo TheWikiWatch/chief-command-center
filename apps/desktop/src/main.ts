@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statfsSync } from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, session, shell, Tray, utilityProcess } from "electron";
 
@@ -74,10 +74,23 @@ function toolDirs(payload: string): string[] {
   return dirs;
 }
 
+/** The bundled Hermes, from its install stamp: "2026.9.24 · upstream 41cd311 · 3 app patches" (Settings → About). */
 function hermesVersion(): string {
   try {
-    const manifest = JSON.parse(readFileSync(path.join(paths.payload, "manifest.json"), "utf8")) as { version?: string; hermes_version?: string };
-    return String(manifest.hermes_version || manifest.version || "");
+    const stamp = JSON.parse(readFileSync(path.join(paths.payload, "hermes-agent", "install-stamp.json"), "utf8")) as {
+      baseVersion?: string;
+      displayVersion?: string;
+      upstreamCommit?: string;
+      patches?: string[];
+    };
+    const patches = stamp.patches?.length || 0;
+    return [
+      stamp.baseVersion || stamp.displayVersion || "",
+      stamp.upstreamCommit ? `upstream ${stamp.upstreamCommit.slice(0, 7)}` : "",
+      patches ? `${patches} app patch${patches === 1 ? "" : "es"}` : "",
+    ]
+      .filter(Boolean)
+      .join(" · ");
   } catch {
     return "";
   }
@@ -88,6 +101,16 @@ function hermesCommit(): string {
   try {
     const stamp = JSON.parse(readFileSync(path.join(paths.payload, "hermes-agent", "install-stamp.json"), "utf8")) as { commit?: string };
     return String(stamp.commit || "");
+  } catch {
+    return "";
+  }
+}
+
+/** The upstream Hermes commit this build bundles (a release manifest's `hermes.commit`). */
+function hermesUpstream(): string {
+  try {
+    const stamp = JSON.parse(readFileSync(path.join(paths.payload, "hermes-agent", "install-stamp.json"), "utf8")) as { upstreamCommit?: string };
+    return String(stamp.upstreamCommit || "");
   } catch {
     return "";
   }
@@ -288,20 +311,29 @@ function preUpdateBackup(): Promise<{ ok: boolean; error?: string }> {
 /** Windows installs the verified package (its signature is checked again by Windows) and relaunches the app. */
 function installPackage(file: string): Promise<{ ok: boolean; error?: string }> {
   if (!app.isPackaged) return Promise.resolve({ ok: false, error: "Updates install only in the installed app." });
+  const log = path.join(paths.logs, "update-install.log").replace(/'/g, "''");
   const script = [
-    "$ErrorActionPreference = 'Stop'",
-    `Add-AppxPackage -Path '${file.replace(/'/g, "''")}' -ForceApplicationShutdown -ForceUpdateFromAnyVersion`,
-    "$p = Get-AppxPackage -Name ChiefCommandCenter",
-    "Start-Process ('shell:AppsFolder\\' + $p.PackageFamilyName + '!ChiefCommandCenter')",
+    `function Note($t) { Add-Content -Path '${log}' -Value ("$(Get-Date -Format s) " + $t) }`,
+    `Note 'installing ${path.basename(file).replace(/'/g, "''")}'`,
+    "try {",
+    `  Add-AppxPackage -Path '${file.replace(/'/g, "''")}' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop`,
+    "  Note ('installed ' + (Get-AppxPackage -Name ChiefCommandCenter).Version)",
+    "} catch {",
+    "  Note ('install failed: ' + $_.Exception.Message)",
+    "} finally {",
+    // The app always comes back, updated or not, so Chief is never left stopped.
+    "  $p = Get-AppxPackage -Name ChiefCommandCenter",
+    "  Start-Process ('shell:AppsFolder\\' + $p.PackageFamilyName + '!ChiefCommandCenter')",
+    "}",
   ].join("\n");
   // -EncodedCommand (UTF-16LE base64) avoids every command-line quoting pitfall.
   const encoded = Buffer.from(script, "utf16le").toString("base64");
-  const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], {
-    detached: true,
-    stdio: "ignore",
-    windowsHide: true,
-  });
-  child.unref();
+  // The installer must not be the app's own child: Windows shuts the app's processes down to replace the package
+  // (-ForceApplicationShutdown), and a child would be stopped with them halfway through. WMI starts it as a
+  // process of its own, outside the app.
+  const outer = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ${encoded}'} | Out-Null`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", outer], { windowsHide: true, timeout: 30_000 });
+  if (result.status !== 0) return Promise.resolve({ ok: false, error: "Windows didn't start the installer. Try again." });
   quitting = true;
   setTimeout(() => app.exit(0), 1500);
   return Promise.resolve({ ok: true });
@@ -521,7 +553,9 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         return s.bavail * s.bsize;
       },
       activeWork: () => currentWork(),
-      backup: (_release: Release) => preUpdateBackup(),
+      // Before installing: the full backup only when the release brings a different upstream Hermes (the only
+      // thing that migrates data). The same Hermes with different app patches is caught at first start.
+      backup: (release: Release) => (release.hermes?.commit && release.hermes.commit === hermesUpstream() ? Promise.resolve({ ok: true }) : preUpdateBackup()),
       stopChief: async () => {
         notifier?.stop();
         await web.stop(true).catch(() => undefined);

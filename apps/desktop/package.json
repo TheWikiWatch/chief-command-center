@@ -1,6 +1,6 @@
 {
   "name": "@chief/desktop",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "description": "Chief Command Center desktop shell: supervises the Hermes gateway and the dashboard server.",
   "license": "MIT",

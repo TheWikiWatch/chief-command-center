@@ -113,3 +113,11 @@ it("a private GitHub release source asks for its key once, and keeps it sealed i
   expect(field.value).toBe(""); // never kept in the page
   expect(await screen.findByText(/Saved and protected by Windows/)).toBeTruthy();
 });
+
+it("the floating card has its own surface while it installs, never bare text over the page", async () => {
+  fakeShell({ status: "installing", release: release as never, step: "Backing up…" });
+  render(<UpdateCard compact />);
+  const card = await screen.findByRole("region", { name: "App update" });
+  expect(card.className).toMatch(/bg-raised/);
+  expect(card.textContent).toMatch(/Backing up… .* will be back in a moment\./);
+});
