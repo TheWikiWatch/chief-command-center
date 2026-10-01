@@ -11,6 +11,8 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
 - Sets the bridge port, turns on the Command Center platform and makes the owner's chat its home channel
   (where scheduled jobs and notices go) in the profile .env.
 - Stamps a new profile's config with Hermes's current schema version before writing anything else.
+- Marks the profile's gateway as standalone (`gateway.standalone: true`): the app runs it, and Hermes otherwise
+  refuses a named profile's own gateway on a PC where no Hermes launcher is registered for that profile.
 - Gives the chief twice Hermes's default memory (4400 / 2750 characters) unless the owner set their own.
 - Gives the chief the `kanban` toolset (delegating to workers) and the bridge's `fleet` toolset (mint, re-pin,
   retire and restore workers), and, unless the owner chose otherwise,
@@ -266,6 +268,13 @@ def main() -> int:
         raw = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
     except (OSError, ValueError):
         raw = {}
+    # The app runs one gateway of its own for this profile. Hermes refuses a named profile's gateway unless a
+    # launcher for it is registered on this Windows account (a per-user check, not per install) or the profile
+    # opts out of the host multiplexer: `gateway.standalone: true`, Hermes's documented opt-out.
+    gateway = raw.get("gateway") if isinstance(raw.get("gateway"), dict) else {}
+    if gateway.get("standalone") is not True:
+        save_config_value("gateway.standalone", True)
+        changed.append("gateway: standalone")
     display = raw.get("display") if isinstance(raw.get("display"), dict) else {}
     if not display.get("busy_input_mode"):
         save_config_value("display.busy_input_mode", "steer")

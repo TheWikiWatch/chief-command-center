@@ -436,3 +436,24 @@
   - `--plan` on the live install read it correctly and changed nothing.
   - The Second Brain contract's new adopted section and two provisioning tests pass.
 - Built `Chief Command Center 0.1.8.appx`. The signature verifies, the build log holds no password, and the package carries the adoption code (provision `--adopted`).
+
+**The handover, done on the owner's install (2026-10-01).**
+
+- `adopt.py --apply` ran with Chief idle:
+  - backup to another drive;
+  - launchers handed over;
+  - old dashboard and gateway stopped;
+  - old `command-center` plugin moved aside;
+  - token handed over;
+  - app pointed at the install.
+  A dangling link in a language-server folder failed the first backup copy. That folder is now excluded, and `--resume` continues a part-done run from its journal.
+- **Found and fixed: a fresh install's gateway was refused on a clean PC.** Hermes refuses a named profile's own gateway ("does not get a gateway of its own", exit 78) unless a Hermes launcher for that profile is registered on the Windows account. That check is per user, not per install, so the app had only worked on PCs where an older Hermes launcher existed. Provisioning now sets Hermes's documented opt-out, `gateway.standalone: true`, on the chief profile. Reproduced on a fresh home without it (exit 78), and the compatibility suite passes 12/12 with it.
+- **Also found:** the packaged payload can't be run from outside the app (WindowsApps), so `adopt.py` takes `--payload-dir` (a build payload of the same commit). Windows reports a disabled task's state as `1`.
+- **`--verify`, all passing:**
+  - the app's gateway on the old port with the same token, running the app's Hermes;
+  - chat bound, the team of 14 on the roster, history there;
+  - the Second Brain used as it is;
+  - no app routines added, and all 17 of the owner's on;
+  - the dashboard on the old port, with Today at 44 open and 22 overdue from the boards;
+  - Fleet Health reading the install's own ledger;
+  - the old launchers off.

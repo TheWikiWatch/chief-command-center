@@ -45,7 +45,7 @@ APP_PACKAGE = "ChiefCommandCenter"
 APP_EXE = "Chief Command Center.exe"
 MIN_APP = (0, 1, 8)  # the first version that runs an adopted install (desktop.json `adopted`, provision --adopted)
 EXCLUDE_DIRS = ["crash-dumps", "hermes-agent", "tools", "cache", "image_cache", "audio_cache", "logs", "models",
-                "node_modules", "__pycache__", "pm-runtime", "uv-cache", ".deleted"]
+                "node_modules", "__pycache__", "pm-runtime", "uv-cache", ".deleted", "lsp"]
 
 
 # ---------------------------------------------------------------- small helpers
@@ -117,7 +117,11 @@ class Install:
                              f"{'.'.join(map(str, MIN_APP))} or later first.")
 
     def payload(self) -> Payload:
-        return Payload(Path(self.package()["InstallLocation"]) / "resources" / "payload")
+        """Hermes's own helpers (the planned-stop marker, config writes) run on a payload of the same commit. The
+        installed package's can't be run from outside the app (WindowsApps), so a build payload is used."""
+        if self.args.payload_dir:
+            return Payload(Path(self.args.payload_dir))
+        return Payload(Path(self.package()["InstallLocation"]) / "app" / "resources" / "payload")
 
     def token(self) -> str:
         for folder in (self.profile / "plugins" / "chief-dashboard-bridge", self.root / "plugins" / "chief-dashboard-bridge"):
@@ -288,25 +292,31 @@ def plan(inst: Install) -> None:
 def apply(inst: Install) -> None:
     inst.backup.mkdir(parents=True, exist_ok=True)
     journal = Journal(inst.backup)
-    if journal.steps:
-        raise SystemExit(f"{journal.file} already has steps: this backup folder was used for an earlier run. Roll it back or use a new folder.")
+    if journal.steps and not inst.args.resume:
+        raise SystemExit(f"{journal.file} already has steps: this backup folder was used for an earlier run. Roll it back, use a "
+                         "new folder, or --resume to continue it.")
+    done = {s["kind"] for s in journal.steps}
     inst.require_adoption_support()
     pay = inst.payload()
-    for _ in range(60 if inst.args.wait_idle else 1):
-        busy = [] if inst.args.even_if_busy else inst.busy()
-        if not busy:
-            break
-        say("Waiting: " + "; ".join(busy))
-        time.sleep(10)
-    else:
-        raise SystemExit("Chief is busy: " + "; ".join(busy) + ". Nothing was changed. Try again when he's idle.")
+    if "gateway-stopped" not in done:  # a resumed run is past the point where Chief could be working
+        for _ in range(60 if inst.args.wait_idle else 1):
+            busy = [] if inst.args.even_if_busy else inst.busy()
+            if not busy:
+                break
+            say("Waiting: " + "; ".join(busy))
+            time.sleep(10)
+        else:
+            raise SystemExit("Chief is busy: " + "; ".join(busy) + ". Nothing was changed. Try again when he's idle.")
 
     say("1/8 Stopping the app…")
     stop_app(inst, pay)
-    journal.add("stopped-app")
+    if "stopped-app" not in done:
+        journal.add("stopped-app")
 
     say("2/8 Handing over the launchers…")
     for t in inst.guard_tasks():
+        if t["State"] in (1, "Disabled"):
+            continue
         ps(f"Disable-ScheduledTask -TaskPath '{t['TaskPath']}' -TaskName '{t['TaskName']}' | Out-Null")
         journal.add("task-disabled", path=t["TaskPath"], name=t["TaskName"])
     for item in inst.startup_items():
@@ -322,9 +332,10 @@ def apply(inst: Install) -> None:
     if stop_gateway(inst, pay, inst.profile):
         journal.add("gateway-stopped")
 
-    say("4/8 Backing up the install (this takes a few minutes)…")
-    dest = backup(inst)
-    journal.add("backed-up", folder=str(dest))
+    if "backed-up" not in done:
+        say("4/8 Backing up the install (this takes a few minutes)…")
+        dest = backup(inst)
+        journal.add("backed-up", folder=str(dest))
 
     say("5/8 Moving the old command-center plugin aside…")
     cc = inst.profile / "plugins" / "command-center"
@@ -345,11 +356,12 @@ def apply(inst: Install) -> None:
         journal.add("token-handover", file=str(handover))
 
     say("7/8 Pointing the app at the install…")
-    before_text = inst.desktop_json.read_text(encoding="utf-8") if inst.desktop_json.is_file() else ""
-    before = json.loads(before_text) if before_text else {}
-    inst.desktop_json.parent.mkdir(parents=True, exist_ok=True)
-    inst.desktop_json.write_text(json.dumps(adopted_settings(inst, before), indent=2), encoding="utf-8")
-    journal.add("desktop-json", previous=before_text)
+    if "desktop-json" not in done:
+        before_text = inst.desktop_json.read_text(encoding="utf-8") if inst.desktop_json.is_file() else ""
+        before = json.loads(before_text) if before_text else {}
+        inst.desktop_json.parent.mkdir(parents=True, exist_ok=True)
+        inst.desktop_json.write_text(json.dumps(adopted_settings(inst, before), indent=2), encoding="utf-8")
+        journal.add("desktop-json", previous=before_text)
 
     say("8/8 Starting the app…")
     start_app(inst)
@@ -397,7 +409,7 @@ def verify(inst: Install) -> int:
             check("the app's dashboard serves the UI port", res.status == 200)
     except Exception as exc:
         check("the app's dashboard serves the UI port", False, str(exc))
-    check("the old launchers stay off", not inst.startup_items() and all(t["State"] == "Disabled" for t in inst.guard_tasks()))
+    check("the old launchers stay off", not inst.startup_items() and all(t["State"] in (1, "Disabled") for t in inst.guard_tasks()))
     say(json.dumps({"failures": failures}))
     return 1 if failures else 0
 
@@ -462,8 +474,10 @@ def main() -> int:
     parser.add_argument("--learning-dir", default="", help="the install's own Fleet Health report folder, if any")
     parser.add_argument("--learning-tool", default="", help="the install's own learning ledger script, if any")
     parser.add_argument("--web-env", action="append", default=[], help="NAME=value for the dashboard (connectors; never secrets)")
+    parser.add_argument("--payload-dir", default="", help="a built payload of the app's Hermes commit (packaging/payload)")
     parser.add_argument("--wait-idle", action="store_true", help="wait up to 10 minutes for Chief to be idle")
     parser.add_argument("--even-if-busy", action="store_true")
+    parser.add_argument("--resume", action="store_true", help="continue an --apply that stopped part way (its journal)")
     args = parser.parse_args()
     inst = Install(args)
     if not inst.profile.is_dir():
