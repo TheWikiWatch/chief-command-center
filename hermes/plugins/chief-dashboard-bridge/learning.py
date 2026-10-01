@@ -72,8 +72,11 @@ def install_script(home: Path) -> bool:
 
 
 def ensure(home: Path | None = None) -> dict[str, Any]:
-    """The ledger script in place and the three jobs armed (missing ones only)."""
+    """The ledger script in place and the three jobs armed (missing ones only). An adopted install keeps its own
+    ledger and jobs (the app reads its report folder, CHIEF_LEARNING_DIR), so nothing is armed there."""
     home = Path(home or data.chief_home())
+    if os.environ.get("CHIEF_ADOPTED") == "1":
+        return {"ok": True, "contract": CONTRACT, "folder": str(folder()), "script": False, "jobs": [], "adopted": True}
     learning = folder()
     learning.mkdir(parents=True, exist_ok=True)
     wrote = install_script(home)

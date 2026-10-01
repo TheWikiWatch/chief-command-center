@@ -12,6 +12,14 @@ export type DesktopSettings = {
   sharedGatewayLock: boolean;
   /** Pass the user's PATH to Hermes (adopted installs whose skills rely on it). */
   inheritUserPath: boolean;
+  /** An existing Hermes install the app took over (packaging/migrate/adopt.py): the owner's own skills, routines,
+   * toolkit and Fleet Health jobs are kept, and the app adds none of its own alongside them. */
+  adopted: boolean;
+  /** Fleet Health's report folder and ledger, when the install already has them; empty = the app's own. */
+  learningDir: string;
+  learningTool: string;
+  /** Where the app's own backups go (the pre-update one included); empty = beside the app's data. */
+  backupDir: string;
   ports: { ui: number; bridge: number };
   /** Extra settings for the dashboard server (optional connectors), e.g. CHIEF_OPS_URL. Never secrets. */
   webEnv: Record<string, string>;
@@ -29,6 +37,10 @@ export const DEFAULTS: DesktopSettings = {
   hermesRoot: "",
   sharedGatewayLock: false,
   inheritUserPath: false,
+  adopted: false,
+  learningDir: "",
+  learningTool: "",
+  backupDir: "",
   ports: { ui: 3000, bridge: 7790 },
   webEnv: {},
   closeNoticeShown: false,

@@ -93,3 +93,12 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The drop gate** is a cron `script` in the profile's `scripts/` (Hermes runs scripts only from there). It runs from the vault (the job's `workdir`) and prints `{"wakeAgent": false}` when there is nothing to file. If Hermes changes the wake-gate contract (`cron/scheduler_prompt.py`), the contract fails at "an empty drop folder never wakes the model".
 - **The morning brief is mirrored into the chat session** (`attach_to_session`). Hermes stores the copy as a user row starting `[Cron delivery:`; `data.transcript` hides those rows, and the notice shows the brief once. If Hermes changes that prefix, the brief appears twice, once as if the owner had sent it. `test_bridge` covers the filter.
 - **Kanban boards** are recognized by `kanban-plugin:` in the properties block only. The column mapping is by keywords (Backlog, This Week, In Progress, Waiting On, Next Week, Done; unknown headings count as Backlog), and reading stops at `%%`.
+
+## Adopted installs
+
+`apps/desktop/src/store.ts` (`adopted`), `apps/desktop/python/provision.py --adopted`, `second_brain.adopted()` and `learning.ensure()` (both read `CHIEF_ADOPTED`), and `packaging/migrate/adopt.py`. Test map: the adopted section of `run_second_brain_contract.py`, `AdoptedInstallTests` in `test_provision_toolkit.py`.
+
+- **The owner's skills win by name.** The app looks for a same-named skill anywhere in the profile's skills and its `skills.external_dirs`. A skill counts as the app's only if its frontmatter says `author: Chief Command Center`; anything else is the owner's and is never shadowed. Renaming that author line in a bundled skill makes the app treat its own skill as the owner's.
+- **The toolkit is the owner's** when an external skills dir holds `obsidian-second-brain`. The always-loaded skill's `{{toolkit}}` then points there. If the owner deletes it later, the app reinstalls its own only when not adopted.
+- **The old `command-center` plugin must stay off:** the app's bridge registers the same platform. `adopt.py` moves it aside and removes it from `plugins.enabled`.
+- **The old launchers** (the guard task and Startup VBS that start this profile's gateway) are found by their reference to `profiles\<profile>\gateway-service`. `adopt.py --rollback` turns them back on.

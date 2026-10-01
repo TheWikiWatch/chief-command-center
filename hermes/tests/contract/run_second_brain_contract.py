@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
 import os
 import sys
 import types
@@ -332,6 +333,60 @@ up = second_brain.upgrade()
 state = json.loads(state_file.read_text(encoding="utf-8"))
 check("an earlier install learns its format and rules file", state.get("format") == "wiki" and state.get("rules") == "_CLAUDE.md", state)
 check("and the upgrade adds nothing to the vault", tree(mine) == before and f"{mine}\\_CLAUDE.md" in skill.read_text(encoding="utf-8"), up)
+
+# ---------------------------------------------------------------- an install the app adopted
+# The owner's own vault (its own manual), write gate and toolkit in a shared skills folder, and no app state yet:
+# the app records the vault as it is and adds no routines or skills that would shadow the owner's.
+own_vault = work / "adopted-vault"
+for rel, body in {"_CLAUDE.md": "# Manual\n\nSources in raw/, wiki/ pages, boards/.\n", "wiki/concepts/A.md": "a\n", "raw/articles/s.md": "s\n"}.items():
+    (own_vault / rel).parent.mkdir(parents=True, exist_ok=True)
+    (own_vault / rel).write_text(body, encoding="utf-8")
+shared = work / "shared-skills"
+(shared / "note-taking" / "second-brain-writes").mkdir(parents=True)
+(shared / "note-taking" / "second-brain-writes" / "SKILL.md").write_text("---\nname: second-brain-writes\nauthor: the owner\n---\nmine\n", encoding="utf-8")
+(shared / "obsidian-second-brain" / "references").mkdir(parents=True)
+import yaml as _yaml
+cfg = _yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
+cfg.setdefault("skills", {})["external_dirs"] = [shared.as_posix()]
+(home / "config.yaml").write_text(_yaml.safe_dump(cfg), encoding="utf-8")
+for rel in ("note-taking/second-brain-writes", "note-taking/second-brain-drop", "note-taking/second-brain-brief", "note-taking/second-brain-analysis"):
+    shutil.rmtree(home / "skills" / rel, ignore_errors=True)
+for name, job in cron_jobs().items():
+    from cron import jobs as _jobs
+    with _jobs.use_cron_store(home):
+        _jobs.remove_job(job["id"])
+(home / second_brain.STATE_FILE).unlink()
+with persona.profile_scope(home):
+    from hermes_cli.config import save_env_value
+    save_env_value("OBSIDIAN_VAULT_PATH", str(own_vault))
+before_vault, before_env = tree(own_vault), (home / ".env").read_text(encoding="utf-8")
+# An adopted install has no copy of the toolkit in the profile (provision --adopted keeps the owner's).
+own_toolkit_copy = home / "skills" / "obsidian-second-brain"
+aside = work / "toolkit-aside"
+shutil.move(str(own_toolkit_copy), str(aside))
+os.environ["CHIEF_ADOPTED"] = "1"
+try:
+    up = second_brain.upgrade()
+    state = json.loads((home / second_brain.STATE_FILE).read_text(encoding="utf-8"))
+    check("an adopted vault is recorded as using its own rules, routines off", state.get("adopted") and state.get("own_rules")
+          and state.get("routines_off") and state.get("format") == "wiki" and state.get("rules") == "_CLAUDE.md", state)
+    check("nothing is added to it, and no routine is armed", tree(own_vault) == before_vault and not cron_jobs()
+          and all(not r["exists"] for r in second_brain.routines()["routines"]), up)
+    check("the owner's write gate is never shadowed", not (home / "skills" / "note-taking" / "second-brain-writes").exists()
+          and (shared / "note-taking" / "second-brain-writes" / "SKILL.md").read_text(encoding="utf-8").endswith("mine\n"))
+    check("nor are the app's routine skills installed beside the owner's", not (home / "skills" / "note-taking" / "second-brain-brief").exists())
+    text = skill.read_text(encoding="utf-8")
+    check("Chief's always-loaded skill points at the vault's manual and the owner's toolkit",
+          f"{own_vault}\\_CLAUDE.md" in text and (shared / "obsidian-second-brain").as_posix() in text)
+    check("the owner's .env keeps its own settings", "OBSIDIAN_ENV_FILE" not in (home / ".env").read_text(encoding="utf-8").replace(before_env, ""))
+    learned = load("learning").ensure(home)
+    check("Fleet Health arms nothing in an adopted install", learned.get("adopted") and learned["jobs"] == [] and not cron_jobs(), learned)
+    turned = second_brain.set_routine("brief", enabled=True)
+    check("turning one routine on creates just that one, with its skill", list(cron_jobs()) == ["Second Brain: morning brief"]
+          and (home / "skills" / "note-taking" / "second-brain-brief" / "SKILL.md").is_file(), list(cron_jobs()))
+finally:
+    os.environ.pop("CHIEF_ADOPTED", None)
+    shutil.move(str(aside), str(own_toolkit_copy))
 
 print(json.dumps({"failures": failures}))
 sys.exit(1 if failures else 0)

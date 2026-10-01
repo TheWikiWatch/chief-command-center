@@ -9,7 +9,7 @@ metadata:
   hermes:
     tags: [second-brain, notes, tasks, memory, obsidian, wiki]
     category: note-taking
-    related_skills: [second-brain-writes, obsidian-find, obsidian-save, obsidian-task, obsidian-board, obsidian-daily, second-brain-drop, second-brain-brief, second-brain-analysis]
+    related_skills: [second-brain-writes, obsidian-find, obsidian-save, obsidian-task, obsidian-board, obsidian-daily]
 ---
 
 # Second Brain
@@ -56,9 +56,9 @@ A task is a card on a board in `boards/` (`- [ ] Title 🟡 @{YYYY-MM-DD} [[wiki
 | to find something | `obsidian-find` |
 | a person, a project | `obsidian-person`, `obsidian-project`, `obsidian-projects` |
 | a decision thought through | `obsidian-decide`, `obsidian-challenge` |
-| a file or article filed away | put it in `drop/` (the `second-brain-drop` routine files one at a time), or `second-brain-drop` now |
-| answers to the morning brief | `second-brain-brief` (reply mode) |
-| where things stand | `wiki/reviews/Current Analysis.md` (`second-brain-analysis` rewrites it nightly) |
+| a file or article filed away | put it in `drop/`: the drop routine files one file at a time (its skill is the one the rules file names, else `second-brain-drop`) |
+| answers to the morning brief | the brief's skill in reply mode (the one the rules file names, else `second-brain-brief`) |
+| where things stand | `wiki/reviews/Current Analysis.md`, rewritten nightly |
 | patterns, links between notes | `obsidian-connect`, `obsidian-synthesize`, `obsidian-emerge` |
 | a health check of the folder | `obsidian-health` |
 

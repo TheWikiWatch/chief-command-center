@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statfsSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync, statfsSync } from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
@@ -82,9 +82,14 @@ function hermesVersion(): string {
   }
 }
 
-/** Fleet Health's data folder, beside the Hermes profiles. */
+/** Fleet Health's data folder: an adopted install's own, else beside the Hermes profiles. */
 function learningDir(): string {
-  return path.join(hermesRoot, "learning");
+  return store.value.learningDir || path.join(hermesRoot, "learning");
+}
+
+/** Where the app's backups go: the owner's choice (an adopted install keeps them off a full drive), else beside the data. */
+function backupsDir(): string {
+  return store.value.backupDir || path.join(paths.data, "backups");
 }
 
 function envFor(kind: "gateway" | "web"): Record<string, string> {
@@ -102,6 +107,7 @@ function envFor(kind: "gateway" | "web"): Record<string, string> {
         CHIEF_DASHBOARD_TOKEN: token,
         CHIEF_DASHBOARD_PORT: String(store.value.ports.bridge),
         CHIEF_LEARNING_DIR: learningDir(),
+        ...(store.value.adopted ? { CHIEF_ADOPTED: "1" } : {}),
       },
     });
   }
@@ -117,7 +123,7 @@ function envFor(kind: "gateway" | "web"): Record<string, string> {
       CHIEF_PYTHON: layout.python,
       // Fleet Health: the bundled learning ledger (its report folder, the program and the Python that runs it).
       CHIEF_LEARNING_DIR: learningDir(),
-      CHIEF_LEARNING_TOOL: path.join(paths.plugins, "chief-dashboard-bridge", "ledger", "learning_ledger.py"),
+      CHIEF_LEARNING_TOOL: store.value.learningTool || path.join(paths.plugins, "chief-dashboard-bridge", "ledger", "learning_ledger.py"),
       CHIEF_HERMES_PYTHON: layout.python,
       CHIEF_PYTHONPATH: layout.pythonPath.join(";"),
       CHIEF_BACKUP_ENGINE: paths.backupEngine,
@@ -166,7 +172,12 @@ async function boot() {
   const gone = missing(paths);
   if (gone.length) return setStep("runtime", "error", `Missing: ${gone.join("; ")}`);
   try {
-    token = bridgeToken(paths.secrets, safeStorage);
+    // The migration hands over an existing install's bridge token once (so phones and scripts stay authorized);
+    // it is sealed here and the plain copy removed.
+    const handover = path.join(paths.appDir, "adopt-token.txt");
+    const adopt = existsSync(handover) ? readFileSync(handover, "utf8").trim() : "";
+    token = bridgeToken(paths.secrets, safeStorage, adopt.length >= 32 ? adopt : undefined);
+    if (existsSync(handover)) rmSync(handover, { force: true });
   } catch (e) {
     return setStep("runtime", "error", e instanceof Error ? e.message : String(e));
   }
@@ -185,7 +196,7 @@ async function boot() {
   const engine = engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, envFor("web"), payloadLayout(paths.payload).pythonPath);
   const recovered = await engine(["recover", "--state-dir", path.join(paths.appDir, "restore")]);
   if (recovered.ok && recovered.action === "rolled-back") setStep("prepare", "working", "An interrupted restore was undone.");
-  const provisioned = await runPython(paths.provision, ["--plugins-src", paths.plugins, "--bridge-port", String(store.value.ports.bridge)], {
+  const provisioned = await runPython(paths.provision, ["--plugins-src", paths.plugins, "--bridge-port", String(store.value.ports.bridge), ...(store.value.adopted ? ["--adopted"] : [])], {
     ...envFor("gateway"),
     HERMES_HOME: profileHome(hermesRoot),
     PYTHONPATH: payloadLayout(paths.payload).pythonPath.join(";"),
@@ -254,7 +265,7 @@ async function boot() {
 function preUpdateBackup(): Promise<{ ok: boolean; error?: string }> {
   const layout = payloadLayout(paths.payload);
   return engineRunner(layout.python, paths.backupEngine, envFor("web"), layout.pythonPath)([
-    "backup", "--dest", path.join(paths.data, "backups"), "--parts", "setup", "--kind", "pre-update", "--local",
+    "backup", "--dest", backupsDir(), "--parts", "setup", "--kind", "pre-update", "--local",
     "--hermes-root", hermesRoot, "--app-dir", path.join(paths.appDir, "settings-backup"), "--app-version", app.getVersion(),
   ]).then((r) => ({ ok: !!r.ok, error: r.error }));
 }

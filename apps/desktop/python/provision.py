@@ -60,9 +60,18 @@ def sync_plugin(src: Path, dst: Path) -> bool:
     return True
 
 
-def install_bundled_skills(src: Path, dest: Path) -> list[str]:
+def _same_named(name: str, roots: list[Path], target: Path) -> bool:
+    """A skill with this name somewhere else in these skill folders (the owner's, at another path)."""
+    for root in roots:
+        if root.is_dir() and any(p.resolve() != target.resolve() for p in root.rglob(f"{name}/SKILL.md")):
+            return True
+    return False
+
+
+def install_bundled_skills(src: Path, dest: Path, external: list[Path] | None = None) -> list[str]:
     """Install the app's skills into the chief's profile. A skill the app installed earlier is updated only if
-    the owner hasn't edited it; a same-named skill the app didn't install is never touched."""
+    the owner hasn't edited it; a same-named skill the app didn't install is never touched, at this path or any
+    other in the profile's skills or its `skills.external_dirs` (it would be shadowed or duplicated)."""
     if not src.is_dir():
         return []
     record_path = dest / ".chief-bundled.json"
@@ -83,6 +92,8 @@ def install_bundled_skills(src: Path, dest: Path) -> list[str]:
                 continue
             if record.get(rel) != current:
                 continue  # the owner's own skill, or edited by the owner: keep it
+        elif _same_named(skill.parent.name, [dest, *(external or [])], target):
+            continue  # the owner has a skill of this name elsewhere: theirs stays the only one
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(new, encoding="utf-8", newline="\n")
         record[rel] = new_hash
@@ -93,6 +104,34 @@ def install_bundled_skills(src: Path, dest: Path) -> list[str]:
 
 
 TOOLKIT = "obsidian-second-brain"
+
+
+def external_skill_dirs(home: Path) -> list[Path]:
+    try:
+        import yaml
+
+        config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        return []
+    skills = config.get("skills") if isinstance(config.get("skills"), dict) else {}
+    return [Path(str(d)) for d in skills.get("external_dirs") or []]
+
+
+def owner_toolkit(home: Path) -> Path | None:
+    """An adopted install's own copy of the toolkit, in one of its `skills.external_dirs` (a profile copy would
+    shadow it, skill by skill, with a different version). None when it has none."""
+    try:
+        import yaml
+
+        config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        return None
+    skills = config.get("skills") if isinstance(config.get("skills"), dict) else {}
+    for folder in skills.get("external_dirs") or []:
+        candidate = Path(str(folder)) / TOOLKIT
+        if candidate.is_dir():
+            return candidate
+    return None
 _UPSTREAM_ROOT = "$HOME/.hermes/skills/obsidian-second-brain"
 _TILDE_ROOT = "~/.hermes/skills/obsidian-second-brain"
 
@@ -167,6 +206,8 @@ def main() -> int:
     parser.add_argument("--plugin", action="append", default=[])
     parser.add_argument("--skills-src", default="", help="bundled skills (default: <plugins-src>/chief-dashboard-bridge/skills)")
     parser.add_argument("--vendor-src", default="", help="the vendored Second Brain toolkit (default: <plugins-src>/../vendor/obsidian-second-brain)")
+    parser.add_argument("--adopted", action="store_true",
+                        help="an existing install the app took over: its own copy of the toolkit is kept, not shadowed")
     args = parser.parse_args()
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(parents=True, exist_ok=True)
@@ -178,10 +219,12 @@ def main() -> int:
             changed.append(f"plugin {name}")
 
     skills_src = Path(args.skills_src) if args.skills_src else Path(args.plugins_src) / "chief-dashboard-bridge" / "skills"
-    changed += install_bundled_skills(skills_src, home / "skills")
+    changed += install_bundled_skills(skills_src, home / "skills", external_skill_dirs(home))
     vendor = Path(args.vendor_src) if args.vendor_src else Path(args.plugins_src).parent / "vendor" / TOOLKIT
     pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(p for p in sys.path if p.endswith("site-packages"))
-    changed += install_toolkit(vendor, home / "skills" / TOOLKIT, sys.executable, pythonpath.replace("\\", "/"))
+    own_toolkit = owner_toolkit(home) if args.adopted else None
+    if own_toolkit is None:
+        changed += install_toolkit(vendor, home / "skills" / TOOLKIT, sys.executable, pythonpath.replace("\\", "/"))
 
     from cli import save_config_value
     from hermes_cli.config import load_config, load_env, save_env_value

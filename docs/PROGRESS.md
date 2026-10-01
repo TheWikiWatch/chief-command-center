@@ -412,3 +412,26 @@
   - Compatibility suite 12/12 on the payload.
   - Tests: web 326, desktop 28, Python 89 + 20, privacy clean.
 - Built `Chief Command Center 0.1.7.appx`. The signature verifies, the build log holds no password, and the package carries the wiki template, its five skills and the drop gate. It installs over 0.1.6 with data kept; an existing Second Brain learns its format at first start.
+
+**Adopting an existing install (PLAN §5 "Existing install", the migration).**
+
+- **The app can take over an existing Hermes install in place.** Its profiles, conversations, memory, SOUL, skills, routines, bots and absolute paths keep working; nothing is copied or moved. New desktop settings carry it: `adopted`, `learningDir`, `learningTool` (the install's own Fleet Health) and `backupDir` (keeps backups off a full system drive).
+- **In an adopted install the app adds nothing beside the owner's own:**
+  - provisioning keeps the install's own copy of the Second Brain toolkit (no profile copy shadowing it);
+  - a bundled skill whose name the owner already uses anywhere is not installed (this now applies to every install);
+  - the vault is recorded as using its own rules, with the app's routines off and not created, and no generic brief, drop or analysis skills;
+  - the owner's write gate and `.env` settings are left alone;
+  - Fleet Health arms no jobs;
+  - bots keep their own setup.
+  Turning one routine on later creates just that one, with its skill.
+- **`packaging/migrate/adopt.py`** does the handover, journaled, with `--plan`, `--apply`, `--verify` and `--rollback`:
+  - it refuses while Chief is working;
+  - stops the app, disables the gateway's scheduled task and Startup item, and stops the old dashboard and the old gateway (planned-stop marker, scoped to its pid);
+  - backs up the install;
+  - moves the old `command-center` plugin aside and hands the bridge token over;
+  - points the app at the install on the same ports, and starts it.
+  Rollback restores the profile files the app changed from the backup, puts the plugin and launchers back, and restarts the old dashboard with its exact command line.
+- **Evidence:**
+  - Dress rehearsal on a full copy of a real install and its vault (2.7 GB, on another drive), running what the app runs at start. Only the bridge plugin, the `fleet-builder` and `second-brain` skills, `second_brain.json`, and three config values (the `fleet` toolset, auto-loading `second-brain`, steer while busy) changed. The 17 cron jobs, the SOUL and the vault (byte for byte) were unchanged; a second start changed nothing.
+  - `--plan` on the live install read it correctly and changed nothing.
+  - The Second Brain contract's new adopted section and two provisioning tests pass.

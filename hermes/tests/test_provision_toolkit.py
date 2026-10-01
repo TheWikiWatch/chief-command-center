@@ -70,3 +70,36 @@ class ToolkitInstallTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AdoptedInstallTests(unittest.TestCase):
+    """An existing install the app takes over keeps its own skills and its own toolkit."""
+
+    def setUp(self):
+        scratch = ROOT / "hermes/tests/.runtime"
+        scratch.mkdir(exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(dir=scratch)
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.home = self.root / "profiles" / "chief"
+        self.shared = self.root / "skills"
+        (self.home / "skills").mkdir(parents=True)
+        (self.home / "config.yaml").write_text(f"skills:\n  external_dirs:\n    - {self.shared.as_posix()}\n", encoding="utf-8")
+        self.bundled = self.root / "bundled"
+        for name in ("fleet-ops", "fleet-builder"):
+            (self.bundled / "autonomous-ai-agents" / name).mkdir(parents=True)
+            (self.bundled / "autonomous-ai-agents" / name / "SKILL.md").write_text(f"---\nname: {name}\nauthor: Chief Command Center\n---\n", encoding="utf-8")
+
+    def test_a_same_named_skill_elsewhere_is_never_shadowed(self):
+        mine = self.shared / "agents" / "fleet-ops" / "SKILL.md"
+        mine.parent.mkdir(parents=True)
+        mine.write_text("---\nname: fleet-ops\n---\nmine\n", encoding="utf-8")
+        changed = provision.install_bundled_skills(self.bundled, self.home / "skills", provision.external_skill_dirs(self.home))
+        self.assertEqual(changed, ["skill fleet-builder"])
+        self.assertFalse((self.home / "skills" / "autonomous-ai-agents" / "fleet-ops").exists())
+        self.assertEqual(mine.read_text(encoding="utf-8"), "---\nname: fleet-ops\n---\nmine\n")
+
+    def test_the_install_s_own_toolkit_is_found(self):
+        self.assertIsNone(provision.owner_toolkit(self.home))
+        (self.shared / "obsidian-second-brain").mkdir(parents=True)
+        self.assertEqual(provision.owner_toolkit(self.home), self.shared / "obsidian-second-brain")

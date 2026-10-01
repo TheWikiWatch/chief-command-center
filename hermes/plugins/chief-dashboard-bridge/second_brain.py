@@ -219,6 +219,12 @@ def _clean_path(raw: str) -> Path:
     return path
 
 
+def adopted() -> bool:
+    """An existing install the app took over (`CHIEF_ADOPTED`, set by the desktop app): its own skills, routines,
+    toolkit and settings are kept, and the app adds none of its own alongside them."""
+    return os.environ.get("CHIEF_ADOPTED") == "1"
+
+
 def _format(value: Any) -> str:
     fmt = str(value or "").strip().lower()
     return fmt if fmt in FORMATS else "para"
@@ -478,27 +484,76 @@ def _layout_of(home: Path, vault: Path) -> tuple[str, str]:
     return fmt, rules or RULES_FILE[fmt]
 
 
-def install_skill(home: Path, vault: Path, fmt: Optional[str] = None, rules: Optional[str] = None) -> Path:
+def _external_dirs(home: Path) -> list[Path]:
+    try:
+        import yaml
+
+        config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        return []
+    skills = config.get("skills") if isinstance(config.get("skills"), dict) else {}
+    return [Path(str(d)) for d in skills.get("external_dirs") or []]
+
+
+def toolkit_dir(home: Path) -> Path:
+    """The toolkit this profile uses: its own copy, else one in its `skills.external_dirs` (an adopted install's)."""
+    own = home / "skills" / TOOLKIT
+    if own.is_dir():
+        return own
+    for folder in _external_dirs(home):
+        if (folder / TOOLKIT).is_dir():
+            return folder / TOOLKIT
+    return own
+
+
+def _owner_skill(home: Path, name: str, ours: Path) -> bool:
+    """A skill of the owner's with this name (anywhere in the profile's skills or its external dirs, not written by
+    the app): the app's same-named skill would shadow it, so it isn't installed."""
+    for root in [home / "skills", *_external_dirs(home)]:
+        if not root.is_dir():
+            continue
+        for found in root.rglob(f"{name}/SKILL.md"):
+            if found.resolve() == ours.resolve():
+                continue
+            try:
+                head = found.read_text(encoding="utf-8")[:600]
+            except OSError:
+                continue
+            if "author: Chief Command Center" not in head:
+                return True
+    return False
+
+
+def install_skill(home: Path, vault: Path, fmt: Optional[str] = None, rules: Optional[str] = None,
+                  extras: Optional[bool] = None) -> Path:
     """The `second-brain` skill (the folder, its rules file, its critical facts, which skill does what) and the
     `second-brain-writes` write gate, in the variant for the folder's format, rendered for this folder. The wiki
-    format also gets its routines' skills (drop folder, morning brief, Current Analysis)."""
+    format also gets its routines' skills (drop folder, morning brief, Current Analysis), unless the folder has its
+    own rules (and so, likely, its own versions of them) and none of the app's routines is on: `extras`."""
     if fmt is None or rules is None:
         found_fmt, found_rules = _layout_of(home, vault)
         fmt, rules = fmt or found_fmt, rules or found_rules
     fmt = _format(fmt)
-    toolkit = (home / "skills" / TOOLKIT).as_posix()
+    toolkit = toolkit_dir(home).as_posix()
 
     def render(source: Path) -> str:
         return (source.read_text(encoding="utf-8").replace("{{vault}}", str(vault)).replace("{{rules}}", rules)
                 .replace("{{toolkit}}", toolkit).replace("{{critical_facts}}", critical_facts(vault)))
 
+    def put(target: Path, source: Path) -> None:
+        if not _owner_skill(home, target.parent.name, target):
+            _atomic_write(target, render(source))
+
     skill, writes = SKILL_SOURCES[fmt]
     dest = _skill_path(home)
-    _atomic_write(dest, render(skill))
-    _atomic_write(home / "skills" / WRITES_DIR[0] / WRITES_DIR[1] / "SKILL.md", render(writes))
-    if fmt == "wiki":
+    put(dest, skill)
+    put(home / "skills" / WRITES_DIR[0] / WRITES_DIR[1] / "SKILL.md", writes)
+    if extras is None:
+        state = _read_state(home)
+        extras = not (state.get("own_rules") and state.get("routines_off"))
+    if fmt == "wiki" and extras:
         for name, source in WIKI_SKILLS.items():
-            _atomic_write(home / "skills" / "note-taking" / name / "SKILL.md", render(source))
+            put(home / "skills" / "note-taking" / name / "SKILL.md", source)
     return dest
 
 
@@ -537,9 +592,11 @@ def _configure(home: Path, vault: Path, fmt: Optional[str] = None, rules: Option
         fmt, rules = fmt or found_fmt, rules or found_rules
     with persona.profile_scope(home):
         save_env_value("OBSIDIAN_VAULT_PATH", str(vault))
-        # The toolkit's own settings file stays in the profile, never in the user's home folder.
-        save_env_value("OBSIDIAN_ENV_FILE", str(home / "obsidian-second-brain.env"))
-    _wiki_path(home, vault, _format(fmt))
+        if not adopted():
+            # The toolkit's own settings file stays in the profile, never in the user's home folder.
+            save_env_value("OBSIDIAN_ENV_FILE", str(home / "obsidian-second-brain.env"))
+    if not adopted():
+        _wiki_path(home, vault, _format(fmt))
     install_skill(home, vault, fmt, rules)
     _auto_load(home)
 
@@ -668,12 +725,13 @@ def _job_args(routine: dict[str, Any], fmt: str, home: Path) -> tuple[str, dict[
 
 
 def ensure_routines(home: Path, vault: Path, fmt: Optional[str] = None, paused: bool = False,
-                    switch: Optional[bool] = None) -> list[str]:
-    """Create each of the format's routines that doesn't exist yet, switched off when `paused`. An existing one keeps
+                    switch: Optional[bool] = None, only: Optional[str] = None) -> list[str]:
+    """Create each of the format's routines that doesn't exist yet (none while `paused`). An existing one keeps
     its time and on/off state, but follows the folder and the format (prompt, skills, workdir, gate). A wiki-only
     routine left from an earlier format is removed. `switch` (setup only) turns them all on or off. Returns the ids
-    created."""
-    if not (home / "skills" / TOOLKIT).is_dir():
+    created. A routine that would start switched off isn't created (it is listed as off, and created when turned on);
+    `only` creates just that one."""
+    if not toolkit_dir(home).is_dir():
         return []
     fmt = _format(fmt or _layout_of(home, vault)[0])
     try:
@@ -698,11 +756,13 @@ def ensure_routines(home: Path, vault: Path, fmt: Optional[str] = None, paused: 
                     elif switch is False and job.get("enabled") and job.get("state") != "paused":
                         jobs.pause_job(job["id"], reason="Off until the owner turns it on.")
                     continue
+                if (paused or switch is False) or (only and routine["id"] != only):
+                    continue
+                if fmt == "wiki" and routine["skill"] in WIKI_SKILLS:
+                    install_skill(home, vault, fmt, None, extras=True)  # its skill, before its job
                 prompt, extra = _job_args(routine, fmt, home)
-                job = jobs.create_job(prompt, routine["schedule"], name=routine["name"], deliver="command_center",
-                                      workdir=str(vault), **extra)
-                if paused or switch is False:
-                    jobs.pause_job(job["id"], reason="Off until the owner turns it on.")
+                jobs.create_job(prompt, routine["schedule"], name=routine["name"], deliver="command_center",
+                                workdir=str(vault), **extra)
                 made.append(routine["id"])
             for rid, job in existing.items():
                 if rid not in wanted:
@@ -765,7 +825,7 @@ def set_routine(routine_id: str, enabled: Optional[bool] = None, at: Optional[st
         vault = _env_paths(home).get("OBSIDIAN_VAULT_PATH") or ""
         if not vault:
             raise SecondBrainError("Set up the Second Brain first.")
-        ensure_routines(home, Path(vault))
+        ensure_routines(home, Path(vault), only=routine_id)
         job = _routine_jobs(home).get(routine_id)
         if job is None:
             raise SecondBrainError("That routine couldn't be created.")
@@ -800,6 +860,14 @@ def upgrade(profile: str = "chief") -> dict[str, Any]:
     if not str(vault) or not vault.is_dir():
         return {"ok": True, "upgraded": False}
     done: list[str] = []
+    if adopted() and not state.get("path"):
+        # Taken over from an existing install: the vault keeps its own rules and its owner's routines.
+        rules = manual(vault)
+        fmt = detect_format(vault, rules) or "para"
+        state = {"path": str(vault), "mode": "keep", "format": fmt, "rules": rules or RULES_FILE[fmt], "own_rules": bool(rules),
+                 "routines_off": True, "adopted": True, "template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1),
+                 "set_up_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        _state_path(home).write_text(json.dumps(state, indent=2), encoding="utf-8")  # the skills read it
     if not state.get("format"):
         # Set up before formats existed: the app made PARA folders, or the owner's own folder was kept.
         rules = manual(vault)
@@ -838,7 +906,8 @@ def upgrade(profile: str = "chief") -> dict[str, Any]:
     except Exception:
         logger.debug("SOUL refresh skipped", exc_info=True)
     made = ensure_routines(home, vault, fmt, paused=bool(state.get("routines_off")))
-    _share_with_team(profile)
+    if not adopted():
+        _share_with_team(profile)  # an adopted install's bots keep their own setup; new bots get it when minted
     state.update({"template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1),
                   "routines": sorted(set((state.get("routines") or []) + made))})
     _state_path(home).write_text(json.dumps(state, indent=2), encoding="utf-8")
