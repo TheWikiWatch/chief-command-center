@@ -371,3 +371,4 @@
     - Settings window, Usage page and strip checked at desktop and phone sizes.
   - Compatibility suite 12/12 on the payload.
   - Tests: web 316, desktop 28, Python 88 + 20, privacy clean.
+- Built `Chief Command Center 0.1.4.appx` (about 896 MB). The signature verifies, the build log holds no password, and the package holds the new bridge modules (threads, routines, usage) and the new app. It installs over 0.1.3 with data kept.
