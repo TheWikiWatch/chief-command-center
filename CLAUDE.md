@@ -37,7 +37,8 @@ When the owner says "ship it" / "release this" / "push this out":
 
 1. Commit the work on `main` and push (the release is built from what's committed).
 2. `npm run release:plan` checks the setup without changing anything.
-3. `npm run release -- --notes "One or two plain sentences on what changed"`
+3. `npm run release -- --notes "One or two plain sentences on what changed"` (from cmd or Git Bash; in
+   PowerShell npm's wrapper drops the flags, so run `node scripts/release.mjs --notes "…"` there)
 
 `scripts/release.mjs` then runs every check, bumps the patch version (`--version X.Y.Z` to choose), builds the
 dashboard and the signed package (about 5 minutes), verifies the signature, checks that the password didn't reach

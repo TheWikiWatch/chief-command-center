@@ -512,3 +512,4 @@
   - Every release writes `Chief-Command-Center-setup-<version>.zip` (`npm run tester-kit` makes one for any build). It holds `Install Chief.cmd`, which checks the package's signature against the bundled certificate, trusts that certificate after one administrator prompt, installs or updates the app, and opens it.
   - Release builds now carry their update source, so a tester only pastes their key. `install-chief.ps1 -CheckOnly` checks a kit without changing anything: a good kit passed, and a mismatched certificate was refused.
 - Tests: Python usage 5 (3 new: a switch, last-call dating, the remainder), desktop 35 (2 new: the built-in update source).
+- **Released 0.1.12** with `release.mjs` (signature verified, no password in the logs) as the latest release, and its setup zip (844 MB). Found: in PowerShell, `npm run release -- --notes …` loses its flags in npm's wrapper; CLAUDE.md and DISTRIBUTION.md now say to run `node scripts/release.mjs` there.

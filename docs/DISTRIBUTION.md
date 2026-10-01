@@ -25,6 +25,9 @@ npm run release:plan                                   # checks the setup; chang
 npm run release -- --notes "What changed, in a sentence or two"
 ```
 
+In PowerShell, npm's wrapper drops the flags after `--`; run `node scripts/release.mjs --notes "…"` instead (and
+`node scripts/tester-kit.mjs --version X.Y.Z`).
+
 `scripts/release.mjs` runs every check, bumps the patch version (`--version X.Y.Z` to choose), builds the dashboard
 and the signed MSIX, verifies the signature, checks the password never reached the build log, writes the signed
 manifest (`release-tool.mjs make` + `verify`), commits and pushes the bump, and publishes it to the releases
