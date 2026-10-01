@@ -18,7 +18,7 @@
 | Face clock measure/draw | Layout reads interleaved with transform writes thrash layout per face | `pointer-attention.test.tsx` (measure before draw) |
 | Cursor attention | Eyes that lock onto a parked cursor, or flap at the edge of the radius | `pointer-attention.test.tsx`, `attentive-gaze.test.tsx` (decay, hysteresis) |
 | VoiceStudio plugin | Backend down or slow must never silence Chief (Edge fallback); text must stay on loopback | `tests/python/test_voicestudio.py` |
-| Phone alerts | Gateway's Python 3.14 can't load pywebpush (compiled 3.11 deps): every push failed silently; `ttl=0` dropped alerts to a dozing phone; a blocking send on Chief's event loop | `test_bridge.py` PushTests (ttl/timeout/Topic, helper fallback, never blocks), `npm run doctor` (Push library) |
+| Phone alerts | Gateway's Python 3.14 can't load pywebpush (compiled 3.11 deps): every push failed silently; `ttl=0` dropped alerts to a dozing phone; a blocking send on Chief's event loop | `test_bridge.py` PushTests (ttl/timeout/Topic, helper fallback, never blocks); on a real install, Settings → Phone → Send a test alert |
 | Service worker | Navigating the open app reloads it (lost state, unspoken replies); a push while the app is visible | `service-worker.test.ts`, `open-target.test.ts` |
 | Skill revert | Reverting an older change wrote back the version before it, silently discarding every later edit | `test_learning_ledger.py` (refuses without `--discard-newer N`), `fleet-health.test.tsx` (arms first), `fleet-routes.test.ts` |
 | Ledger output | Diffs with `→` crashed a Windows child's cp1252 stdout (500 on /api/fleet/diff) | ledger forces UTF-8; `runLedger` sets `PYTHONIOENCODING` |
@@ -30,7 +30,6 @@
 
 ```text
 npm test             # unit/regression; live bridge checks stay skipped
-npm run doctor       # read-only service, auth, and capability report
 npm run test:bridge  # three live checks; see README "Check" for the enable flag
 ```
 
@@ -105,6 +104,27 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The old `command-center` plugin must stay off:** the app's bridge registers the same platform. `adopt.py` moves it aside and removes it from `plugins.enabled`.
 - **The old launchers** (the guard task and Startup VBS that start this profile's gateway) are found by their reference to `profiles\<profile>\gateway-service`. `adopt.py --rollback` turns them back on.
 - **`gateway.standalone: true`** on the chief profile (set by provisioning) is what lets the app run that profile's gateway at all. Without it, Hermes 2026.9.x refuses a named profile's own gateway unless a Hermes launcher for that profile is registered on the Windows account. Hermes calls the key a temporary shim, "removed once multiplexing gaps are fixed". When an upstream pin drops it, the compatibility suite's "gateway start, bridge, stop" fails (exit 78), and the app must move to running the host gateway from the default profile.
+
+## Phone access (Tailscale Serve)
+
+`apps/desktop/src/tailscale.ts`, the `phone:*` IPC in `apps/desktop/src/main.ts`, `apps/web/components/phone/`, `apps/web/lib/tailnet-guard.ts`, `apps/web/middleware.ts`. Test map: `apps/desktop/tests/tailscale.test.ts`, `apps/web/tests/phone-settings.test.tsx`, `apps/web/tests/phone-this-device.test.tsx`, `apps/web/tests/tailnet-guard.test.ts`.
+
+- **The app owns exactly one Serve entry.** It reads `tailscale serve status --json`, marks the HTTPS entry whose `/` handler proxies to `127.0.0.1:<ui port>` as its own, and changes only that one (`serve --bg --yes --https=<port> http://127.0.0.1:<ui>`, and the same with `off`). It never runs `serve reset`: the owner may serve other things (another port on the same PC). Serve's HTTPS ports are 443, 8443 and 10000; when 443 is taken it uses the next free one.
+- **Serve waits on a consent link** when the tailnet hasn't allowed Serve or HTTPS yet. `enableServe` returns the first `https://login.tailscale.com/…` link it prints and ends the wait (20 s at most). If Tailscale changes that output, Turn on reports "didn't answer in time" instead of offering the link.
+- **The CLI's JSON shapes** (`status --json`: `BackendState`, `Self.DNSName`, `Self.UserID` → `User[id].LoginName`, `CertDomains`; `serve status --json`: `Web["host:port"].Handlers["/"].Proxy`) are parsed in `parseStatus` / `parseServe`. A change there shows as "isn't answering" or a step stuck at to-do.
+- **"Only you" is `CHIEF_DASHBOARD_TAILSCALE_USER`** in the desktop store's `webEnv`, which the dashboard server reads at start: changing it restarts that server (about a second). An empty value lets every login on the tailnet in (the behaviour before this page), so turning phone access on the first time sets it to the PC owner's login.
+- **The dashboard port can move** (3000 busy at start, `choosePorts`). `phoneServe` in the store remembers the Serve port and the ui port it pointed at, so the page can say the address points nowhere and offer Fix it.
+- **On the phone, Settings → Phone** is the page opened through Serve (a non-loopback host). Android's install button needs `beforeinstallprompt`, captured by `lib/install-prompt.ts`, which `command-shell.tsx` imports so it listens from the first moment. iPhone allows Web Push only from the Home Screen app, so alerts stay disabled in Safari with a reason.
+- **The bridge's push routes** `push/subscriptions` (a count only), `push/test` and `push/unsubscribe` are on the proxy allow-list for this page.
+
+## Update history
+
+`apps/desktop/src/release-history.ts`, `onVerified` in `apps/desktop/src/updater.ts`, `apps/web/lib/server/update-history.ts`, `apps/web/components/updates/update-history.tsx`. Test map: `apps/desktop/tests/release-history.test.ts`, `apps/web/tests/update-history.test.tsx`.
+
+- **Every release description is kept as signed**, in `<appDir>/release-history/<version>.json` + `.sig`, verified before writing and again when the desktop reads it. The dashboard server reads the same files (it trusts the app's own folder and doesn't re-verify), so the phone sees the list too.
+- **GitHub feeds sync the whole list** with `GET /releases?per_page=100`, then the two small assets of each release not kept yet. A folder feed keeps only what its checks have seen. Over 100 releases, the oldest stop arriving (add paging then).
+- **Install dates** come from `update-history.json`, written on the first start of each version (`recordInstall` in `boot()`), from 0.1.13 on. Earlier installs show only their release dates.
+- **What's new** shows the running version's notes once per device (`chief-whats-new-seen` in localStorage), for 14 days after an update that replaced an older version, and only when its notes are kept.
 
 ## Releases and testers
 

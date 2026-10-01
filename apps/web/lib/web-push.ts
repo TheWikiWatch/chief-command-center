@@ -79,3 +79,41 @@ export async function enableWebPush(): Promise<{ ok: boolean; error?: string }> 
     return { ok: false, error: String(e?.message || e) };
   }
 }
+
+/** How many devices get phone alerts (the bridge keeps only their push addresses, so a count is all there is). */
+export async function pushDeviceCount(): Promise<number | null> {
+  try {
+    const data = await requestJson<{ ok: boolean; count?: number }>("/api/bridge/push/subscriptions", { cache: "no-store" }, 5000);
+    return data.ok && typeof data.count === "number" ? data.count : null;
+  } catch {
+    return null;
+  }
+}
+
+/** One test alert to every registered device. */
+export async function sendTestPush(title: string): Promise<{ ok: boolean; sent: number; error?: string }> {
+  try {
+    const data = await requestJson<{ ok?: boolean; sent?: number; error?: string }>("/api/bridge/push/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body: "Test alert: phone alerts work.", url: "/" }),
+    });
+    return { ok: data.ok !== false && !data.error, sent: Number(data.sent || 0), error: data.error };
+  } catch (e) {
+    return { ok: false, sent: 0, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Stop alerts on this device: forget it at the bridge and drop the browser's subscription. */
+export async function disableWebPush(): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration("/");
+    const sub = await reg?.pushManager.getSubscription();
+    if (!sub) return { ok: true };
+    await requestJson("/api/bridge/push/unsubscribe", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ endpoint: sub.endpoint }) });
+    await sub.unsubscribe();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}

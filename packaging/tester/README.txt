@@ -12,4 +12,13 @@ Chief Command Center - setup
 
 Running "Install Chief.cmd" again later is safe: it updates Chief in place and keeps your data.
 
+Using Chief on your phone (optional)
+------------------------------------
+In Chief on the PC: Settings > Phone. It walks you through it and checks each step:
+  1. Tailscale on the PC (free; the page links to it). Sign in.
+  2. Turn on HTTPS certificates in Tailscale (the page opens the right Tailscale page).
+  3. Click Turn on. Chief gets a private https:// address that only your account can open.
+Then on the phone: install Tailscale, sign in with the same account, scan the QR code shown on the PC,
+add Chief to the home screen, and in Chief on the phone open Settings > Phone > Turn on alerts.
+
 To remove Chief: Settings > Apps > Installed apps > Chief Command Center > Uninstall.

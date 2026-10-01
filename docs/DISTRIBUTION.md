@@ -70,7 +70,9 @@ Later versions reach them through the app's update card; the zip is only for the
    If SmartScreen says it protected your PC, click **More info**, then **Run anyway**. Running it again later is safe.
 2. In the app: **Settings → Backup & updates → Update key:** paste the key you were given, then Save key. Windows keeps it protected for your account; the page never shows it again. The update source is already filled in.
 
-From then on, an "Update available — install?" card appears when a new release is out. Install backs up first, waits until Chief isn't working, and relaunches the app.
+From then on, an "Update available — install?" card appears when a new release is out. Install backs up first, waits until Chief isn't working, and relaunches the app. After an update, a small "What's new" note shows that version's notes once; **History** (Settings → Backup & updates, or About) lists every published version.
+
+3. Optional, **the phone:** Settings → Phone sets up private access through Tailscale step by step (the tester README has the short version).
 
 By hand, without the script: in an administrator PowerShell, `Import-Certificate -FilePath .\chief-test-signing.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople`, then `Add-AppxPackage -Path .\ChiefCommandCenter-<version>.appx`.
 

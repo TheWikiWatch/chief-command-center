@@ -71,11 +71,10 @@ export function parseGithub(feed: string): { owner: string; repo: string } | nul
 
 type Fetch = typeof fetch;
 
-export function githubSource(owner: string, repo: string, key: string, fetchImpl: Fetch = fetch): ReleaseSource {
+/** A private GitHub release repository read with a per-person key: the API calls both the updater and the history use. */
+export function githubApi(owner: string, repo: string, key: string, fetchImpl: Fetch = fetch) {
   const api = `https://api.github.com/repos/${owner}/${repo}`;
   const headers = { Authorization: `Bearer ${key}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "ChiefCommandCenter" };
-  let assets = new Map<string, number>();
-
   const refused = (status: number) =>
     status === 401
       ? new SourceError("the update key was refused: it may have expired or been revoked. Ask for a new key.")
@@ -84,11 +83,19 @@ export function githubSource(owner: string, repo: string, key: string, fetchImpl
         : status === 404
           ? new SourceError(`the release repository (${owner}/${repo}) wasn't found, or the key can't read it, or it has no release yet.`)
           : new SourceError(`GitHub answered ${status}.`);
-
+  const json = async <T>(pathPart: string): Promise<T> => {
+    if (!key) throw new SourceError("this release repository needs an update key: paste the one you were given in Settings, then Backup & updates.");
+    let res: Response;
+    try {
+      res = await fetchImpl(`${api}${pathPart}`, { headers: { ...headers, Accept: "application/vnd.github+json" } });
+    } catch {
+      throw new SourceError("GitHub isn't reachable (offline?).");
+    }
+    if (!res.ok) throw refused(res.status);
+    return (await res.json()) as T;
+  };
   /** An asset's bytes live behind a short-lived redirect; the key is never sent on to that host. */
-  async function assetResponse(name: string, range?: string): Promise<Response> {
-    const id = assets.get(name);
-    if (id === undefined) throw new SourceError(`the latest release has no ${name}.`);
+  const asset = async (id: number, range?: string): Promise<Response> => {
     let res: Response;
     try {
       res = await fetchImpl(`${api}/releases/assets/${id}`, { headers: { ...headers, Accept: "application/octet-stream" }, redirect: "manual" });
@@ -106,20 +113,26 @@ export function githubSource(owner: string, repo: string, key: string, fetchImpl
     }
     if (!res.ok) throw refused(res.status);
     return res;
+  };
+  return { label: `${owner}/${repo}`, json, asset };
+}
+
+export type GithubRelease = { tag_name: string; assets?: { id: number; name: string }[] };
+
+export function githubSource(owner: string, repo: string, key: string, fetchImpl: Fetch = fetch): ReleaseSource {
+  const gh = githubApi(owner, repo, key, fetchImpl);
+  let assets = new Map<string, number>();
+
+  async function assetResponse(name: string, range?: string): Promise<Response> {
+    const id = assets.get(name);
+    if (id === undefined) throw new SourceError(`the latest release has no ${name}.`);
+    return gh.asset(id, range);
   }
 
   return {
-    label: `${owner}/${repo}`,
+    label: gh.label,
     refresh: async () => {
-      if (!key) throw new SourceError("this release repository needs an update key: paste the one you were given in Settings, then Backup & updates.");
-      let res: Response;
-      try {
-        res = await fetchImpl(`${api}/releases/latest`, { headers: { ...headers, Accept: "application/vnd.github+json" } });
-      } catch {
-        throw new SourceError("GitHub isn't reachable (offline?).");
-      }
-      if (!res.ok) throw refused(res.status);
-      const body = (await res.json()) as { assets?: { id: number; name: string }[] };
+      const body = await gh.json<GithubRelease>("/releases/latest");
       assets = new Map((body.assets || []).map((a) => [a.name, a.id]));
     },
     read: async (name) => Buffer.from(await (await assetResponse(name)).arrayBuffer()),

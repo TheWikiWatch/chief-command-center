@@ -46,6 +46,9 @@ import { useAppConfig } from "@/lib/app-config";
 import { Onboarding, useNeedsOnboarding } from "@/components/onboarding/onboarding";
 import { SecondBrainSheet } from "@/components/second-brain/sheet";
 import { UpdateCard } from "@/components/updates/update-card";
+import { WhatsNewCard } from "@/components/updates/update-history";
+// Listens for Android's install offer from the first moment (Settings → Phone shows it).
+import "@/lib/install-prompt";
 import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunchTarget, type OpenTarget } from "@/lib/open-target";
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
 
@@ -506,10 +509,11 @@ export function CommandShell() {
         category={settingsCategory}
       />
       <SecondBrainSheet open={secondBrainOpen} phone={phone} onClose={() => setSecondBrainOpen(false)} onAskChief={sendFromToday} />
-      {updateLater || onboarding.needed ? null : (
+      {onboarding.needed ? null : (
         // Top right, under the headers: clear of the message box and the tab bar.
-        <div className="fixed right-4 top-16 z-50 w-[min(24rem,calc(100vw-2rem))]">
-          <UpdateCard compact onLater={() => setUpdateLater(true)} />
+        <div className="fixed right-4 top-16 z-50 w-[min(24rem,calc(100vw-2rem))] space-y-2">
+          {updateLater ? null : <UpdateCard compact onLater={() => setUpdateLater(true)} />}
+          <WhatsNewCard />
         </div>
       )}
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />

@@ -56,6 +56,8 @@ export type UpdaterDeps = {
   stopChief: () => Promise<void>;
   install: (file: string) => Promise<{ ok: boolean; error?: string }>;
   onState?: (state: UpdateState) => void;
+  /** Each release description that verified (newer or not): the update history keeps it. */
+  onVerified?: (bytes: Buffer, signature: string, release: Release) => void;
 };
 
 export function compareVersions(a: string, b: string): number {
@@ -130,6 +132,7 @@ export class Updater {
     } catch (e) {
       return this.set({ status: "error", error: e instanceof Error ? e.message : "This update couldn't be verified." });
     }
+    this.deps.onVerified?.(bytes, sig, release);
     const newer = compareVersions(release.version, this.deps.currentVersion) > 0;
     if (!newer || this.deps.skipped().includes(release.version)) return this.set({ status: "up-to-date", checkedAt: Date.now() });
     return this.set({ status: "available", checkedAt: Date.now(), release });

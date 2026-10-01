@@ -26,6 +26,10 @@ describe("proxy trust boundary", () => {
     expect(permittedOperation("bridge", "POST", ["setup", "secrets"])).toBe(false);
     expect(permittedOperation("ops", "PUT", ["settings"])).toBe(true);
     expect(permittedOperation("ops", "PUT", ["boards"])).toBe(false);
+    // Settings → Phone: the alert device count by GET; a test alert and stopping alerts by POST.
+    expect(permittedOperation("bridge", "GET", ["push", "subscriptions"])).toBe(true);
+    for (const p of [["push", "test"], ["push", "unsubscribe"]]) expect(permittedOperation("bridge", "POST", p)).toBe(true);
+    expect(permittedOperation("bridge", "GET", ["push", "test"])).toBe(false);
   });
   it("blocks writes before forwarding and permits same-origin JSON mutations", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ok:true})); vi.stubGlobal("fetch", fetcher);

@@ -33,6 +33,8 @@ export type DesktopSettings = {
   dataSchema: number;
   /** The Hermes build (payload commit) that last opened this data: an update that keeps it can't migrate anything. */
   lastHermes: string;
+  /** Phone access the app turned on: the Tailscale Serve HTTPS port, and the dashboard port it pointed at then. */
+  phoneServe: { port: number; uiPort: number } | null;
 };
 
 export const DEFAULTS: DesktopSettings = {
@@ -52,6 +54,7 @@ export const DEFAULTS: DesktopSettings = {
   lastVersion: "",
   dataSchema: 0,
   lastHermes: "",
+  phoneServe: null,
 };
 
 export class Store {

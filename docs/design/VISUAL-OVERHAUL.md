@@ -321,7 +321,7 @@ Haptics are skipped automatically when `navigator.vibrate` is missing (desktop, 
 5. **Phone check per phase** on your Android over the Tailscale URL: send, hold-to-talk, approval (a real one when it happens), tab switches, Settings switches. Also toggle Airplane mode for the outage state.
 6. **Hard rules:**
    - No changes under `hermes-plugin/` and no bridge-protocol changes.
-   - No gateway restarts. Port 3000 unchanged. Tailscale path verified with `npm run doctor`.
+   - No gateway restarts. Port 3000 unchanged. Tailscale path checked in Settings → Phone.
 
 ## 10. Phases, effort and risk
 

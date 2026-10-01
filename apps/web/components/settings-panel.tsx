@@ -22,12 +22,16 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   InfoIcon,
+  SmartphoneIcon,
   PencilIcon,
   XIcon,
 } from "@/components/icons";
 import { BackupPanel } from "@/components/backup/backup-panel";
 import { UpdatesPanel, useUpdates } from "@/components/updates/update-card";
+import { UpdateHistoryButton } from "@/components/updates/update-history";
+import { PhoneSettings } from "@/components/phone/phone-settings";
 import { Sheet } from "@/components/ui/sheet";
+import { Group, PillButton, Row } from "@/components/ui/settings-group";
 import { Segmented, Switch } from "@/components/ui/controls";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
 import { FONT_STEPS, notifyVoiceConfig, useDashboardPrefs } from "@/lib/dashboard-prefs";
@@ -75,6 +79,7 @@ const CATEGORIES: { id: SettingsCategory; label: string; blurb: string; Icon: (p
   { id: "voice", label: "Voice", blurb: "How the chief speaks and listens.", Icon: ({ className }) => <AudioLinesIcon className={className} /> },
   { id: "second-brain", label: "Second Brain", blurb: "Your notes folder and its routines.", Icon: ({ className }) => <BookOpenIcon className={className} /> },
   { id: "notifications", label: "Notifications", blurb: "Alerts, sounds and vibration on this device.", Icon: ({ className }) => <BellIcon className={className} /> },
+  { id: "phone", label: "Phone", blurb: "Use the app on your phone, privately, with alerts.", Icon: ({ className }) => <SmartphoneIcon className={className} /> },
   { id: "usage", label: "Usage", blurb: "Tokens and cost for the chief and every bot, and your budget.", Icon: ({ className }) => <ChartColumnIcon className={className} /> },
   { id: "backup", label: "Backup & updates", blurb: "Copies of your setup, and new versions of the app.", Icon: ({ className }) => <HardDriveDownloadIcon className={className} /> },
   { id: "about", label: "About", blurb: "Versions, licences and credits.", Icon: ({ className }) => <InfoIcon className={className} /> },
@@ -284,6 +289,8 @@ function CategoryPage({
           <SoundGroup />
           <HapticsGroup />
         </>
+      ) : id === "phone" ? (
+        <PhoneSettings />
       ) : id === "usage" ? (
         <UsagePage />
       ) : id === "backup" ? (
@@ -351,7 +358,7 @@ function AboutGroup() {
   }, []);
   return (
     <>
-      <Group icon={<InfoIcon className="size-4" />} title="Chief Command Center">
+      <Group icon={<InfoIcon className="size-4" />} title="Chief Command Center" action={<UpdateHistoryButton />}>
         <Row label="Version" hint={about?.app || "…"} />
         <Row label="Hermes Agent" hint={about ? `${about.hermes || "version unknown"}, by Nous Research (MIT)` : "…"} />
         <Row
@@ -430,7 +437,7 @@ function UpdatesGroup() {
   const { api } = useUpdates();
   if (!api) return null;
   return (
-    <Group icon={<RefreshCwIcon className="size-4" />} title="Updates" hint="New versions of the app, including its tested Hermes.">
+    <Group icon={<RefreshCwIcon className="size-4" />} title="Updates" hint="New versions of the app, including its tested Hermes." action={<UpdateHistoryButton />}>
       <div className="px-3 py-3">
         <UpdatesPanel />
       </div>
@@ -1304,59 +1311,6 @@ function KeyField({
 }
 
 /* ------------------------------------------------------------------ Primitives */
-
-function Group({
-  icon,
-  title,
-  hint,
-  action,
-  children,
-}: {
-  icon: ReactNode;
-  title: string;
-  hint?: string;
-  action?: ReactNode;
-  children: ReactNode;
-}) {
-  const id = useId();
-  return (
-    <section aria-labelledby={id}>
-      <div className="mb-2 flex items-center gap-2 px-1">
-        <span className="text-fg-3">{icon}</span>
-        <h3 id={id} className="min-w-0 flex-1 text-headline text-fg">
-          {title}
-        </h3>
-        {action}
-      </div>
-      {hint ? <p className="-mt-1 mb-2.5 px-1 text-caption text-fg-3">{hint}</p> : null}
-      <div className="divide-y divide-[color:var(--line-1)] overflow-hidden rounded-card border border-line bg-card">{children}</div>
-    </section>
-  );
-}
-
-function Row({
-  label,
-  hint,
-  stacked,
-  dim,
-  children,
-}: {
-  label: ReactNode;
-  hint?: string;
-  stacked?: boolean;
-  dim?: boolean;
-  children?: ReactNode;
-}) {
-  return (
-    <div className={`px-3.5 py-3 transition-opacity duration-fast ${dim ? "opacity-45" : ""}`}>
-      <div className={stacked ? "mb-2" : ""}>
-        <p className="text-body text-fg">{label}</p>
-        {hint ? <p className="mt-0.5 text-caption text-fg-3">{hint}</p> : null}
-      </div>
-      {children}
-    </div>
-  );
-}
 
 function SwitchRow({
   label,

@@ -18,11 +18,20 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
     setFeed: (folder: string) => ipcRenderer.invoke("updates:setFeed", folder),
     hasKey: () => ipcRenderer.invoke("updates:hasKey"),
     setKey: (key: string) => ipcRenderer.invoke("updates:setKey", key),
+    history: () => ipcRenderer.invoke("updates:history"),
     onState: (fn: (state: unknown) => void) => {
       const listener = (_e: unknown, state: unknown) => fn(state);
       ipcRenderer.on("updates:state", listener);
       return () => ipcRenderer.removeListener("updates:state", listener);
     },
+  },
+  // Settings → Phone: Tailscale's state, and the one Serve entry the app manages.
+  phone: {
+    state: () => ipcRenderer.invoke("phone:state"),
+    enable: (port?: number) => ipcRenderer.invoke("phone:enable", port),
+    disable: () => ipcRenderer.invoke("phone:disable"),
+    setAccess: (mode: "owner" | "tailnet") => ipcRenderer.invoke("phone:setAccess", mode),
+    open: (url: string) => ipcRenderer.invoke("phone:open", url),
   },
 });
 

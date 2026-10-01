@@ -18,6 +18,8 @@ import { launchWeb, webHealth } from "./web";
 import { RELEASE_PUBLIC_KEY } from "./release-key";
 import { compareVersions, Updater, type Release } from "./updater";
 import { builtInFeed, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
+import { cacheRelease, recordInstall, syncGithubHistory } from "./release-history";
+import { choosePort, disableServe, enableServe, findTailscale, phoneUrl, readState } from "./tailscale";
 
 /** The data layout this version writes. A later version that changes it raises this, and an older app
  * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
@@ -249,6 +251,7 @@ async function boot() {
     const saved = await preUpdateBackup();
     if (!saved.ok) return setStep("prepare", "error", `The backup before this version's first start failed: ${saved.error}. Chief wasn't started, so nothing changed.`);
   }
+  recordInstall(paths.appDir, app.getVersion(), previous);
   store.save({ lastVersion: app.getVersion(), dataSchema: DATA_SCHEMA, lastHermes: hermes });
   setStep("prepare", "done");
 
@@ -299,7 +302,7 @@ async function boot() {
     },
   });
   notifier.start();
-  void updater.check();
+  void updater.check().then(() => syncHistory());
 }
 
 function preUpdateBackup(): Promise<{ ok: boolean; error?: string }> {
@@ -438,6 +441,96 @@ async function quit() {
   app.exit(0);
 }
 
+/* ------------------------------------------------------------------ update history */
+
+/** Fetch and verify any published release this install hasn't kept yet (GitHub feeds; a folder feed is kept as it is checked). */
+async function syncHistory(): Promise<{ ok: boolean; added?: number; error?: string }> {
+  const repo = parseGithub(effectiveFeed(store.value.updateFeed, shippedFeed));
+  const key = readUpdateKey(paths.secrets, safeStorage);
+  if (!repo || !key) return { ok: true, added: 0 };
+  try {
+    return { ok: true, added: await syncGithubHistory(repo.owner, repo.repo, key, paths.appDir, RELEASE_PUBLIC_KEY) };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/* ------------------------------------------------------------------ phone access (Tailscale Serve) */
+
+const ALLOW_ENV = "CHIEF_DASHBOARD_TAILSCALE_USER";
+
+/** Tailscale's state for Settings → Phone, with the app's own view of it. The login is the owner's own, shown only on this PC. */
+async function phoneState() {
+  const ui = store.value.ports.ui;
+  const ts = await readState(ui);
+  const ours = ts.serve.find((e) => e.ours);
+  const recorded = store.value.phoneServe;
+  // The dashboard moved to another port (3000 was busy at start): Serve still points at the old one.
+  const moved = !ours && !!recorded && recorded.uiPort !== ui && ts.serve.some((e) => e.port === recorded.port && e.target.endsWith(`:${recorded.uiPort}`));
+  const allow = String(store.value.webEnv[ALLOW_ENV] || "").trim();
+  return {
+    ...ts,
+    uiPort: ui,
+    url: ours ? phoneUrl(ts.dnsName, ours.port) : "",
+    port: ours?.port ?? (moved ? recorded!.port : choosePort(ts.serve)),
+    moved,
+    access: allow ? ("owner" as const) : ("tailnet" as const),
+    allowed: allow,
+  };
+}
+
+/** Restart only the dashboard server so it reads a new allow-list (the window keeps its page). */
+async function restartWeb() {
+  await web.stop(true).catch(() => undefined);
+  await web.start();
+}
+
+async function setPhoneAccess(mode: "owner" | "tailnet", login?: string) {
+  const webEnv = { ...store.value.webEnv };
+  if (mode === "owner") {
+    const who = (login || (await readState(store.value.ports.ui)).login).trim();
+    if (!who) return { ok: false, error: "Tailscale didn't say which account owns this PC. Check that it's signed in." };
+    webEnv[ALLOW_ENV] = who;
+  } else delete webEnv[ALLOW_ENV];
+  store.save({ webEnv });
+  await restartWeb();
+  return { ok: true };
+}
+
+async function enablePhone(wanted?: number) {
+  const exe = findTailscale();
+  if (!exe) return { ok: false, error: "Tailscale isn't installed on this PC." };
+  const state = await phoneState();
+  if (state.backend !== "Running") return { ok: false, error: "Tailscale isn't running and signed in on this PC." };
+  const recorded = store.value.phoneServe;
+  const port = wanted ?? (state.moved && recorded ? recorded.port : choosePort(state.serve));
+  if (port === null) return { ok: false, error: "Every port Tailscale Serve can use (443, 8443, 10000) is taken by something else on this PC." };
+  const taken = state.serve.find((e) => e.port === port && !e.ours && !(state.moved && recorded?.port === port));
+  if (taken) return { ok: false, error: `Port ${port} already serves ${taken.target}. Choose another port.` };
+  const result = await enableServe(exe, port, store.value.ports.ui);
+  if (!result.ok) return result;
+  store.save({ phoneServe: { port, uiPort: store.value.ports.ui } });
+  // Turning it on for the first time: only the owner's own Tailscale account, unless they widened it before.
+  if (!store.value.webEnv[ALLOW_ENV] && state.login && !recorded) await setPhoneAccess("owner", state.login);
+  return { ok: true, url: phoneUrl(state.dnsName, port) };
+}
+
+async function disablePhone() {
+  const exe = findTailscale();
+  const state = await phoneState();
+  const ours = state.serve.find((e) => e.ours);
+  if (!exe || !ours) {
+    store.save({ phoneServe: null });
+    return { ok: true };
+  }
+  const result = await disableServe(exe, ours.port, store.value.ports.ui);
+  if (result.ok) store.save({ phoneServe: null });
+  return result;
+}
+
+/** Links the Phone page may open: Tailscale's own pages (downloads, admin, consent) and the phone app stores. */
+const OPENABLE = /^https:\/\/((login\.|www\.)?tailscale\.com|apps\.apple\.com|play\.google\.com)\//;
+
 /* ------------------------------------------------------------------ IPC for the dashboard */
 
 function registerIpc() {
@@ -459,6 +552,12 @@ function registerIpc() {
     store.save({ updateFeed: String(folder || "").trim() });
     return updater.check();
   });
+  ipcMain.handle("updates:history", () => syncHistory());
+  ipcMain.handle("phone:state", () => phoneState());
+  ipcMain.handle("phone:enable", (_e, port?: number) => enablePhone(typeof port === "number" ? port : undefined));
+  ipcMain.handle("phone:disable", () => disablePhone());
+  ipcMain.handle("phone:setAccess", (_e, mode: string) => setPhoneAccess(mode === "owner" ? "owner" : "tailnet"));
+  ipcMain.handle("phone:open", (_e, url: string) => (OPENABLE.test(String(url)) ? shell.openExternal(String(url)).then(() => true) : false));
   ipcMain.handle("boot:retry", () => boot());
   ipcMain.handle("boot:logs", () => shell.openPath(paths.logs));
   ipcMain.handle("desktop:pickFolder", async (_e, opts: { title?: string; defaultPath?: string } = {}) => {
@@ -566,8 +665,16 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
       },
       install: (file) => installPackage(file),
       onState: (state) => window?.webContents.send("updates:state", state),
+      // Every verified release is kept for the update history (a folder feed's included).
+      onVerified: (bytes, signature) => {
+        try {
+          cacheRelease(paths.appDir, bytes, signature, RELEASE_PUBLIC_KEY);
+        } catch {
+          /* the check already reported it */
+        }
+      },
     });
-    setInterval(() => void updater.check(), 24 * 3600 * 1000).unref();
+    setInterval(() => void updater.check().then(() => syncHistory()), 24 * 3600 * 1000).unref();
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
       const ours = wc.getURL().startsWith(uiUrl());
       callback(ours && ["media", "notifications", "clipboard-sanitized-write", "fullscreen"].includes(permission));

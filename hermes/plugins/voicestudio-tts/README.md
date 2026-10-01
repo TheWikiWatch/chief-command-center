@@ -34,7 +34,7 @@ To go back, pick Edge (or any other engine) in the same list. The plugin can sta
 
 ## Parking (currently parked, 2026-09-27)
 
-Parked means nothing runs: Chief is on Edge, `voicestudio-tts` is out of `plugins.enabled`, the backend is stopped, and `E:\tools\voicestudio.parked` exists. While that file exists, `ensure-voicestudio.ps1` (and so the desktop shortcut) won't start the backend, and `npm run doctor` shows `PARKED`. The marker file lists the four steps to bring it back. Nothing is deleted: the checkout, models and saved voices stay on E:.
+Parked means nothing runs: Chief is on Edge, `voicestudio-tts` is out of `plugins.enabled`, the backend is stopped, and `E:\tools\voicestudio.parked` exists. While that file exists, `ensure-voicestudio.ps1` (and so the desktop shortcut) won't start the backend. The marker file lists the four steps to bring it back. Nothing is deleted: the checkout, models and saved voices stay on E:.
 
 ## Config
 
@@ -53,7 +53,7 @@ Everything is optional, under `tts.voicestudio` in the chief profile's `config.y
 
 ## Security
 
-VoiceStudio's backend is unauthenticated on loopback, and its admin routes (`/system/*`, `/api/settings/*`) can execute code. Keep it bound to `127.0.0.1` and never put port 3900 behind Tailscale Serve or Funnel. `npm run doctor` fails if it listens on anything but loopback, or if Serve exposes it.
+VoiceStudio's backend is unauthenticated on loopback, and its admin routes (`/system/*`, `/api/settings/*`) can execute code. Keep it bound to `127.0.0.1` and never put port 3900 behind Tailscale Serve or Funnel. Check with `tailscale serve status` that nothing serves it.
 
 VoiceStudio is AGPL-3.0, which is fine for personal use unmodified. Model weights carry their own licenses (see each model card).
 

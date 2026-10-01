@@ -40,7 +40,7 @@ The web server reads only its environment (`apps/web/lib/server/app-config.ts`);
 
 - Today can read an Ops-compatible task service (`CHIEF_OPS_URL`) or, by default, the Second Brain folder.
 - Fleet Health can read a learning ledger's report (`CHIEF_LEARNING_DIR`).
-- Phone access uses Tailscale Serve when the user sets it up.
+- Phone access uses Tailscale Serve, set up from Settings → Phone. The desktop app reads Tailscale's state and adds (or removes) one Serve entry, HTTPS → `http://127.0.0.1:<dashboard port>`; the dashboard admits a Serve request only with an allowed Tailscale login (`CHIEF_DASHBOARD_TAILSCALE_USER`, set by the same page; "only you" by default).
 
 ## Phone alerts
 

@@ -15,15 +15,15 @@ export function middleware(req: NextRequest) {
 
   const api = req.nextUrl.pathname.startsWith("/api/");
   const detail = login
-    ? "This Tailscale account is not on the dashboard allowlist."
-    : "Open this app over Tailscale Serve, or on this PC at http://127.0.0.1:3000.";
+    ? "This Tailscale account isn't allowed to open Chief."
+    : "Open Chief through its Tailscale address, or in the desktop app on its PC.";
 
   if (api) {
     return NextResponse.json({ ok: false, error: detail }, { status: 401 });
   }
 
   return new NextResponse(
-    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chief</title><body style="font-family:system-ui,sans-serif;background:#0c0d10;color:#e8eaed;padding:2rem;line-height:1.5"><h1 style="font-size:1.25rem">Chief Command Center</h1><p>${detail}</p><p style="color:#9aa0a6">Set <code>CHIEF_DASHBOARD_TAILSCALE_USER</code> in <code>.env.local</code> to your Tailscale login if this keeps happening.</p></body>`,
+    `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chief</title><body style="font-family:system-ui,sans-serif;background:#0c0d10;color:#e8eaed;padding:2rem;line-height:1.5"><h1 style="font-size:1.25rem">Chief Command Center</h1><p>${detail}</p><p style="color:#9aa0a6">On the PC that runs Chief: Settings, then Phone, then Who can open Chief. Sign in to Tailscale on this device with an account allowed there.</p></body>`,
     {
       status: 401,
       headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
