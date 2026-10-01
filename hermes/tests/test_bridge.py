@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -171,6 +172,7 @@ class BridgeTests(unittest.TestCase):
         inbound = self.home / "cache" / "inbound"
         with patch.dict(os.environ, {"COMMAND_CENTER_ENABLED": "1"}):
             bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
+            bridge._started -= 600  # past start-up: no waiting for an adapter that isn't coming
             with patch.object(data, "resolve_session_key", return_value={"sessionKey": "agent:main:command_center:dm:owner", "platform": "command_center"}):
                 detached = bridge.send("look", [{"name": "a.png", "mime": "image/png", "data_url": image}])
                 self.assertFalse(detached["ok"])
@@ -310,10 +312,28 @@ class BridgeTests(unittest.TestCase):
                 session_key_override="agent:main:discord:group:1546:owner",
                 inject=lambda text, sk: injected.append((text, sk)) or True,
             )
+            bridge._started -= 600  # long past start-up: a missing adapter is a fault, reported at once
+            started = time.monotonic()
             result = bridge.send("hello")
         self.assertFalse(result["ok"])
+        self.assertLess(time.monotonic() - started, 2)
         self.assertEqual(injected, [])
         self.assertIn("not attached", result["error"].lower())
+
+    def test_a_send_right_after_start_waits_for_the_adapter(self):
+        received = []
+
+        class Adapter:
+            def queue_user_text(self, text, media=None, message_type="text"):
+                received.append(text)
+                return True
+
+        with patch.dict(os.environ, {"COMMAND_CENTER_ENABLED": "1"}):
+            bridge = server.BridgeServer(token="test", port=0, session_key_override="agent:main:command_center:dm:owner", inject=lambda text, sk: False)
+            threading.Timer(0.6, lambda: setattr(bridge, "command_center_adapter", Adapter())).start()
+            result = bridge.send("hello")
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(received, ["hello"])
 
     def test_approval_requires_specific_request(self):
         self.assertFalse(data.resolve_approval("session", "", "always")["ok"])

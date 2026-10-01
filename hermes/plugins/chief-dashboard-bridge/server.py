@@ -151,6 +151,7 @@ class BridgeServer:
         self.discord_bot = None
         self.discord_adapter = None
         self.command_center_adapter = None
+        self._started = time.monotonic()
         self._httpd: Optional[ThreadingHTTPServer] = None
         self._subscribers: list[callable] = []
         self._sub_lock = threading.Lock()
@@ -450,9 +451,14 @@ class BridgeServer:
             self._release_send(client_id)
         return result
 
+    _STARTUP_GRACE_S = 60.0
+
     def _attached_adapter(self, wait_s: float = 15.0):
         """The Command Center adapter. Right after the gateway starts, /health answers a few seconds before the
-        adapter attaches; a message sent in that window waits for it instead of failing."""
+        adapter attaches; a message sent in that window waits for it instead of failing. Later on, a missing
+        adapter is a real fault and is reported at once."""
+        if time.monotonic() - self._started > self._STARTUP_GRACE_S:
+            wait_s = 0.0
         end = time.monotonic() + wait_s
         while self.command_center_adapter is None and time.monotonic() < end and not self._watch_stop.is_set():
             time.sleep(0.25)
