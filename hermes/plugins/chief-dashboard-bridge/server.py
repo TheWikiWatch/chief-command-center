@@ -45,6 +45,8 @@ _BINDING_TTL = 2.0
 _WATCH_SECONDS = 2.5
 _FLAG_EVERY = 24
 _SIG_EVERY = 2
+# The Second Brain: brought up to date once at start, its critical facts re-checked about once a minute.
+_FACTS_EVERY = 24
 
 
 def learning_report_path() -> Optional[Path]:
@@ -301,8 +303,17 @@ class BridgeServer:
     def _watch_loop(self) -> None:
         last_sig = ""
         tick = 0
+        try:
+            second_brain.upgrade()
+        except Exception:
+            logger.warning("Second Brain upgrade failed", exc_info=True)
         while not self._watch_stop.wait(_WATCH_SECONDS):
             tick += 1
+            if tick % _FACTS_EVERY == 0:
+                try:
+                    second_brain.sync_critical_facts()
+                except Exception:
+                    logger.debug("critical facts sync failed", exc_info=True)
             try:
                 self._push_new_approval()
             except Exception:
@@ -746,6 +757,9 @@ def _make_handler(bridge: BridgeServer):
             if path == "/setup/second-brain":
                 self._json(_guarded(second_brain.status))
                 return
+            if path == "/second-brain/routines":
+                self._json(_guarded(second_brain.routines))
+                return
             if path == "/voice/model":
                 self._json(_guarded(speech_model.status))
                 return
@@ -955,6 +969,15 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/setup/second-brain":
                 self._act(path, started, _guarded(lambda: second_brain.setup(str(body.get("path") or ""), str(body.get("mode") or ""))))
+                return
+            if path == "/second-brain/routines":
+                enabled = body.get("enabled")
+                at = body.get("time")
+                self._act(path, started, _guarded(lambda: second_brain.set_routine(
+                    str(body.get("id") or ""),
+                    enabled=enabled if isinstance(enabled, bool) else None,
+                    at=str(at) if isinstance(at, str) else None,
+                )))
                 return
             if path == "/fleet/model":
                 self._act(path, started, _guarded(lambda: fleet.set_model(

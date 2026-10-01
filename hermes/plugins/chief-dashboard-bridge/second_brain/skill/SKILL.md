@@ -1,59 +1,55 @@
 ---
 name: second-brain
-description: "The owner's Second Brain: capture, tasks, projects, daily notes, weekly review."
-version: 1.0.0
+description: "The owner's Second Brain: the first place to look for context about them, and the rules every write follows."
+version: 2.0.0
 author: Chief Command Center
 license: MIT
 platforms: [windows, macos, linux]
 metadata:
   hermes:
-    tags: [second-brain, notes, tasks, para, obsidian]
+    tags: [second-brain, notes, tasks, memory, obsidian]
     category: note-taking
-    related_skills: [obsidian, llm-wiki, weekly-review-planning]
+    related_skills: [second-brain-writes, obsidian-find, obsidian-save, obsidian-daily, llm-wiki]
 ---
 
 # Second Brain
 
-The owner keeps their notes, tasks and projects in a Second Brain folder:
+The owner's Second Brain is the folder `{{vault}}`. It is the long-term record of their projects, people, decisions, plans, tasks and notes, and it outlasts any conversation.
 
-`{{vault}}`
+## Look here first
 
-Use this skill whenever the owner asks you to remember, save, capture, track, plan, review, or find something they wrote down, and for anything about their tasks, projects, areas, journal or weekly review.
+- For anything about the owner (their work, people, plans, preferences, past decisions or anything they wrote down), check the Second Brain **before** answering from memory and before asking them. Start with `index.md`, then search the folder (the `obsidian-find` skill).
+- If the Second Brain and your memory disagree, say so and prefer the dated note.
+- Never say something isn't there without having searched.
+- Reading is always fine.
 
-## First, read the rules
+## Critical facts
 
-Read `{{vault}}\AGENTS.md` at the start of any Second Brain work. It says where things go, how tasks are written and what never to do. It wins over anything below if they disagree, because the owner may have edited it.
+From `CRITICAL_FACTS.md` (kept short; it is loaded into every conversation):
 
-File tools need concrete paths: use the path above, not `$OBSIDIAN_VAULT_PATH`.
+{{critical_facts}}
 
-## Everyday actions
+When you learn a fact that belongs there and the line is blank or out of date, update `CRITICAL_FACTS.md`, following the write rules below.
 
-**Capture** ("remember…", "save this", "note that…")
-- A task with a date → add a checkbox task to the right project or area note, or to today's daily note if none fits: `- [ ] Call the plumber 📅 2026-10-02`.
-- Anything else without an obvious home → a new note in `00 Inbox/` named after its content.
-- Say where you put it, in one line.
+## Every write follows the full rules
 
-**Tasks**
-- Syntax: `📅` due, `⏳` scheduled, `✅` done date, priority `🔺 ⏫ 🔼 🔽`, `#waiting` for things that wait on someone.
-- Completing: tick `- [x]` and append `✅ YYYY-MM-DD` with today's date. Never delete a finished task.
-- Rescheduling: change the `📅` date in place.
-- The dashboard's Today tab reads these tasks straight from the files, so keep the syntax exact.
+Before your first write to the Second Brain in a conversation, load the **`second-brain-writes`** skill and read `{{vault}}\AGENTS.md`. Every write follows them, including small ones and scheduled routines. A fact settled in conversation but never written down is a failed write.
 
-**Projects and areas**
-- New project → `10 Projects/<Name>.md` from `Templates/Project.md` with `type: project`, `status: active`, an **Outcome** line and at least one next step.
-- Finished project → set `status: done` and move the note to `90 Archive/`.
-- Ongoing responsibilities without an end go in `20 Areas/`.
+## Which skill for what
 
-**Daily note**: `Journal/Daily/YYYY-MM-DD.md` from `Templates/Daily note.md`. Create it the first time the owner mentions today's plans or logs something for today.
+| The owner wants… | Use |
+| --- | --- |
+| "remember this", "save that" | `obsidian-save`, or `obsidian-capture` for a quick idea |
+| a task, a reminder, a due date | `obsidian-task` (task syntax in `AGENTS.md`; the app's Today tab reads it) |
+| today's plan, what's overdue | `obsidian-daily`, `obsidian-catchup` |
+| to find something | `obsidian-find` |
+| a person, a project | `obsidian-person`, `obsidian-project`, `obsidian-projects` |
+| a decision thought through | `obsidian-decide`, `obsidian-challenge` |
+| a weekly review | `obsidian-review` (template: `Templates/Weekly review.md`) |
+| patterns, links between notes | `obsidian-connect`, `obsidian-synthesize`, `obsidian-emerge` |
+| a source or article kept | `llm-wiki` into `40 Knowledge/` (raw sources are never edited) |
+| a health check of the folder | `obsidian-health` |
 
-**Weekly review** (when asked, or when a weekly routine runs): follow `Templates/Weekly review.md` into `Journal/Weekly/YYYY-Www.md`. Empty the Inbox with the owner, check every active project has a next step, surface overdue and `#waiting` tasks, archive what's done. Propose moves; don't make big changes silently.
+These skills read the Folder Map in `AGENTS.md` to choose folders. The toolkit's own rules are in `{{toolkit}}/references/` (`ai-first-rules.md`, `write-rules.md`). This folder is already set up: never run `obsidian-init` on it.
 
-**Knowledge**: sources and research go through the `llm-wiki` skill into `40 Knowledge/` (`WIKI_PATH`). Raw sources in `40 Knowledge/raw/` are never edited.
-
-## Always
-
-- Never delete notes. Archive instead.
-- Ask before moving, renaming or merging more than a couple of notes, and show the list first.
-- Append one line per change to `40 Knowledge/log.md`: `YYYY-MM-DD — what — where`.
-- Prefer adding to an existing note over creating a near-duplicate; search first.
-- The Second Brain is the owner's private data. Don't copy it elsewhere unless asked.
+When you mention a note to the owner, give its full path in backticks or a `[[wikilink]]`, so the app can open it.

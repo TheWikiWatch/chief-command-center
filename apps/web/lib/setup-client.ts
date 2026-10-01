@@ -84,9 +84,32 @@ export type FolderInspection = {
 };
 export type SecondBrainResult = { ok: boolean; error?: string; path: string; mode: SecondBrainMode; created: string[]; kept: string[]; next_prompt: string };
 
+/** The Second Brain's scheduled routines (morning note, nightly tidy, weekly review, health check). */
+export type Routine = {
+  id: string;
+  title: string;
+  about: string;
+  exists: boolean;
+  enabled: boolean;
+  /** HH:MM, local time. */
+  time: string;
+  days: string;
+  next_run: string | null;
+  last_run: string | null;
+  last_status: string | null;
+};
+export type RoutinesResult = { ok: boolean; error?: string; routines: Routine[] };
+
 export const secondBrain = {
   status: () => requestJson<SecondBrainStatus>(`${PREFIX}/second-brain`, { cache: "no-store" }, 15_000),
   inspect: (path: string) => post<FolderInspection>("second-brain/inspect", { path }, 30_000),
   setUp: (path: string, mode: SecondBrainMode) => post<SecondBrainResult>("second-brain", { path, mode }, 60_000),
   seedSoul: () => post<{ ok: boolean; seeded?: boolean; error?: string }>("soul/seed", {}, 15_000),
+  routines: () => requestJson<RoutinesResult>("/api/bridge/second-brain/routines", { cache: "no-store" }, 15_000),
+  setRoutine: (id: string, change: { enabled?: boolean; time?: string }) =>
+    requestJson<RoutinesResult>(
+      "/api/bridge/second-brain/routines",
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, ...change }) },
+      20_000,
+    ),
 };

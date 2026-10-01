@@ -1,7 +1,13 @@
 ---
+date: {{date:YYYY-MM-DD}}
 type: weekly
 week: {{date:GGGG-[W]WW}}
+tags: [weekly]
+ai-first: true
 ---
+
+## For future agent
+A weekly note, saved {{date:YYYY-MM-DD}}. Replace this with two or three sentences: what it is, why it was saved, and what may go stale.
 
 # Week {{date:GGGG-[W]WW}}
 

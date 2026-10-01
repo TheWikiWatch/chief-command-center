@@ -1,5 +1,6 @@
-# Log
+# Knowledge log
 
-One line per change to this Second Brain, newest last: `YYYY-MM-DD — action — where`.
+The wiki's own changes, newest last: sources saved, pages created or revised. `YYYY-MM-DD — action — page`.
+Changes anywhere else in the Second Brain go in `log.md` at the top of the folder.
 
-- {{today}} — created the Second Brain — whole vault
+- {{today}} — created the Knowledge wiki — 40 Knowledge

@@ -91,12 +91,81 @@ def install_bundled_skills(src: Path, dest: Path) -> list[str]:
     return changed
 
 
+TOOLKIT = "obsidian-second-brain"
+_UPSTREAM_ROOT = "$HOME/.hermes/skills/obsidian-second-brain"
+_TILDE_ROOT = "~/.hermes/skills/obsidian-second-brain"
+
+
+def _toolkit_layout(src: Path) -> list[tuple[Path, str]]:
+    """(source file, path under the install root): skills and the routine blueprints at the root (as the
+    toolkit's INSTALL.md lays them out), references and scripts beside them, plus its licence and notices."""
+    out: list[tuple[Path, str]] = []
+    for base in (src / "skills", src / "optional-skills"):
+        for f in sorted(p for p in base.rglob("*") if p.is_file()):
+            out.append((f, f.relative_to(base).as_posix()))
+    for sub in ("references", "scripts"):
+        for f in sorted(p for p in (src / sub).rglob("*") if p.is_file() and "__pycache__" not in p.parts):
+            out.append((f, f"{sub}/{f.relative_to(src / sub).as_posix()}"))
+    for name in ("LICENSE", "NOTICE.md", "vendor.json", "pyproject.toml"):
+        if (src / name).is_file():
+            out.append((src / name, name))
+    return out
+
+
+def _toolkit_text(text: str, root: str, python: str, pythonpath: str) -> str:
+    """Point the toolkit at its real install folder, and run its helper scripts on the app's own Python
+    (its standard-library scripts need nothing else) instead of `uv`, which would download packages."""
+    import re
+
+    head = r'uv run --directory "?' + re.escape(_UPSTREAM_ROOT) + r'"?'
+    env = f'PYTHONPATH="{pythonpath}" "{python}"'
+    text = re.sub(head + r'(?: python)? scripts/([\w./-]+\.py)', lambda m: f'{env} "{root}/scripts/{m.group(1)}"', text)
+    text = re.sub(head + r' python -c ', lambda m: f'{env} -c ', text)
+    return text.replace(_UPSTREAM_ROOT, root).replace(_TILDE_ROOT, root)
+
+
+def install_toolkit(src: Path, dest: Path, python: str, pythonpath: str) -> list[str]:
+    """Install the vendored Second Brain toolkit into `<profile>/skills/obsidian-second-brain`. Like the
+    app's skills: a file the app installed earlier is updated only if the owner hasn't edited it."""
+    if not (src / "vendor.json").is_file():
+        return []
+    root = dest.as_posix()
+    record_path = dest / ".chief-bundled.json"
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {}
+    changed = 0
+    for source, rel in _toolkit_layout(src):
+        target = dest / rel
+        data = source.read_bytes()
+        if source.suffix in (".md", ".sh", ".yaml", ".toml"):
+            data = _toolkit_text(data.decode("utf-8"), root, python.replace("\\", "/"), pythonpath).encode("utf-8")
+        new_hash = hashlib.sha256(data).hexdigest()
+        if target.exists():
+            current = hashlib.sha256(target.read_bytes()).hexdigest()
+            if current == new_hash:
+                record[rel] = new_hash
+                continue
+            if record.get(rel) != current:
+                continue  # edited by the owner: keep it
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+        record[rel] = new_hash
+        changed += 1
+    dest.mkdir(parents=True, exist_ok=True)
+    record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    version = json.loads((src / "vendor.json").read_text(encoding="utf-8")).get("version", "")
+    return [f"{TOOLKIT} {version}: {changed} files"] if changed else []
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plugins-src", required=True)
     parser.add_argument("--bridge-port", type=int, required=True)
     parser.add_argument("--plugin", action="append", default=[])
     parser.add_argument("--skills-src", default="", help="bundled skills (default: <plugins-src>/chief-dashboard-bridge/skills)")
+    parser.add_argument("--vendor-src", default="", help="the vendored Second Brain toolkit (default: <plugins-src>/../vendor/obsidian-second-brain)")
     args = parser.parse_args()
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(parents=True, exist_ok=True)
@@ -109,6 +178,9 @@ def main() -> int:
 
     skills_src = Path(args.skills_src) if args.skills_src else Path(args.plugins_src) / "chief-dashboard-bridge" / "skills"
     changed += install_bundled_skills(skills_src, home / "skills")
+    vendor = Path(args.vendor_src) if args.vendor_src else Path(args.plugins_src).parent / "vendor" / TOOLKIT
+    pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(p for p in sys.path if p.endswith("site-packages"))
+    changed += install_toolkit(vendor, home / "skills" / TOOLKIT, sys.executable, pythonpath.replace("\\", "/"))
 
     from cli import save_config_value
     from hermes_cli.config import load_config, load_env, save_env_value

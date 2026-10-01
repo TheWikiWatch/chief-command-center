@@ -1,10 +1,11 @@
 {
-  "version": 1,
+  "version": 2,
   "folders": [
     "00 Inbox",
     "10 Projects",
     "20 Areas",
     "30 Resources",
+    "30 Resources/People",
     "40 Knowledge",
     "40 Knowledge/raw/articles",
     "40 Knowledge/raw/papers",
@@ -17,12 +18,17 @@
     "90 Archive",
     "Journal/Daily",
     "Journal/Weekly",
+    "Journal/Meetings",
     "Templates",
     "Bases",
     "Attachments"
   ],
   "files": [
     "AGENTS.md",
+    "log.md",
+    "index.md",
+    "CRITICAL_FACTS.md",
+    "_CLAUDE.md",
     "Home.md",
     "00 Inbox/Welcome.md",
     "10 Projects/Example project.md",
@@ -56,6 +62,10 @@
     ],
     "files": [
       "AGENTS.md",
+      "log.md",
+      "index.md",
+      "CRITICAL_FACTS.md",
+      "_CLAUDE.md",
       "00 Inbox/Welcome.md",
       "40 Knowledge/SCHEMA.md",
       "40 Knowledge/index.md",

@@ -46,7 +46,7 @@ import { ModelsKeys } from "@/components/fleet/models-keys";
 import { SecondBrainSetup } from "@/components/second-brain/setup";
 import { CheckMySystem } from "@/components/voice/check-my-system";
 import { loadVoiceCheck, type VoiceCheckResult } from "@/lib/mic-device";
-import { secondBrain, setup, type SecondBrainStatus, type SetupStatus } from "@/lib/setup-client";
+import { secondBrain, setup, type Routine, type SecondBrainStatus, type SetupStatus } from "@/lib/setup-client";
 import { useAppConfig } from "@/lib/app-config";
 
 type ApplyBody = {
@@ -289,19 +289,98 @@ function SecondBrainGroup({ onAskChief }: { onAskChief?: (text: string) => Promi
           <SecondBrainSetup onAskChief={onAskChief} onDone={load} />
         </div>
       ) : (
-        <Row
-          label={path ? <span className="break-all font-mono text-code">{path}</span> : status ? "Not set up" : "…"}
-          hint={
-            error ||
-            (fromEnv
-              ? "Set by this install's configuration (CHIEF_VAULT_PATH)."
-              : status?.configured
-                ? `${status.exists ? MODE_LABEL[status.mode || ""] || "Connected" : "The folder is missing"}${config.secondBrain.today === "ops" ? " · Today uses your task service" : ""}`
-                : "Choose a folder to keep notes and tasks with your chief.")
-          }
-        />
+        <>
+          <Row
+            label={path ? <span className="break-all font-mono text-code">{path}</span> : status ? "Not set up" : "…"}
+            hint={
+              error ||
+              (fromEnv
+                ? "Set by this install's configuration (CHIEF_VAULT_PATH)."
+                : status?.configured
+                  ? `${status.exists ? MODE_LABEL[status.mode || ""] || "Connected" : "The folder is missing"}${config.secondBrain.today === "ops" ? " · Today uses your task service" : ""}`
+                  : "Choose a folder to keep notes and tasks with your chief.")
+            }
+          />
+          {status?.configured && !fromEnv ? <RoutineRows /> : null}
+        </>
       )}
     </Group>
+  );
+}
+
+/** One routine: its time (saved when the field is left) and an on/off switch. */
+function RoutineRow({ routine: r, busy, onChange }: { routine: Routine; busy: string; onChange: (next: { enabled?: boolean; time?: string }) => void }) {
+  const [time, setTime] = useState(r.time);
+  useEffect(() => setTime(r.time), [r.time]);
+  const commit = () => {
+    if (time && time !== r.time) onChange({ time });
+  };
+  return (
+    <li className={`flex items-center gap-3 py-2.5 ${busy === r.id ? "opacity-60" : ""}`}>
+      <div className="min-w-0 flex-1">
+        <p className="text-callout text-fg">{r.title}</p>
+        <p className="text-caption text-fg-3">{r.about}</p>
+      </div>
+      <label className="sr-only" htmlFor={`routine-${r.id}`}>
+        {r.title} time
+      </label>
+      <input
+        id={`routine-${r.id}`}
+        type="time"
+        value={time}
+        disabled={!!busy}
+        onChange={(e) => setTime(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => e.key === "Enter" && commit()}
+        className="min-h-9 w-[6.5rem] shrink-0 rounded-ctl border border-line-2 bg-canvas px-2 text-callout text-fg outline-none focus:border-line-3 disabled:opacity-60"
+      />
+      <span className="hidden w-16 shrink-0 text-caption text-fg-3 sm:block">{r.days}</span>
+      <Switch label={`${r.title} ${r.enabled ? "on" : "off"}`} checked={r.enabled} disabled={!!busy} onChange={(on) => onChange({ enabled: on })} />
+    </li>
+  );
+}
+
+/** The Second Brain's scheduled routines: each on or off, at the time the owner picks. */
+function RoutineRows() {
+  const assistant = useAssistantName();
+  const [items, setItems] = useState<Routine[] | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  useEffect(() => {
+    secondBrain
+      .routines()
+      .then((r) => (r.ok ? setItems(r.routines) : setError(r.error || "Couldn't read the routines.")))
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Couldn't read the routines."));
+  }, []);
+  async function change(id: string, next: { enabled?: boolean; time?: string }) {
+    setBusy(id);
+    setError("");
+    try {
+      const res = await secondBrain.setRoutine(id, next);
+      if (!res.ok) throw new Error(res.error || "That didn't save.");
+      setItems(res.routines);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "That didn't save.");
+    } finally {
+      setBusy("");
+    }
+  }
+  if (!items && !error) return <Row label="Routines" hint="Reading…" />;
+  return (
+    <div className="px-3.5 py-3">
+      <p className="text-body text-fg">Routines</p>
+      <p className="mt-0.5 text-caption text-fg-3">{assistant} looks after the Second Brain on a schedule and tells you what changed.</p>
+      {error ? (
+        <p role="alert" className="mt-2 text-caption text-danger">
+          {error}
+        </p>
+      ) : null}
+      <ul className="mt-2 divide-y divide-[color:var(--line-1)]">
+        {(items || []).map((r) => (
+          <RoutineRow key={r.id} routine={r} busy={busy} onChange={(next) => void change(r.id, next)} />
+        ))}
+      </ul>
+    </div>
   );
 }
 

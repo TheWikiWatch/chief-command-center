@@ -31,6 +31,8 @@ module.exports = {
     { from: path.join(repo, "apps", "web", ".next", "standalone", ".next"), to: "web/.next", filter: ["**/*"] },
     { from: path.join(repo, "apps", "web", ".next", "standalone", "node_modules"), to: "web/node_modules", filter: ["**/*"] },
     { from: path.join(repo, "hermes", "plugins"), to: "plugins", filter: ["**/*", "!**/__pycache__/**", "!**/.token"] },
+    // The vendored Second Brain toolkit (MIT); provisioning installs it from <resources>/vendor.
+    { from: path.join(repo, "hermes", "vendor"), to: "vendor", filter: ["**/*", "!**/__pycache__/**"] },
     { from: path.join(repo, "backup", "chief_backup"), to: "backup/chief_backup", filter: ["**/*.py"] },
     { from: path.join(__dirname, "python"), to: "python", filter: ["*.py"] },
     { from: path.join(repo, "apps", "web", "public", "icons", "icon-512.png"), to: "icon.png" },

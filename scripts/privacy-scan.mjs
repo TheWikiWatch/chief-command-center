@@ -26,7 +26,7 @@ const words = [
 
 const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Placeholder user names that may appear in documentation and tests.
-const PLACEHOLDER_USERS = /^(you|user|username|name|me|runner|example|<[^>]+>|%[A-Z_]+%|\$\{?[A-Za-z_]+\}?)$/i;
+const PLACEHOLDER_USERS = /^(you|user|username|name|me|runner|example|\.{3}|…|<[^>]+>|%[A-Z_]+%|\$\{?[A-Za-z_]+\}?)$/i;
 
 const checks = [
   {

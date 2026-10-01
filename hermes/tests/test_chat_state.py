@@ -212,5 +212,16 @@ class ChatStateTests(unittest.TestCase):
         chat_state._live.clear()
 
 
+class DefaultSoulTests(unittest.TestCase):
+    def test_the_shipped_soul_digest_is_recorded(self):
+        second_brain = importlib.import_module("test_bridge_plugin.second_brain")
+        shipped = (ROOT / "hermes/plugins/chief-dashboard-bridge/second_brain/SOUL.md").read_text(encoding="utf-8")
+        self.assertEqual(
+            second_brain._soul_digest(shipped), second_brain.CURRENT_DEFAULT_SOUL,
+            "second_brain/SOUL.md changed: move CURRENT_DEFAULT_SOUL into _PREVIOUS_DEFAULT_SOULS (so unedited "
+            "installs still get the new default) and set CURRENT_DEFAULT_SOUL to the new digest.")
+        self.assertNotIn(second_brain.CURRENT_DEFAULT_SOUL, second_brain._PREVIOUS_DEFAULT_SOULS)
+
+
 if __name__ == "__main__":
     unittest.main()

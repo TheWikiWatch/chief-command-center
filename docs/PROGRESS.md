@@ -274,3 +274,26 @@
   - The real-gateway contract passes 28/28, now including questions (a choice, a stale id refused, a typed answer, the question and answer kept) and live steps.
   - The web UI was checked in the browser on desktop and phone against a throwaway gateway.
   - Tests: web 287, desktop 28, Python 68 + 20, privacy clean.
+
+**Second Brain first, and Second Brain parity (plan §3.1, §3.2).**
+
+- **Bundled toolkit.** The public `obsidian-second-brain` toolkit v0.17.0 (MIT, Eugeniu Ghelbur) is vendored, with LICENSE, NOTICE and `vendor.json`, and built with its own Hermes build.
+  - Provisioning installs it into the chief's profile: 36 skills plus the four routine blueprints. A file the owner edited is never overwritten.
+  - Its helper scripts run on the app's own Python. `uv` would download packages, so it is never used.
+  - The research skills (paid keys, large downloads) are left out.
+- **Vault template v2.**
+  - `AGENTS.md` gains a Folder Map (every kind of note to an app folder), the rules for notes agents write, and "search before you create, verify after you write".
+  - The toolkit's files are added: `_CLAUDE.md` (a pointer to `AGENTS.md`), `CRITICAL_FACTS.md`, `index.md` and `log.md`.
+  - Templates carry `date`, `tags`, `ai-first` and a "For future agent" section.
+  - Today and Vault are unchanged.
+- **Second Brain first.**
+  - The `second-brain` skill is pinned into every conversation (`skills.auto_load`) with `CRITICAL_FACTS.md` inside it. It says to look in the Second Brain before answering from memory, and maps requests to the toolkit's skills.
+  - A new `second-brain-writes` skill is the write gate: rules first, search, the Folder Map, properties, ask before big changes, log, read back and report. "Settled in chat but not written" counts as a failed write.
+  - The default SOUL has a "Your Second Brain" section. An unedited earlier default is replaced; an edited SOUL is kept.
+- **Routines.** Setting up the Second Brain arms morning note, nightly tidy, weekly review and health check as cron jobs that report to the app. Settings, then Second Brain, lists them with an on/off switch and a time.
+- **Bots.** Minted bots get the same skills, auto-loaded, plus the folder and the chief's toolkit.
+- **Upgrade.** A Second Brain set up by 0.1.1 is brought up to date when the bridge starts. Files are created only if missing, the Folder Map is appended to an app-made `AGENTS.md`, and the change is logged in the vault.
+- **Evidence:**
+  - The Second Brain contract passes on the payload. It covers setup v2, both skills, auto-load, routines (created, off, moved, recreated idempotently), the facts sync, upgrade from v1, sharing with a bot, and the SOUL refresh.
+  - A rewritten toolkit script ran a real health scan on the app's Python.
+  - Tests: web 289, desktop 28, Python 73 + 20, privacy clean.

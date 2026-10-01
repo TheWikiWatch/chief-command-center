@@ -1,7 +1,12 @@
 ---
+date: {{today}}
 type: guide
-created: {{today}}
+tags: [guide]
+ai-first: true
 ---
+
+## For future agent
+The rules for every agent working in this Second Brain: where each kind of note goes (the Folder Map), how notes and tasks are written, and what never to do. Read it before the first read or write of a session.
 
 # How this Second Brain works
 
@@ -16,8 +21,22 @@ This folder is a Second Brain: plain Markdown notes, organized by what they are 
 3. **One project, one note** in `10 Projects/`. A project has an outcome and an end. Ongoing responsibilities without an end are areas (`20 Areas/`).
 4. **Raw sources are immutable.** Files in `40 Knowledge/raw/` are never edited after they are saved. Summaries and synthesis go in the rest of `40 Knowledge/` (see `40 Knowledge/SCHEMA.md`).
 5. **Link, don't duplicate.** Use `[[wikilinks]]` to connect notes. Prefer adding to an existing note over creating a near-duplicate.
-6. **Log what you change.** Append one line per change you make to the vault to `40 Knowledge/log.md`: date, what, where.
+6. **Log what you change.** Append one line per change you make to `log.md` (in this folder): date, what, where. Keep `index.md` current when you add a note worth finding again.
 7. **Ask before big moves.** Reorganizing many notes, renaming folders or merging notes needs the owner's go-ahead, with the list of changes shown first.
+8. **Search before you create, and verify after you write.** Look for an existing note first. After writing, read back what you wrote, and say in one line where it went. A fact settled in conversation but never written down is a failed write.
+9. **Never invent a folder.** Put each note where the Folder Map says. If a kind of note isn't listed, ask the owner.
+
+{{foldermap}}
+
+## Notes agents write
+
+Every note an agent creates or rewrites is written for the next agent that reads it:
+
+- **Properties first:** `date`, `type`, `tags` (include the type) and `ai-first: true`, plus the type's own fields below.
+- **A `## For future agent` section** right after the properties: two or three sentences saying what the note is, why it was saved, and anything that may go stale.
+- **Links, not repeats:** every person, project, idea and decision mentioned is a `[[wikilink]]`. Create a short stub if the note doesn't exist yet.
+- **Dated facts:** anything that can change within a week carries `(as of YYYY-MM-DD)` or links to where the truth lives. Sources keep their full URL.
+- **Facts change by adding, not overwriting:** add the new value with its date and mark the old one as superseded.
 
 ## Tasks
 
@@ -50,3 +69,4 @@ Keep tags few (status and stage, not topics). Topics are links.
 
 - **Daily note** in `Journal/Daily/YYYY-MM-DD.md` from `Templates/Daily note.md`.
 - **Weekly review** in `Journal/Weekly/YYYY-Www.md` from `Templates/Weekly review.md`: empty the Inbox, check every active project has a next step, archive what's done.
+- **Scheduled routines** (the owner turns each on or off in the app, under Settings, then Second Brain): a morning daily note with overdue tasks, a nightly consolidation (close the day, reconcile contradictions, link orphans), a weekly review on Friday evening, and a health check on Sunday evening. They follow these rules like any other agent and log what they change.

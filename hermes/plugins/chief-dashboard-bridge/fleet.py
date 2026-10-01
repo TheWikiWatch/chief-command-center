@@ -179,6 +179,10 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
         _write_yaml(home / "profile.yaml", meta)
         (home / "SOUL.md").write_text(soul + "\n", encoding="utf-8")
         granted = providers.grant_provider(chief_model["provider"], home) if chief_model["provider"] else {"keys": 0}
+        # The owner's Second Brain, the same way the chief has it (when one is set up).
+        from . import second_brain
+
+        second_brain.share_with(home)
         _sections_assign(name, TEAM_SECTION)
     except Exception:
         logger.warning("mint of %s failed part-way; removing the half-made profile", name)
