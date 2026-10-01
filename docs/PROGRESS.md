@@ -253,3 +253,4 @@
   - Checked in the browser against a throwaway gateway: mint, model dropdown, retire, Team sheet, restore, Models & keys.
   - Tests: web 279 passed (4 live skipped), desktop 28, Python 57 + 20, privacy scan clean.
   - The existing install was untouched: same process on 7790, gateway start count still 40.
+- Built `Chief Command Center 0.1.1.appx` (about 896 MB). The signature verifies (SHA-256, timestamped), and the build log contains no password. The package was checked for the fleet plugin, both skills, the Models & keys UI and the standalone server's `next`. The owner installs it themselves, as a fresh build.
