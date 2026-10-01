@@ -254,3 +254,23 @@
   - Tests: web 279 passed (4 live skipped), desktop 28, Python 57 + 20, privacy scan clean.
   - The existing install was untouched: same process on 7790, gateway start count still 40.
 - Built `Chief Command Center 0.1.1.appx` (about 896 MB). The signature verifies (SHA-256, timestamped), and the build log contains no password. The package was checked for the fleet plugin, both skills, the Models & keys UI and the standalone server's `next`. The owner installs it themselves, as a fresh build.
+
+**Hotfix: nothing the gateway sends is hidden (2026-09-30, plan `PLAN-2026-09-30-second-brain-fleet-health.md` §3.0).**
+
+- The bug: the owner saw Chief "thinking" for over 15 minutes.
+  - Chief's turn had finished in 17 s. It ended by asking a multiple-choice question with Hermes's `clarify` tool, then waited (up to an hour) for the answer.
+  - The question went to the adapter outbox, which no dashboard shows. So did Hermes's "⏳ Working" notices and its "no home channel" notice.
+- The chief's questions now show as a card in the chat.
+  - Tap a choice, pick several and Send (multi-select), or "Something else…" to answer in your own words.
+  - Typing in the message box answers it too. The box says "Answer Chief…", and the header says "Has a question for you".
+  - The phone gets a push, and voice mode reads the question out.
+  - Answered questions stay in the thread as the question and its answer.
+  - Bridge: the open question comes with the transcript long-poll, and `POST /clarify` answers it through Hermes's own resolver.
+- Notices (scheduled-job results and gateway notices) show in the thread in time order, labelled. A busy notice is never shown and never pushes to the phone.
+- Live steps: the thinking row says what Chief is doing ("Checking the team…", "Reading your Second Brain…"), from Hermes's per-tool status hook, with a fallback to the database.
+- The owner's chat is the home channel (provisioning and the adapter default), so scheduled jobs have a place to deliver.
+- A new profile's config gets Hermes's schema version before anything else is written, so the first-start migration no longer skips.
+- Evidence:
+  - The real-gateway contract passes 28/28, now including questions (a choice, a stale id refused, a typed answer, the question and answer kept) and live steps.
+  - The web UI was checked in the browser on desktop and phone against a throwaway gateway.
+  - Tests: web 287, desktop 28, Python 68 + 20, privacy clean.

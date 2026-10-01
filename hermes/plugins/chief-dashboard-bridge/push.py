@@ -173,3 +173,17 @@ def notify_approval(approval: dict) -> bool:
         urgency="high",
         open_={"tab": "chat", "approval": rid},
     )
+
+
+def notify_question(question: str, clarify_id: str) -> bool:
+    """The chief asked the owner a question and is waiting. High urgency; tapping opens the chat."""
+    if not clarify_id:
+        return False
+    return enqueue(
+        f"{identity.assistant_name()} has a question",
+        plain_text(question or "", 160) or "Open the app to answer.",
+        tag=f"question-{clarify_id}",
+        ttl=APPROVAL_TTL,
+        urgency="high",
+        open_={"tab": "chat"},
+    )

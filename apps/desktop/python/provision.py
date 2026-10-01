@@ -8,7 +8,9 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
   Hermes's own override for bundled plugins would replace upstream's whole plugins folder, so the app's
   plugins are user plugins that the app keeps current.
 - Enables them in config.yaml, with gateway injection allowed (the bridge's chat platform needs it).
-- Sets the bridge port and turns on the Command Center platform in the profile .env.
+- Sets the bridge port, turns on the Command Center platform and makes the owner's chat its home channel
+  (where scheduled jobs and notices go) in the profile .env.
+- Stamps a new profile's config with Hermes's current schema version before writing anything else.
 - Gives the chief the `kanban` toolset (delegating to workers) and the bridge's `fleet` toolset (mint, re-pin,
   retire and restore workers), and, unless the owner chose otherwise,
   `display.busy_input_mode: steer`, so a message sent while the chief works is added to that work instead of
@@ -110,6 +112,13 @@ def main() -> int:
 
     from cli import save_config_value
     from hermes_cli.config import load_config, load_env, save_env_value
+    from hermes_cli.config_defaults import DEFAULT_CONFIG
+
+    # A new profile: stamp the current schema version before writing anything, or Hermes's start-up
+    # migration reads the file as pre-version-12 and skips (it did on the first 0.1.1 start).
+    if not (home / "config.yaml").exists():
+        save_config_value("_config_version", DEFAULT_CONFIG["_config_version"])
+        changed.append("config version")
 
     config = load_config() or {}
     plugins = config.get("plugins") if isinstance(config.get("plugins"), dict) else {}
@@ -151,6 +160,10 @@ def main() -> int:
         if env.get(key) != value:
             save_env_value(key, value)
             changed.append(key)
+    # The owner's chat is the home channel: scheduled-job results and gateway notices go there.
+    if not env.get("COMMAND_CENTER_HOME_CHANNEL"):
+        save_env_value("COMMAND_CENTER_HOME_CHANNEL", "owner")
+        changed.append("COMMAND_CENTER_HOME_CHANNEL")
 
     print(json.dumps({"ok": True, "changed": changed}))
     return 0

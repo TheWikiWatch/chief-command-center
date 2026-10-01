@@ -53,3 +53,11 @@ Two Hermes profile helpers reach outside the profile they are given:
 - `hermes_cli.profiles.delete_profile` disables the per-user scheduled task `Hermes_Gateway_<name>` and deletes the wrapper, both by name, so it can break a profile of the same name in another install. `fleet.retire` never calls it: it exports the profile (Hermes's own `export_profile`, which leaves out keys), refuses while the bot is working, and then removes only that profile's folder itself.
 
 `hermes/tests/contract/run_fleet_contract.py` checks that minting writes no wrapper and that the archive holds no `.env` or `auth.json`.
+
+## What the chat shows besides transcript rows
+
+`hermes/plugins/chief-dashboard-bridge/chat_state.py`; test map: `hermes/tests/test_chat_state.py`, and the questions and live-steps checks in `hermes/tests/contract/run_chat_controls_contract.py`.
+
+- **The chief's questions (`clarify`).** The adapter overrides Hermes's `send_clarify`, so no text prompt goes to the outbox. The bridge reads the open question from `tools.clarify_gateway` (`get_pending_for_session(..., include_choice_prompts=True)`) and answers through `resolve_gateway_clarify`. The adapter marks every question as accepting free text (`mark_awaiting_text`), so a typed message answers it too. If Hermes renames these, the contract fails at "the question comes with the transcript".
+- **Notices.** Every adapter send is written to the outbox, replies included. A notice is an outbox row whose text isn't a transcript reply, or a piece of one. Hermes saves a reply's row before it sends it; if that order ever flips, a reply could flash as a notice. "⏳ Working" busy lines are never notices and never push to the phone.
+- **Live steps.** A turn's rows reach `state.db` only when the turn ends. The adapter declares `supports_status_text`, so Hermes calls `set_status_text` as each tool starts. To label steps in the app's words, the plugin wraps `agent.display.build_status_phrase` (`chat_state.install_status_capture`). The wrapper notes the tool and arguments on the same thread, just before `set_status_text`. Without the wrapper, the bridge falls back to Hermes's own phrase, tidied. Deferred tools (Hermes's `tool_search` defer list) that the model calls directly are refused before they start, so they show no step. The test model uses `skills_list` for that reason.

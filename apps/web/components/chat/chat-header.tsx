@@ -43,6 +43,7 @@ export function ChatHeader({
   onOpenSettings,
   onVoiceMode,
   face,
+  status,
 }: {
   chief: Person | undefined;
   mood: ChiefMood;
@@ -58,6 +59,8 @@ export function ChatHeader({
   onVoiceMode?: () => void;
   /** Chief's presence renders here when provided (Phase 3); falls back to the plain face. */
   face?: ReactNode;
+  /** A status line that wins over the mood's own (e.g. "Has a question for you"). */
+  status?: { text: string; tone: string } | null;
 }) {
   const thinkingFor = useSince(mood === "thinking");
   const fallbackName = useAssistantName();
@@ -67,7 +70,7 @@ export function ChatHeader({
   const link = useLinkLabel({ connected, authFailed });
   const linkLine = compact && link.label && (mood === "online" || mood === "offline") ? { text: link.label, tone: link.text } : null;
 
-  const line: { text: string; tone: string } = linkLine ??
+  const line: { text: string; tone: string } = status ?? linkLine ??
     (mood === "approval"
       ? { text: "Needs your approval", tone: "text-warn" }
       : mood === "listening"

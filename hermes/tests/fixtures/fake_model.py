@@ -5,8 +5,12 @@
 Behaviour, from the latest user message of a turn:
 - contains "single word": answers "ready" (the provider test message).
 - contains "WORK": a long turn. Each model call waits `WORK_STEP_S` (default 4) seconds, then calls a
-  harmless built-in tool (`todo_list` with no arguments: it only reads the list), twice (a third identical call trips Hermes's loop guard), so a steered message has safe points to land on.
+  harmless built-in tool (`skills_list`, read-only and always visible: deferred tools such as `todo_list` are
+  refused before they start), twice (a third identical call trips Hermes's loop guard), so a steered message
+  has safe points to land on and the live step line has a step to show.
   The final answer lists every `CTX-<word>` marker seen anywhere in the conversation of that turn.
+- contains "QUIZME": calls Hermes's `clarify` tool ("Which colour?", Red / Blue; "QUIZME FREE" asks without
+  choices), then answers "You picked: <the owner's answer>." from the tool's result.
 - anything else: "Hello from the local test model. You said: …".
 Streaming and non-streaming are both supported.
 """
@@ -91,13 +95,26 @@ class Handler(BaseHTTPRequestHandler):
         if "single word" in opener:
             self._reply({"role": "assistant", "content": "ready"}, "stop", stream)
             return
+        if "QUIZME" in opener:
+            answered = [m for m in turn if m.get("role") == "tool"]
+            if not answered:
+                args = {"question": "Which colour?"} if "FREE" in opener else {"question": "Which colour?", "choices": ["Red", "Blue"]}
+                call = {"id": "call_ask", "type": "function", "function": {"name": "clarify", "arguments": json.dumps(args)}}
+                self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
+                return
+            try:
+                picked = json.loads(_text(answered[-1].get("content"))).get("user_response")
+            except (ValueError, AttributeError):
+                picked = _text(answered[-1].get("content"))
+            self._reply({"role": "assistant", "content": f"You picked: {picked}."}, "stop", stream)
+            return
         if "WORK" not in opener:
             self._reply({"role": "assistant", "content": f"Hello from the local test model. You said: {opener[-80:]}"}, "stop", stream)
             return
         time.sleep(STEP)
         tool_results = sum(1 for m in turn if m.get("role") == "tool")
         if tool_results < 2:
-            call = {"id": f"call_{tool_results}", "type": "function", "function": {"name": "todo_list", "arguments": "{}"}}
+            call = {"id": f"call_{tool_results}", "type": "function", "function": {"name": "skills_list", "arguments": "{}"}}
             self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
             return
         markers = sorted(set(re.findall(r"CTX-\w+", " ".join(_text(m.get("content")) for m in turn))))

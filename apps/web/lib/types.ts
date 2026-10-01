@@ -77,7 +77,22 @@ export type ChatMessage = {
   queueFiles?: string[];
   /** Client-only: sent while the chief was working, so it was added to that work (steer), not a new turn. */
   steered?: boolean;
+  /** Bridge: questions the chief asked with Hermes's `clarify` tool, and the owner's answers. */
+  asked?: AskedQuestion[];
+  /** Client-only: a gateway notice or scheduled-job message shown in the thread (not a transcript row). */
+  notice?: ChatNotice;
 };
+
+export type AskedQuestion = { question: string; choices: string[]; answer: string | string[]; unanswered?: boolean };
+
+/** The chief's open question: the turn waits until the owner answers (a choice, several, or their own words). */
+export type PendingQuestion = { id: string; question: string; choices: string[]; multi: boolean };
+
+/** A message the gateway sent that isn't a reply: a scheduled job's result or a notice. */
+export type ChatNotice = { id: string; at: number; text: string; source: "scheduled" | "notice" };
+
+/** What the running turn is doing: since when (epoch seconds), how many steps, and the current one. */
+export type TurnActivity = { since: number; steps: number; label: string };
 
 export type Transcript = {
   sessionKey: string;
@@ -87,6 +102,11 @@ export type Transcript = {
   generating?: boolean;
   /** The pending approval, when the bridge sends it with the transcript (phase 4 bridges). */
   approval?: ExecApproval | null;
+  /** The chief's open question, its current step, and notices since `nsince` (newer bridges). */
+  clarify?: PendingQuestion | null;
+  activity?: TurnActivity | null;
+  notices?: ChatNotice[];
+  noticeHead?: string;
   /** The bridge can hold `?wait=` requests until something changes. */
   longpoll?: boolean;
   /** Load earlier (`?before=`): older rows are left, and the next `before` to ask for. */

@@ -77,16 +77,20 @@ export async function fetchSnapshot(signal?: AbortSignal): Promise<Snapshot> {
  * What the chat already knows, for a long-poll: the bridge holds the request (up to `wait` seconds)
  * until a row lands after `after`, generating differs from `gen`, or the approval differs.
  */
-export type TranscriptWait = { wait: number; gen: boolean; approval: string };
+export type TranscriptWait = { wait: number; gen: boolean; approval: string; clarify: string; notice: string };
 
-export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: TranscriptWait): Promise<Transcript> {
+/** `noticeSince`: the newest notice the chat has (epoch seconds), so only newer ones come back. */
+export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: TranscriptWait, noticeSince = 0): Promise<Transcript> {
   const q = new URLSearchParams({ after: String(after) });
   const hold = !!(live && after);
   if (hold && live) {
     q.set("wait", String(live.wait));
     q.set("gen", live.gen ? "1" : "0");
     q.set("approval", live.approval);
+    q.set("clarify", live.clarify);
+    q.set("notice", live.notice);
   }
+  if (noticeSince) q.set("nsince", String(noticeSince));
   const data = await get<Transcript>(`transcript?${q}`, signal, hold && live ? (live.wait + 15) * 1000 : 10_000);
   if (!Array.isArray(data.messages) || typeof data.lastId !== "number" || typeof data.sessionKey !== "string") throw new Error("Invalid transcript");
   return data;
@@ -104,6 +108,9 @@ export async function fetchApprovals(signal?: AbortSignal): Promise<{ ok: boolea
   if (!data.ok) throw new Error("Approvals unavailable");
   return data;
 }
+/** Answer the chief's open question: a choice's text, several choices (multi-select), or the owner's own words. */
+export const answerQuestion = (id: string, answer: string | string[]) =>
+  write<{ ok: boolean; error?: string; code?: string }>("clarify", { id, answer });
 export const resolveApproval = (requestId: string, choice: ApprovalChoice) =>
   write<{ ok: boolean; resolved?: number; error?: string }>("approve", { request_id: requestId, choice });
 export type OutboundAttachment = { name: string; mime: string; data_url: string };

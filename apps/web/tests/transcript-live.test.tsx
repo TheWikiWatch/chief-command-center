@@ -40,8 +40,8 @@ it("long-polls once the bridge can hold requests, with what the bridge last repo
   expect(api.transcript.mock.calls[0].slice(0, 1)).toEqual([0]);
   expect(api.transcript.mock.calls[0][2]).toBeUndefined(); // the first load never waits
   expect(api.transcript.mock.calls[1][0]).toBe(50);
-  expect(api.transcript.mock.calls[1][2]).toEqual({ wait: 25, gen: true, approval: "r1" });
-  expect(api.transcript.mock.calls[2][2]).toEqual({ wait: 25, gen: false, approval: "" });
+  expect(api.transcript.mock.calls[1][2]).toEqual({ wait: 25, gen: true, approval: "r1", clarify: "", notice: "" });
+  expect(api.transcript.mock.calls[2][2]).toEqual({ wait: 25, gen: false, approval: "", clarify: "", notice: "" });
   expect(update.mock.calls.map((c) => c[0]?.requestId ?? null)).toEqual(["r1", null]);
 });
 

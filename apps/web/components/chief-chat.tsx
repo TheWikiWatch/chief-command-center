@@ -18,7 +18,7 @@ import { CheckIcon, PaperclipIcon, XIcon } from "@/components/icons";
 import { type MicStatus } from "@/components/mic-button";
 import { meterStream } from "@/lib/audio-level";
 import { fx } from "@/lib/fx";
-import { fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, speakText, stopTurn, type OutboundAttachment } from "@/lib/bridge";
+import { answerQuestion, fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, speakText, stopTurn, type OutboundAttachment } from "@/lib/bridge";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { SHOW_APPROVAL_EVENT } from "@/lib/open-target";
 import { chatTone, isMachineNote } from "@/lib/chat-tone";
@@ -38,7 +38,7 @@ import {
   subscribeSpeaking,
   toggleSpeechPause,
 } from "@/lib/voice-client";
-import type { ApprovalChoice, ChatAttachment, ChatMessage, ExecApproval, Person, Transcript } from "@/lib/types";
+import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, Transcript, TurnActivity } from "@/lib/types";
 import { admitFiles } from "@/lib/upload-limits";
 import { shrinkImage } from "@/lib/image-shrink";
 import { retryable, type QueuedSend } from "@/lib/outbox";
@@ -136,7 +136,14 @@ export function ChiefChat({
   // lands, and an idle chat makes one request every 25s instead of one every 2.5s.
   const [longpoll, setLongpoll] = useState(false);
   const longpollRef = useRef(false);
-  const bridgeState = useRef({ generating: false, approval: "" });
+  const bridgeState = useRef({ generating: false, approval: "", clarify: "", notice: "" });
+  // The chief's open question (its turn waits for the answer), notices that aren't replies, and its current step.
+  const [question, setQuestion] = useState<PendingQuestion | null>(null);
+  const questionRef = useRef<PendingQuestion | null>(null);
+  questionRef.current = question;
+  const [notices, setNotices] = useState<ChatNotice[]>([]);
+  const noticeSince = useRef(0);
+  const [activity, setActivity] = useState<TurnActivity | null>(null);
   const quickReturns = useRef(0);
   const approvalUpdate = useRef(onApprovalUpdate);
   approvalUpdate.current = onApprovalUpdate;
@@ -177,6 +184,12 @@ export function ChiefChat({
     approvalChime.current = approval.requestId;
     fx("approval");
   }, [approval?.requestId]);
+  const questionChime = useRef("");
+  useEffect(() => {
+    if (!question?.id || questionChime.current === question.id) return;
+    questionChime.current = question.id;
+    fx("approval");
+  }, [question?.id]);
   const retrySend = useRef<{ signature: string; id: string } | null>(null);
   // Messages waiting for Chief (lib/outbox.ts): sent in order when he is reachable again.
   const onQueuedDelivered = useCallback((item: QueuedSend, previews: string[]) => {
@@ -347,6 +360,8 @@ export function ChiefChat({
         historyPrimed.current = false;
         lastIdRef.current = 0;
         setMessages([]);
+        setNotices([]);
+        noticeSince.current = 0;
         setEarlier({ more: true, loading: false, error: "" });
         earlierCursor.current = null;
         stopSpeech();
@@ -394,13 +409,33 @@ export function ChiefChat({
   useEffect(() => poll(async signal => {
     const after = historyPrimed.current ? lastIdRef.current || 0 : 0;
     // What the bridge last told us, not local guesses: a difference would return the long-poll at once.
-    const live = longpollRef.current && after ? { wait: 25, gen: bridgeState.current.generating, approval: bridgeState.current.approval } : undefined;
+    const state = bridgeState.current;
+    const live = longpollRef.current && after
+      ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice }
+      : undefined;
     const started = Date.now();
     try {
-      const data = await fetchTranscript(after, signal, live);
+      const data = await fetchTranscript(after, signal, live, after ? noticeSince.current : 0);
       if (signal.aborted) return;
       applyTranscript(data, after);
-      bridgeState.current = { generating: !!data.generating, approval: data.approval?.requestId || "" };
+      bridgeState.current = {
+        generating: !!data.generating,
+        approval: data.approval?.requestId || "",
+        clarify: data.clarify?.id || "",
+        notice: data.noticeHead || "",
+      };
+      if ("clarify" in data) setQuestion(data.clarify ?? null);
+      setActivity(data.activity ?? null);
+      if (Array.isArray(data.notices)) {
+        const fresh = data.notices;
+        setNotices((prev) => {
+          const base = after ? prev : [];
+          const have = new Set(base.map((n) => n.id));
+          const next = [...base, ...fresh.filter((n) => !have.has(n.id))].sort((a, b) => a.at - b.at);
+          noticeSince.current = next.length ? next[next.length - 1].at : noticeSince.current;
+          return next.length === base.length && after ? prev : next;
+        });
+      }
       if ("approval" in data) approvalUpdate.current?.(data.approval ?? null);
       if (data.longpoll && !longpollRef.current) {
         longpollRef.current = true;
@@ -524,6 +559,16 @@ export function ChiefChat({
     });
   }, [approval, speakOn]);
 
+  // Voice: the question is read out, so it can be answered without looking.
+  const questionCue = useRef("");
+  useEffect(() => {
+    if (!speakOn || !question?.id || questionCue.current === question.id) return;
+    questionCue.current = question.id;
+    const script = `${assistantName()} asks: ${question.question}`;
+    const jobEpoch = currentSpeakEpoch();
+    void enqueueSpeechTask(async () => speechClips(await speakText(script)), jobEpoch);
+  }, [question, speakOn]);
+
   function retrySpeech() {
     const jobs = speechFailures;
     setSpeechFailures([]);
@@ -579,6 +624,22 @@ export function ChiefChat({
     if (!trimmed && !files.length) throw new Error("Message is empty.");
     if (busyRef.current) throw new Error("A message is still sending. Try again when it finishes.");
     if (authFailed) throw new Error(`${assistantName()} is unavailable. Your message has been kept.`);
+    // While the chief waits on its question, what you type is the answer (shown as the question and its
+    // answer, not as a new message).
+    const open = questionRef.current;
+    if (open && connected && !files.length && trimmed) {
+      busyRef.current = true;
+      setBusy(true);
+      setSendError("");
+      try {
+        await answerOpenQuestion(open.id, trimmed);
+        showNotice(`Answer sent to ${assistantName()}.`);
+      } finally {
+        busyRef.current = false;
+        setBusy(false);
+      }
+      return;
+    }
     if (!connected) {
       // Chief is unreachable: the message waits in the outbox and goes when he is back.
       await outbox.enqueue(newSendId(), trimmed, files.map(file => ({ name: file.name, mime: file.mime, blob: file.file })));
@@ -744,7 +805,17 @@ export function ChiefChat({
       });
   }
 
-  const mood: ChiefMood = approval
+  const answerOpenQuestion = useCallback(async (id: string, answer: string | string[]) => {
+    const result = await answerQuestion(id, answer);
+    if (!result.ok) {
+      if (result.code === "gone") setQuestion(null);
+      throw new Error(result.error || `${assistantName()} didn't get the answer.`);
+    }
+    setQuestion((q) => (q?.id === id ? null : q));
+    fx("send");
+  }, []);
+
+  const mood: ChiefMood = approval || question
     ? "approval"
     : micStatus.state === "recording"
       ? "listening"
@@ -826,6 +897,7 @@ export function ChiefChat({
       <ChatHeader
         chief={chief}
         mood={mood}
+        status={question && !approval ? { text: "Has a question for you", tone: "text-warn" } : null}
         voiceLabel={voiceLabel}
         connected={connected}
         authFailed={authFailed}
@@ -852,6 +924,10 @@ export function ChiefChat({
         connected={connected}
         authFailed={authFailed}
         onSuggestion={(s) => setText(s)}
+        notices={notices}
+        activity={activity}
+        question={question}
+        onAnswer={answerOpenQuestion}
       />
       <form onSubmit={onSubmit} className="shrink-0">
         <div className="px-4 pb-2 empty:hidden">
@@ -953,6 +1029,7 @@ export function ChiefChat({
           onMicStream={onMicStream}
           phone={!!compact}
           working={generating && connected && !authFailed}
+          answering={!!question && connected && !authFailed}
           onStop={stopping ? undefined : () => void stopWork()}
           onSendAfter={sendAfter}
         />

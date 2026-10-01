@@ -27,7 +27,8 @@ import { chatTone, isMachineNote, notePreview, type ChatTone } from "@/lib/chat-
 import { withDiscordEmojiMarkdown } from "@/lib/emoji";
 import { EASE, SPRING } from "@/lib/motion";
 import { messageTimeMs, uniqueToolNames } from "@/lib/thinking-chrome";
-import type { ChatMessage, Person } from "@/lib/types";
+import type { ChatMessage, ChatNotice, PendingQuestion, Person, TurnActivity } from "@/lib/types";
+import { AskedRow, NoticeBody, QuestionCard } from "@/components/chat/question";
 import { useAssistantName } from "@/lib/identity";
 
 const OPTIMISTIC = 1e12;
@@ -63,6 +64,30 @@ function stripMediaTags(content: string) {
 
 const isToolOnly = (m: ChatMessage) => chatTone(m) === "tool" && !m.attachments?.length;
 
+/**
+ * Notices (scheduled-job results, gateway notices) in time order among the messages. They get ids below
+ * zero so they never count as transcript rows; messages without a time (just sent) stay last.
+ */
+export function withNotices(messages: ChatMessage[], notices: ChatNotice[] | undefined): ChatMessage[] {
+  if (!notices?.length) return messages;
+  const items: ChatMessage[] = notices.map((n, i) => ({
+    id: -(i + 1),
+    role: "assistant",
+    content: "",
+    timestamp: String(n.at),
+    notice: n,
+  }));
+  const out: ChatMessage[] = [];
+  let next = 0;
+  for (const m of messages) {
+    const ms = m.id >= OPTIMISTIC ? Number.POSITIVE_INFINITY : messageTimeMs(m.timestamp);
+    while (next < items.length && Number.isFinite(ms) && items[next].notice!.at * 1000 <= ms) out.push(items[next++]);
+    out.push(m);
+  }
+  while (next < items.length) out.push(items[next++]);
+  return out;
+}
+
 /** Groups, day separators and collapsed tool runs. */
 export function buildRows(messages: ChatMessage[]): Row[] {
   const rows: Row[] = [];
@@ -77,6 +102,8 @@ export function buildRows(messages: ChatMessage[]): Row[] {
         lastDay = day;
       }
     }
+    // The question itself shows as a card, and later as the question and its answer: no tool chip for it.
+    if (isToolOnly(m) && m.tools?.length && m.tools.every((t) => t === "clarify")) continue;
     if (isToolOnly(m)) {
       const run = [m];
       while (i + 1 < messages.length && isToolOnly(messages[i + 1])) run.push(messages[++i]);
@@ -85,10 +112,15 @@ export function buildRows(messages: ChatMessage[]): Row[] {
         continue;
       }
     }
+    if (m.notice || m.asked) {
+      rows.push({ kind: "msg", key: m.notice ? `n-${m.notice.id}` : `m-${m.id}`, m, mine: false, first: true, last: true });
+      continue;
+    }
     const mine = m.role === "user" && !isMachineNote(chatTone(m));
     const prev = messages[i - 1];
     const next = messages[i + 1];
-    const sameSide = (o?: ChatMessage) => !!o && (o.role === "user" && !isMachineNote(chatTone(o))) === mine;
+    // A notice or a past question is its own block: the message after it starts a new group (with the face).
+    const sameSide = (o?: ChatMessage) => !!o && !o.notice && !o.asked && (o.role === "user" && !isMachineNote(chatTone(o))) === mine;
     rows.push({ kind: "msg", key: `m-${m.id}`, m, mine, first: !sameSide(prev), last: !sameSide(next) });
   }
   return rows;
@@ -106,6 +138,10 @@ export function Thread({
   earlier,
   onLoadEarlier,
   footer,
+  notices,
+  activity,
+  question,
+  onAnswer,
 }: {
   messages: ChatMessage[];
   chief: Person | undefined;
@@ -120,6 +156,13 @@ export function Thread({
   earlier?: { more: boolean; loading: boolean; error: string };
   onLoadEarlier?: () => void;
   footer?: ReactNode;
+  /** Scheduled-job results and gateway notices, shown in time order. */
+  notices?: ChatNotice[];
+  /** What the running turn is doing now. */
+  activity?: TurnActivity | null;
+  /** The chief's open question (the turn waits for the answer), and how to answer it. */
+  question?: PendingQuestion | null;
+  onAnswer?: (id: string, answer: string | string[]) => Promise<void>;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   // Pinned / idle rules live in lib/stick-to-bottom.ts.
@@ -130,7 +173,7 @@ export function Thread({
   const seen = useRef<Set<number> | null>(null);
   // Sticky per message: once a message animates in, it keeps the same props so a re-render never cuts it short.
   const animated = useRef(new Set<number>());
-  const rows = useMemo(() => buildRows(messages), [messages]);
+  const rows = useMemo(() => buildRows(withNotices(messages, notices)), [messages, notices]);
   // The oldest message id shown, and the scroll height before the last change (Load earlier anchoring).
   const oldest = useRef(0);
   const heightBefore = useRef(0);
@@ -188,7 +231,7 @@ export function Thread({
   useEffect(() => {
     const el = scroller.current;
     if (el && stick.current.follow("incoming", Date.now())) toBottom(el, true);
-  }, [awaiting]);
+  }, [awaiting, question?.id, notices?.length]);
 
   // Images and videos grow the thread after it renders; stay pinned to the bottom unless you scrolled up.
   const content = useRef<HTMLDivElement>(null);
@@ -252,7 +295,17 @@ export function Thread({
               return <MessageRow key={row.key} row={row} chief={chief} animate={animated.current.has(row.m.id)} onCancelQueued={onCancelQueued} />;
             })}
             <AnimatePresence>
-              {awaiting ? <ThinkingRow key="thinking" chief={chief} waitingApproval={waitingApproval} since={thinkingSince.current ?? Date.now()} /> : null}
+              {question && onAnswer ? (
+                <QuestionCard key={`q-${question.id}`} question={question} chief={chief} onAnswer={onAnswer} />
+              ) : awaiting ? (
+                <ThinkingRow
+                  key="thinking"
+                  chief={chief}
+                  waitingApproval={waitingApproval}
+                  since={activity?.since ? activity.since * 1000 : (thinkingSince.current ?? Date.now())}
+                  step={activity?.label}
+                />
+              ) : null}
             </AnimatePresence>
           </div>
         )}
@@ -331,6 +384,18 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
   const text = stripMediaTags(m.content || "");
   const time = clock(m.id >= OPTIMISTIC ? Date.now() : messageTimeMs(m.timestamp));
   const motionProps = animate ? (mine ? enterMine : enterChief) : {};
+
+  if (m.notice || m.asked) {
+    return (
+      <motion.div {...motionProps} className="mt-5 flex gap-2.5">
+        <div className="w-7 shrink-0" />
+        <div className="min-w-0 flex-1">
+          {m.notice ? <NoticeBody notice={m.notice} /> : <AskedRow items={m.asked!} />}
+          {time ? <span className="mt-1 block text-caption text-fg-3">{time}</span> : null}
+        </div>
+      </motion.div>
+    );
+  }
 
   if (isMachineNote(tone)) {
     return (
@@ -529,9 +594,11 @@ function useElapsed(since: number) {
   return Math.max(0, Math.floor((now - since) / 1000));
 }
 
-function ThinkingRow({ chief, waitingApproval, since }: { chief: Person | undefined; waitingApproval: boolean; since: number }) {
+function ThinkingRow({ chief, waitingApproval, since, step }: { chief: Person | undefined; waitingApproval: boolean; since: number; step?: string }) {
   const assistant = useAssistantName();
   const seconds = useElapsed(since);
+  // The current step in plain words ("Checking the team"); plain "thinking" until the first one.
+  const doing = step && step !== "Thinking" ? `${step}…` : `${assistant} is thinking…`;
   return (
     <motion.div
       className="mt-5 flex items-center gap-2.5"
@@ -546,7 +613,7 @@ function ThinkingRow({ chief, waitingApproval, since }: { chief: Person | undefi
         ) : null}
       </div>
       <span className={`text-body font-medium ${waitingApproval ? "text-warn" : "shimmer-text"}`}>
-        {waitingApproval ? "Waiting for your approval" : `${assistant} is thinking…`}
+        {waitingApproval ? "Waiting for your approval" : doing}
       </span>
       {!waitingApproval && seconds >= 5 ? (
         <span className="font-mono text-code tabular text-fg-3">

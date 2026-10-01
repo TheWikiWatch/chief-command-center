@@ -32,11 +32,14 @@ export function Composer({
   onMicStream,
   phone = false,
   working = false,
+  answering = false,
   onStop,
   onSendAfter,
 }: {
   /** The chief is mid-turn: Enter adds to that work (steer), Stop / Esc ends it, Alt+Enter sends after it. */
   working?: boolean;
+  /** The chief asked a question and waits: what you type answers it. */
+  answering?: boolean;
   onStop?: () => void;
   onSendAfter?: () => void;
   /** Phone keyboards: Enter adds a line and the arrow sends (desktop: Enter sends, Shift+Enter adds a line). */
@@ -75,7 +78,8 @@ export function Composer({
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
-  }, [text]);
+    // The placeholder and the buttons beside the box change with the chief's state: measure again then too.
+  }, [text, working, answering, connected, offline]);
 
   useEffect(() => {
     if (!menu) return;
@@ -215,7 +219,7 @@ export function Composer({
                 onStop();
                 return;
               }
-              if (e.key === "Enter" && e.altKey && working && onSendAfter && text.trim() && !pendingFiles.length) {
+              if (e.key === "Enter" && e.altKey && working && !answering && onSendAfter && text.trim() && !pendingFiles.length) {
                 e.preventDefault();
                 onSendAfter();
                 return;
@@ -234,7 +238,17 @@ export function Composer({
             }}
             enterKeyHint={phone ? "enter" : "send"}
             placeholder={
-              connected ? (working ? `Add to what ${assistant} is doing…` : `Message ${assistant}`) : offline ? `${assistant} is offline · it will wait` : "Gateway down"
+              connected
+                ? answering
+                  ? phone
+                    ? `Answer ${assistant}…`
+                    : `Answer ${assistant} in your own words…`
+                  : working
+                    ? `Add to what ${assistant} is doing…`
+                    : `Message ${assistant}`
+                : offline
+                  ? `${assistant} is offline · it will wait`
+                  : "Gateway down"
             }
             disabled={!writable || busy}
             rows={1}
@@ -243,7 +257,7 @@ export function Composer({
         </div>
 
         <AnimatePresence initial={false}>
-          {working && connected && onSendAfter && hasContent && !pendingFiles.length ? (
+          {working && !answering && connected && onSendAfter && hasContent && !pendingFiles.length ? (
             <motion.button
               key="after"
               type="button"
@@ -281,8 +295,8 @@ export function Composer({
               <motion.button
                 key="send"
                 type="submit"
-                aria-label={connected ? (working ? `Add to ${assistant}'s current work` : "Send") : `Queue for ${assistant}`}
-                title={connected && working ? `Add to ${assistant}'s current work (Enter)` : undefined}
+                aria-label={connected ? (answering ? "Send answer" : working ? `Add to ${assistant}'s current work` : "Send") : `Queue for ${assistant}`}
+                title={connected && answering ? "Send answer" : connected && working ? `Add to ${assistant}'s current work (Enter)` : undefined}
                 disabled={!writable || busy}
                 className="press flex h-11 w-11 items-center justify-center rounded-full bg-accent-solid text-white shadow-[0_4px_18px_rgb(var(--c-accent)/0.35)] disabled:opacity-40"
                 initial={{ opacity: 0, scale: 0.6, rotate: -90 }}

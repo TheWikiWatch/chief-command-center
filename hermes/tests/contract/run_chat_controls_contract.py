@@ -1,4 +1,4 @@
-"""Chat controls against a real gateway: Stop, Add (steer) and Send after (queue).
+"""Chat controls against a real gateway: Stop, Add (steer), Send after (queue), and the chief's questions.
 
     python hermes/tests/contract/run_chat_controls_contract.py <payload dir> [<work dir>]
 
@@ -6,7 +6,10 @@ Starts the scriptable fake model (hermes/tests/fixtures/fake_model.py) and a gat
 the bundled bridge, then through the bridge's HTTP API:
 - steer: a CTX marker sent while the chief works reaches the SAME turn (the final answer names it);
 - stop: a running turn ends without its final answer;
-- queue: a message sent with "send after" is answered after the running turn finishes.
+- queue: a message sent with "send after" is answered after the running turn finishes;
+- questions: a turn that calls Hermes's `clarify` shows the question with the transcript (not as a notice),
+  an answer through /clarify or a typed message resumes it, and the transcript keeps the question and answer;
+- the running turn reports its current step, and the owner's chat is the home channel (no "/sethome" notice).
 The gateway is stopped with Hermes's planned-stop marker for its own home only.
 """
 from __future__ import annotations
@@ -119,10 +122,16 @@ def main() -> int:
         first = call("/send", {"text": "WORK on the report", "client_id": "c-steer"})
         check("send starts a long turn", first.get("ok") is True, first)
         check("chief is working", wait(generating, 30))
-        # Steer once the turn is really running (Hermes holds early arrivals until the agent exists). The
-        # transcript records tool rows only when a turn ends, so wait on time: the fixture's first tool call
-        # comes 3 s in, and the turn lasts about 9 s.
-        time.sleep(4)
+        # The fixture's first tool (skills_list) starts about 3 s in and ends at once: the step count goes up
+        # while the turn still runs (the rows themselves reach the database only when the turn ends).
+        def live_step():
+            now = call("/transcript?after=0")
+            act = now.get("activity") or {}
+            return now.get("generating") and act.get("steps", 0) >= 1 and act.get("label") in ("Looking through its skills", "Thinking it over")
+        check("the running turn reports its steps live", wait(live_step, 8, every=0.25) is True, call("/transcript?after=0").get("activity"))
+        # Steer once the turn is really running (Hermes holds early arrivals until the agent exists): the
+        # step check above waited for the fixture's first tool (about 3 s in); the turn lasts about 9 s.
+        time.sleep(1)
         steered = call("/steer", {"text": "CTX-alpha use the blue template"})
         check("steer accepted while working", steered.get("ok") is True and steered.get("action") == "steer", steered)
         final = wait(lambda: assistant_after(start, "Work finished"), 90)
@@ -152,6 +161,38 @@ def main() -> int:
               done is not None and after is not None and rows.index(after) > rows.index(done),
               [(m.get("id"), m.get("role"), str(m.get("content"))[:70], m.get("tools")) for m in rows[start:]])
         check("controls refuse junk", call("/steer", {"text": "  "}).get("ok") is False and call("/queue", {"text": ""}).get("ok") is False)
+
+        # Questions: the chief asks with `clarify`; the turn waits for the answer.
+        wait(lambda: not generating(), 60)
+        start = len(messages())
+        call("/send", {"text": "QUIZME now", "client_id": "c-ask"})
+        asked = wait(lambda: call("/transcript?after=0").get("clarify"), 45)
+        check("the question comes with the transcript", bool(asked) and asked.get("question") == "Which colour?"
+              and [c.replace(" (Recommended)", "") for c in asked.get("choices") or []] == ["Red", "Blue"], asked)
+        payload = call("/transcript?after=0")
+        check("it is not shown as a notice", not any("Which colour" in n.get("text", "") for n in payload.get("notices") or []), payload.get("notices"))
+        check("a stale answer is refused", call("/clarify", {"id": "not-the-question", "answer": "Red"}).get("ok") is False)
+        blue = next((c for c in (asked or {}).get("choices") or [] if c.startswith("Blue")), "Blue")
+        answered = call("/clarify", {"id": (asked or {}).get("id", ""), "answer": blue})
+        check("a choice answers it", answered.get("ok") is True, answered)
+        reply = wait(lambda: assistant_after(start, "You picked"), 45)
+        check("the turn resumes with the answer", reply is not None and "Blue" in str(reply.get("content")), reply)
+        check("the transcript keeps the question and the answer",
+              any((m.get("asked") or [{}])[0].get("answer", "").startswith("Blue") for m in messages()[start:]),
+              [m for m in messages()[start:] if m.get("asked")])
+        check("no question is left open", wait(lambda: call("/transcript?after=0").get("clarify") is None, 10))
+
+        wait(lambda: not generating(), 30)
+        start = len(messages())
+        call("/send", {"text": "QUIZME FREE please", "client_id": "c-ask-free"})
+        check("an open question appears", bool(wait(lambda: call("/transcript?after=0").get("clarify"), 45)))
+        typed = call("/send", {"text": "teal please", "client_id": "c-ask-typed"})
+        check("typing in the chat answers it", typed.get("ok") is True, typed)
+        reply = wait(lambda: assistant_after(start, "You picked"), 45)
+        check("the typed answer reached the turn", reply is not None and "teal please" in str(reply.get("content")), reply)
+
+        notices = call("/transcript?after=0").get("notices") or []
+        check("no home-channel or busy notices", not any("/sethome" in n.get("text", "") or n.get("text", "").startswith("⏳") for n in notices), notices)
     finally:
         if gateway is not None:
             try:

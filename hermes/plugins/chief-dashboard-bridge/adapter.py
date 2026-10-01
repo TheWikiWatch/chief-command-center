@@ -22,6 +22,7 @@ from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 
 from . import identity
+from .outbox import _outbox_path, append_outbox, read_outbox  # noqa: F401 (re-exported: the bridge reads them here)
 
 logger = logging.getLogger("command-center-platform")
 
@@ -45,12 +46,6 @@ def _truthy(val: str | None, default: bool = True) -> bool:
     return str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
-def _outbox_path() -> Path:
-    from .data import chief_home
-
-    return chief_home() / "command_center_outbox.jsonl"
-
-
 def _notify_phone(message: str) -> None:
     """Best-effort Web Push of a reply, queued off the event loop (see push.py)."""
     try:
@@ -61,59 +56,23 @@ def _notify_phone(message: str) -> None:
         logger.debug("web push skipped", exc_info=True)
 
 
-def append_outbox(chat_id: str, message: str, *, source: str = "adapter") -> str:
-    mid = uuid.uuid4().hex[:12]
-    row = {
-        "id": mid,
-        "at": time.time(),
-        "chat_id": chat_id or identity.owner_id(),
-        "message": message,
-        "source": source,
-        "read": False,
-    }
-    path = _outbox_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "a", encoding="utf-8") as f:
-        f.write(json.dumps(row, ensure_ascii=False) + "\n")
-    return mid
-
-
-def read_outbox(*, after_id: str = "", limit: int = 50) -> list[dict]:
-    path = _outbox_path()
-    if not path.is_file():
-        return []
-    rows: list[dict] = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return []
-    seen = False if after_id else True
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            row = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if not seen:
-            if str(row.get("id")) == after_id:
-                seen = True
-            continue
-        rows.append(row)
-        if len(rows) >= limit:
-            break
-    return rows
-
-
 class CommandCenterAdapter(BasePlatformAdapter):
     """Loopback messaging platform for the Chief Command Center PWA."""
+
+    # Hermes then reports each tool as it starts (set_status_text): the chat's live step line.
+    supports_status_text = True
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform("command_center"))
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._broadcast: Optional[Callable[[dict], None]] = None
         self.chat_id = identity.owner_id()
+        try:
+            from .chat_state import install_status_capture
+
+            install_status_capture()
+        except Exception:
+            logger.debug("status capture not installed", exc_info=True)
 
     def set_broadcast(self, fn: Callable[[dict], None]) -> None:
         self._broadcast = fn
@@ -139,7 +98,11 @@ class CommandCenterAdapter(BasePlatformAdapter):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> SendResult:
         mid = append_outbox(chat_id or self.chat_id, content or "", source="send")
-        _notify_phone(content or "")
+        # Hermes's "⏳ Working — N min" busy notices feed the chat's step line; they never ping the phone.
+        from .chat_state import busy_line
+
+        if not busy_line(content or ""):
+            _notify_phone(content or "")
         if self._broadcast:
             try:
                 self._broadcast(
@@ -154,6 +117,45 @@ class CommandCenterAdapter(BasePlatformAdapter):
             except Exception:
                 logger.debug("cc broadcast failed", exc_info=True)
         return SendResult(success=True, message_id=mid)
+
+    async def send_clarify(
+        self, chat_id: str, question: str, choices: Optional[list], clarify_id: str,
+        session_key: str, metadata: Optional[Dict[str, Any]] = None,
+    ) -> SendResult:
+        """The chief's question as a card in the chat (the bridge reads it from Hermes's clarify registry
+        with the transcript). Typing in the chat answers it too, as with Hermes's text fallback."""
+        from tools.clarify_gateway import mark_awaiting_text
+
+        mark_awaiting_text(clarify_id)
+        try:
+            from . import push
+
+            push.notify_question(question or "", clarify_id)
+        except Exception:
+            logger.debug("question push skipped", exc_info=True)
+        if self._broadcast:
+            try:
+                self._broadcast({"type": "cc_clarify", "at": time.time(), "id": clarify_id})
+            except Exception:
+                logger.debug("cc broadcast failed", exc_info=True)
+        return SendResult(success=True, message_id=f"clarify-{clarify_id}")
+
+    async def retire_clarify_card(self, clarify_id: str, notice: str = "") -> None:
+        """The question ended without an answer (timed out, superseded): the card goes on the next poll."""
+        if self._broadcast:
+            try:
+                self._broadcast({"type": "cc_clarify", "at": time.time(), "id": clarify_id, "retired": True})
+            except Exception:
+                pass
+
+    def set_status_text(self, chat_id: str, text: Optional[str]) -> None:
+        super().set_status_text(chat_id, text)
+        try:
+            from .chat_state import record_status
+
+            record_status(chat_id, text)
+        except Exception:
+            logger.debug("live step record failed", exc_info=True)
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         if self._broadcast:
@@ -237,7 +239,8 @@ def _env_enablement() -> dict | None:
         return None
     return {
         "enabled": True,
-        **seed_extra_from_env((), home_env="COMMAND_CENTER_HOME_CHANNEL"),
+        # The owner's chat is the home channel (where scheduled jobs and notices go) unless set otherwise.
+        **seed_extra_from_env((), home_env="COMMAND_CENTER_HOME_CHANNEL", home_default=identity.owner_id()),
     }
 
 

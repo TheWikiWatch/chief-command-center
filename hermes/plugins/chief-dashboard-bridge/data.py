@@ -866,18 +866,15 @@ def _message_session_id(conn: sqlite3.Connection, session_key: str) -> str:
 
 
 def _tool_names(tool_calls: Any) -> list[str]:
-    names: list[str] = []
+    """Tool names of a row's calls; a deferred call through Hermes's `tool_call` bridge counts as the tools it ran."""
     if not tool_calls:
-        return names
+        return []
     try:
-        parsed = json.loads(tool_calls) if isinstance(tool_calls, str) else tool_calls
-        if isinstance(parsed, list):
-            for tc in parsed:
-                if isinstance(tc, dict):
-                    names.append(str(tc.get("name") or (tc.get("function") or {}).get("name") or "tool"))
+        from .chat_state import _calls
+
+        return [name or "tool" for name, _args in _calls(tool_calls)]
     except Exception:
-        pass
-    return names
+        return []
 
 
 _COMPACTION_PREFIX = "[CONTEXT COMPACTION"
@@ -994,6 +991,15 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
             if role in _SKIP_ROLES:
                 continue
             names = _tool_names(row["tool_calls"])
+            if role == "tool":
+                # A question the chief asked with `clarify`, and the owner's answer.
+                from .chat_state import asked_from_tool_row
+
+                asked = asked_from_tool_row(row["content"])
+                if asked:
+                    messages.append({"id": row["id"], "role": "assistant", "content": "", "timestamp": row["timestamp"],
+                                     "tools": [], "attachments": [], "asked": asked})
+                continue
             content = ""
             attachments: list[dict[str, Any]] = []
             if role != "tool":

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, urlparse
 
+from . import chat_state
 from . import data
 from . import identity
 from . import media
@@ -196,10 +197,13 @@ class BridgeServer:
         self._binding_cache = (ready, now, bind)
         return dict(bind)
 
-    def live_transcript(self, after: int, wait: float = 0, gen: str = "", approval: str = "", before: int = 0) -> dict[str, Any]:
-        """The transcript with the chief's state (generating, pending approval). With `wait` (seconds) and
-        `after`, hold until a row lands after it, generating differs from `gen`, or the pending
-        approval differs from `approval`: one open request instead of a poll every 0.8s."""
+    def live_transcript(self, after: int, wait: float = 0, gen: str = "", approval: str = "", before: int = 0,
+                        clarify: Optional[str] = None, notice: Optional[str] = None, notice_since: float = 0.0) -> dict[str, Any]:
+        """The transcript with the chief's state: generating, the pending approval, its open question
+        (`clarify`), notices that aren't replies, and the current step (`activity`). With `wait` (seconds)
+        and `after`, hold until a row lands after it or generating, the approval, the question or the
+        newest notice differs from what the caller has: one open request instead of a poll every 0.8s.
+        `clarify` / `notice` None means the caller doesn't track them (an older dashboard)."""
         bind = self.binding()
         sk = bind.get("sessionKey") or ""
         if before:
@@ -215,6 +219,10 @@ class BridgeServer:
                     break
                 if ((pending or {}).get("requestId") or "") != approval:
                     break
+                if clarify is not None and ((chat_state.pending_clarify(sk) or {}).get("id") or "") != clarify:
+                    break
+                if notice is not None and chat_state.notice_head() != notice:
+                    break
                 time.sleep(_LONGPOLL_STEP)
                 bind = self.binding()
                 if (bind.get("sessionKey") or "") != sk:
@@ -223,8 +231,21 @@ class BridgeServer:
         payload["bind"] = bind
         payload["generating"] = self.generating(sk)
         payload["approval"] = data.pending_approval(sk)
+        payload["clarify"] = chat_state.pending_clarify(sk)
+        payload["activity"] = chat_state.activity(sk, payload["generating"], chat_state.vault_path(), chat_id=identity.owner_id())
+        if not before:
+            since = notice_since
+            if not since:
+                stamps = [float(m.get("timestamp") or 0) for m in payload.get("messages") or []]
+                since = min(stamps) if stamps else time.time() - 86400
+            payload["notices"] = chat_state.notices(sk, since=since)
+            payload["noticeHead"] = chat_state.notice_head()
         payload["longpoll"] = True
         return payload
+
+    def answer_question(self, clarify_id: str, answer: Any) -> dict[str, Any]:
+        bind = self.binding()
+        return chat_state.resolve_clarify(bind.get("sessionKey") or "", clarify_id, answer)
 
     def generating(self, session_key: str) -> bool:
         """True while the owning platform adapter still has this session busy."""
@@ -599,6 +620,14 @@ def _guarded(fn) -> dict[str, Any]:
         return {"ok": False, "error": providers._plain(exc)}
 
 
+def _float_param(qs: dict, name: str) -> float:
+    try:
+        value = float((qs.get(name) or ["0"])[0])
+    except ValueError:
+        return 0.0
+    return value if value == value and 0 <= value < 1e11 else 0.0
+
+
 def _flag(qs: dict, name: str) -> bool:
     return str((qs.get(name) or [""])[0]).lower() in ("1", "true", "yes")
 
@@ -743,6 +772,9 @@ def _make_handler(bridge: BridgeServer):
                     gen=(qs.get("gen") or [""])[0],
                     approval=(qs.get("approval") or [""])[0][:128],
                     before=max(0, self._int_param(qs, "before", 0)),
+                    clarify=(qs.get("clarify") or [None])[0],
+                    notice=(qs.get("notice") or [None])[0],
+                    notice_since=_float_param(qs, "nsince"),
                 ))
                 return
             if path == "/outbox":
@@ -874,6 +906,13 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path in ("/stop", "/steer", "/queue"):
                 self._act(path, started, bridge.control(path[1:], str(body.get("text") or "")))
+                return
+            if path == "/clarify":
+                answer = body.get("answer")
+                if not isinstance(answer, (str, list)):
+                    self._reject(400, "answer must be text or a list")
+                    return
+                self._act(path, started, bridge.answer_question(str(body.get("id") or "")[:128], answer))
                 return
             if path == "/approve":
                 request_id = str(body.get("request_id") or body.get("requestId") or "")
