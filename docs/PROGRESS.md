@@ -435,3 +435,4 @@
   - Dress rehearsal on a full copy of a real install and its vault (2.7 GB, on another drive), running what the app runs at start. Only the bridge plugin, the `fleet-builder` and `second-brain` skills, `second_brain.json`, and three config values (the `fleet` toolset, auto-loading `second-brain`, steer while busy) changed. The 17 cron jobs, the SOUL and the vault (byte for byte) were unchanged; a second start changed nothing.
   - `--plan` on the live install read it correctly and changed nothing.
   - The Second Brain contract's new adopted section and two provisioning tests pass.
+- Built `Chief Command Center 0.1.8.appx`. The signature verifies, the build log holds no password, and the package carries the adoption code (provision `--adopted`).
