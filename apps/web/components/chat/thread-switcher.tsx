@@ -52,6 +52,8 @@ export function ThreadSwitcher({
   phone: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Desktop popover: its width and offset, so it stays inside the chat pane however narrow the pane is.
+  const [place, setPlace] = useState<{ width: number; right: number }>({ width: 340, right: 0 });
   const [items, setItems] = useState<ChatThread[]>([]);
   const [seen, setSeen] = useState<Record<string, number>>({});
   const root = useRef<HTMLDivElement>(null);
@@ -74,7 +76,27 @@ export function ThreadSwitcher({
     if (active?.lastActivity) markSeen(current, active.lastActivity);
   }, [current, active?.lastActivity]);
 
-  // Desktop popover: close on a click outside.
+  // Desktop popover: fit it to the chat pane (right-aligned to the pill, moved right if it would cross the
+  // pane's left edge), and close on a click outside.
+  useEffect(() => {
+    if (!open || phone || !root.current) return;
+    const fit = () => {
+      const pill = root.current?.getBoundingClientRect();
+      // The nearest ancestor that clips (the chat pane), else the window.
+      let clip: HTMLElement | null = root.current?.parentElement ?? null;
+      while (clip && clip !== document.body && getComputedStyle(clip).overflowX === "visible") clip = clip.parentElement;
+      const pane = clip && clip !== document.body ? clip.getBoundingClientRect() : null;
+      if (!pill) return;
+      const left = pane ? pane.left + 8 : 8;
+      const rightEdge = pane ? pane.right - 8 : window.innerWidth - 8;
+      const width = Math.max(220, Math.min(340, rightEdge - left));
+      const start = Math.min(Math.max(pill.right - width, left), rightEdge - width);
+      setPlace({ width, right: pill.right - (start + width) });
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [open, phone]);
   useEffect(() => {
     if (!open || phone) return;
     const onDown = (e: MouseEvent) => {
@@ -116,7 +138,7 @@ export function ThreadSwitcher({
   );
 
   return (
-    <div ref={root} className="relative flex min-w-0">
+    <div ref={root} className="relative flex min-w-[4.75rem]">
       <button
         type="button"
         aria-haspopup="menu"
@@ -126,7 +148,7 @@ export function ThreadSwitcher({
           setOpen((v) => !v);
           load();
         }}
-        className="press flex min-h-8 min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full border border-line-2 bg-white/[0.04] py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-[14rem]"
+        className="press flex min-h-8 min-w-[4.75rem] max-w-[11rem] items-center gap-1.5 rounded-full border border-line-2 bg-white/[0.04] py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-[12rem]"
       >
         <span className="truncate">{title}</span>
         {elsewhere ? <Dot kind={elsewhere} /> : null}
@@ -144,8 +166,8 @@ export function ThreadSwitcher({
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.16, ease: EASE.enter } }}
               exit={{ opacity: 0, y: -4, transition: { duration: 0.1 } }}
-              style={{ transformOrigin: "top right" }}
-              className="absolute right-0 top-full z-50 mt-2 w-[min(340px,calc(100vw-24px))] rounded-card border border-line-2 bg-raised p-2 shadow-e4"
+              style={{ transformOrigin: "top right", width: place.width, right: place.right }}
+              className="absolute top-full z-50 mt-2 rounded-card border border-line-2 bg-raised p-2 shadow-e4"
             >
               {menu}
             </motion.div>

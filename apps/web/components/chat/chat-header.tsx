@@ -91,7 +91,7 @@ export function ChatHeader({
                 : { text: voiceLabel || "Online", tone: "text-fg-3" });
 
   return (
-    <header className="relative z-20 flex items-center gap-3 border-b border-line px-3 py-2">
+    <header className="chat-header relative z-20 flex items-center gap-3 border-b border-line px-3 py-2">
       <div className="shrink-0 pl-2 pr-1">
         {face ??
           (chief ? (
@@ -110,7 +110,7 @@ export function ChatHeader({
             </div>
           ) : null)}
       </div>
-      <div className="min-w-[3.25rem] flex-1 sm:shrink-0 sm:basis-auto">
+      <div className="min-w-[3.25rem] flex-1 sm:basis-auto">
         <div className="flex items-center gap-2">
           <h1 className="min-w-[2.75rem] truncate text-headline text-fg">{name}</h1>
           {/* DeepSeek's peak/off-peak pricing only matters when the chief runs on DeepSeek. */}
@@ -130,7 +130,7 @@ export function ChatHeader({
           </motion.p>
         </AnimatePresence>
       </div>
-      {switcher ? <div className="flex min-w-0 shrink items-center">{switcher}</div> : null}
+      {switcher ? <div className="flex min-w-[4.75rem] shrink items-center">{switcher}</div> : null}
       <AnimatePresence initial={false}>
         {speakingish || mood === "preparing" ? (
           <motion.div

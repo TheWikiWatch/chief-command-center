@@ -182,7 +182,11 @@ export function HeaderStatus({
     <div className="flex shrink-0 items-center">
       <ConnectionDot connected={connected} authFailed={authFailed} onOpen={onOpenStatus} quiet={quiet} />
       {/* Desktop only: on the phone the header is full, and full screen lives in Settings. */}
-      {fullscreen ? <FullscreenButton /> : null}
+      {fullscreen ? (
+        <span className="chat-header-fullscreen contents">
+          <FullscreenButton />
+        </span>
+      ) : null}
       {onOpenSettings ? (
         <button
           type="button"
