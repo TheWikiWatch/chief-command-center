@@ -99,7 +99,8 @@ export type Runtime = {
   rosterReview: RunInfo;
 };
 
-export type ProposalStatus = "open" | "sent to Chief" | "waiting on Chief" | "applied" | "dismissed" | string;
+/** The bundled ledger says "the chief"; an older external ledger used the chief's name ("… Chief"). */
+export type ProposalStatus = "open" | "sent to the chief" | "waiting on the chief" | "sent to Chief" | "waiting on Chief" | "applied" | "dismissed" | string;
 
 export type Proposal = {
   id: string;

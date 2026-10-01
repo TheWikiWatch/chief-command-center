@@ -204,6 +204,7 @@ def main() -> int:
     check("providers contract", lambda: contract("run_providers_contract.py"))
     check("persona contract", lambda: contract("run_persona_contract.py"))
     check("fleet contract", lambda: contract("run_fleet_contract.py"))
+    check("Fleet Health contract", lambda: contract("run_learning_contract.py"))
     check("second brain contract", lambda: contract("run_second_brain_contract.py", str(work / "second-brain-work")))
     check("speech model contract" + (" + network" if args.network else ""), lambda: contract("run_speech_model_contract.py", network=args.network))
     check("bridge unit tests", lambda: run([str(p.python), "-B", "-m", "unittest", "discover", "-s", "hermes/tests"], p.env(), cwd=REPO))

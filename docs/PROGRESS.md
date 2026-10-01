@@ -297,3 +297,18 @@
   - The Second Brain contract passes on the payload. It covers setup v2, both skills, auto-load, routines (created, off, moved, recreated idempotently), the facts sync, upgrade from v1, sharing with a bot, and the SOUL refresh.
   - A rewritten toolkit script ran a real health scan on the app's Python.
   - Tests: web 289, desktop 28, Python 73 + 20, privacy clean.
+
+**Fleet Health and self-improvement parity (plan §3.3).**
+
+- The learning ledger is ported into the app (`hermes/plugins/chief-dashboard-bridge/ledger/learning_ledger.py`, standard library) with its 10 tests. It finds the Hermes root from the environment or from where it runs. The owner's and the chief's names are gone; proposal statuses say "the chief".
+- `learning.py` arms three jobs in the chief's profile:
+  - `Fleet: learning ledger`, every 30 minutes, script only;
+  - `Fleet: lessons distill (weekly)`, the new generic `fleet-lessons-distill` skill: up to five proposals, never applied, plus a week's entry in `learning/LEARNINGS.md`;
+  - `Fleet: roster review (monthly)`, a new section in `fleet-ops`.
+  The bridge runs a first report at start, so Fleet Health has data at once.
+- Fleet Health is on by default. The desktop app passes the report folder, the ledger and its Python to the dashboard, and the folder to the gateway, which pushes new flags to the phone.
+- The chief gets twice Hermes's default memory (4400 / 2750 characters), as in the original install, unless the owner chose otherwise.
+- `docs/SELF-IMPROVEMENT.md` compares every self-improvement piece in the original install with the app, and lists the original's one-person integrations that aren't bundled.
+- Evidence:
+  - The Fleet Health contract passes 9/9 on the payload: jobs armed once, a first report, a skill edit recorded, and the copied script run the way the cron job runs it. It is in the compatibility suite.
+  - Tests: web 289, desktop 28, Python 83 + 20, privacy clean.

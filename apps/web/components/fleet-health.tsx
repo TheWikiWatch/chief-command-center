@@ -691,6 +691,8 @@ function takeLegacyDismissed(): string[] {
 const STATUS: Record<string, { label: string; tone: string }> = {
   applied: { label: "Applied", tone: "bg-ok/15 text-ok" },
   // Keys are the ledger's status strings; {name} is the chief's display name.
+  "waiting on the chief": { label: "Waiting on {name}", tone: "bg-warn/15 text-warn" },
+  "sent to the chief": { label: "Sent to {name}", tone: "bg-white/[0.07] text-fg-2" },
   "waiting on Chief": { label: "Waiting on {name}", tone: "bg-warn/15 text-warn" },
   "sent to Chief": { label: "Sent to {name}", tone: "bg-white/[0.07] text-fg-2" },
   dismissed: { label: "Dismissed", tone: "border border-line-2 text-fg-3" },
@@ -726,7 +728,7 @@ function Proposals({ items, onSendToChief, onDecided }: { items: Proposal[]; onS
     }, () => undefined);
   }, [items, onDecided]);
 
-  const statusOf = (p: Proposal) => (local[p.id] ? (local[p.id] === "approve" ? "sent to Chief" : "dismissed") : p.status || "open");
+  const statusOf = (p: Proposal) => (local[p.id] ? (local[p.id] === "approve" ? "sent to the chief" : "dismissed") : p.status || "open");
   const open = items.filter((p) => statusOf(p) === "open");
   const decided = items.filter((p) => statusOf(p) !== "open");
 
@@ -802,7 +804,7 @@ function Proposals({ items, onSendToChief, onDecided }: { items: Proposal[]; onS
           {showDecided ? (
             <ul className="mt-1 overflow-hidden rounded-card border border-line bg-card">
               {decided.map((p) => {
-                const s = STATUS[statusOf(p)] || STATUS["sent to Chief"];
+                const s = STATUS[statusOf(p)] || STATUS["sent to the chief"];
                 return (
                   <li key={p.id} className="flex items-center gap-2 border-b border-line px-3 py-2 last:border-b-0">
                     <span className="min-w-0 flex-1 truncate text-callout text-fg-2">{p.target}</span>

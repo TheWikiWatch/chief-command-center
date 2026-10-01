@@ -74,14 +74,14 @@ type ReportProposal = { id?: unknown; status?: unknown; decision?: unknown };
 
 /**
  * Decisions made since the ledger last ran show at once: the report's status is kept when the ledger
- * already knows the decision (it can say "applied"), otherwise it becomes "sent to Chief" / "dismissed".
+ * already knows the decision (it can say "applied"), otherwise it becomes "sent to the chief" / "dismissed".
  */
 export function withDecisions<T extends { proposals?: unknown; flags?: unknown }>(report: T, decisions: Record<string, Decision>): T {
   const proposals = Array.isArray(report.proposals) ? (report.proposals as ReportProposal[]) : [];
   const merged = proposals.map((p) => {
     const d = decisions[String(p.id)];
     if (!d || p.decision === d.decision) return p;
-    return { ...p, decision: d.decision, decidedAt: d.at, status: d.decision === "approve" ? "sent to Chief" : "dismissed" };
+    return { ...p, decision: d.decision, decidedAt: d.at, status: d.decision === "approve" ? "sent to the chief" : "dismissed" };
   });
   const decided = new Set(Object.keys(decisions));
   const flags = Array.isArray(report.flags)

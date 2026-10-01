@@ -44,3 +44,12 @@ Every request ends up as one of these:
 ## When the owner adds context mid-task
 
 New messages while you work are added to your current turn. Read them at the next step, adjust course, and say in one line what changed.
+
+## Monthly roster review
+
+When the monthly review runs (or the owner asks for one):
+
+1. `fleet_roster` for the team, and the Fleet Health report in `learning/report.json` under the Hermes root (each bot's finished, crashed and abandoned cards, its memory fill, and flags).
+2. For each bot: is its job still needed, is its description still true, is its model right for the work, is its memory nearly full?
+3. Report one screen to the owner: who is busy, who is idle, and at most three proposed changes (re-pin a model, rewrite a description, retire an idle bot, propose a new specialist), each with the number behind it.
+4. Change nothing yourself. Every change waits for the owner's yes, as always.

@@ -11,6 +11,7 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
 - Sets the bridge port, turns on the Command Center platform and makes the owner's chat its home channel
   (where scheduled jobs and notices go) in the profile .env.
 - Stamps a new profile's config with Hermes's current schema version before writing anything else.
+- Gives the chief twice Hermes's default memory (4400 / 2750 characters) unless the owner set their own.
 - Gives the chief the `kanban` toolset (delegating to workers) and the bridge's `fleet` toolset (mint, re-pin,
   retire and restore workers), and, unless the owner chose otherwise,
   `display.busy_input_mode: steer`, so a message sent while the chief works is added to that work instead of
@@ -226,6 +227,12 @@ def main() -> int:
     if not display.get("busy_input_mode"):
         save_config_value("display.busy_input_mode", "steer")
         changed.append("busy input: steer")
+    # The chief carries more than a single-job bot: twice Hermes's default memory, unless the owner chose.
+    memory = raw.get("memory") if isinstance(raw.get("memory"), dict) else {}
+    for key, value in (("memory_char_limit", 4400), ("user_char_limit", 2750)):
+        if key not in memory:
+            save_config_value(f"memory.{key}", value)
+            changed.append(f"memory.{key}")
 
     env = load_env()
     for key, value in (("COMMAND_CENTER_ENABLED", "true"), ("COMMAND_CENTER_ALLOW_ALL_USERS", "true"), ("CHIEF_DASHBOARD_PORT", str(args.bridge_port))):

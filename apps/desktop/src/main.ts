@@ -82,6 +82,11 @@ function hermesVersion(): string {
   }
 }
 
+/** Fleet Health's data folder, beside the Hermes profiles. */
+function learningDir(): string {
+  return path.join(hermesRoot, "learning");
+}
+
 function envFor(kind: "gateway" | "web"): Record<string, string> {
   const layout = payloadLayout(paths.payload, toolDirs(paths.payload));
   const common = { PYTHONIOENCODING: "utf-8" };
@@ -96,6 +101,7 @@ function envFor(kind: "gateway" | "web"): Record<string, string> {
         HERMES_BIN: layout.launcher,
         CHIEF_DASHBOARD_TOKEN: token,
         CHIEF_DASHBOARD_PORT: String(store.value.ports.bridge),
+        CHIEF_LEARNING_DIR: learningDir(),
       },
     });
   }
@@ -109,6 +115,10 @@ function envFor(kind: "gateway" | "web"): Record<string, string> {
       CHIEF_APP_DATA: paths.appDir,
       CHIEF_HERMES_ROOT: hermesRoot,
       CHIEF_PYTHON: layout.python,
+      // Fleet Health: the bundled learning ledger (its report folder, the program and the Python that runs it).
+      CHIEF_LEARNING_DIR: learningDir(),
+      CHIEF_LEARNING_TOOL: path.join(paths.plugins, "chief-dashboard-bridge", "ledger", "learning_ledger.py"),
+      CHIEF_HERMES_PYTHON: layout.python,
       CHIEF_PYTHONPATH: layout.pythonPath.join(";"),
       CHIEF_BACKUP_ENGINE: paths.backupEngine,
       CHIEF_APP_VERSION: app.getVersion(),

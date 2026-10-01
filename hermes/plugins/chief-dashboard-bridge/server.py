@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from . import chat_state
 from . import data
 from . import identity
+from . import learning
 from . import media
 from . import push
 from . import vapid
@@ -50,9 +51,8 @@ _FACTS_EVERY = 24
 
 
 def learning_report_path() -> Optional[Path]:
-    """An optional learning ledger's report.json (CHIEF_LEARNING_DIR), or None when none is configured."""
-    folder = (os.environ.get("CHIEF_LEARNING_DIR") or "").strip()
-    return Path(folder) / "report.json" if folder else None
+    """Fleet Health's report.json: CHIEF_LEARNING_DIR, else the bundled ledger's <root>/learning."""
+    return learning.folder() / "report.json"
 
 
 def _already_bound_here() -> bool:
@@ -307,6 +307,13 @@ class BridgeServer:
             second_brain.upgrade()
         except Exception:
             logger.warning("Second Brain upgrade failed", exc_info=True)
+        try:
+            # Fleet Health: the ledger and its jobs armed, and a first report before the first scheduled run.
+            learning.ensure()
+            if not learning_report_path().is_file():
+                learning.run_now()
+        except Exception:
+            logger.warning("Fleet Health setup failed", exc_info=True)
         while not self._watch_stop.wait(_WATCH_SECONDS):
             tick += 1
             if tick % _FACTS_EVERY == 0:
