@@ -11,12 +11,13 @@ import { Notifier } from "./notifier";
 import { missing, resolvePaths, type DesktopPaths } from "./paths";
 import { isFree, pickPort } from "./ports";
 import { applyRestore, engineRunner } from "./restore";
-import { bridgeToken } from "./secrets";
+import { bridgeToken, readUpdateKey, saveUpdateKey } from "./secrets";
 import { Store } from "./store";
 import { Supervisor } from "./supervisor";
 import { launchWeb, webHealth } from "./web";
 import { RELEASE_PUBLIC_KEY } from "./release-key";
 import { compareVersions, Updater, type Release } from "./updater";
+import { folderSource, githubSource, parseGithub } from "./release-source";
 
 /** The data layout this version writes. A later version that changes it raises this, and an older app
  * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
@@ -401,6 +402,11 @@ function registerIpc() {
     return updater.check();
   });
   ipcMain.handle("updates:feed", () => store.value.updateFeed);
+  ipcMain.handle("updates:hasKey", () => readUpdateKey(paths.secrets, safeStorage) !== "");
+  ipcMain.handle("updates:setKey", (_e, key: string) => {
+    saveUpdateKey(paths.secrets, safeStorage, String(key || ""));
+    return updater.check();
+  });
   ipcMain.handle("updates:setFeed", (_e, folder: string) => {
     store.save({ updateFeed: String(folder || "").trim() });
     return updater.check();
@@ -485,10 +491,16 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
       },
     });
     updater = new Updater({
-      feed: () => store.value.updateFeed,
+      source: () => {
+        const feed = store.value.updateFeed.trim();
+        if (!feed) return null;
+        const repo = parseGithub(feed);
+        return repo ? githubSource(repo.owner, repo.repo, readUpdateKey(paths.secrets, safeStorage)) : folderSource(feed);
+      },
       currentVersion: app.getVersion(),
       publicKey: RELEASE_PUBLIC_KEY,
-      updatesDir: path.join(paths.data, "updates"),
+      // Beside the backups when the owner moved those off a full system drive.
+      updatesDir: store.value.backupDir ? path.join(path.dirname(store.value.backupDir), "updates") : path.join(paths.data, "updates"),
       skipped: () => store.value.skippedVersions,
       freeBytes: async (dir) => {
         const s = statfsSync(existsSync(dir) ? dir : paths.data);

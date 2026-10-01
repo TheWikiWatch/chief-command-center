@@ -83,3 +83,33 @@ it("the floating card stays out of the way unless there is something to install"
   await new Promise((r) => setTimeout(r, 10));
   expect(container.textContent).toBe("");
 });
+
+it("a private GitHub release source asks for its key once, and keeps it sealed in the shell", async () => {
+  const saved: string[] = [];
+  let hasKey = false;
+  (window as unknown as { chiefDesktop: unknown }).chiefDesktop = {
+    updates: {
+      state: async () => ({ status: "idle" }),
+      check: async () => ({ status: "idle" }),
+      download: async () => ({ status: "idle" }),
+      install: async () => ({ status: "idle" }),
+      skip: async () => ({ status: "idle" }),
+      feed: async () => "github:me/chief-releases",
+      setFeed: async () => ({ status: "idle" }),
+      hasKey: async () => hasKey,
+      setKey: async (k: string) => (saved.push(k), (hasKey = true), { status: "idle" }),
+      onState: () => () => undefined,
+    },
+  };
+  const { UpdatesPanel, isGithubFeed } = await import("@/components/updates/update-card");
+  expect(isGithubFeed("https://github.com/me/r")).toBe(true);
+  expect(isGithubFeed("E:\Releases")).toBe(false);
+  render(<UpdatesPanel />);
+  const field = (await screen.findByLabelText("Update key")) as HTMLInputElement;
+  expect(field.type).toBe("password");
+  fireEvent.change(field, { target: { value: " github_pat_abc " } });
+  fireEvent.click(screen.getByRole("button", { name: "Save key" }));
+  await waitFor(() => expect(saved).toEqual(["github_pat_abc"]));
+  expect(field.value).toBe(""); // never kept in the page
+  expect(await screen.findByText(/Saved and protected by Windows/)).toBeTruthy();
+});

@@ -457,3 +457,17 @@
   - the dashboard on the old port, with Today at 44 open and 22 overdue from the boards;
   - Fleet Health reading the install's own ledger;
   - the old launchers off.
+
+**Updates for a few testers: a private releases repository and a key per person (`docs/DISTRIBUTION.md`).**
+
+- **Two release sources.** The updater now reads from either a folder or a private GitHub repository that holds only releases (`apps/desktop/src/release-source.ts`). A GitHub source:
+  - finds the latest release's files;
+  - downloads them through GitHub's redirect without passing the key on to the download host;
+  - resumes partial downloads.
+
+  Every release is still verified against the pinned Ed25519 key and the package against its signed digest, so a leaked key can't deliver a forged update.
+- **The key** is a fine-grained, read-only token for that one repository, one per tester. It is pasted once in Settings → Backup & updates, sealed with Windows DPAPI in the app's secrets, and never shown again. A refused, expired or missing key gets a plain message saying what to do.
+- **Downloads** go beside the backups when those were moved off a full system drive.
+- **`release-tool.mjs publish`** uploads a made release (manifest, signature, package) to the releases repository as the latest release, with the `gh` login.
+- **The releases repository was created,** private, and holds no source.
+- **Tests:** desktop 33 (parsing; reading through the redirect without the key; refused, missing and empty-release messages; resume; a full check, download and verify from a fake GitHub), and the Settings key field.

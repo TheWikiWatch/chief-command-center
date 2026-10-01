@@ -16,6 +16,8 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
     skip: (version: string) => ipcRenderer.invoke("updates:skip", version),
     feed: () => ipcRenderer.invoke("updates:feed"),
     setFeed: (folder: string) => ipcRenderer.invoke("updates:setFeed", folder),
+    hasKey: () => ipcRenderer.invoke("updates:hasKey"),
+    setKey: (key: string) => ipcRenderer.invoke("updates:setKey", key),
     onState: (fn: (state: unknown) => void) => {
       const listener = (_e: unknown, state: unknown) => fn(state);
       ipcRenderer.on("updates:state", listener);

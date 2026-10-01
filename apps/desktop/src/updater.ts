@@ -3,6 +3,7 @@ import { createReadStream, createWriteStream, existsSync, promises as fs } from 
 import path from "node:path";
 
 import type { ActiveWork } from "./active-work";
+import { folderSource, SourceError, type ReleaseSource } from "./release-source";
 
 /**
  * "Update available — install?" (PLAN §8 "App update flow"). Nothing installs without the owner's click.
@@ -15,8 +16,8 @@ import type { ActiveWork } from "./active-work";
  * 4. Backup, then stop Chief and hand the package to Windows, which verifies its signature, installs it and
  *    relaunches the app.
  *
- * The feed is a folder while the repo is closed (a local or network release folder); an https feed comes
- * with public releases.
+ * Releases come from a folder (local or network) or a private GitHub repository that holds only releases,
+ * read with a per-person read-only key (release-source.ts).
  */
 export type Release = {
   format: "chief-release";
@@ -41,7 +42,10 @@ export type UpdateState =
   | { status: "error"; error: string; release?: Release };
 
 export type UpdaterDeps = {
-  feed: () => string;
+  /** A release folder (the closed-phase default). */
+  feed?: () => string;
+  /** Where releases come from: a folder or a private GitHub repo (release-source.ts); wins over `feed`. */
+  source?: () => ReleaseSource | null;
   currentVersion: string;
   publicKey: string;
   updatesDir: string;
@@ -94,6 +98,12 @@ export class Updater {
 
   constructor(private readonly deps: UpdaterDeps) {}
 
+  private source(): ReleaseSource | null {
+    if (this.deps.source) return this.deps.source();
+    const feed = this.deps.feed?.() || "";
+    return feed ? folderSource(feed) : null;
+  }
+
   private set(state: UpdateState): UpdateState {
     this.state = state;
     this.deps.onState?.(state);
@@ -101,16 +111,18 @@ export class Updater {
   }
 
   async check(): Promise<UpdateState> {
-    const feed = this.deps.feed();
-    if (!feed) return this.set({ status: "error", error: "Couldn't check for updates: no update source is set." });
+    const source = this.source();
+    if (!source) return this.set({ status: "error", error: "Couldn't check for updates: no update source is set." });
     this.set({ status: "checking" });
     let bytes: Buffer;
     let sig: string;
     try {
-      bytes = await fs.readFile(path.join(feed, "release.json"));
-      sig = await fs.readFile(path.join(feed, "release.json.sig"), "utf8");
-    } catch {
-      return this.set({ status: "error", error: `Couldn't check for updates: the release folder (${feed}) isn't reachable.` });
+      await source.refresh();
+      bytes = await source.read("release.json");
+      sig = (await source.read("release.json.sig")).toString("utf8");
+    } catch (e) {
+      const why = e instanceof SourceError ? e.message : `the release source (${source.label}) isn't reachable.`;
+      return this.set({ status: "error", error: `Couldn't check for updates: ${why}` });
     }
     let release: Release;
     try {
@@ -127,7 +139,8 @@ export class Updater {
     if (this.state.status !== "available" && this.state.status !== "error") return this.state;
     const release = this.state.release;
     if (!release) return this.state;
-    const source = path.join(this.deps.feed(), release.package.file);
+    const source = this.source();
+    if (!source) return this.set({ status: "error", release, error: "Couldn't download the update: no update source is set." });
     const target = path.join(this.deps.updatesDir, release.package.file);
     const part = `${target}.part`;
     await fs.mkdir(this.deps.updatesDir, { recursive: true });
@@ -148,8 +161,9 @@ export class Updater {
     }
     this.set({ status: "downloading", release, done: have, total: release.package.bytes });
     try {
+      await source.refresh(); // a GitHub source learns the latest release's files here
+      const input = await source.open(release.package.file, have);
       await new Promise<void>((resolve, reject) => {
-        const input = createReadStream(source, { start: have });
         const output = createWriteStream(part, { flags: "a" });
         let done = have;
         input.on("data", (chunk) => {
@@ -164,6 +178,7 @@ export class Updater {
       });
     } catch (e) {
       if (e instanceof UpdateError) await fs.rm(part, { force: true });
+      if (e instanceof SourceError) return this.set({ status: "error", release, error: `Couldn't download the update: ${e.message}` });
       const full = (e as NodeJS.ErrnoException).code === "ENOSPC";
       return this.set({ status: "error", release, error: full ? "The disk filled up during the download. Free some space and try again; it resumes." : e instanceof UpdateError ? e.message : "The download stopped. Try again; it resumes where it stopped." });
     }

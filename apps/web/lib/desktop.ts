@@ -30,6 +30,9 @@ export type DesktopUpdates = {
   skip: (version: string) => Promise<UpdateState>;
   feed: () => Promise<string>;
   setFeed: (folder: string) => Promise<UpdateState>;
+  /** A private GitHub release repository's read-only key (sealed by the shell); older shells lack these. */
+  hasKey?: () => Promise<boolean>;
+  setKey?: (key: string) => Promise<UpdateState>;
   onState: (fn: (state: UpdateState) => void) => () => void;
 };
 

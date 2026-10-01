@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -27,3 +27,27 @@ export function bridgeToken(dir: string, sealer: Sealer, adopt?: string): string
   writeFileSync(file, sealer.encryptString(token));
   return token;
 }
+
+/** The read-only key for a private GitHub release repository (Settings → Updates), sealed like the token. "" = none. */
+export function readUpdateKey(dir: string, sealer: Sealer): string {
+  const file = path.join(dir, "update-key.bin");
+  if (!existsSync(file) || !sealer.isEncryptionAvailable()) return "";
+  try {
+    return sealer.decryptString(readFileSync(file));
+  } catch {
+    return "";
+  }
+}
+
+export function saveUpdateKey(dir: string, sealer: Sealer, key: string): void {
+  const file = path.join(dir, "update-key.bin");
+  const clean = key.trim();
+  if (!clean) {
+    rmSync(file, { force: true });
+    return;
+  }
+  if (!sealer.isEncryptionAvailable()) throw new Error("Windows can't protect the app's secrets for this user (DPAPI unavailable).");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(file, sealer.encryptString(clean));
+}
+

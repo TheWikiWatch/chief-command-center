@@ -146,18 +146,25 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
   }
 }
 
-/** Settings → Updates: where updates come from, and the card. */
+/** `github:owner/repo` or a github.com URL: a private release repository read with a key. */
+export const isGithubFeed = (feed: string) => /^(github:|https:\/\/github\.com\/)[\w-]+\/[\w.-]+/.test(feed.trim());
+
+/** Settings → Updates: where updates come from (a release folder, or a private GitHub release repository and its key), and the card. */
 export function UpdatesPanel() {
   const { api } = useUpdates();
   const [feed, setFeed] = useState("");
   const [saved, setSaved] = useState("");
+  const [hasKey, setHasKey] = useState(false);
+  const [key, setKey] = useState("");
   useEffect(() => {
     void api?.feed().then((f) => {
       setFeed(f);
       setSaved(f);
     });
+    void api?.hasKey?.().then(setHasKey);
   }, [api]);
   if (!api) return null;
+  const github = isGithubFeed(saved);
   return (
     <div className="space-y-3">
       <UpdateCard />
@@ -169,7 +176,7 @@ export function UpdatesPanel() {
             value={feed}
             onChange={(e) => setFeed(e.target.value)}
             spellCheck={false}
-            placeholder="A release folder, e.g. E:\ChiefReleases"
+            placeholder="github:owner/releases-repo, or a release folder"
             className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
           />
           {feed.trim() !== saved ? (
@@ -185,6 +192,37 @@ export function UpdatesPanel() {
         </div>
         <p className="mt-1 text-caption text-fg-3">Only releases signed by this app&apos;s publisher are offered, and nothing installs without your click.</p>
       </div>
+      {github && api.setKey ? (
+        <div className="text-callout text-fg-2">
+          <label htmlFor="update-key">Update key</label>
+          <div className="mt-1.5 flex gap-2">
+            <input
+              id="update-key"
+              type="password"
+              autoComplete="off"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              spellCheck={false}
+              placeholder={hasKey ? "A key is saved; paste a new one to replace it" : "Paste the key you were given"}
+              className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+            />
+            {key.trim() ? (
+              <Button
+                onClick={async () => {
+                  await api.setKey!(key.trim());
+                  setKey("");
+                  setHasKey(true);
+                }}
+              >
+                Save key
+              </Button>
+            ) : null}
+          </div>
+          <p className="mt-1 text-caption text-fg-3">
+            {hasKey ? "Saved and protected by Windows for your account. " : ""}It only lets this app read new releases; ask whoever gave it to you when it expires.
+          </p>
+        </div>
+      ) : null}
     </div>
   );
 }
