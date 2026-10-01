@@ -95,5 +95,32 @@ try:
 except persona.PersonaError:
     check("profile names are validated", True)
 
+# Names
+import yaml
+
+soul_now = persona.read_soul("chief")
+persona.write_soul("chief", "You are Chief, a personal chief of staff.\n\nYou are Chief everywhere.\n", soul_now["hash"])
+renamed = persona.rename("chief", "Nova", "Chief of Staff")
+meta = yaml.safe_load((home / "profile.yaml").read_text(encoding="utf-8"))
+check("a rename writes the title", renamed["title"] == "Nova - Chief of Staff" and meta["ui_meta"]["hermes-bots"]["title"] == "Nova - Chief of Staff", renamed)
+soul_text = (home / "SOUL.md").read_text(encoding="utf-8")
+check("the SOUL's opening follows the name, and only the opening", soul_text.startswith("You are Nova, a personal") and "You are Chief everywhere." in soul_text and renamed["soul"] == "updated", soul_text[:120])
+check("the old SOUL is kept in history", any("You are Chief, a personal" in p.read_text(encoding="utf-8") for p in (home / "soul-history").glob("*.md")))
+kept = persona.rename("chief", "Atlas", "", update_soul=False)
+check("the SOUL can be left as it is", kept["title"] == "Atlas" and (home / "SOUL.md").read_text(encoding="utf-8").startswith("You are Nova"), kept)
+persona.write_soul("chief", "My own words, no greeting line.\n", persona.read_soul("chief")["hash"])
+odd = persona.rename("chief", "Quinn", "")
+check("a SOUL that opens differently is left alone and says so", odd["soul"].startswith("kept") and (home / "SOUL.md").read_text(encoding="utf-8") == "My own words, no greeting line.\n", odd)
+(home.parent / "helper" / "SOUL.md").write_text("You are Sam, a researcher.\n", encoding="utf-8")
+(home.parent / "helper" / "profile.yaml").write_text("ui_meta:\n  hermes-bots:\n    title: Sam - Researcher\n", encoding="utf-8")
+bot = persona.rename("helper", "Riley", "Research lead")
+check("any bot can be renamed", bot["title"] == "Riley - Research lead" and (home.parent / "helper" / "SOUL.md").read_text(encoding="utf-8").startswith("You are Riley,"), bot)
+for bad in ("", "a - b", "x" * 41):
+    try:
+        persona.rename("helper", bad, "")
+        check(f"a bad name is refused: {bad[:8]!r}", False)
+    except persona.PersonaError:
+        check(f"a bad name is refused: {bad[:8]!r}", True)
+
 print(json.dumps({"failures": failures}))
 sys.exit(1 if failures else 0)

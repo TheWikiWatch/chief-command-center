@@ -46,12 +46,13 @@ def _truthy(val: str | None, default: bool = True) -> bool:
     return str(val).strip().lower() in ("1", "true", "yes", "on")
 
 
-def _notify_phone(message: str) -> None:
-    """Best-effort Web Push of a reply, queued off the event loop (see push.py)."""
+def _notify_phone(message: str, chat_id: str = "") -> None:
+    """Best-effort Web Push of a reply, queued off the event loop (see push.py); it opens the reply's thread."""
     try:
         from . import push
+        from .threads import thread_of
 
-        push.notify_reply(message or "")
+        push.notify_reply(message or "", thread=thread_of(chat_id))
     except Exception:
         logger.debug("web push skipped", exc_info=True)
 
@@ -102,7 +103,7 @@ class CommandCenterAdapter(BasePlatformAdapter):
         from .chat_state import busy_line
 
         if not busy_line(content or ""):
-            _notify_phone(content or "")
+            _notify_phone(content or "", chat_id or self.chat_id)
         if self._broadcast:
             try:
                 self._broadcast(
@@ -167,8 +168,10 @@ class CommandCenterAdapter(BasePlatformAdapter):
     async def get_chat_info(self, chat_id: str):
         return {"name": chat_id or self.chat_id, "type": "dm"}
 
-    def queue_user_text(self, text: str, media: list | None = None, message_type: str = "text") -> bool:
-        """Accept a user turn onto the gateway loop and return without waiting for the model."""
+    def queue_user_text(self, text: str, media: list | None = None, message_type: str = "text", chat_id: str | None = None) -> bool:
+        """Accept a user turn onto the gateway loop and return without waiting for the model. `chat_id` picks the
+        thread (each thread is its own chat, so Hermes gives it its own session); default: the main chat."""
+        chat = chat_id or self.chat_id
         text = (text or "").strip()
         files = [item for item in (media or []) if isinstance(item, dict) and item.get("path")]
         if not text and not files:
@@ -186,7 +189,7 @@ class CommandCenterAdapter(BasePlatformAdapter):
 
         async def _run() -> None:
             source = self.build_source(
-                chat_id=self.chat_id,
+                chat_id=chat,
                 chat_name=identity.owner_label(),
                 chat_type="dm",
                 user_id=self.chat_id,

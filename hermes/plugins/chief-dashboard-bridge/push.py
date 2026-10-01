@@ -136,14 +136,15 @@ def enqueue(title: str, body: str, **kwargs) -> bool:
         return False
 
 
-def notify_reply(text: str) -> bool:
-    """A reply from the chief. Machine notes and empty text never reach the phone."""
+def notify_reply(text: str, thread: str = "main") -> bool:
+    """A reply from the chief. Machine notes and empty text never reach the phone. Tapping opens its thread."""
     if is_machine_note(text):
         return False
     body = plain_text(text)
     if not body:
         return False
-    return enqueue(identity.assistant_name(), body, tag=REPLY_TAG, ttl=REPLY_TTL, open_={"tab": "chat"})
+    open_ = {"tab": "chat"} if thread in ("", "main") else {"tab": "chat", "thread": thread}
+    return enqueue(identity.assistant_name(), body, tag=REPLY_TAG if thread in ("", "main") else f"{REPLY_TAG}-{thread}", ttl=REPLY_TTL, open_=open_)
 
 
 def notify_flags(flags: list[dict]) -> bool:
@@ -186,4 +187,14 @@ def notify_question(question: str, clarify_id: str) -> bool:
         ttl=APPROVAL_TTL,
         urgency="high",
         open_={"tab": "chat"},
+    )
+
+
+def notify_budget(spent: float, limit: float) -> bool:
+    """The month's usage passed the owner's budget (once a month). Nothing is stopped."""
+    return enqueue(
+        "Monthly budget reached",
+        f"${spent:,.2f} of ${limit:,.2f} this month. Nothing has been stopped; see Settings, then Usage.",
+        tag="usage-budget",
+        open_={"tab": "settings", "settings": "usage"},
     )

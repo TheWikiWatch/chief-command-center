@@ -463,7 +463,8 @@ def resolve_session_key(override: str = "", *, command_center_ready: bool = Fals
         chosen = cc_dm
         if cc_dm not in keys:
             for key in keys:
-                if ":command_center:dm:" in key:
+                # Another thread's session (dm:<owner>.t-…) is never the main chat.
+                if ":command_center:dm:" in key and not re.search(r":dm:[^:]*\.t-[0-9a-f]+$", key):
                     chosen = key
                     break
         known = chosen in keys

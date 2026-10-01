@@ -24,6 +24,9 @@ from . import push
 from . import vapid
 from . import persona
 from . import second_brain
+from . import threads
+from . import routines
+from . import usage
 from . import fleet
 from . import speech_model
 from . import providers
@@ -48,6 +51,10 @@ _FLAG_EVERY = 24
 _SIG_EVERY = 2
 # The Second Brain: brought up to date once at start, its critical facts re-checked about once a minute.
 _FACTS_EVERY = 24
+# The usage budget is checked about every five minutes (one notification a month at most).
+_BUDGET_EVERY = 120
+# A bot's routine runs are relayed into the chief's chat every few seconds (routines.relay).
+_RELAY_EVERY = 4
 
 
 def learning_report_path() -> Optional[Path]:
@@ -105,15 +112,15 @@ def _busy_input_mode() -> str:
         return "interrupt"
 
 
-def _queue_inbound(adapter: Any, text: str, media: list | None = None, message_type: str = "text") -> bool:
-    """Return once the turn is queued. Do not wait for the model."""
+def _queue_inbound(adapter: Any, text: str, media: list | None = None, message_type: str = "text", chat_id: str = "") -> bool:
+    """Return once the turn is queued. Do not wait for the model. `chat_id` is the thread's chat (default main)."""
     media = media or []
     queue = getattr(adapter, "queue_user_text", None)
     if callable(queue):
         try:
-            return bool(queue(text, media, message_type))
+            return bool(queue(text, media, message_type, chat_id=chat_id or None)) if chat_id else bool(queue(text, media, message_type))
         except TypeError:
-            if media:
+            if media or chat_id:
                 return False
             return bool(queue(text))
     if not _loop_running(adapter):
@@ -199,15 +206,35 @@ class BridgeServer:
         self._binding_cache = (ready, now, bind)
         return dict(bind)
 
+    def thread_bind(self, thread: str = threads.MAIN) -> tuple[dict[str, Any], str]:
+        """(binding, chat id) of a thread: the main thread is the app's chat as always (chat id "": the adapter's
+        own); any other thread is its own chat, so its own Hermes session."""
+        bind = self.binding()
+        if not thread or thread == threads.MAIN:
+            return bind, ""
+        if not threads.valid(thread) or not threads.exists(thread):
+            raise threads.ThreadError("Unknown thread.")
+        bind = dict(bind)
+        bind["sessionKey"] = threads.session_key(thread)
+        return bind, threads.chat_id(thread)
+
     def live_transcript(self, after: int, wait: float = 0, gen: str = "", approval: str = "", before: int = 0,
-                        clarify: Optional[str] = None, notice: Optional[str] = None, notice_since: float = 0.0) -> dict[str, Any]:
+                        clarify: Optional[str] = None, notice: Optional[str] = None, notice_since: float = 0.0,
+                        thread: str = threads.MAIN, session: str = "") -> dict[str, Any]:
         """The transcript with the chief's state: generating, the pending approval, its open question
         (`clarify`), notices that aren't replies, and the current step (`activity`). With `wait` (seconds)
         and `after`, hold until a row lands after it or generating, the approval, the question or the
         newest notice differs from what the caller has: one open request instead of a poll every 0.8s.
-        `clarify` / `notice` None means the caller doesn't track them (an older dashboard)."""
-        bind = self.binding()
+        `clarify` / `notice` None means the caller doesn't track them (an older dashboard).
+        `thread` picks the conversation; `session` reads one of its earlier conversations (before a fresh start)."""
+        bind, chat = self.thread_bind(thread)
         sk = bind.get("sessionKey") or ""
+        if session:
+            if session not in {p["id"] for p in threads.previous_sessions(thread)}:
+                raise threads.ThreadError("That conversation isn't part of this thread.")
+            payload = data.transcript(session, limit=400)
+            payload.update({"thread": thread, "session": session, "longpoll": False})
+            return payload
         if before:
             payload = data.transcript(sk, before_id=before, limit=60)
         else:
@@ -226,28 +253,69 @@ class BridgeServer:
                 if notice is not None and chat_state.notice_head() != notice:
                     break
                 time.sleep(_LONGPOLL_STEP)
-                bind = self.binding()
-                if (bind.get("sessionKey") or "") != sk:
-                    break
+                if thread in ("", threads.MAIN):
+                    bind = self.binding()
+                    if (bind.get("sessionKey") or "") != sk:
+                        break
             payload = data.transcript(sk, after_id=after)
         payload["bind"] = bind
         payload["generating"] = self.generating(sk)
         payload["approval"] = data.pending_approval(sk)
         payload["clarify"] = chat_state.pending_clarify(sk)
-        payload["activity"] = chat_state.activity(sk, payload["generating"], chat_state.vault_path(), chat_id=identity.owner_id())
+        payload["activity"] = chat_state.activity(sk, payload["generating"], chat_state.vault_path(), chat_id=chat or identity.owner_id())
         if not before:
             since = notice_since
             if not since:
                 stamps = [float(m.get("timestamp") or 0) for m in payload.get("messages") or []]
                 since = min(stamps) if stamps else time.time() - 86400
-            payload["notices"] = chat_state.notices(sk, since=since)
+            payload["notices"] = chat_state.notices(sk, since=since, chat_id=chat or identity.owner_id())
             payload["noticeHead"] = chat_state.notice_head()
+            if not after:
+                payload["previous"] = threads.previous_sessions(thread)
+                # Whether Load earlier has anything to show (a new thread has nothing before its first rows).
+                ids = [int(m["id"]) for m in payload.get("messages") or [] if 0 < int(m.get("id") or 0) < 10**12]
+                if ids:
+                    probe = data.transcript(sk, before_id=min(ids), limit=1)
+                    payload["more"] = bool(probe.get("messages")) or bool(probe.get("more"))
+        payload["thread"] = thread or threads.MAIN
         payload["longpoll"] = True
         return payload
 
-    def answer_question(self, clarify_id: str, answer: Any) -> dict[str, Any]:
-        bind = self.binding()
+    def answer_question(self, clarify_id: str, answer: Any, thread: str = threads.MAIN) -> dict[str, Any]:
+        bind, _chat = self.thread_bind(thread)
         return chat_state.resolve_clarify(bind.get("sessionKey") or "", clarify_id, answer)
+
+    def thread_list(self) -> dict[str, Any]:
+        return threads.list_threads(
+            busy=self.generating,
+            question=lambda key: chat_state.pending_clarify(key) is not None,
+            approval=lambda key: data.pending_approval(key) is not None,
+        )
+
+    def fresh_start(self, thread: str = threads.MAIN) -> dict[str, Any]:
+        """A fresh start in a thread: Hermes's `/new` (the earlier conversation is kept as history), its
+        confirmation answered for the owner, who already confirmed in the app."""
+        bind, chat = self.thread_bind(thread)
+        sk = bind.get("sessionKey") or ""
+        cc = self._attached_adapter()
+        if cc is None or not sk:
+            return {"ok": False, "error": "Command Center is not attached. Relaunch Chief Command Center."}
+        if self.generating(sk):
+            return {"ok": False, "code": "busy", "error": f"{identity.assistant_name()} is working in this thread. Stop it first, or wait."}
+        if not _queue_inbound(cc, "/new", chat_id=chat):
+            return {"ok": False, "error": "Command Center is not ready."}
+        try:
+            from tools import slash_confirm
+        except Exception:
+            slash_confirm = None
+        end = time.monotonic() + 8.0
+        while slash_confirm is not None and time.monotonic() < end:
+            if slash_confirm.get_pending(sk):
+                _queue_inbound(cc, "/approve", chat_id=chat)
+                break
+            time.sleep(0.2)
+        self.broadcast({"type": "thread_fresh", "at": time.time(), "thread": thread})
+        return {"ok": True, "thread": thread}
 
     def generating(self, session_key: str) -> bool:
         """True while the owning platform adapter still has this session busy."""
@@ -316,6 +384,18 @@ class BridgeServer:
             logger.warning("Fleet Health setup failed", exc_info=True)
         while not self._watch_stop.wait(_WATCH_SECONDS):
             tick += 1
+            if tick % _BUDGET_EVERY == 0:
+                try:
+                    over = usage.check_budget()
+                    if over:
+                        push.notify_budget(over["spent"], over["limit"])
+                except Exception:
+                    logger.debug("budget check failed", exc_info=True)
+            if tick % _RELAY_EVERY == 0:
+                try:
+                    routines.relay()
+                except Exception:
+                    logger.debug("routine relay failed", exc_info=True)
             if tick % _FACTS_EVERY == 0:
                 try:
                     second_brain.sync_critical_facts()
@@ -449,16 +529,17 @@ class BridgeServer:
             "sections": roster.get("sections") or [],
             "workers": work.get("workers") or [],
             "approval": approval,
-            "generating": self.generating(sk),
+            # The chief is thinking when any of its threads is working.
+            "generating": self.generating(sk) or any(t["working"] for t in threads.list_threads(busy=self.generating)["threads"][1:]),
         }
 
-    def approvals(self) -> dict[str, Any]:
-        bind = self.binding()
+    def approvals(self, thread: str = threads.MAIN) -> dict[str, Any]:
+        bind, _chat = self.thread_bind(thread)
         item = data.pending_approval(bind.get("sessionKey") or "")
         return {"ok": True, "approval": item, "approvals": [item] if item else []}
 
-    def approve(self, request_id: str, choice: str) -> dict[str, Any]:
-        bind = self.binding()
+    def approve(self, request_id: str, choice: str, thread: str = threads.MAIN) -> dict[str, Any]:
+        bind, _chat = self.thread_bind(thread)
         result = data.resolve_approval(bind.get("sessionKey") or "", request_id, choice)
         if result.get("ok") and int(result.get("resolved") or 0) > 0:
             self.broadcast({"type": "approved", "at": time.time()})
@@ -481,12 +562,15 @@ class BridgeServer:
             with self._send_lock:
                 self._sent_ids.pop(client_id, None)
 
-    def send(self, text: str, attachments: list | None = None, client_id: str = "") -> dict[str, Any]:
+    def send(self, text: str, attachments: list | None = None, client_id: str = "", thread: str = threads.MAIN) -> dict[str, Any]:
         client_id = str(client_id or "")[:64]
         if not self._claim_send(client_id):
             logger.info("duplicate send %s ignored; the chief already has it", client_id)
             return {"ok": True, "accepted": True, "duplicate": True}
-        result = self._send_once(text, attachments)
+        try:
+            result = self._send_once(text, attachments, thread)
+        except threads.ThreadError as exc:
+            result = {"ok": False, "error": str(exc)}
         if not result.get("ok"):
             self._release_send(client_id)
         return result
@@ -504,7 +588,7 @@ class BridgeServer:
             time.sleep(0.25)
         return self.command_center_adapter
 
-    def control(self, action: str, text: str = "") -> dict[str, Any]:
+    def control(self, action: str, text: str = "", thread: str = threads.MAIN) -> dict[str, Any]:
         """Stop the chief's current turn, add context to it (steer), or queue a message for after it.
 
         These are Hermes's own chat commands (`/stop`, `/steer <text>`, `/queue <text>`), sent into the chief's
@@ -519,8 +603,12 @@ class BridgeServer:
             return {"ok": False, "error": "Message is empty."}
         if len(text) > 8000:
             return {"ok": False, "error": "That message is too long to add mid-turn; send it as a message instead."}
+        try:
+            bind, chat = self.thread_bind(thread)
+        except threads.ThreadError as exc:
+            return {"ok": False, "error": str(exc)}
         cc = self._attached_adapter()
-        sk = self.binding().get("sessionKey") or ""
+        sk = bind.get("sessionKey") or ""
         if cc is None or not sk:
             return {"ok": False, "error": "Command Center is not attached. Relaunch Chief Command Center."}
         if action == "steer":
@@ -532,7 +620,7 @@ class BridgeServer:
         else:
             command = "/stop" if action == "stop" else f"/queue {text}"
         try:
-            accepted = _queue_inbound(cc, command)
+            accepted = _queue_inbound(cc, command, chat_id=chat)
         except Exception as exc:
             logger.warning("command_center control failed: %s", type(exc).__name__)
             return {"ok": False, "error": "Command Center send failed."}
@@ -541,10 +629,10 @@ class BridgeServer:
         self.broadcast({"type": f"control_{action}", "at": time.time()})
         return {"ok": True, "action": action, "generating": self.generating(sk)}
 
-    def _send_once(self, text: str, attachments: list | None = None) -> dict[str, Any]:
+    def _send_once(self, text: str, attachments: list | None = None, thread: str = threads.MAIN) -> dict[str, Any]:
         if not (text or "").strip() and not attachments:
             return {"ok": False, "error": "Message is empty."}
-        bind = self.binding()
+        bind, chat = self.thread_bind(thread)
         sk = bind.get("sessionKey") or ""
         platform = bind.get("platform") or ("command_center" if ":command_center:" in sk else "discord")
         # Command Center is the front door. Never inject into a dead Discord session.
@@ -569,7 +657,7 @@ class BridgeServer:
             return {"ok": False, "error": "Message is empty."}
         if use_cc:
             try:
-                accepted = _queue_inbound(cc, text, composed["media"], composed["message_type"])
+                accepted = _queue_inbound(cc, text, composed["media"], composed["message_type"], chat_id=chat)
             except Exception as exc:
                 logger.warning("command_center inbound failed: %s", exc)
                 data.discard_staged(staged)
@@ -631,11 +719,29 @@ def _guarded(fn) -> dict[str, Any]:
     """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
     try:
         return fn()
-    except (persona.PersonaError, second_brain.SecondBrainError, speech_model.SpeechModelError, fleet.FleetError) as exc:
+    except (persona.PersonaError, second_brain.SecondBrainError, speech_model.SpeechModelError, fleet.FleetError, threads.ThreadError, routines.RoutineError) as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:  # the adapter maps expected failures itself
         logger.warning("bridge action failed: %s", type(exc).__name__)
         return {"ok": False, "error": providers._plain(exc)}
+
+
+def _about() -> dict[str, Any]:
+    """The bundled Second Brain toolkit's version and source (Settings → About)."""
+    try:
+        meta = json.loads((data.chief_home() / "skills" / "obsidian-second-brain" / "vendor.json").read_text(encoding="utf-8"))
+        toolkit = {"version": str(meta.get("version") or ""), "source": str(meta.get("source") or "")}
+    except (OSError, ValueError):
+        toolkit = None
+    return {"ok": True, "toolkit": toolkit}
+
+
+def _thread_param(qs: dict) -> str:
+    return str((qs.get("thread") or [threads.MAIN])[0] or threads.MAIN)[:32]
+
+
+def _thread_body(body: dict) -> str:
+    return str(body.get("thread") or threads.MAIN)[:32]
 
 
 def _float_param(qs: dict, name: str) -> float:
@@ -744,7 +850,13 @@ def _make_handler(bridge: BridgeServer):
                 self._json(bridge.snapshot())
                 return
             if path == "/approvals":
-                self._json(bridge.approvals())
+                self._json(_guarded(lambda: bridge.approvals(_thread_param(qs))))
+                return
+            if path == "/threads":
+                self._json(_guarded(bridge.thread_list))
+                return
+            if path == "/routines":
+                self._json(_guarded(routines.list_routines))
                 return
             if path == "/voice-config":
                 self._json(voice.voice_config())
@@ -767,6 +879,13 @@ def _make_handler(bridge: BridgeServer):
             if path == "/second-brain/routines":
                 self._json(_guarded(second_brain.routines))
                 return
+            if path == "/about":
+                self._json(_about())
+                return
+            if path == "/usage":
+                period = str((qs.get("period") or ["month"])[0])
+                self._json(_guarded(lambda: usage.summary(period)))
+                return
             if path == "/voice/model":
                 self._json(_guarded(speech_model.status))
                 return
@@ -787,7 +906,7 @@ def _make_handler(bridge: BridgeServer):
                 self._json(hermes_settings.get_settings())
                 return
             if path == "/transcript":
-                self._json(bridge.live_transcript(
+                self._json(_guarded(lambda: bridge.live_transcript(
                     max(0, self._int_param(qs, "after", 0)),
                     wait=max(0, self._int_param(qs, "wait", 0)),
                     gen=(qs.get("gen") or [""])[0],
@@ -796,7 +915,9 @@ def _make_handler(bridge: BridgeServer):
                     clarify=(qs.get("clarify") or [None])[0],
                     notice=(qs.get("notice") or [None])[0],
                     notice_since=_float_param(qs, "nsince"),
-                ))
+                    thread=_thread_param(qs),
+                    session=str((qs.get("session") or [""])[0])[:64],
+                )))
                 return
             if path == "/outbox":
                 after_id = (qs.get("after") or [""])[0] or ""
@@ -919,6 +1040,7 @@ def _make_handler(bridge: BridgeServer):
                     str(body.get("text") or ""),
                     attachments if isinstance(attachments, list) else [],
                     str(body.get("client_id") or ""),
+                    _thread_body(body),
                 ))
                 return
             if path == "/outbox/notify":
@@ -926,19 +1048,53 @@ def _make_handler(bridge: BridgeServer):
                 self._json({"ok": True})
                 return
             if path in ("/stop", "/steer", "/queue"):
-                self._act(path, started, bridge.control(path[1:], str(body.get("text") or "")))
+                self._act(path, started, bridge.control(path[1:], str(body.get("text") or ""), _thread_body(body)))
                 return
             if path == "/clarify":
                 answer = body.get("answer")
                 if not isinstance(answer, (str, list)):
                     self._reject(400, "answer must be text or a list")
                     return
-                self._act(path, started, bridge.answer_question(str(body.get("id") or "")[:128], answer))
+                self._act(path, started, _guarded(lambda: bridge.answer_question(str(body.get("id") or "")[:128], answer, _thread_body(body))))
                 return
             if path == "/approve":
                 request_id = str(body.get("request_id") or body.get("requestId") or "")
                 choice = str(body.get("choice") or "").strip().lower()
-                self._act(path, started, bridge.approve(request_id, choice))
+                self._act(path, started, _guarded(lambda: bridge.approve(request_id, choice, _thread_body(body))))
+                return
+            if path == "/threads":
+                self._act(path, started, _guarded(lambda: threads.create(str(body.get("title") or ""))))
+                return
+            if path == "/threads/rename":
+                self._act(path, started, _guarded(lambda: threads.rename(_thread_body(body), str(body.get("title") or ""))))
+                return
+            if path == "/threads/archive":
+                self._act(path, started, _guarded(lambda: threads.archive(_thread_body(body), body.get("archived") is not False)))
+                return
+            if path == "/routines":
+                self._act(path, started, _guarded(lambda: routines.create(
+                    str(body.get("profile") or "chief"), str(body.get("name") or ""), str(body.get("prompt") or ""),
+                    body.get("schedule") if isinstance(body.get("schedule"), dict) else {}, _thread_body(body))))
+                return
+            if path == "/routines/update":
+                schedule = body.get("schedule")
+                enabled = body.get("enabled")
+                self._act(path, started, _guarded(lambda: routines.update(
+                    str(body.get("profile") or "chief"), str(body.get("id") or ""),
+                    name=body.get("name") if isinstance(body.get("name"), str) else None,
+                    prompt=body.get("prompt") if isinstance(body.get("prompt"), str) else None,
+                    schedule=schedule if isinstance(schedule, dict) else None,
+                    thread=body.get("thread") if isinstance(body.get("thread"), str) else None,
+                    enabled=enabled if isinstance(enabled, bool) else None)))
+                return
+            if path == "/routines/run":
+                self._act(path, started, _guarded(lambda: routines.run_now(str(body.get("profile") or "chief"), str(body.get("id") or ""))))
+                return
+            if path == "/routines/delete":
+                self._act(path, started, _guarded(lambda: routines.delete(str(body.get("profile") or "chief"), str(body.get("id") or ""))))
+                return
+            if path == "/threads/fresh":
+                self._act(path, started, _guarded(lambda: bridge.fresh_start(_thread_body(body))))
                 return
             if path == "/transcribe":
                 self._act(path, started, voice.transcribe(body))
@@ -946,6 +1102,14 @@ def _make_handler(bridge: BridgeServer):
             if path == "/persona/soul":
                 self._act(path, started, _guarded(lambda: persona.write_soul(
                     str(body.get("profile") or "chief"), str(body.get("text") or ""), str(body.get("base_hash") or ""))))
+                return
+            if path == "/usage/budget":
+                self._act(path, started, _guarded(lambda: usage.set_budget(body.get("monthly"))))
+                return
+            if path == "/profile/rename":
+                self._act(path, started, _guarded(lambda: persona.rename(
+                    str(body.get("profile") or "chief"), str(body.get("name") or ""), str(body.get("role") or ""),
+                    update_soul=body.get("update_soul") is not False)))
                 return
             if path == "/persona/soul/restore":
                 self._act(path, started, _guarded(lambda: persona.restore_version(

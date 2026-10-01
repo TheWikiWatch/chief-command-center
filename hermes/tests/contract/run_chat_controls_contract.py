@@ -33,7 +33,7 @@ failures: list[str] = []
 
 
 def check(name: str, cond: bool, detail: object = "") -> None:
-    print(("ok   " if cond else "FAIL ") + name + (f"  ({str(detail)[:400]})" if detail and not cond else ""), flush=True)
+    print(("ok   " if cond else "FAIL ") + name + (f"  ({ascii(str(detail)[:400])})" if detail and not cond else ""), flush=True)
     if not cond:
         failures.append(name)
 
@@ -63,7 +63,9 @@ def main() -> int:
             "    spec = importlib.util.spec_from_file_location('bridge.' + n, plugin / (n + '.py')); m = importlib.util.module_from_spec(spec); sys.modules['bridge.' + n] = m; spec.loader.exec_module(m); return m\n"
             "load('data'); providers = load('providers')\n"
             "r = providers.save_endpoint('Local model', sys.argv[2], 'tiny-local', '')\n"
-            "print(r); sys.exit(0 if r.get('ok') else 1)\n"
+            "load('persona'); fleet = load('fleet')\n"
+            "m = fleet.mint('research-desk', 'Sam', 'Researcher', 'Finds sources.', 'You are Sam, a researcher.', owner_signed=True)\n"
+            "print(r, m.get('ok')); sys.exit(0 if r.get('ok') and m.get('ok') else 1)\n"
         )
         ok, out = compat.run([str(p.python), "-B", "-c", connect, str(REPO / "hermes" / "plugins" / "chief-dashboard-bridge"),
                               f"http://127.0.0.1:{model_port}/v1"], p.env(HERMES_HOME=str(profile)))
@@ -193,6 +195,71 @@ def main() -> int:
 
         notices = call("/transcript?after=0").get("notices") or []
         check("no home-channel or busy notices", not any("/sethome" in n.get("text", "") or n.get("text", "").startswith("⏳") for n in notices), notices)
+
+        # Threads: separate conversations with the chief, side by side.
+        wait(lambda: not generating(), 30)
+        made = call("/threads", {"title": "Side project"})
+        tid = (made.get("thread") or {}).get("id", "")
+        check("a thread can be made", made.get("ok") is True and tid.startswith("t-"), made)
+
+        def thread_rows(thread: str) -> list[dict]:
+            return call(f"/transcript?after=0&thread={thread}").get("messages") or []
+
+        def thread_busy(thread: str) -> bool:
+            return bool(call(f"/transcript?after=0&thread={thread}").get("generating"))
+
+        main_before = len(messages())
+        call("/send", {"text": "WORK on the main plan", "client_id": "t-main-1"})
+        call("/send", {"text": "WORK on the side plan", "client_id": "t-side-1", "thread": tid})
+        both = wait(lambda: thread_busy("main") and thread_busy(tid), 20, every=0.25)
+        check("two threads work at the same time", both is True)
+        listed = {t["id"]: t for t in call("/threads").get("threads") or []}
+        check("the thread list shows both working", listed.get(tid, {}).get("working") is True and listed.get("main", {}).get("working") is True, listed)
+        side_done = wait(lambda: next((m for m in thread_rows(tid) if "Work finished" in str(m.get("content"))), None), 90)
+        main_done = wait(lambda: next((m for m in messages()[main_before:] if "Work finished" in str(m.get("content"))), None), 90)
+        check("each thread finishes its own work", side_done is not None and main_done is not None)
+        check("their transcripts stay apart", not any("side plan" in str(m.get("content")) for m in messages())
+              and any("side plan" in str(m.get("content")) for m in thread_rows(tid)))
+
+        wait(lambda: not thread_busy(tid), 30)
+        call("/send", {"text": "QUIZME now", "client_id": "t-side-ask", "thread": tid})
+        asked_side = wait(lambda: call(f"/transcript?after=0&thread={tid}").get("clarify"), 45)
+        check("a question belongs to its thread", bool(asked_side) and call("/transcript?after=0").get("clarify") is None)
+        listed = {t["id"]: t for t in call("/threads").get("threads") or []}
+        check("the thread list shows the waiting question", listed.get(tid, {}).get("question") is True, listed.get(tid))
+        call("/clarify", {"id": asked_side.get("id", ""), "answer": "Red", "thread": tid})
+        wait(lambda: not thread_busy(tid), 45)
+
+        fresh = call("/threads/fresh", {"thread": tid})
+        check("a fresh start is accepted", fresh.get("ok") is True, fresh)
+        restarted = wait(lambda: call(f"/transcript?after=0&thread={tid}").get("previous"), 30)
+        check("the earlier conversation is kept as history", bool(restarted) and restarted[0].get("messages", 0) > 0, restarted)
+        old = call(f"/transcript?after=0&thread={tid}&session={(restarted or [{}])[0].get('id', '')}")
+        check("and can be read", any("side plan" in str(m.get("content")) for m in old.get("messages") or []), [m.get("content") for m in (old.get("messages") or [])][:4])
+        renamed = call("/threads/rename", {"thread": tid, "title": "Lisbon trip"})
+        archived = call("/threads/archive", {"thread": tid})
+        check("a thread can be renamed and archived", renamed.get("ok") and archived.get("ok") and (archived.get("thread") or {}).get("archived") is True)
+        check("an unknown thread is refused", call("/send", {"text": "hi", "client_id": "t-bad", "thread": "t-deadbeef"}).get("ok") is False)
+
+        # Routines: a bot's routine runs as that bot and reports into the chat; the chief's into a thread.
+        reported = call("/threads", {"title": "Reports"})
+        rid = (reported.get("thread") or {}).get("id", "")
+        bot_r = call("/routines", {"profile": "research-desk", "name": "Ping", "prompt": "BOTPING report in", "schedule": {"kind": "daily", "time": "03:00"}})
+        chief_r = call("/routines", {"profile": "chief", "name": "Thread ping", "prompt": "CHIEFPING report in", "schedule": {"kind": "daily", "time": "03:00"}, "thread": rid})
+        check("routines are created for a bot and for the chief", bot_r.get("ok") is True and chief_r.get("ok") is True, (bot_r, chief_r))
+        call("/routines/run", {"profile": "research-desk", "id": (bot_r.get("routine") or {}).get("id", "")})
+        call("/routines/run", {"profile": "chief", "id": (chief_r.get("routine") or {}).get("id", "")})
+
+        def notice_with(thread: str, needle: str):
+            q = "/transcript?after=0" + (f"&thread={thread}" if thread != "main" else "")
+            return next((n for n in call(q).get("notices") or [] if needle in n.get("text", "")), None)
+
+        bot_note = wait(lambda: notice_with("main", "BOTPING"), 150, every=2)
+        check("a bot's routine runs and reports into the main thread", bot_note is not None, call("/transcript?after=0").get("notices"))
+        chief_note = wait(lambda: notice_with(rid, "CHIEFPING"), 120, every=2)
+        check("the chief's routine reports into its thread, not the main one", chief_note is not None and notice_with("main", "CHIEFPING") is None)
+        listed = {r["name"]: r for r in call("/routines").get("routines") or []}
+        check("the routine list shows the last run", bool(listed.get("Ping", {}).get("lastRun")), listed.get("Ping"))
     finally:
         if gateway is not None:
             try:

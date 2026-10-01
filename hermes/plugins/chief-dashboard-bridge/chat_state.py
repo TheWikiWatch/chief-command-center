@@ -152,11 +152,16 @@ def busy_line(text: str) -> bool:
     return bool(_BUSY.match(str(text or "")))
 
 
-def notices(session_key: str, since: float = 0.0, limit: int = 30) -> list[dict[str, Any]]:
-    """Gateway sends at or after `since` that aren't replies: newest `limit`, oldest first."""
+def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str = "") -> list[dict[str, Any]]:
+    """Gateway sends at or after `since` that aren't replies: newest `limit`, oldest first. With `chat_id`, only
+    that thread's (the main chat also gets sends without a chat)."""
+    from . import identity
     from .outbox import read_outbox
 
     rows = [r for r in read_outbox(limit=100000) if float(r.get("at") or 0) >= since]
+    if chat_id:
+        main = chat_id == identity.owner_id()
+        rows = [r for r in rows if str(r.get("chat_id") or "") == chat_id or (main and not r.get("chat_id"))]
     rows = [r for r in rows if not busy_line(str(r.get("message") or "")) and _norm(str(r.get("message") or ""))]
     if not rows:
         return []

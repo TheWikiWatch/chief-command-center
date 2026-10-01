@@ -261,3 +261,64 @@ def _plain_memory_error(error: str) -> str:
 def read_all(profile: str) -> dict[str, Any]:
     return {"ok": True, "contract": CONTRACT, "profile": (profile or "chief").lower(),
             "soul": read_soul(profile), **read_memory(profile)}
+
+
+# ---------------------------------------------------------------- name
+
+_NAME_OK = re.compile(r"^[^\n\r\t]{1,40}$")
+_ROLE_OK = re.compile(r"^[^\n\r\t]{0,60}$")
+
+
+def _title_parts(title: str) -> tuple[str, str]:
+    name, sep, role = str(title or "").partition(" - ")
+    return name.strip(), role.strip() if sep else ""
+
+
+def rename(profile: str, name: str, role: str = "", update_soul: bool = True) -> dict[str, Any]:
+    """Rename a bot (the chief too): its title ("Name - Role") in profile.yaml, and, unless asked not to, the
+    first "You are <old name>" in its SOUL. A SOUL that doesn't open that way is left alone (`soul` says so)."""
+    import yaml
+
+    home = profile_home(profile)
+    name, role = " ".join(str(name or "").split()), " ".join(str(role or "").split())
+    if not name or not _NAME_OK.match(name) or " - " in name:
+        raise PersonaError("Give a name of up to 40 characters (no ' - ').")
+    if not _ROLE_OK.match(role):
+        raise PersonaError("Keep the role under 60 characters.")
+    meta_path = home / "profile.yaml"
+    meta = data.load_yaml(meta_path) if meta_path.is_file() else {}
+    meta = meta if isinstance(meta, dict) else {}
+    ui = meta.get("ui_meta") if isinstance(meta.get("ui_meta"), dict) else {}
+    bots = ui.get("hermes-bots") if isinstance(ui.get("hermes-bots"), dict) else {}
+    old_name, old_role = _title_parts(bots.get("title") or "")
+    if not old_name and profile in ("chief", ""):
+        from . import identity
+
+        old_name = identity.DEFAULT_ASSISTANT
+    bots["title"] = f"{name} - {role}" if role else name
+    ui["hermes-bots"] = bots
+    meta["ui_meta"] = ui
+    tmp = meta_path.with_suffix(".yaml.tmp")
+    tmp.write_text(yaml.safe_dump(meta, sort_keys=False, allow_unicode=True), encoding="utf-8")
+    os.replace(tmp, meta_path)
+
+    soul_note = "unchanged"
+    if update_soul and old_name and old_name != name:
+        path = home / "SOUL.md"
+        current = _read(path)
+        pattern = re.compile(r"^(\s*You are )" + re.escape(old_name) + r"(?=[\s,.;:!—-])", re.M)
+        match = pattern.search(current)
+        if match and match.start() < 400:
+            updated = current[: match.start()] + match.group(1) + name + current[match.end():]
+            result = write_soul(profile, updated, _hash(current))
+            soul_note = "updated" if result.get("ok") else "not updated"
+        else:
+            soul_note = "kept (it doesn't open with \"You are " + old_name + "\")"
+    try:
+        from . import identity
+
+        identity._cache.pop("assistant", None)
+    except Exception:
+        pass
+    logger.info("persona: %s renamed to %s", home.name, bots["title"])
+    return {"ok": True, "title": bots["title"], "name": name, "role": role, "soul": soul_note}
