@@ -17,6 +17,7 @@ import {
   BotIcon,
   BookOpenIcon,
   HardDriveDownloadIcon,
+  KeyRoundIcon,
 } from "@/components/icons";
 import { BackupPanel } from "@/components/backup/backup-panel";
 import { UpdatesPanel, useUpdates } from "@/components/updates/update-card";
@@ -41,6 +42,7 @@ import { enableWebPush, pushCapability, pushStatus, type PushStatus } from "@/li
 import { useAssistantName, ownerName } from "@/lib/identity";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { PersonaEditor } from "@/components/persona/persona-editor";
+import { ModelsKeys } from "@/components/fleet/models-keys";
 import { SecondBrainSetup } from "@/components/second-brain/setup";
 import { CheckMySystem } from "@/components/voice/check-my-system";
 import { loadVoiceCheck, type VoiceCheckResult } from "@/lib/mic-device";
@@ -83,6 +85,7 @@ function SettingsBody({ phone, onAskChief }: { phone: boolean; onAskChief?: (tex
   return (
     <div className="space-y-6 px-4 pb-10 pt-1">
       <ConnectionGroup />
+      <ModelsKeysGroup />
       <SecondBrainGroup onAskChief={onAskChief} />
       <BackupGroup />
       <UpdatesGroup />
@@ -137,6 +140,15 @@ function ConnectionGroup() {
           ) : null}
         </Row>
       )}
+    </Group>
+  );
+}
+
+/** Every provider this install can use; their models fill each bot's model list. */
+function ModelsKeysGroup() {
+  return (
+    <Group icon={<KeyRoundIcon className="size-4" />} title="Models & keys" hint="Providers your bots can use. Pick each bot's model from its Look drawer, under Job.">
+      <ModelsKeys />
     </Group>
   );
 }

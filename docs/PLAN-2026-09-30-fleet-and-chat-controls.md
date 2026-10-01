@@ -1,6 +1,6 @@
 # Plan: fleet management for every chief, and chat controls (stop, add context)
 
-Status: approved 2026-09-30, from the owner's first-use notes on the installed app.
+Status: approved 2026-09-30, from the owner's first-use notes on the installed app. Steps 1 to 3 of §6 are built and tested; step 4 is the 0.1.1 build for the owner's reinstall.
 
 **Decisions (owner, 2026-09-30):**
 1. **Enter while Chief works = Add to current work** (steer). Send after (queue) is the second action; Stop is its own button.

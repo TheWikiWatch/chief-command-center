@@ -1,8 +1,9 @@
 """Chief Command Center loopback bridge: an HTTP server inside the chief's gateway.
 
-No tools, no model, no SOUL. Registers the Command Center messaging platform (the app's chat), reads
-profiles, kanban and the Command Center session, injects the owner's turns, and sends phone alerts.
-If Command Center is disabled it falls back to a Discord DM session.
+No model, no SOUL. Registers the Command Center messaging platform (the app's chat), reads profiles, kanban
+and the Command Center session, injects the owner's turns, and sends phone alerts. If Command Center is disabled
+it falls back to a Discord DM session. Its one toolset, `fleet` (fleet.py), lets the chief mint, re-pin,
+retire and restore its workers through the same code as the dashboard.
 """
 
 from __future__ import annotations
@@ -99,6 +100,15 @@ def _register(ctx):
         )
     except Exception:
         logger.warning("Command Center adapter unavailable; using Discord", exc_info=True)
+
+    try:
+        from .fleet import TOOLS
+
+        for name, schema, handler, emoji in TOOLS:
+            ctx.register_tool(name=name, toolset="fleet", schema=schema, handler=handler, emoji=emoji,
+                              description=schema.get("description", ""))
+    except Exception:
+        logger.warning("chief-dashboard-bridge: fleet tools unavailable", exc_info=True)
 
     thread = threading.Thread(target=server.serve_forever, name="chief-dashboard-bridge", daemon=True)
     thread.start()

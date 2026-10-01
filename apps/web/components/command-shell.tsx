@@ -20,6 +20,7 @@ import { useVaultOpenSignal } from "@/lib/vault-client";
 import { TodayPane } from "@/components/today-pane";
 import { WorkforcePane } from "@/components/workforce-pane";
 import { FleetHealth } from "@/components/fleet-health";
+import { TeamButton } from "@/components/fleet/team-sheet";
 import { fetchApprovals, fetchHealth, fetchSnapshot, subscribeBridge } from "@/lib/bridge";
 import { useDashboardPrefs } from "@/lib/dashboard-prefs";
 import { SPRING } from "@/lib/motion";
@@ -379,6 +380,7 @@ export function CommandShell() {
             </p>
           </div>
           {viewSwitch}
+          <TeamButton phone onAskChief={sendFromToday} />
           {headerStatus}
         </header>
       ) : (
@@ -386,7 +388,10 @@ export function CommandShell() {
           <div className="absolute left-3 top-3 z-20">
             <SurfaceTabs surface={surface} onChange={changeSurface} />
           </div>
-          <div className="absolute right-3 top-3 z-20">{viewSwitch}</div>
+          <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+            {viewSwitch}
+            <TeamButton phone={false} onAskChief={sendFromToday} />
+          </div>
         </>
       )}
       {fleetView === "health" ? (

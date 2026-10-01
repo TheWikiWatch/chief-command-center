@@ -122,7 +122,7 @@ it("connects a local endpoint without a key", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Check the endpoint" }));
   fireEvent.click(await screen.findByRole("button", { name: "Use llama3.2" }));
   expect(await screen.findByRole("heading", { name: "Connected" })).toBeInTheDocument();
-  expect(calls.find((c) => c.path === "endpoint/save")?.body).toEqual({ name: "Local model", base_url: "http://127.0.0.1:11434/v1", model: "llama3.2", api_key: "" });
+  expect(calls.find((c) => c.path === "endpoint/save")?.body).toEqual({ name: "Local model", base_url: "http://127.0.0.1:11434/v1", model: "llama3.2", api_key: "", make_default: true });
 });
 
 it("an unreachable endpoint says so", async () => {

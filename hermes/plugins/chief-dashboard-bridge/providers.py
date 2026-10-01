@@ -20,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from pathlib import Path
 from typing import Any, Optional
 
 from .data import chief_config_scope
@@ -53,6 +54,13 @@ def _key_env(slug: str, raw: Optional[dict[str, Any]] = None) -> str:
     if raw and str(raw.get("auth_type") or "") in _KEY_AUTH and raw.get("key_env"):
         return str(raw["key_env"])
     return _UNREGISTERED_KEY_ENV.get(slug, "")
+
+
+def _saved_key_names() -> set[str]:
+    """Names (never values) of the keys in the chief's own .env. Call inside chief_config_scope."""
+    from hermes_cli.config import load_env
+
+    return {name for name, value in (load_env() or {}).items() if str(value or "").strip()}
 
 
 def _registry(slug: str):
@@ -95,7 +103,11 @@ def catalog(refresh: bool = False) -> dict[str, Any]:
         from hermes_cli.inventory import build_model_options_payload, load_picker_context
 
         payload = build_model_options_payload(load_picker_context(), include_unconfigured=True, refresh=bool(refresh))
+        saved = _saved_key_names()
     rows = [_row(r) for r in payload.get("providers") or [] if isinstance(r, dict) and r.get("slug") not in ("moa",)]
+    for row in rows:
+        # Connected with a key the app stored (removable here), or through a sign-in Hermes found on this PC.
+        row["keySaved"] = bool(row["keyEnv"]) and row["keyEnv"] in saved
     return {"ok": True, "contract": CONTRACT, "provider": str(payload.get("provider") or ""),
             "model": str(payload.get("model") or ""), "providers": rows, "status": status()}
 
@@ -175,12 +187,22 @@ def provider_models(slug: str) -> dict[str, Any]:
     return {"ok": False, "error": "Unknown provider."}
 
 
-def choose_model(slug: str, model: str, *, confirm_expensive: bool = False) -> dict[str, Any]:
-    """Make provider/model the chief's main model, through Hermes's own model assignment."""
+def _scope(home: Optional[Path]):
+    """Hermes code as if HERMES_HOME were `home` (a worker profile), or the chief's profile."""
+    if home is None:
+        return chief_config_scope()
+    from .persona import profile_scope
+
+    return profile_scope(home)
+
+
+def choose_model(slug: str, model: str, *, confirm_expensive: bool = False, home: Optional[Path] = None) -> dict[str, Any]:
+    """Make provider/model a profile's main model (the chief's unless `home` names another), through Hermes's
+    own model assignment, so its expensive-model guard applies."""
     slug, model = (slug or "").strip(), (model or "").strip()
     if not _SLUG.match(slug.lower()) or not model or len(model) > 200:
         return {"ok": False, "error": "Choose a provider and a model."}
-    with chief_config_scope():
+    with _scope(home):
         from hermes_cli.web_models import ModelAssignment
         from hermes_cli.web_routers.models import set_model_assignment
 
@@ -193,7 +215,82 @@ def choose_model(slug: str, model: str, *, confirm_expensive: bool = False) -> d
         return {"ok": False, "confirm": str(result.get("confirm_message") or "This model is expensive. Use it anyway?")}
     if isinstance(result, dict) and result.get("ok") is False:
         return {"ok": False, "error": str(result.get("error") or result.get("detail") or "Hermes did not accept that model.")}
-    return {"ok": True, "provider": slug, "model": model, "status": status()}
+    return {"ok": True, "provider": slug, "model": model, **({"status": status()} if home is None else {})}
+
+
+def remove_key(slug: str) -> dict[str, Any]:
+    """Forget a provider's API key (Hermes's credential lifecycle also drops its pooled copies)."""
+    slug = (slug or "").strip().lower()
+    env_var = _key_env(slug) if _SLUG.match(slug) else ""
+    if not env_var or not _ENV.match(env_var):
+        return {"ok": False, "error": "This provider isn't set up with a key."}
+    with chief_config_scope():
+        from hermes_cli.config import load_config
+
+        model_cfg = (load_config() or {}).get("model")
+        current = str(model_cfg.get("provider") or "").strip().lower() if isinstance(model_cfg, dict) else ""
+        if current == slug:
+            return {"ok": False, "code": "in_use", "error": "Your chief is using this provider. Switch the chief to another model first."}
+        if env_var not in _saved_key_names():
+            return {"ok": False, "code": "not_saved", "error": "This app didn't store that sign-in, so it can't remove it. It comes from elsewhere on this PC."}
+        from hermes_cli.credential_lifecycle import remove_provider_env_credential
+
+        remove_provider_env_credential(env_var)
+    return {"ok": True, "provider": slug}
+
+
+def connected_models(refresh: bool = False) -> dict[str, Any]:
+    """Every model the owner can pick right now: the models of each connected provider (the chief's keys and
+    endpoints), current choice first. What a bot's model dropdown lists."""
+    data = catalog(refresh=refresh)
+    groups = []
+    for row in data["providers"]:
+        if not row["connected"] or row["kind"] == "external" and not row["models"]:
+            continue
+        models = row["models"] or row["featured"]
+        if not models:
+            continue
+        groups.append({"provider": row["slug"], "name": row["name"], "kind": row["kind"], "models": models})
+    groups.sort(key=lambda g: (g["provider"] != data["provider"], g["name"].lower()))
+    return {"ok": True, "contract": CONTRACT, "current": {"provider": data["provider"], "model": data["model"]}, "groups": groups}
+
+
+def grant_provider(slug: str, home: Path) -> dict[str, Any]:
+    """Let another profile use one of the chief's providers: its API key (copied from the chief's profile into
+    that profile's own .env, through Hermes's env writer; never returned) and, for a custom or local endpoint,
+    its `providers:` definition. Nothing else of the chief's crosses over."""
+    slug = (slug or "").strip()
+    if not _SLUG.match(slug.lower()):
+        return {"ok": False, "error": "Unknown provider."}
+    from cli import save_config_value
+    from hermes_cli.config import load_env, read_user_config_raw, save_env_value
+
+    with chief_config_scope():
+        from hermes_constants import get_hermes_home
+
+        chief_env = load_env()
+        raw_cfg = read_user_config_raw(get_hermes_home() / "config.yaml") or {}
+    custom = (raw_cfg.get("providers") or {}).get(slug) if isinstance(raw_cfg.get("providers"), dict) else None
+    env_names = [n for n in {_key_env(slug), str((custom or {}).get("key_env") or "")} if n and _ENV.match(n)]
+    if custom is not None and not env_names:
+        try:
+            from hermes_cli.config import custom_endpoint_key_env
+
+            name = custom_endpoint_key_env(slug)
+            if name in chief_env:
+                env_names.append(name)
+        except Exception:
+            pass
+    copied = 0
+    with _scope(home):
+        if isinstance(custom, dict):
+            save_config_value(f"providers.{slug}", custom)
+        for name in env_names:
+            value = chief_env.get(name, "")
+            if value:
+                save_env_value(name, value)
+                copied += 1
+    return {"ok": True, "provider": slug, "keys": copied}
 
 
 def check_endpoint(base_url: str, api_key: str = "") -> dict[str, Any]:
@@ -219,8 +316,9 @@ def check_endpoint(base_url: str, api_key: str = "") -> dict[str, Any]:
     }
 
 
-def save_endpoint(name: str, base_url: str, model: str, api_key: str = "") -> dict[str, Any]:
-    """Save a custom endpoint and make it the main model (key, if any, kept in .env by reference)."""
+def save_endpoint(name: str, base_url: str, model: str, api_key: str = "", make_default: bool = True) -> dict[str, Any]:
+    """Save a custom endpoint (key, if any, kept in .env by reference) and, unless `make_default` is false (the
+    Models & keys manager), make it the chief's main model."""
     name = (name or "").strip() or "Local model"
     base_url, model = (base_url or "").strip(), (model or "").strip()
     if not base_url or not model:
@@ -230,7 +328,7 @@ def save_endpoint(name: str, base_url: str, model: str, api_key: str = "") -> di
         from hermes_cli.web_routers.config_env import upsert_custom_endpoint
 
         body = CustomEndpointUpdate(name=name[:60], base_url=base_url, model=model,
-                                    api_key=(api_key or "").strip() or None, make_default=True)
+                                    api_key=(api_key or "").strip() or None, make_default=bool(make_default))
         try:
             result = upsert_custom_endpoint(body)
         except Exception as exc:

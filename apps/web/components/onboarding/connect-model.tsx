@@ -10,14 +10,29 @@ type Stage =
   | { name: "key"; provider: ProviderRow }
   | { name: "model"; provider: ProviderRow; models: string[]; recommended: string }
   | { name: "endpoint" }
-  | { name: "done"; provider: string; model: string; reply: string };
+  | { name: "done"; provider: string; model: string; reply: string }
+  | { name: "added"; provider: string };
 
 /**
  * Connect the chief to a model: a key-based provider from Hermes's own catalog, or a custom / local
  * OpenAI-compatible endpoint (a key is optional there). Every step says what went wrong and offers a
  * way forward; nothing here ever shows a saved key again.
  */
-export function ConnectModel({ onDone, onBusy }: { onDone?: (status: SetupStatus) => void; onBusy?: (busy: boolean) => void }) {
+/**
+ * `addOnly`: connect another provider (a key, or a local endpoint) without switching the chief to it. Its
+ * models then show in every bot's model list. Used by Settings → Models & keys.
+ */
+export function ConnectModel({
+  onDone,
+  onBusy,
+  addOnly = false,
+  onAdded,
+}: {
+  onDone?: (status: SetupStatus) => void;
+  onBusy?: (busy: boolean) => void;
+  addOnly?: boolean;
+  onAdded?: (provider: string) => void;
+}) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
   const [loadError, setLoadError] = useState("");
   const [stage, setStage] = useState<Stage>({ name: "choose" });
@@ -56,6 +71,21 @@ export function ConnectModel({ onDone, onBusy }: { onDone?: (status: SetupStatus
     onDone?.(status ?? { ready: true, provider, model, error: "" });
   };
   const test = { testing, testError };
+  const added = (provider: string) => {
+    setStage({ name: "added", provider });
+    onAdded?.(provider);
+  };
+  if (stage.name === "added") {
+    return (
+      <Panel heading={heading} title={`${stage.provider} is connected`} subtitle="Its models are now in every bot's model list.">
+        <p className="flex items-start gap-2 text-callout text-fg-2" role="status">
+          <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-ok" />
+          <span>Nothing else changed: each bot keeps the model it has until you pick another.</span>
+        </p>
+        <GhostButton onClick={() => go({ name: "choose" })}>Connect another</GhostButton>
+      </Panel>
+    );
+  }
   if (stage.name === "done") {
     return (
       <Panel heading={heading} title="Connected" subtitle={`${stage.model} on ${stage.provider}`}>
@@ -67,7 +97,14 @@ export function ConnectModel({ onDone, onBusy }: { onDone?: (status: SetupStatus
     );
   }
   if (stage.name === "key") {
-    return <KeyStep heading={heading} provider={stage.provider} onBack={() => go({ name: "choose" })} onConnected={(models, recommended) => go({ name: "model", provider: stage.provider, models, recommended })} />;
+    return (
+      <KeyStep
+        heading={heading}
+        provider={stage.provider}
+        onBack={() => go({ name: "choose" })}
+        onConnected={(models, recommended) => (addOnly ? added(stage.provider.name) : go({ name: "model", provider: stage.provider, models, recommended }))}
+      />
+    );
   }
   if (stage.name === "model") {
     return (
@@ -87,8 +124,9 @@ export function ConnectModel({ onDone, onBusy }: { onDone?: (status: SetupStatus
       <EndpointStep
         heading={heading}
         {...test}
+        makeDefault={!addOnly}
         onBack={() => go({ name: "choose" })}
-        onSaved={(name, model) => runTest(name, model)}
+        onSaved={async (name, model) => (addOnly ? added(name) : runTest(name, model))}
       />
     );
   }
@@ -374,12 +412,14 @@ function EndpointStep({
   heading,
   testing,
   testError,
+  makeDefault = true,
   onBack,
   onSaved,
 }: {
   heading: React.RefObject<HTMLHeadingElement | null>;
   testing: boolean;
   testError: string;
+  makeDefault?: boolean;
   onBack: () => void;
   onSaved: (name: string, model: string) => Promise<void>;
 }) {
@@ -411,7 +451,7 @@ function EndpointStep({
     setBusy(true);
     setError("");
     try {
-      const result = await setup.saveEndpoint(name.trim(), resolved || url.trim(), model.trim(), key.trim());
+      const result = await setup.saveEndpoint(name.trim(), resolved || url.trim(), model.trim(), key.trim(), makeDefault);
       if (!result.ok) throw new Error(result.error || "The endpoint wasn't saved.");
       setKey("");
       await onSaved(name.trim() || "Local model", model.trim());
@@ -479,7 +519,7 @@ function EndpointStep({
         {error || testError ? <Problem text={error || testError} /> : null}
         <TestLine testing={testing} />
         <PrimaryButton type="submit" disabled={busy || testing || !url.trim() || (!!models && !model.trim())}>
-          {busy || testing ? "Checking…" : models ? `Use ${model || "this model"}` : "Check the endpoint"}
+          {busy || testing ? "Checking…" : models ? (makeDefault ? `Use ${model || "this model"}` : "Add this endpoint") : "Check the endpoint"}
         </PrimaryButton>
       </form>
     </Panel>

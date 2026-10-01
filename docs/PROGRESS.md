@@ -224,3 +224,32 @@
   - Remove and reinstall kept the app's data (write virtualization off works).
   - The installed app runs: dashboard 200 on 3001, and its own gateway healthy on 7791 with `profile: chief`, waiting for a model (onboarding).
   - The existing install was untouched throughout: 401 on 7790, its gateway start count unchanged at 40, no new log lines.
+
+**First-use fixes: chat controls, fleet management, models and keys (2026-09-30, plan `PLAN-2026-09-30-fleet-and-chat-controls.md`).**
+
+- Two UI fixes. The message box no longer shows a red focus ring. The ElevenLabs key box opens only when you click it.
+- Chat controls, through Hermes's own gateway commands:
+  - **Stop** button (and Esc) ends the chief's current turn (`/stop`).
+  - While the chief works, **Enter adds to the current work** (Hermes's steer mode, set at provisioning only if the owner hasn't chosen a mode). The text lands after the chief's next tool call.
+  - **Send after** (Alt+Enter, or the clock button) holds a message until the turn ends. Held messages show as chips with "Add now" and "Remove".
+  - Messages added mid-turn are marked "Added while working" in the thread.
+  - In the first minute after start, the bridge waits up to 15 s for the chat adapter instead of failing a send.
+  - Contract: `run_chat_controls_contract.py`, 16 checks on a real gateway with a scripted model. Covered: stop mid-tool, steer lands mid-turn, queue runs after.
+- Fleet management for every chief (`fleet.py`, contract `chief.fleet.v1`):
+  - The chief has tools for its team: `fleet_roster`, `fleet_models`, `fleet_mint`, `fleet_set_model`, `fleet_retire` and `fleet_restore`. Bundled skills `fleet-builder` and `fleet-ops` carry the doctrine: interview the owner, draft a SOUL, get it signed before minting, hand work over through kanban.
+  - A mint refuses without the owner's sign-off. The new bot gets the chief's model and its own working folder, and is placed on the team.
+  - Retire refuses while the bot is working. It archives the profile with Hermes's `export_profile` (no keys in the archive), then removes it. Restore brings it back; "Remove for good" deletes the archive after a second confirmation.
+  - Hermes's `delete_profile` and command wrappers are never used: they act on names machine-wide (`FRAGILE_SEAMS.md`).
+- In the app:
+  - Each bot's Look drawer, under Job, has a **Model** dropdown listing every model of every connected provider. Expensive models ask first.
+  - Workers have **Retire…** with a confirmation.
+  - Fleet has a **Team** sheet. It holds "Propose a specialist" (sends the request to the chief) and the retired bots, with Restore and Remove.
+  - Settings has **Models & keys**:
+    - It lists the connected providers and marks the one the chief uses.
+    - **Add or replace a key**, or add a local endpoint, without switching the chief's model.
+    - A saved key can be removed, except the chief's own. A sign-in Hermes finds elsewhere on the PC (for example GitHub Copilot through the GitHub CLI) is labelled as such and isn't offered for removal.
+- Evidence:
+  - The compatibility suite passed 10/10 on the payload, now including the fleet contract (about 40 checks) and chat controls.
+  - Checked in the browser against a throwaway gateway: mint, model dropdown, retire, Team sheet, restore, Models & keys.
+  - Tests: web 279 passed (4 live skipped), desktop 28, Python 57 + 20, privacy scan clean.
+  - The existing install was untouched: same process on 7790, gateway start count still 40.

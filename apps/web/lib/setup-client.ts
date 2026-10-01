@@ -13,6 +13,8 @@ export type ProviderRow = {
   models: string[];
   featured: string[];
   warning: string;
+  /** The key is in the chief's own .env (so the app can remove it), not a sign-in found elsewhere on the PC. */
+  keySaved?: boolean;
 };
 export type SetupStatus = { ready: boolean; provider: string; model: string; error: string };
 export type Catalog = { ok: boolean; provider: string; model: string; providers: ProviderRow[]; status: SetupStatus; error?: string };
@@ -32,8 +34,10 @@ export const setup = {
   saveKey: (provider: string, key: string) => post<ActionResult>("key", { provider, key }, 20_000),
   chooseModel: (provider: string, model: string, confirm = false) => post<ActionResult>("model", { provider, model, confirm }, 60_000),
   checkEndpoint: (base_url: string, api_key = "") => post<EndpointCheck>("endpoint/check", { base_url, api_key }, 30_000),
-  saveEndpoint: (name: string, base_url: string, model: string, api_key = "") =>
-    post<ActionResult>("endpoint/save", { name, base_url, model, api_key }, 30_000),
+  saveEndpoint: (name: string, base_url: string, model: string, api_key = "", makeDefault = true) =>
+    post<ActionResult>("endpoint/save", { name, base_url, model, api_key, make_default: makeDefault }, 30_000),
+  /** Forget a provider's key. Refused (code "in_use") for the provider the chief is using. */
+  removeKey: (provider: string) => post<ActionResult>("key/remove", { provider }, 20_000),
   test: () => post<TestResult>("test", {}, 60_000),
 };
 

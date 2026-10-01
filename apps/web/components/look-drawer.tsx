@@ -7,6 +7,9 @@ import { Streamdown } from "streamdown";
 import { BotFace, faceProps } from "@/components/bot-face";
 import { UserMinusIcon } from "@/components/icons";
 import { PersonaEditor } from "@/components/persona/persona-editor";
+import { ModelPicker } from "@/components/fleet/model-picker";
+import { fleetApi } from "@/lib/fleet-client";
+import { showToast } from "@/lib/toast-store";
 import { ChiefPresence } from "@/components/presence";
 import { Sheet } from "@/components/ui/sheet";
 import { StatusPill } from "@/components/workforce-pane";
@@ -143,7 +146,11 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
       <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-4">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE.enter } }} exit={{ opacity: 0, transition: { duration: 0.1 } }}>
-            {!peek ? <p className="shimmer-text text-body">Reading…</p> : <DrawerBody tab={tab} person={person} peek={peek} />}
+            {!peek ? (
+              <p className="shimmer-text text-body">Reading…</p>
+            ) : (
+              <DrawerBody tab={tab} person={person} peek={peek} retired={retired} onRetired={onClose} onChanged={() => setReload((n) => n + 1)} />
+            )}
           </motion.div>
         </AnimatePresence>
       </div>
@@ -153,7 +160,21 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
   );
 }
 
-function DrawerBody({ tab, person, peek }: { tab: Tab; person: Person; peek: Peek }) {
+function DrawerBody({
+  tab,
+  person,
+  peek,
+  retired,
+  onRetired,
+  onChanged,
+}: {
+  tab: Tab;
+  person: Person;
+  peek: Peek;
+  retired: boolean;
+  onRetired: () => void;
+  onChanged: () => void;
+}) {
   if (!peek.ok) return <p className="text-body text-fg-3">Could not read this profile.</p>;
   if (tab === "Job") {
     const job = peek.job;
@@ -161,11 +182,18 @@ function DrawerBody({ tab, person, peek }: { tab: Tab; person: Person; peek: Pee
       ["Status", person.ring === "working" ? "Working" : person.ring === "failed" ? "Blocked" : "Idle"],
       ["Current or last job", job?.title || person.jobTitle || "None"],
       ["Kanban", job?.kanbanStatus || "—"],
-      ["Model", peek.model?.default ? `${peek.model.provider || ""} / ${peek.model.default}` : person.model || "—"],
       ["Flavor", peek.flavor?.flavor || person.flavor || "—"],
     ];
     return (
       <div className="space-y-4">
+        {retired ? null : (
+          <ModelPicker
+            profile={person.isChief ? "chief" : person.id}
+            provider={peek.model?.provider || ""}
+            model={peek.model?.default || ""}
+            onChanged={onChanged}
+          />
+        )}
         <dl className="divide-y divide-line overflow-hidden rounded-card border border-line bg-card">
           {rows.map(([k, v]) => (
             <div key={k} className="flex gap-3 px-4 py-3">
@@ -175,6 +203,7 @@ function DrawerBody({ tab, person, peek }: { tab: Tab; person: Person; peek: Pee
           ))}
         </dl>
         {peek.description ? <p className="whitespace-pre-wrap text-body text-fg-2">{peek.description}</p> : null}
+        {!person.isChief && !retired ? <RetireRow person={person} onRetired={onRetired} /> : null}
       </div>
     );
   }
@@ -201,6 +230,61 @@ function DrawerBody({ tab, person, peek }: { tab: Tab; person: Person; peek: Pee
     <div className="space-y-5">
       <Chips title="Toolsets" items={peek.toolsets || []} />
       <Chips title="Skills" items={peek.skills || []} />
+    </div>
+  );
+}
+
+/** Retire (unmint): archived, removed from the team, restorable from Fleet → Team. Always confirmed first. */
+function RetireRow({ person, onRetired }: { person: Person; onRetired: () => void }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const { name } = splitTitle(person.name);
+  const who = name || person.name;
+  if (!asking) {
+    return (
+      <button type="button" onClick={() => setAsking(true)} className="press min-h-10 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg">
+        Retire {who}…
+      </button>
+    );
+  }
+  return (
+    <div className="space-y-2 rounded-card border border-line-2 bg-card px-3 py-3">
+      <p className="text-callout text-fg">
+        Retire {who}? Their identity, memory and skills are archived and they leave the team. You can restore them any time from Fleet, then Team.
+      </p>
+      {person.ring === "working" ? <p className="text-callout text-warn">{who} is working on a task right now; retiring waits until it&apos;s done.</p> : null}
+      {error ? (
+        <p role="alert" className="text-callout text-danger">
+          {error}
+        </p>
+      ) : null}
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || person.ring === "working"}
+          onClick={async () => {
+            setBusy(true);
+            setError("");
+            try {
+              const res = await fleetApi.retire(person.id);
+              if (!res.ok) throw new Error(res.error || "Couldn't retire.");
+              showToast({ title: `${who} was retired`, body: "Restore from Fleet, then Team", tone: "ok", icon: "user-minus" });
+              onRetired();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : "Couldn't retire.");
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50"
+        >
+          {busy ? "Retiring…" : "Retire"}
+        </button>
+        <button type="button" onClick={() => setAsking(false)} className="press min-h-10 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg">
+          Cancel
+        </button>
+      </div>
     </div>
   );
 }

@@ -9,7 +9,8 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
   plugins are user plugins that the app keeps current.
 - Enables them in config.yaml, with gateway injection allowed (the bridge's chat platform needs it).
 - Sets the bridge port and turns on the Command Center platform in the profile .env.
-- Gives the chief the `kanban` toolset (delegating to workers) and, unless the owner chose otherwise,
+- Gives the chief the `kanban` toolset (delegating to workers) and the bridge's `fleet` toolset (mint, re-pin,
+  retire and restore workers), and, unless the owner chose otherwise,
   `display.busy_input_mode: steer`, so a message sent while the chief works is added to that work instead of
   stopping it.
 
@@ -56,11 +57,44 @@ def sync_plugin(src: Path, dst: Path) -> bool:
     return True
 
 
+def install_bundled_skills(src: Path, dest: Path) -> list[str]:
+    """Install the app's skills into the chief's profile. A skill the app installed earlier is updated only if
+    the owner hasn't edited it; a same-named skill the app didn't install is never touched."""
+    if not src.is_dir():
+        return []
+    record_path = dest / ".chief-bundled.json"
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        record = {}
+    changed = []
+    for skill in sorted(src.glob("*/*/SKILL.md")):
+        rel = skill.relative_to(src).as_posix()
+        target = dest / rel
+        new = skill.read_text(encoding="utf-8")
+        new_hash = hashlib.sha256(new.encode("utf-8")).hexdigest()
+        if target.exists():
+            current = hashlib.sha256(target.read_bytes()).hexdigest()
+            if current == new_hash:
+                record[rel] = new_hash
+                continue
+            if record.get(rel) != current:
+                continue  # the owner's own skill, or edited by the owner: keep it
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(new, encoding="utf-8", newline="\n")
+        record[rel] = new_hash
+        changed.append(f"skill {skill.parent.name}")
+    dest.mkdir(parents=True, exist_ok=True)
+    record_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    return changed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plugins-src", required=True)
     parser.add_argument("--bridge-port", type=int, required=True)
     parser.add_argument("--plugin", action="append", default=[])
+    parser.add_argument("--skills-src", default="", help="bundled skills (default: <plugins-src>/chief-dashboard-bridge/skills)")
     args = parser.parse_args()
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(parents=True, exist_ok=True)
@@ -70,6 +104,9 @@ def main() -> int:
     for name in names:
         if sync_plugin(Path(args.plugins_src) / name, home / "plugins" / name):
             changed.append(f"plugin {name}")
+
+    skills_src = Path(args.skills_src) if args.skills_src else Path(args.plugins_src) / "chief-dashboard-bridge" / "skills"
+    changed += install_bundled_skills(skills_src, home / "skills")
 
     from cli import save_config_value
     from hermes_cli.config import load_config, load_env, save_env_value
@@ -93,10 +130,10 @@ def main() -> int:
             save_config_value(f"plugins.entries.{name}.allow_tool_override", False)
 
     toolsets = list(config.get("toolsets") or ["hermes-cli"])
-    if "kanban" not in toolsets:
-        toolsets.append("kanban")
-        save_config_value("toolsets", toolsets)
-        changed.append("kanban toolset")
+    added = [t for t in ("kanban", "fleet") if t not in toolsets]
+    if added:
+        save_config_value("toolsets", toolsets + added)
+        changed.append("toolsets: " + ", ".join(added))
     # load_config() merges Hermes's defaults in, so read the file itself to see what the owner actually set.
     try:
         import yaml

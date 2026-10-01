@@ -22,6 +22,7 @@ from . import push
 from . import vapid
 from . import persona
 from . import second_brain
+from . import fleet
 from . import speech_model
 from . import providers
 from . import settings as hermes_settings
@@ -591,7 +592,7 @@ def _guarded(fn) -> dict[str, Any]:
     """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
     try:
         return fn()
-    except (persona.PersonaError, second_brain.SecondBrainError, speech_model.SpeechModelError) as exc:
+    except (persona.PersonaError, second_brain.SecondBrainError, speech_model.SpeechModelError, fleet.FleetError) as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:  # the adapter maps expected failures itself
         logger.warning("bridge action failed: %s", type(exc).__name__)
@@ -718,6 +719,12 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/voice/model":
                 self._json(_guarded(speech_model.status))
+                return
+            if path == "/fleet":
+                self._json(_guarded(fleet.roster))
+                return
+            if path == "/fleet/models":
+                self._json(_guarded(lambda: fleet.models(refresh=_flag(qs, "refresh"))))
                 return
             if path == "/setup/providers":
                 self._json(_guarded(lambda: providers.catalog(refresh=_flag(qs, "refresh"))))
@@ -901,13 +908,32 @@ def _make_handler(bridge: BridgeServer):
                 return
             if path == "/setup/endpoint/save":
                 self._act(path, started, _guarded(lambda: providers.save_endpoint(
-                    str(body.get("name") or ""), str(body.get("base_url") or ""), str(body.get("model") or ""), str(body.get("api_key") or ""))))
+                    str(body.get("name") or ""), str(body.get("base_url") or ""), str(body.get("model") or ""), str(body.get("api_key") or ""),
+                    make_default=body.get("make_default") is not False)))
                 return
             if path == "/setup/second-brain/inspect":
                 self._act(path, started, _guarded(lambda: second_brain.inspect(str(body.get("path") or ""))))
                 return
             if path == "/setup/second-brain":
                 self._act(path, started, _guarded(lambda: second_brain.setup(str(body.get("path") or ""), str(body.get("mode") or ""))))
+                return
+            if path == "/fleet/model":
+                self._act(path, started, _guarded(lambda: fleet.set_model(
+                    str(body.get("profile") or "chief"), str(body.get("provider") or ""), str(body.get("model") or ""),
+                    confirm_expensive=bool(body.get("confirm")))))
+                return
+            if path == "/fleet/retire":
+                # The dashboard asks the owner before calling this; the request itself is the go-ahead.
+                self._act(path, started, _guarded(lambda: fleet.retire(str(body.get("profile") or ""), owner_confirmed=True)))
+                return
+            if path == "/fleet/restore":
+                self._act(path, started, _guarded(lambda: fleet.restore(str(body.get("archive_id") or ""))))
+                return
+            if path == "/fleet/archive/remove":
+                self._act(path, started, _guarded(lambda: fleet.remove_archive(str(body.get("archive_id") or ""))))
+                return
+            if path == "/setup/key/remove":
+                self._act(path, started, _guarded(lambda: providers.remove_key(str(body.get("provider") or ""))))
                 return
             if path == "/voice/model/download":
                 self._act(path, started, _guarded(lambda: speech_model.download(str(body.get("id") or speech_model.DEFAULT_MODEL))))

@@ -44,3 +44,12 @@ This app never calls it. To stop its own gateway, it writes Hermes's own planned
 
 The gateway's `gateway.pid` appears a few seconds after `/health` answers, so a stop right after start must wait for it. A test that stops its own gateway should check that a live install on the same PC is unaffected: its `gateway-starts.log` line count doesn't change.
 
+
+## Creating and removing worker profiles
+
+Two Hermes profile helpers reach outside the profile they are given:
+
+- `hermes_cli.profiles.create_profile` writes a command wrapper (`<name>.cmd`) into a user-wide folder on `PATH`, unless it is called with `no_alias=True`. A second install's wrapper would shadow the first's. `fleet.mint` always passes `no_alias=True`.
+- `hermes_cli.profiles.delete_profile` disables the per-user scheduled task `Hermes_Gateway_<name>` and deletes the wrapper, both by name, so it can break a profile of the same name in another install. `fleet.retire` never calls it: it exports the profile (Hermes's own `export_profile`, which leaves out keys), refuses while the bot is working, and then removes only that profile's folder itself.
+
+`hermes/tests/contract/run_fleet_contract.py` checks that minting writes no wrapper and that the archive holds no `.env` or `auth.json`.
