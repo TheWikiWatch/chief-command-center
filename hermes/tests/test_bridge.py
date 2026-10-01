@@ -592,7 +592,7 @@ class WatchPushTests(unittest.TestCase):
             write([{"id": "churn:a", "title": "a churns"}], 1000)
             self.bridge._push_new_flags()
             self.assertEqual(pushed, [])  # first run: already flagged, shown in Health
-            write([{"id": "churn:a"}, {"id": "memory:chief", "title": "Chief's memory is full"}], 2000)
+            write([{"id": "churn:a"}, {"id": "memory:chief", "title": "Nova's memory is full"}], 2000)
             self.bridge._push_new_flags()
             self.bridge._push_new_flags()  # unchanged report: nothing
             write([{"id": "churn:a"}, {"id": "memory:chief"}], 3000)

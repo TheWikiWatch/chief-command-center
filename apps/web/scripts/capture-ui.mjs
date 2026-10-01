@@ -1,5 +1,5 @@
 // Read-only UI capture via headless Edge + CDP. No dependencies (Node 22 WebSocket).
-// Every write endpoint is blocked inside the browser, so nothing reaches Chief or the vault.
+// Every write endpoint is blocked inside the browser, so nothing reaches Nova or the vault.
 // Usage: node docs/visual-overhaul/capture-ui.mjs <outDir> [scenarioRegex]
 // Needs the dashboard running on 127.0.0.1:3000. Output contains real chat content: keep it untracked.
 import { spawn, spawnSync } from "node:child_process";
@@ -27,7 +27,7 @@ const DOWN = "fail";
 const IVY = { id: "ivy-capture", name: "Ivy - Research Assistant", title: "Ivy", description: "Synthetic bot for the capture gallery", section: "", shape: "", color: "", imageKind: "", custom: false, avatarUrl: null, model: "", provider: "", flavor: "", isChief: false, ring: "working", jobTitle: "Scan the new vendor list" };
 const mintAfter = (b, n) => (n >= 3 && Array.isArray(b.roster) ? { ...b, roster: [...b.roster, IVY] } : b);
 const retireAfter = (b, n) => (n >= 3 && Array.isArray(b.roster) ? { ...b, roster: b.roster.filter((p, i) => p.isChief || i !== 1) } : b);
-// A long synthetic reply from Chief that lands on the Nth transcript poll (scroll-follow checks).
+// A long synthetic reply from Nova that lands on the Nth transcript poll (scroll-follow checks).
 const LONG_REPLY = Array.from({ length: 14 }, (_, i) => `Line ${i + 1} of a long synthetic reply, written so it is taller than the phone screen.`).join("\n\n");
 const replyAt = (at) => (b, n) => {
   if (n < at || !b || !Array.isArray(b.messages)) return b;
@@ -50,7 +50,7 @@ const lastWorking = (b) => {
 const SEAT_POS = `[...document.querySelectorAll('[data-orbit-seat] button')].slice(0, 4).map((b) => { const r = b.getBoundingClientRect(); return [Math.round(r.x), Math.round(r.y)]; })`;
 const SCROLLER = `document.querySelector('.chief-chat .overflow-y-auto')`;
 const FROM_BOTTOM = `(() => { const el = ${SCROLLER}; return { fromBottom: Math.round(el.scrollHeight - el.scrollTop - el.clientHeight), pill: !!document.querySelector('.chief-chat button.glass') }; })()`;
-const LAST_CHIEF = JSON.stringify({ id: "chief", name: "Chief - Chief of Staff", shape: "blobatar::hexagon", color: "hsl(0 68% 58%)", isChief: true, custom: true, imageKind: "shape", avatarUrl: null, ring: "idle" });
+const LAST_CHIEF = JSON.stringify({ id: "chief", name: "Nova - Chief of Staff", shape: "blobatar::hexagon", color: "hsl(0 68% 58%)", isChief: true, custom: true, imageKind: "shape", avatarUrl: null, ring: "idle" });
 
 const click = (expr) => `(() => { const el = ${expr}; if (el) { el.click(); return true } return false })()`;
 const byText = (t) => `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(t)})`;
@@ -73,7 +73,7 @@ const scenarios = [
   { name: "phone-chat-emoji", vp: PHONE, ls: { "chief-phone-tab": "chat" }, js: [click(byLabel("Add attachment or emoji")), click(byLabel("Insert emoji"))], settle: 600 },
   { name: "phone-chat-plus-menu", vp: PHONE, ls: { "chief-phone-tab": "chat" }, js: [click(byLabel("Add attachment or emoji"))], settle: 600 },
   { name: "phone-chat-recording", vp: PHONE, ls: { "chief-phone-tab": "chat" }, hold: '[aria-label="Hold to talk"]', settle: 1800 },
-  { name: "phone-chat-gateway-down", vp: PHONE, ls: { "chief-phone-tab": "chat", "chief-last-chief": LAST_CHIEF }, mock: { "/api/bridge/": DOWN }, wait: 16000 },
+  { name: "phone-chat-gateway-down", vp: PHONE, ls: { "chief-phone-tab": "chat", "chief-last-known": LAST_CHIEF }, mock: { "/api/bridge/": DOWN }, wait: 16000 },
   { name: "phone-today", vp: PHONE, ls: { "chief-phone-tab": "today" } },
   { name: "phone-today-intent", vp: PHONE, ls: { "chief-phone-tab": "today" }, js: [click(firstTask)], settle: 800 },
   { name: "phone-today-area", vp: PHONE, ls: { "chief-phone-tab": "today" }, js: [click(firstArea)], settle: 800 },
@@ -108,7 +108,7 @@ const scenarios = [
   { name: "desktop-today-intent", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, js: [click(firstTask)], settle: 800 },
   { name: "desktop-today-area", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, js: [click(firstArea)], settle: 800 },
   { name: "desktop-settings", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, js: [click(`document.querySelector('.chief-chat [aria-label="Settings"]')`)], settle: 2500 },
-  { name: "desktop-gateway-down", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "60", "chief-last-chief": LAST_CHIEF }, mock: { "/api/bridge/": DOWN, "/api/ops/": DOWN }, wait: 16000 },
+  { name: "desktop-gateway-down", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "60", "chief-last-known": LAST_CHIEF }, mock: { "/api/bridge/": DOWN, "/api/ops/": DOWN }, wait: 16000 },
   // Scroll-follow checks (PLAN-2026-09-23 §3): print how far from the bottom the thread ends up.
   { name: "chk-follow-bottom", vp: PHONE, ls: { "chief-phone-tab": "chat" }, patch: { "/api/bridge/transcript": replyAt(5) }, js: [`true`], settle: 12000, check: FROM_BOTTOM },
   { name: "chk-follow-reading", vp: PHONE, ls: { "chief-phone-tab": "chat" }, patch: { "/api/bridge/transcript": replyAt(5) }, js: [`(() => { const el = ${SCROLLER}; let n = 0; const t = setInterval(() => { el.dispatchEvent(new WheelEvent("wheel", { bubbles: true, deltaY: -250 })); el.scrollTop -= 250; if (++n > 14) clearInterval(t); }, 1500); return true; })()`], settle: 12000, check: FROM_BOTTOM },

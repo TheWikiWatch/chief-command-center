@@ -13,7 +13,7 @@ import { useLayer } from "@/lib/overlay-stack";
 import type { Person } from "@/lib/types";
 
 /**
- * Voice mode (VISUAL-OVERHAUL §4.3, Phase 3b): Chief full screen with one big hold-to-talk button.
+ * Voice mode (VISUAL-OVERHAUL §4.3, Phase 3b): The chief full screen with one big hold-to-talk button.
  * It reuses the chat's mic, send and speech paths unchanged; this is presentation only.
  */
 export function VoiceMode({

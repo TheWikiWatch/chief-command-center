@@ -26,7 +26,7 @@ function setup(phone: boolean) {
       />
     </form>,
   );
-  return { submit, onAddFiles, field: screen.getByPlaceholderText("Message Chief") };
+  return { submit, onAddFiles, field: screen.getByPlaceholderText("Message Nova") };
 }
 
 it("sends on Enter on desktop, but not while an input method is composing", () => {

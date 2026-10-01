@@ -15,7 +15,7 @@ const settings = {
     voices: [
       { id: "design:male, middle-aged, low pitch, british accent", label: "British man, deep", group: "Designed · fast" },
       { id: "default", label: "OmniVoice default", group: "Designed · fast" },
-      { id: "profile:abc", label: "Chief clone (cloned)", group: "Your VoiceStudio voices" },
+      { id: "profile:abc", label: "Nova clone (cloned)", group: "Your VoiceStudio voices" },
     ],
   },
 };

@@ -158,7 +158,8 @@ def _roster_flavor(root: Path) -> dict[str, dict[str, str]]:
         agent, _desk, _reach, pin, status = cells[0], cells[1], cells[2], cells[3], cells[4]
         m = re.search(r"`([a-z0-9][a-z0-9_-]*)`", agent)
         if not m:
-            if "chief" in agent.lower() and "chief" in agent.lower():
+            # A row without a profile id is the chief's when it says so ("Chief of Staff"), whatever its name.
+            if "chief" in agent.lower():
                 pid = "chief"
             else:
                 continue

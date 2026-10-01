@@ -55,9 +55,9 @@ it("offers the update with versions and size; Install downloads, then installs",
 
 it("while Chief is busy it offers to wait, install now, or later", async () => {
   const onLater = vi.fn();
-  const calls = fakeShell({ status: "busy", release, file: "x.msix", reasons: ["Chief is writing a reply."] }, { install: (force) => (force ? { status: "installing", release, step: "Stopping Chief…" } : { status: "busy", release, file: "x.msix", reasons: ["Chief is writing a reply."] }) });
+  const calls = fakeShell({ status: "busy", release, file: "x.msix", reasons: ["Nova is writing a reply."] }, { install: (force) => (force ? { status: "installing", release, step: "Stopping Chief…" } : { status: "busy", release, file: "x.msix", reasons: ["Nova is writing a reply."] }) });
   render(<UpdateCard onLater={onLater} />);
-  expect(await screen.findByText(/Chief is writing a reply\. Installing stops/)).toBeTruthy();
+  expect(await screen.findByText(/Nova is writing a reply\. Installing stops/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Later" }));
   expect(onLater).toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Install now" }));

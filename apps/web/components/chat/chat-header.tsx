@@ -56,9 +56,9 @@ export function ChatHeader({
   onStop: () => void;
   onOpenStatus?: () => void;
   onOpenSettings?: () => void;
-  /** Opens full-screen voice mode (hidden while Chief is speaking, where Pause and Stop take the room). */
+  /** Opens full-screen voice mode (hidden while the chief is speaking, where Pause and Stop take the room). */
   onVoiceMode?: () => void;
-  /** Chief's presence renders here when provided (Phase 3); falls back to the plain face. */
+  /** The chief's presence renders here when provided (Phase 3); falls back to the plain face. */
   face?: ReactNode;
   /** A status line that wins over the mood's own (e.g. "Has a question for you"). */
   status?: { text: string; tone: string } | null;

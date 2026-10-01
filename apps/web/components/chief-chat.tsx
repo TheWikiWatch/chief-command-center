@@ -196,7 +196,7 @@ export function ChiefChat({
     fx("approval");
   }, [question?.id]);
   const retrySend = useRef<{ signature: string; id: string } | null>(null);
-  // Messages waiting for Chief (lib/outbox.ts): sent in order when he is reachable again.
+  // Messages waiting for the chief (lib/outbox.ts): sent in order when it is reachable again.
   const onQueuedDelivered = useCallback((item: QueuedSend, previews: string[]) => {
     const images = item.files.filter(f => f.mime.startsWith("image/"));
     const bubble: ChatMessage = {
@@ -396,7 +396,7 @@ export function ChiefChat({
         setMessages((prev) => mergeMsgs(prev, data.messages));
         const replays = data.messages.filter((m) => m.replay).length;
         if (replays) {
-          // Hermes compacted Chief's context and re-sent the conversation it kept. Not new: not shown or spoken.
+          // Hermes compacted the chief's context and re-sent the conversation it kept. Not new: not shown or spoken.
           logSpeech({
             at: Date.now(),
             preview: "Context compaction",
@@ -464,7 +464,7 @@ export function ChiefChat({
     const oldest = messages.reduce((n, m) => (m.id > 0 && m.id < 1e12 ? Math.min(n, m.id) : n), Number.POSITIVE_INFINITY);
     if (!Number.isFinite(oldest)) return;
     let before = Math.min(oldest, earlierCursor.current ?? oldest);
-    // Earlier pages include the conversation archived at Chief's last compaction; the thread already
+    // Earlier pages include the conversation archived at the chief's last compaction; the thread already
     // shows its kept tail as the copies Hermes re-inserted (flagged replay), so skip their originals.
     const copies = new Set(messages.filter(m => m.replay).map(m => `${m.role}|${sameText(m.content || "")}`));
     const have = new Set(messages.map(m => m.id));
@@ -666,7 +666,7 @@ export function ChiefChat({
       return;
     }
     if (!connected) {
-      // Chief is unreachable: the message waits in the outbox and goes when he is back.
+      // The chief is unreachable: the message waits in the outbox and goes when it is back.
       await outbox.enqueue(newSendId(), trimmed, files.map(file => ({ name: file.name, mime: file.mime, blob: file.file })));
       releasePending(files);
       setSendError("");
@@ -697,7 +697,7 @@ export function ChiefChat({
       ...(steered ? { steered: true } : {}),
     };
     setMessages(m => [...m, optimistic]);
-    // Retrying the same draft reuses its id, so a send that timed out after Chief got it is not doubled.
+    // Retrying the same draft reuses its id, so a send that timed out after the chief got it is not doubled.
     const signature = JSON.stringify([trimmed, files.map(file => file.id)]);
     if (retrySend.current?.signature !== signature) retrySend.current = { signature, id: newSendId() };
     const clientId = retrySend.current.id;
@@ -714,7 +714,7 @@ export function ChiefChat({
       setPendingFiles(current => current.filter(item => !files.some(file => file.id === item.id)));
       const previews = files.map(file => file.previewUrl).filter((url): url is string => !!url);
       if (previews.length) sentPreviews.current.set(optimistic.id, previews);
-      // Chief has it; the bubble stays until the transcript brings the stored copy.
+      // The chief has it; the bubble stays until the transcript brings the stored copy.
       setMessages(m => m.map(item => (item === optimistic ? { ...item, delivery: "sent" } : item)));
       showNotice(steered ? `Added to what ${assistantName()} is doing.` : `Sent to ${assistantName()}.`);
       fx("send");
@@ -723,7 +723,7 @@ export function ChiefChat({
       setMessages(m => m.filter(item => item !== optimistic));
       if (retryable(error)) {
         // The network or the gateway, not the message: queue it under the same id, so if it did reach
-        // Chief before the failure the bridge drops the repeat.
+        // The chief before the failure the bridge drops the repeat.
         retrySend.current = null;
         const reason = error instanceof Error ? error.message : `${assistantName()} is unreachable`;
         await outbox.enqueue(clientId, trimmed, files.map(file => ({ name: file.name, mime: file.mime, blob: file.file })), reason);
@@ -781,7 +781,7 @@ export function ChiefChat({
     setPendingFiles(current => current.filter(item => !files.some(file => file.id === item.id)));
     for (const file of files) if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
   }
-  // Send-after chips go one at a time, each when the chief is idle again (the send itself makes him busy).
+  // Send-after chips go one at a time, each when the chief is idle again (the send itself makes it busy).
   useEffect(() => {
     if (!afterQueue.length || generating || busy || !connected || authFailed) return;
     const timer = setTimeout(() => {
@@ -879,7 +879,7 @@ export function ChiefChat({
   const lastYou = voiceOpen ? lastText(visible, (m) => m.role === "user" && !isMachineNote(chatTone(m))) : "";
   const lastReply = voiceOpen ? lastText(visible, (m) => m.role === "assistant" && chatTone(m) === "reply") : "";
 
-  // Files can be added while Chief is offline too: they wait in the outbox with the message.
+  // Files can be added while the chief is offline too: they wait in the outbox with the message.
   const canAttach = !authFailed && !busy;
   const draggingFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types || []).includes("Files");
 
@@ -1158,7 +1158,7 @@ export function mergeMsgs(prev: ChatMessage[], incoming: ChatMessage[]) {
   return [...kept, ...optimistic];
 }
 
-/** Ambient aurora behind the top of the thread (§4.4): CSS only, brighter while Chief thinks or speaks. */
+/** Ambient aurora behind the top of the thread (§4.4): CSS only, brighter while the chief thinks or speaks. */
 function ChatAurora({ mood, color }: { mood: ChiefMood; color?: string }) {
   return (
     <div aria-hidden className="chat-aurora" data-mood={mood} style={color ? ({ ["--chief" as string]: color } as CSSProperties) : undefined}>

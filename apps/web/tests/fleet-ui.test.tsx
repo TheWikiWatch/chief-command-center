@@ -96,7 +96,7 @@ it("Team: proposing a specialist asks the chief to interview and wait for sign-o
   const ask = vi.fn(async (_text: string) => undefined);
   render(<TeamBody onAskChief={ask} />);
   fireEvent.change(screen.getByLabelText("What should the new specialist do?"), { target: { value: "watch supplier invoices" } });
-  fireEvent.click(screen.getByRole("button", { name: "Ask Chief" }));
+  fireEvent.click(screen.getByRole("button", { name: "Ask Nova" }));
   await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
   const text = ask.mock.calls[0][0];
   expect(text).toContain("watch supplier invoices");
@@ -122,7 +122,7 @@ it("Models & keys: lists connected providers, protects the chief's, removes anot
   render(<ModelsKeys />);
   await screen.findByText("DeepSeek");
   expect(screen.queryByText("Gemini")).toBeNull();
-  expect(screen.getByText("Chief uses this")).toBeInTheDocument();
+  expect(screen.getByText("Nova uses this")).toBeInTheDocument();
   // A sign-in found elsewhere on the PC is shown but can't be removed here.
   expect(screen.getByText(/Signed in on this PC/)).toBeInTheDocument();
   // Only the saved key that the chief isn't using offers removal.

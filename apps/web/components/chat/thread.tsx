@@ -277,7 +277,7 @@ export function Thread({
         onPointerDown={markUser}
         onKeyDown={markUser}
         onClickCapture={(e) => {
-          // Vault links (paths and [[notes]] Chief mentions) open in the Vault tab, not a browser tab.
+          // Vault links (paths and [[notes]] the chief mentions) open in the Vault tab, not a browser tab.
           const link = parseVaultHref((e.target as Element | null)?.closest?.("a")?.getAttribute("href") ?? null);
           if (!link) return;
           e.preventDefault();

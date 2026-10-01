@@ -1,7 +1,7 @@
 import { appearanceSeed, defaultShapeFor } from "@/lib/faces";
 
 /**
- * Zero-setup identity for any bot, including ones Chief mints on the fly (VISUAL-OVERHAUL §12).
+ * Zero-setup identity for any bot, including ones the chief mints on the fly (VISUAL-OVERHAUL §12).
  * Everything derives from the profile id, so a bot looks the same on every device and reload.
  */
 

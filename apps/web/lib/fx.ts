@@ -6,7 +6,7 @@ import { getSpeaking } from "@/lib/voice-client";
 /**
  * Interface sounds and haptics (VISUAL-OVERHAUL §6). Every sound is synthesized with Web Audio at
  * play time: no files, no network. Each event is gated by its own sound and haptic switch, plays
- * only while the page is visible, and ducks to half volume while Chief is speaking.
+ * only while the page is visible, and ducks to half volume while the chief is speaking.
  */
 export type FxVariant = "start" | "stop" | "cancel" | "lost" | "back" | "minted" | "retired";
 

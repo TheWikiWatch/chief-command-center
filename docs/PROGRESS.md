@@ -527,3 +527,16 @@
 - Fixed on the way: the not-allowed page told people to edit `.env.local` (a developer file); it now points to Settings → Phone. Removed mentions of `npm run doctor`, which belonged to the old install.
 - Checked in the browser at desktop and phone sizes (with the desktop functions stood in): each setup step, Turn on, the QR code, who can open it, the History timeline (side panel and bottom sheet), and What's new.
 - Tests: desktop 48 (13 new: Tailscale parsing, port choice, consent link, only-our-entry; the release cache, forged and tampered entries, install records, GitHub sync without sending the key on), web 341 (13 new: the Phone page on the PC and the phone, the history list and reader, What's new; plus the new proxy routes).
+- Released 0.1.13.
+
+**No chief's name in the code (2026-10-01).**
+
+- **Found:** 476 mentions of the owner's own chief's name in 78 files: code names (the roster flag, the chat component and its file, the presence component, a CSS variable and a color token), comments, tests and docs. None was text shown on screen: every visible name already came from the chief's own profile. Two were real bugs for anyone else:
+  - the bridge recognised the chief's row in an optional roster-notes file only when it carried that one name;
+  - Fleet Health read an older ledger's "waiting on <name>" status correctly only for that name. It now reads either status with any name as the chief.
+- **Renamed** to the chief throughout, with a typecheck catching every use: `isChief` in the bridge's roster and the dashboard together, `ChiefChat` (`chief-chat.tsx`, moved with its history), `ChiefPresence`, `--chief`, `text-chief`, `chat_inject` (the built-in Today ignores it). Comments say "the chief" (and "it"), and the tests use a sample chief named Nova, so a hard-coded name would fail them.
+- **Saved values move over:** the last-known chief is kept under `chief-last-known`, and the record an earlier version saved is moved there once (recognised by its id). Phone alerts are tagged `chief-reply`.
+- **Guard:** the name is on the private denylist, so `npm run privacy` (part of `npm run check` and every release) fails if it reappears; checked with a planted word.
+- The owner's own chief is still called by its own name: that comes from its Hermes profile and SOUL, not the code.
+- Checked in the browser: the chat's styles, the chief's color in its presence and the chat aurora, Fleet with the chief at the centre; no element or text mentions the old name.
+- Tests: web 344 (3 new: the old status with any name, moving the saved chief record), desktop 48, Python 94 + 21.

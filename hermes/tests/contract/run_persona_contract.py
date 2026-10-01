@@ -109,7 +109,7 @@ check("the old SOUL is kept in history", any("You are Chief, a personal" in p.re
 kept = persona.rename("chief", "Atlas", "", update_soul=False)
 check("the SOUL can be left as it is", kept["title"] == "Atlas" and (home / "SOUL.md").read_text(encoding="utf-8").startswith("You are Nova"), kept)
 persona.write_soul("chief", "My own words, no greeting line.\n", persona.read_soul("chief")["hash"])
-odd = persona.rename("chief", "Quinn", "")
+odd = persona.rename("chief", "Orion", "")
 check("a SOUL that opens differently is left alone and says so", odd["soul"].startswith("kept") and (home / "SOUL.md").read_text(encoding="utf-8") == "My own words, no greeting line.\n", odd)
 (home.parent / "helper" / "SOUL.md").write_text("You are Sam, a researcher.\n", encoding="utf-8")
 (home.parent / "helper" / "profile.yaml").write_text("ui_meta:\n  hermes-bots:\n    title: Sam - Researcher\n", encoding="utf-8")

@@ -24,7 +24,7 @@ export type ChromeInput = {
 };
 
 /**
- * Single source of truth for "Chief is thinking" chrome.
+ * Single source of truth for "The chief is thinking" chrome.
  * - pendingReply covers the send→generating race
  * - shouldShowThinking covers mid-turn tools + live generating
  * - idle orphan asks must NOT keep chrome up

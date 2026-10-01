@@ -36,9 +36,9 @@ export type FxPrefs = {
   ambient: AmbientPref;
   uiScale: UiScale;
   fleetToasts: boolean;
-  /** Card when a specialist finishes and Chief has not followed up (PLAN-2026-09-23 §2). */
+  /** Card when a specialist finishes and the chief has not followed up (PLAN-2026-09-23 §2). */
   nudges: boolean;
-  /** Card when Chief said he would check back and has not. */
+  /** Card when the chief said it would check back and has not. */
   promises: boolean;
 };
 

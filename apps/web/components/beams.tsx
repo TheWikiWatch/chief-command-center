@@ -20,7 +20,7 @@ function center(el: HTMLElement, box: DOMRect) {
 }
 
 /**
- * Beam from Chief to a specialist with a comet head (VISUAL-OVERHAUL §3.2). The path is
+ * Beam from the chief to a specialist with a comet head (VISUAL-OVERHAUL §3.2). The path is
  * recomputed on the shared clock, so it follows seats that drift or orbit, without React renders.
  */
 export function AnimatedBeam({ containerRef, fromRef, toRef, curvature = 40, once = false, tone = "accent" }: Props) {

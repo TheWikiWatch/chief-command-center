@@ -116,7 +116,7 @@ def main() -> int:
     hermes_tasks = sorted({line.split(",")[0].strip('"') for line in tasks.splitlines() if re.search(r"hermes|chief|fleet", line, re.I)})
     out += [f"- Scheduled tasks: {', '.join(f'`{t}`' for t in hermes_tasks) or 'none'} (disabled with consent at migration; restorable)."]
     startup = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
-    vbs = sorted(p.name for p in startup.glob("*") if re.search(r"hermes|chief|chief|fleet|gateway", p.name, re.I)) if startup.is_dir() else []
+    vbs = sorted(p.name for p in startup.glob("*") if re.search(r"hermes|chief|fleet|gateway", p.name, re.I)) if startup.is_dir() else []
     out += [f"- Startup items: {', '.join(f'`{v}`' for v in vbs) or 'none'}."]
     procs = run(["powershell", "-NoProfile", "-Command",
                  "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.ExecutablePath } | Select-Object ProcessId, ExecutablePath, CommandLine | ConvertTo-Json -Compress"])

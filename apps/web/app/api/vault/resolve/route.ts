@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Turn whatever Chief or a note wrote into a vault path: an absolute path (E:\Second Brain\...),
+ * Turn whatever the chief or a note wrote into a vault path: an absolute path (E:\Second Brain\...),
  * a vault-relative path, or an Obsidian link target ([[Note]], [[folder/Note#Heading]]).
  */
 export async function GET(req: NextRequest) {

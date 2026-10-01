@@ -203,7 +203,7 @@ function rootPattern() {
 const FILE_EXT = "(?:md|markdown|png|jpe?g|gif|webp|pdf|mp4|mov|webm|mp3|m4a|wav|canvas|txt|csv|json|py)";
 
 /**
- * Chief's messages: turn vault paths (backticked or plain) and [[wikilinks]] into Vault links.
+ * The chief's messages: turn vault paths (backticked or plain) and [[wikilinks]] into Vault links.
  * Code blocks and other inline code are left alone.
  */
 export function linkifyVaultRefs(text: string): string {

@@ -23,8 +23,8 @@ import type { ChatMessage, Person } from "@/lib/types";
 import { useAssistantName } from "@/lib/identity";
 
 /**
- * Keeps the follow-up reminders honest (PLAN-2026-09-23 §2): starts promise reminders from Chief's
- * replies, clears any reminder once Chief follows up, and reveals the rest when they come due.
+ * Keeps the follow-up reminders honest (PLAN-2026-09-23 §2): starts promise reminders from the chief's
+ * replies, clears any reminder once the chief follows up, and reveals the rest when they come due.
  * `primed` is false until the first transcript has loaded, so history never starts a reminder.
  */
 export function useFollowupWatch(messages: ChatMessage[], { primed, busy }: { primed: boolean; busy: boolean }) {
@@ -71,7 +71,7 @@ export function useFollowupWatch(messages: ChatMessage[], { primed, busy }: { pr
     });
   }, [messages, primed, items.length]);
 
-  // Reveal reminders that came due, but never while Chief is mid-turn (he may be on it right now).
+  // Reveal reminders that came due, but never while the chief is mid-turn (it may be on it right now).
   useEffect(() => {
     if (busy) return;
     const due = items.filter((f) => !f.shown && f.afterId !== null && now >= f.dueAt);
@@ -103,7 +103,7 @@ function ago(ms: number) {
   return min < 60 ? `${min}m ago` : `${Math.round(min / 60)}h ago`;
 }
 
-/** The ask that goes to Chief when you tap the card's button. */
+/** The ask that goes to the chief when you tap the card's button. */
 export function followupAsk(item: Followup) {
   return item.kind === "finished"
     ? `${item.who || "A specialist"} just finished "${item.title}". Please review it and follow up with me.`

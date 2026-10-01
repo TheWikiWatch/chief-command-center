@@ -138,7 +138,7 @@ function DesktopOrbit({
   const still = reduced || ambient === "off";
 
   const seatRef = (id: string) => (seatRefs.current[id] ??= { current: null });
-  // Chief watches the bot he works with as it orbits, otherwise your cursor or his own idle glances.
+  // The chief watches the bot it works with as it orbits, otherwise your cursor or its own idle glances.
   const lookIdRef = useRef(lookId);
   lookIdRef.current = lookId;
   const { ref: gazeRef } = useAttentiveGaze(() => (lookIdRef.current ? seatRef(lookIdRef.current).current : null));
@@ -170,7 +170,7 @@ function DesktopOrbit({
       const prev = angles.current[p.id];
       const base = prev === undefined || still ? seat.angle : prev + turn(prev, seat.angle) * Math.min(1, dt * 2.4);
       angles.current[p.id] = base;
-      // A freshly minted bot flies out of Chief to its seat.
+      // A freshly minted bot flies out of the chief to its seat.
       const g0 = grow.current[p.id] ?? (moments.minted.has(p.id) && !still ? 0 : 1);
       const g = g0 + (1 - g0) * Math.min(1, dt * 2.2);
       grow.current[p.id] = g > 0.999 ? 1 : g;
@@ -361,7 +361,7 @@ function MiniOrbit({
   const reduced = useReducedMotion();
   const angles = useRef<Record<string, number>>({});
 
-  // Slowly rotating tilted ellipse with depth: front faces grow, overlap Chief and brighten.
+  // Slowly rotating tilted ellipse with depth: front faces grow, overlap the chief and brighten.
   // When the seated set changes, each face glides to its new angle instead of jumping.
   const draw = (t: number) => {
     const el = box.current;

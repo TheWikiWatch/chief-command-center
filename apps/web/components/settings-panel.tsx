@@ -699,7 +699,7 @@ function IdentityGroup() {
   );
 }
 
-/* ------------------------------------------------------------------ Chief's voice (Hermes) */
+/* ------------------------------------------------------------------ the chief's voice (Hermes) */
 
 function VoiceGroup() {
   const assistant = useAssistantName();

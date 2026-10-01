@@ -51,7 +51,7 @@ it("answers Today from the Second Brain without a task service", async () => {
   expect([attention.overdue.length, attention.waiting.length]).toEqual([1, 1]);
 
   const card = today.items[0].card;
-  const launch = await (await ops("POST", "launch", { intent: "task.complete", board_name: "Garden", card_id: card.id, mode: "chief_inject" })).json();
+  const launch = await (await ops("POST", "launch", { intent: "task.complete", board_name: "Garden", card_id: card.id, mode: "chat_inject" })).json();
   expect(launch.ok).toBe(true);
   expect(launch.kickoff).toContain('"Buy seeds" (`10 Projects/Garden.md`, line 1)');
 

@@ -67,7 +67,7 @@ export type ChatMessage = {
   /** Bridge: a copy Hermes re-inserted at a context compaction (history, never a new reply). */
   replay?: boolean;
   /** Client-only: a local bubble the bridge accepted ("sent", waiting for its stored copy), or one
-   * waiting in the outbox for Chief to be reachable ("queued", lib/outbox.ts). */
+   * waiting in the outbox for the chief to be reachable ("queued", lib/outbox.ts). */
   delivery?: "sent" | "queued";
   /** Client-only: the outbox id of a queued bubble. */
   queueId?: string;

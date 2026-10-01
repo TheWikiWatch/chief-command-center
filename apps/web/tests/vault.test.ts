@@ -100,7 +100,7 @@ describe("vault paths", () => {
     }
   });
 
-  it("maps Chief's absolute paths into the vault only", async () => {
+  it("maps Nova's absolute paths into the vault only", async () => {
     expect(await relFromAbsolute(path.join(root, "wiki", "Concrete Candles.md"))).toBe("wiki/Concrete Candles.md");
     expect(await relFromAbsolute(path.join(outside, "secret.txt"))).toBeNull();
   });

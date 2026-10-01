@@ -30,7 +30,7 @@ export function lastUserIndex(messages: ChatMessage[]) {
 
 /**
  * True when the latest user message has no assistant reply without tools after it.
- * That is the "Chief is thinking" condition for an in-flight turn.
+ * That is the "The chief is thinking" condition for an in-flight turn.
  */
 export function awaitingReply(messages: ChatMessage[]) {
   const lastUser = lastUserIndex(messages);

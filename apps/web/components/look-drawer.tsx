@@ -24,7 +24,7 @@ const TABS = ["Job", "Soul", "Memory", "Tools"] as const;
 type Tab = (typeof TABS)[number];
 
 /**
- * Look at one bot (VISUAL-OVERHAUL §5 #16). If Chief retires it while it is open, the drawer
+ * Look at one bot (VISUAL-OVERHAUL §5 #16). If the chief retires it while it is open, the drawer
  * says so and closes itself (§12).
  */
 export function LookDrawer({

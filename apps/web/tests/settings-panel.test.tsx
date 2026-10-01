@@ -35,11 +35,11 @@ afterEach(cleanup);
 
 it("switches each sound and haptic on or off, and the master disables the rows", async () => {
   render(<SettingsPanel open phone onClose={() => {}} category="notifications" />);
-  const reply = screen.getByRole("switch", { name: "Chief replies sound" });
+  const reply = screen.getByRole("switch", { name: "Nova replies sound" });
   expect(reply).toHaveAttribute("aria-checked", "true");
   fireEvent.click(reply);
   expect(stored().sound.reply).toBe(false);
-  expect(screen.getByRole("switch", { name: "Chief replies sound" })).toHaveAttribute("aria-checked", "false");
+  expect(screen.getByRole("switch", { name: "Nova replies sound" })).toHaveAttribute("aria-checked", "false");
 
   fireEvent.click(screen.getByRole("switch", { name: "Button taps vibration" }));
   expect(stored().haptics.tap).toBe(true);
@@ -64,7 +64,7 @@ it("keeps text size adjustable and sets interface size, motion and ambience", as
   expect(stored().fleetToasts).toBe(false);
 });
 
-it("still picks Chief's voice engine through Hermes", async () => {
+it("still picks Nova's voice engine through Hermes", async () => {
   render(<SettingsPanel open phone onClose={() => {}} category="voice" />);
   const edge = await screen.findByRole("radio", { name: /Edge/ });
   expect(edge).toHaveAttribute("aria-checked", "true");

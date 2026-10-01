@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Live loudness for the hold-to-talk waveform and Chief's presence (VISUAL-OVERHAUL §4).
+ * Live loudness for the hold-to-talk waveform and the chief's presence (VISUAL-OVERHAUL §4).
  * Analysis never sits in the playback path: the mic stream is only read, and TTS is read
  * through captureStream(), so speech plays exactly as before even if this fails.
  */

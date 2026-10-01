@@ -77,7 +77,7 @@ export function getSpeechPaused() {
 }
 
 /**
- * What the speech queue is doing, for the header and Chief's presence: "preparing" while a reply is
+ * What the speech queue is doing, for the header and the chief's presence: "preparing" while a reply is
  * being turned into audio (no sound yet), "playing" only while sound is coming out.
  */
 export type SpeechPhase = "idle" | "preparing" | "playing" | "paused";
@@ -340,7 +340,7 @@ export function playableAudioUrl(source: string): { url: string; revoke: () => v
 }
 
 /**
- * Let Chief's presence follow his voice (VISUAL-OVERHAUL §4.3). captureStream() only observes the
+ * Let the chief's presence follow its voice (VISUAL-OVERHAUL §4.3). captureStream() only observes the
  * element, so playback is untouched; any failure just leaves the presence on its gentle fallback.
  * The player is reused and a new source replaces the captured track, so each clip is metered anew.
  */

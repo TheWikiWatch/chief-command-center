@@ -183,7 +183,7 @@ function moodPose(mood: FaceMood, t: number, id: BotIdentity, level = 0): Pose {
   }
 }
 
-/** Live level for a mood: your mic while listening, Chief's audio (or a gentle fake) while speaking. */
+/** Live level for a mood: your mic while listening, the chief's audio (or a gentle fake) while speaking. */
 function liveLevel(mood: FaceMood, t: number) {
   if (mood === "listening") return readLevel("mic");
   if (mood === "speaking") return isMetering("tts") ? readLevel("tts") : 0.35 + 0.35 * Math.max(0, sin(t * 8.5) * sin(t * 3.1));
@@ -222,7 +222,7 @@ function useRig(el: React.RefObject<Element | null>, mood: FaceMood, still: bool
 const MOUTH_MIN_PX = 24;
 
 /**
- * The mouth's eased shape for one face. Speech reads Chief's live audio bands when a meter runs
+ * The mouth's eased shape for one face. Speech reads the chief's live audio bands when a meter runs
  * (fakeVoice otherwise). A redraw that goes back in time (a mood change drawn at t=0) keeps the
  * current shape on animated faces so it still morphs, and snaps on still ones.
  */

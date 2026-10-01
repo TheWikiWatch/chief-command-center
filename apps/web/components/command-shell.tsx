@@ -34,7 +34,7 @@ import { fx } from "@/lib/fx";
 import { useFleetMoments } from "@/lib/roster-moments";
 import { noteFinishedJob } from "@/components/chat/followup-cards";
 import { splitTitle } from "@/lib/names";
-import { assistantName, setAssistantTitle, useAssistantName } from "@/lib/identity";
+import { assistantName, LAST_CHIEF_KEY, readLastChief, setAssistantTitle, useAssistantName } from "@/lib/identity";
 import { showToast } from "@/lib/toast-store";
 import { LayerScope, useLayer } from "@/lib/overlay-stack";
 import { useFullscreenShortcut } from "@/lib/use-fullscreen";
@@ -233,7 +233,7 @@ export function CommandShell() {
     readyAt.current = Date.now() + 4000;
   }, []);
 
-  // Outage signature (VISUAL-OVERHAUL §3.2): the shell dims while Chief is unreachable; recovery says so.
+  // Outage signature (VISUAL-OVERHAUL §3.2): the shell dims while the chief is unreachable; recovery says so.
   const wasOffline = useRef(false);
   useEffect(() => {
     if (!connected && !authFailed) {
@@ -258,7 +258,7 @@ export function CommandShell() {
   }, [approval, chiefThinking]);
 
   useEffect(() => {
-    // Rings and beams don't need sub-second updates; Chief's replies and approvals come with the chat.
+    // Rings and beams don't need sub-second updates; the chief's replies and approvals come with the chat.
     return subscribeBridge(refresh, 2500);
   }, [refresh]);
 
@@ -309,7 +309,7 @@ export function CommandShell() {
   // On the phone, Back from Today, Fleet or Vault returns to Chat instead of leaving the app.
   useLayer(phone && phoneTab !== "chat", () => changePhoneTab("chat"));
 
-  // A vault link tapped anywhere (Chief's messages, a note) brings the Vault into view.
+  // A vault link tapped anywhere (The chief's messages, a note) brings the Vault into view.
   const vaultSignal = useVaultOpenSignal();
   useEffect(() => {
     if (!vaultSignal) return;
@@ -366,7 +366,7 @@ export function CommandShell() {
     else if (e.kind === "finished") noteFinishedJob(e.person, e.previous?.jobTitle || "", splitTitle(e.person.name).name);
   });
   markFresh.current = moments.markFresh;
-  // While the gateway is down there is no roster; show the last-known Chief (asleep) instead of nothing.
+  // While the gateway is down there is no roster; show the last-known the chief (asleep) instead of nothing.
   const chief = people.find((p) => p.isChief) ?? (connected ? undefined : lastChief ?? undefined);
   const specialists = people.filter((p) => !p.isChief);
   const workingCount = specialists.filter((p) => p.ring === "working").length;
@@ -646,24 +646,18 @@ function FleetViewSwitch({ view, onChange, flags = 0 }: { view: FleetView; onCha
   );
 }
 
-const CHIEF_KEY = "chief-last-chief";
-
 function rememberChief(p: Person) {
   try {
-    localStorage.setItem(CHIEF_KEY, JSON.stringify({ ...p, ring: "idle", jobTitle: "" }));
+    localStorage.setItem(LAST_CHIEF_KEY, JSON.stringify({ ...p, ring: "idle", jobTitle: "" }));
   } catch {
     /* ignore */
   }
 }
 
+/** The last-known chief (shown asleep while the gateway is down); older devices' records lack `isChief`. */
 function loadChief(): Person | null {
-  try {
-    const raw = localStorage.getItem(CHIEF_KEY);
-    const p = raw ? (JSON.parse(raw) as Person) : null;
-    return p && typeof p.id === "string" && p.isChief ? p : null;
-  } catch {
-    return null;
-  }
+  const p = readLastChief() as Person | null;
+  return p ? { ...p, isChief: true } : null;
 }
 
 function loadSurface(): Surface {

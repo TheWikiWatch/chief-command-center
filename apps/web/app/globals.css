@@ -162,7 +162,7 @@ body {
   }
 }
 
-/* Chief's presence (§4.3). --s is the face size, --level the live voice level (0..1). */
+/* The chief's presence (§4.3). --s is the face size, --level the live voice level (0..1). */
 .presence {
   position: relative;
   display: grid;
@@ -197,7 +197,7 @@ body {
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 2.5px), #000 calc(100% - 2px));
   animation: pr-spin var(--spin) linear infinite;
-  /* The ring means "Chief is doing something": hidden (and not spinning) while he is idle or offline. */
+  /* The ring means "The chief is doing something": hidden (and not spinning) while it is idle or offline. */
   opacity: 0;
   animation-play-state: paused;
   transition: opacity 400ms var(--ease-enter);
@@ -229,7 +229,7 @@ body {
   opacity: 0.3;
 }
 
-/* Idle: only a soft glow, so Chief looks present but clearly not busy. */
+/* Idle: only a soft glow, so the chief looks present but clearly not busy. */
 .presence[data-mood="online"] .pr-bloom {
   opacity: 0.16;
 }
@@ -407,7 +407,7 @@ body {
   }
 }
 
-/* Shimmer label for "Chief is thinking" and "Transcribing" (§3.2). */
+/* Shimmer label for "The chief is thinking" and "Transcribing" (§3.2). */
 .shimmer-text {
   background: linear-gradient(90deg, rgb(var(--c-fg-3)) 0%, rgb(var(--c-fg)) 45%, rgb(var(--c-fg-3)) 90%);
   background-size: 220% 100%;
@@ -855,7 +855,7 @@ body {
   transform: scale(0.96);
 }
 
-/* Chat aurora (§4.4): two slow gradient clouds behind the top of the thread, in Chief's colors. */
+/* Chat aurora (§4.4): two slow gradient clouds behind the top of the thread, in the chief's colors. */
 .chat-aurora {
   --au: 0.1;
   position: absolute;
@@ -909,7 +909,7 @@ body {
 :root[data-ambient="low"] .chat-aurora { --au: 0.06; }
 :root[data-ambient="off"] .chat-aurora { display: none; }
 
-/* Voice mode: the aurora fills the screen and centers on Chief. */
+/* Voice mode: the aurora fills the screen and centers on the chief. */
 .voice-aurora {
   --au: 0.22;
   height: 100%;

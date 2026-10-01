@@ -84,7 +84,7 @@ it("the fake voice moves the mouth in syllables, not a fixed flap", () => {
   expect(Math.min(...levels)).toBeLessThan(0.1);
 });
 
-it("Blobatar layout contract: Chief's mouth lands under his eyes, inside his face", () => {
+it("Blobatar layout contract: Nova's mouth lands under its eyes, inside its face", () => {
   const frame = blobMouthFrame("chief", 0.9325);
   expect(frame).not.toBeNull();
   const f = frame!;
@@ -97,21 +97,21 @@ it("Blobatar layout contract: Chief's mouth lands under his eyes, inside his fac
   expect(f.color).toMatch(/^#[0-9a-f]{6}$/i);
 });
 
-it("Chief's animated blob wears the mouth inside its bob group, and gets it back after an expression change", () => {
-  const view = render(<BotFace name="Chief" profileId="chief" shape="blobatar::hexagon" isChief custom size={100} mood="idle" />);
+it("Nova's animated blob wears the mouth inside its bob group, and gets it back after an expression change", () => {
+  const view = render(<BotFace name="Nova" profileId="chief" shape="blobatar::hexagon" isChief custom size={100} mood="idle" />);
   act(() => runFrames(3));
   const mouth = () => document.querySelector(".mo-bob > path.bf-mouth");
   expect(mouth()).not.toBeNull();
   expect(mouth()!.getAttribute("d")).toMatch(/^M.*C.*C.*Z$/);
   // "failed" swaps in the sad expression, which re-renders the Blobatar's markup.
-  view.rerender(<BotFace name="Chief" profileId="chief" shape="blobatar::hexagon" isChief custom size={100} mood="failed" />);
+  view.rerender(<BotFace name="Nova" profileId="chief" shape="blobatar::hexagon" isChief custom size={100} mood="failed" />);
   act(() => runFrames(3));
   expect(document.querySelectorAll(".bf-mouth")).toHaveLength(1);
   expect(mouth()).not.toBeNull();
 });
 
 it("a still blob draws its mouth as an overlay, and tiny faces have none", () => {
-  render(<BotFace name="Chief" profileId="chief" shape="blobatar::hexagon" isChief custom size={48} mood="idle" still />);
+  render(<BotFace name="Nova" profileId="chief" shape="blobatar::hexagon" isChief custom size={48} mood="idle" still />);
   expect(document.querySelector("img")).not.toBeNull();
   expect(document.querySelector("svg path[stroke-linejoin=round]")).not.toBeNull();
   cleanup();

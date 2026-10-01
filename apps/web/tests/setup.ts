@@ -13,11 +13,11 @@ if (process.env.CHIEF_BRIDGE_SMOKE !== "1") globalThis.fetch = (async (input: Re
   throw new TypeError(`Network is disabled in unit tests (${String(input)})`);
 }) as typeof fetch;
 
-// Most component tests describe an install whose chief is named Chief (as in the author's setup);
+// Most component tests describe an install whose chief is named Nova (as in the author's setup);
 // identity.test.ts covers the defaults a fresh install shows.
 import { beforeEach } from "vitest";
 import { resetIdentity, setAssistantTitle } from "@/lib/identity";
 beforeEach(() => {
   resetIdentity();
-  setAssistantTitle("Chief - Chief of Staff");
+  setAssistantTitle("Nova - Chief of Staff");
 });

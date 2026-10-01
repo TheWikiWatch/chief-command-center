@@ -5,7 +5,7 @@
 | Thinking vs tools+text | Assistant bubble with tools[] never cleared wait | `chat-tone.test.ts`, `thinking-chrome.test.ts` |
 | Idle orphan Thinking | Status? unanswered after APPCRASH still showed Thinking | `chat-tone.test.ts`, `thinking-chrome.test.ts` |
 | First-send race | busy cleared before generating; no optimistic timestamp | `thinking-chrome.test.ts` |
-| pendingReply stick | Never cleared if Chief dropped turn | `thinking-chrome.test.ts` |
+| pendingReply stick | Never cleared if the chief dropped turn | `thinking-chrome.test.ts` |
 | Compact chat | Must not filter thinking transcript | `compact-filter.test.ts` |
 | UTF-8 mojibake | TOOL Â· / Voice Â· / chevrons | `encoding-source.test.ts` |
 | Prefs keys | Compact + font localStorage | `dashboard-prefs.test.ts` |
@@ -17,8 +17,8 @@
 | Blobatar mouth | `blobatar._layout` is internal; React replaces the blob's markup on an expression change, so the injected mouth must re-attach | `mouth.test.tsx` (layout contract, re-attach); blobatar pinned to an exact version |
 | Face clock measure/draw | Layout reads interleaved with transform writes thrash layout per face | `pointer-attention.test.tsx` (measure before draw) |
 | Cursor attention | Eyes that lock onto a parked cursor, or flap at the edge of the radius | `pointer-attention.test.tsx`, `attentive-gaze.test.tsx` (decay, hysteresis) |
-| VoiceStudio plugin | Backend down or slow must never silence Chief (Edge fallback); text must stay on loopback | `tests/python/test_voicestudio.py` |
-| Phone alerts | Gateway's Python 3.14 can't load pywebpush (compiled 3.11 deps): every push failed silently; `ttl=0` dropped alerts to a dozing phone; a blocking send on Chief's event loop | `test_bridge.py` PushTests (ttl/timeout/Topic, helper fallback, never blocks); on a real install, Settings → Phone → Send a test alert |
+| VoiceStudio plugin | Backend down or slow must never silence the chief (Edge fallback); text must stay on loopback | `tests/python/test_voicestudio.py` |
+| Phone alerts | Gateway's Python 3.14 can't load pywebpush (compiled 3.11 deps): every push failed silently; `ttl=0` dropped alerts to a dozing phone; a blocking send on the chief's event loop | `test_bridge.py` PushTests (ttl/timeout/Topic, helper fallback, never blocks); on a real install, Settings → Phone → Send a test alert |
 | Service worker | Navigating the open app reloads it (lost state, unspoken replies); a push while the app is visible | `service-worker.test.ts`, `open-target.test.ts` |
 | Skill revert | Reverting an older change wrote back the version before it, silently discarding every later edit | `test_learning_ledger.py` (refuses without `--discard-newer N`), `fleet-health.test.tsx` (arms first), `fleet-routes.test.ts` |
 | Ledger output | Diffs with `→` crashed a Windows child's cp1252 stdout (500 on /api/fleet/diff) | ledger forces UTF-8; `runLedger` sets `PYTHONIOENCODING` |
@@ -104,6 +104,14 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The old `command-center` plugin must stay off:** the app's bridge registers the same platform. `adopt.py` moves it aside and removes it from `plugins.enabled`.
 - **The old launchers** (the guard task and Startup VBS that start this profile's gateway) are found by their reference to `profiles\<profile>\gateway-service`. `adopt.py --rollback` turns them back on.
 - **`gateway.standalone: true`** on the chief profile (set by provisioning) is what lets the app run that profile's gateway at all. Without it, Hermes 2026.9.x refuses a named profile's own gateway unless a Hermes launcher for that profile is registered on the Windows account. Hermes calls the key a temporary shim, "removed once multiplexing gaps are fixed". When an upstream pin drops it, the compatibility suite's "gateway start, bridge, stop" fails (exit 78), and the app must move to running the host gateway from the default profile.
+
+## The chief's name
+
+`apps/web/lib/identity.ts`, `isChief` in the bridge's roster (`data.py`) and `apps/web/lib/types.ts`. Test map: `apps/web/tests/last-chief.test.ts`, and the sample chief "Nova" throughout the tests.
+
+- **Nothing names the chief in code.** The chief is the profile `chief` (`isChief` on its roster entry); every word on screen uses its own title through `useAssistantName()`, falling back to "Chief". Tests use a deliberately non-default name (Nova) so a hard-coded name fails them. The owner's own chief's name is on the private denylist (`.privacy-denylist`, and the CI secret `PRIVACY_DENYLIST`), so `npm run privacy` fails if it comes back.
+- **The last-known chief** (shown asleep while the gateway is down) lives under `chief-last-known`. Earlier versions used another `chief-last-…` key; `readLastChief()` moves it over once and recognises the record by its id (`chief`), not by a flag name.
+- **Phone alerts are tagged `chief-reply`.** Alerts shown before the update carried the old tag, so the app doesn't close those automatically when the conversation is opened; that affects only alerts already on a phone at update time.
 
 ## Phone access (Tailscale Serve)
 

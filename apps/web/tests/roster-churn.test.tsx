@@ -33,7 +33,7 @@ function bot(id: string, extra: Partial<Person> = {}): Person {
   };
 }
 
-const chief = bot("chief", { name: "Chief - Chief of Staff", isChief: true, shape: "blobatar::hexagon" });
+const chief = bot("chief", { name: "Nova - Chief of Staff", isChief: true, shape: "blobatar::hexagon" });
 const weird = [
   bot("fresh-mint"),
   bot("broken-shape", { shape: "definitely-not-a-shape", color: "not-a-color" }),
@@ -87,13 +87,13 @@ describe("roster churn", () => {
     expect(toast).not.toHaveBeenCalled();
     rerender({ people: [...base, bot("ivy")], connected: true });
     expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0].title).toBe("Chief added ivy");
+    expect(toast.mock.calls[0][0].title).toBe("Nova added ivy");
     rerender({ people: [...base, bot("ivy")], connected: false });
     rerender({ people: [chief, bot("zed")], connected: true });
     expect(toast).toHaveBeenCalledTimes(1);
     rerender({ people: [chief], connected: true });
     expect(toast).toHaveBeenCalledTimes(2);
-    expect(toast.mock.calls[1][0].title).toBe("Chief retired zed");
+    expect(toast.mock.calls[1][0].title).toBe("Nova retired zed");
   });
 
   it("still announces a mint after a quiet reconnect when polls share an unchanged roster", () => {
@@ -107,7 +107,7 @@ describe("roster churn", () => {
     act(() => result.current.markFresh(roster));
     rerender({ people: [...roster, bot("ivy")], connected: true });
     expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0].title).toBe("Chief added ivy");
+    expect(toast.mock.calls[0][0].title).toBe("Nova added ivy");
   });
 
   it("treats changes made while away as the baseline once a fresh snapshot arrives", () => {

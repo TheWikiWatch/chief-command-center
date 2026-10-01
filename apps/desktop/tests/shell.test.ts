@@ -182,9 +182,9 @@ describe("ports", () => {
 describe("activeWork", () => {
   it("names each reason to wait, from the bridge snapshot", () => {
     const snap = fromBridgeSnapshot({ generating: true, approval: { requestId: "a1" }, roster: [{ name: "Chief", ring: "idle" }, { name: "Scout", ring: "working" }] });
-    expect(activeWork(snap, "Chief")).toEqual({
+    expect(activeWork(snap, "Nova")).toEqual({
       busy: true,
-      reasons: ["Chief is writing a reply.", "Chief is waiting for your approval.", "Scout is working on a task."],
+      reasons: ["Nova is writing a reply.", "Nova is waiting for your approval.", "Scout is working on a task."],
     });
     expect(activeWork(fromBridgeSnapshot({ generating: false, roster: [] }))).toEqual({ busy: false, reasons: [] });
     expect(activeWork(null).busy).toBe(false);

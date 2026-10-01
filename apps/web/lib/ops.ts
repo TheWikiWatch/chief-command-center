@@ -159,7 +159,7 @@ export const ops = {
     user_message?: string;
     due?: string | null;
     blocker?: string | null;
-    mode: "chief_inject";
+    mode: "chat_inject";
   }) => {
     const data = await requestJson<{ ok?: boolean; kickoff?: string; launch_id?: string; error?: string }>(`${PREFIX}/launch`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),

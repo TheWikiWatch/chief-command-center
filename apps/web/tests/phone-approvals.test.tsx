@@ -13,7 +13,7 @@ vi.mock("@/lib/bridge",()=>({
   fetchApprovals:async()=>({ok:true,approval:{requestId:"test",command:"fixture",reason:"test"}}),
 }));
 afterEach(()=>{cleanup();localStorage.clear();});
-const pill=()=>screen.findByRole("button",{name:"Chief needs your approval — open Chat"});
+const pill=()=>screen.findByRole("button",{name:"Nova needs your approval — open Chat"});
 it("badges Chat, floats an approval pill on Today and Fleet, and the pill opens Chat",async()=>{
   render(<CommandShell/>);
   expect(await screen.findByText("Approval pending")).toBeInTheDocument();
@@ -24,5 +24,5 @@ it("badges Chat, floats an approval pill on Today and Fleet, and the pill opens 
   }
   fireEvent.click(await pill());
   expect(screen.getByText("Chat contents")).toBeVisible();
-  await waitFor(()=>expect(screen.queryByRole("button",{name:"Chief needs your approval — open Chat"})).toBeNull());
+  await waitFor(()=>expect(screen.queryByRole("button",{name:"Nova needs your approval — open Chat"})).toBeNull());
 });

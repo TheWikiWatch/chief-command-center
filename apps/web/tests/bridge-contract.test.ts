@@ -49,7 +49,7 @@ describe.skipIf(!live)("bridge contract (live)", () => {
     const q = new URLSearchParams({ after: String(first.lastId), wait: "2", gen: first.generating ? "1" : "0", approval: first.approval?.requestId || "" });
     const started = Date.now();
     const held = (await (await fetch(`${base}/transcript?${q}`, auth)).json()) as { messages: unknown[] };
-    // Either Chief said something (returned early with it) or it waited out the two seconds.
+    // Either Nova said something (returned early with it) or it waited out the two seconds.
     if (!held.messages.length) expect(Date.now() - started).toBeGreaterThanOrEqual(1500);
   }, 15_000);
 

@@ -4,7 +4,7 @@
  * - Pinned means "keep the newest message in view". Only an upward scroll you make unpins it; the app
  *   only ever scrolls down, and content growing (images, the thinking row) never moves scrollTop up.
  * - While unpinned, your touches, wheel turns and the scrolls they cause count as activity. After
- *   IDLE_MS of none, a new message from Chief brings you back down (and pins again).
+ *   IDLE_MS of none, a new message from the chief brings you back down (and pins again).
  * - Your own sends always scroll down.
  */
 export const NEAR_PX = 120;

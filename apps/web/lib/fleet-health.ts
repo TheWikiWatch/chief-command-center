@@ -99,8 +99,8 @@ export type Runtime = {
   rosterReview: RunInfo;
 };
 
-/** The bundled ledger says "the chief"; an older external ledger used the chief's name ("… Chief"). */
-export type ProposalStatus = "open" | "sent to the chief" | "waiting on the chief" | "sent to Chief" | "waiting on Chief" | "applied" | "dismissed" | string;
+/** The bundled ledger says "the chief"; an older external ledger used the chief's own name ("sent to <name>"). */
+export type ProposalStatus = "open" | "sent to the chief" | "waiting on the chief" | "applied" | "dismissed" | string;
 
 export type Proposal = {
   id: string;
@@ -154,13 +154,13 @@ export const refreshFleetHealth = () => post<{ ok: boolean; error?: string }>("/
 export const decideProposal = (id: string, decision: "approve" | "dismiss") =>
   post<{ ok: boolean; error?: string }>("/api/fleet/decide", { id, decision });
 
-/** The message Approve sends to Chief for one distill proposal. */
+/** The message Approve sends to the chief for one distill proposal. */
 export function approvalMessage(p: Proposal) {
   const why = p.why ? ` Why: ${p.why}` : "";
   return `Approved from Fleet Health (distill ${p.id}, ${p.kind}): ${p.target} — ${p.change}.${why} Please apply it, following your usual backup and verify rules, and tell me what changed.`;
 }
 
-/** What "Ask Chief" sends for a flag. Proposals have their own Approve; nothing is changed without asking. */
+/** What "Ask the chief" sends for a flag. Proposals have their own Approve; nothing is changed without asking. */
 export function flagMessage(f: Flag): string | null {
   const head = `Fleet Health flag: ${f.title}. ${f.detail}`.trim();
   const skill = f.skill ? ` (${f.skill})` : "";

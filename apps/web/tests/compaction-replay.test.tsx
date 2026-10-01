@@ -68,7 +68,7 @@ const msg = (id: number, content: string, extra: Partial<ChatMessage> = {}): Cha
 it("drops flagged copies, and unflagged repeats only on a page that carries a compaction marker", () => {
   const prev = [msg(1, first)];
   expect(dropReplays(prev, [msg(2, first, { replay: true }), msg(3, fresh)]).map((m) => m.id)).toEqual([3]);
-  // No marker: a repeated text is a real message (Chief may say the same thing twice).
+  // No marker: a repeated text is a real message (Nova may say the same thing twice).
   expect(dropReplays(prev, [msg(2, first)]).map((m) => m.id)).toEqual([2]);
   const marker = { ...msg(2, "[CONTEXT COMPACTION] x"), role: "user" };
   expect(dropReplays(prev, [marker, msg(3, first), msg(4, fresh)]).map((m) => m.id)).toEqual([2, 4]);

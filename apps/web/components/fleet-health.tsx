@@ -63,7 +63,7 @@ const day = (epochSeconds: number) => new Date(epochSeconds * 1000).toLocaleDate
  * Fleet Health (an optional connector): what needs the owner's eyes (flags), desk
  * scorecards, the skills the fleet rewrote grouped with before/after verdicts per episode, runtime
  * health, and the weekly distill's proposals. Reads the learning ledger's report; Revert and Refresh
- * run the ledger; Approve sends the proposal to Chief and records the decision for every device.
+ * run the ledger; Approve sends the proposal to the chief and records the decision for every device.
  */
 export function FleetHealth({
   people,
@@ -693,10 +693,11 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   // Keys are the ledger's status strings; {name} is the chief's display name.
   "waiting on the chief": { label: "Waiting on {name}", tone: "bg-warn/15 text-warn" },
   "sent to the chief": { label: "Sent to {name}", tone: "bg-white/[0.07] text-fg-2" },
-  "waiting on Chief": { label: "Waiting on {name}", tone: "bg-warn/15 text-warn" },
-  "sent to Chief": { label: "Sent to {name}", tone: "bg-white/[0.07] text-fg-2" },
   dismissed: { label: "Dismissed", tone: "border border-line-2 text-fg-3" },
 };
+
+/** An older external ledger wrote the chief's own name ("sent to Nova"); any name reads as the chief. */
+const statusKey = (s: string) => (/^waiting on /i.test(s) ? "waiting on the chief" : /^sent to /i.test(s) ? "sent to the chief" : s);
 
 function Proposals({ items, onSendToChief, onDecided }: { items: Proposal[]; onSendToChief?: (text: string) => Promise<void>; onDecided: () => void }) {
   const assistant = useAssistantName();
@@ -804,7 +805,7 @@ function Proposals({ items, onSendToChief, onDecided }: { items: Proposal[]; onS
           {showDecided ? (
             <ul className="mt-1 overflow-hidden rounded-card border border-line bg-card">
               {decided.map((p) => {
-                const s = STATUS[statusOf(p)] || STATUS["sent to the chief"];
+                const s = STATUS[statusKey(statusOf(p))] || STATUS["sent to the chief"];
                 return (
                   <li key={p.id} className="flex items-center gap-2 border-b border-line px-3 py-2 last:border-b-0">
                     <span className="min-w-0 flex-1 truncate text-callout text-fg-2">{p.target}</span>

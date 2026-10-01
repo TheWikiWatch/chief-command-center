@@ -66,17 +66,17 @@ it("a cold start carries the target in the URL", async () => {
 
 it("replaces the last notification of a kind and keeps approvals up until handled", async () => {
   const { listeners, show } = loadWorker([{ url: "https://chief.example.ts.net/", focused: false, visibilityState: "hidden" }]);
-  await push(listeners, { title: "Chief", body: "Done", tag: "chief-reply", at: 5 });
-  expect(show).toHaveBeenLastCalledWith("Chief", expect.objectContaining({ body: "Done", tag: "chief-reply", renotify: true, timestamp: 5, requireInteraction: false }));
-  await push(listeners, { title: "Chief needs your approval", body: "git push", tag: "approval-r1", open: { tab: "chat", approval: "r1" } });
+  await push(listeners, { title: "Nova", body: "Done", tag: "chief-reply", at: 5 });
+  expect(show).toHaveBeenLastCalledWith("Nova", expect.objectContaining({ body: "Done", tag: "chief-reply", renotify: true, timestamp: 5, requireInteraction: false }));
+  await push(listeners, { title: "Nova needs your approval", body: "git push", tag: "approval-r1", open: { tab: "chat", approval: "r1" } });
   expect(show).toHaveBeenLastCalledWith(
-    "Chief needs your approval",
+    "Nova needs your approval",
     expect.objectContaining({ tag: "approval-r1", requireInteraction: true, data: { url: "/", open: { tab: "chat", approval: "r1", view: "" } } }),
   );
 });
 
 it("stays quiet while the app is on screen on this device", async () => {
   const { listeners, show } = loadWorker([{ url: "https://chief.example.ts.net/", focused: true, visibilityState: "visible" }]);
-  await push(listeners, { title: "Chief", body: "Done" });
+  await push(listeners, { title: "Nova", body: "Done" });
   expect(show).not.toHaveBeenCalled();
 });

@@ -136,7 +136,7 @@ export const renameProfile = (profile: string, name: string, role: string, updat
 export const resolveApproval = (requestId: string, choice: ApprovalChoice) =>
   write<{ ok: boolean; resolved?: number; error?: string }>("approve", withThread({ request_id: requestId, choice }));
 export type OutboundAttachment = { name: string; mime: string; data_url: string };
-/** `clientId` lets the bridge drop a retry of a send that already reached Chief before timing out. */
+/** `clientId` lets the bridge drop a retry of a send that already reached the chief before timing out. */
 export const sendToChief = (text: string, attachments: OutboundAttachment[] = [], clientId = "") =>
   write<{ ok: boolean; error?: string; duplicate?: boolean }>("send", withThread({ text, attachments, client_id: clientId }), attachments.length ? 120_000 : 20_000);
 

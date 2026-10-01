@@ -166,7 +166,7 @@ function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
     [show],
   );
 
-  // Links from Chief (or anywhere) land here: take the request when it arrives or when this pane mounts.
+  // Links from the chief (or anywhere) land here: take the request when it arrives or when this pane mounts.
   const signal = useVaultOpenSignal();
   useEffect(() => {
     const req = takeVaultOpen();

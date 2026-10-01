@@ -75,13 +75,13 @@ it("shows flags first, scorecards, runtime, and marks the flags seen", async () 
   await waitFor(() => expect(unseenFlags(report.flags!, loadSeenFlags())).toEqual([]));
 });
 
-it("Ask Chief sends the flag's request; Show changes opens that skill", async () => {
+it("Ask Nova sends the flag's request; Show changes opens that skill", async () => {
   const send = vi.fn(async () => undefined);
   render(<FleetHealth people={people} onSendToChief={send} />);
   const memory = (await screen.findByText("ada's memory is 98% full")).closest("li")!;
-  fireEvent.click(within(memory).getByRole("button", { name: "Ask Chief" }));
+  fireEvent.click(within(memory).getByRole("button", { name: "Ask Nova" }));
   await waitFor(() => expect(send).toHaveBeenCalledWith(flagMessage(report.flags![1])));
-  expect(await within(memory).findByRole("button", { name: /Sent to Chief/ })).toBeDisabled();
+  expect(await within(memory).findByRole("button", { name: /Sent to Nova/ })).toBeDisabled();
   const worse = screen.getByText("sdlc-review (ada) got worse after 2 edits").closest("li")!;
   fireEvent.click(within(worse).getByRole("button", { name: "Show changes" }));
   expect(await screen.findByText(/by background review/)).toBeInTheDocument();
@@ -119,7 +119,7 @@ it("reverting an older change arms first and says how many later edits it undoes
   }
 });
 
-it("Approve sends the proposal to Chief and records it for every device; decided ones are listed", async () => {
+it("Approve sends the proposal to Nova and records it for every device; decided ones are listed", async () => {
   const send = vi.fn(async () => undefined);
   render(<FleetHealth people={people} onSendToChief={send} />);
   fireEvent.click(await screen.findByRole("button", { name: "Approve" }));
@@ -128,7 +128,22 @@ it("Approve sends the proposal to Chief and records it for every device; decided
   expect(await screen.findByText("All proposals handled")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Show 2 decided" }));
   expect(screen.getByText("Applied")).toBeInTheDocument();
-  expect(screen.getByText("Sent to Chief")).toBeInTheDocument();
+  expect(screen.getByText("Sent to Nova")).toBeInTheDocument();
+});
+
+it("an older ledger's statuses name the chief by any name, and still read as the chief", async () => {
+  serve({
+    ...report,
+    proposals: [
+      { id: "a", kind: "skill", target: "first-skill", change: "x", status: "waiting on Atlas" },
+      { id: "b", kind: "skill", target: "second-skill", change: "y", status: "sent to Atlas" },
+    ],
+  });
+  render(<FleetHealth people={people} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Show 2 decided" }));
+  expect(screen.getByText("Waiting on Nova")).toBeInTheDocument();
+  expect(screen.getByText("Sent to Nova")).toBeInTheDocument();
+  expect(screen.queryByText(/Atlas/)).toBeNull();
 });
 
 it("dismissals from this device's old local list are recorded once for every device", async () => {

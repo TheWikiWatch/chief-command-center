@@ -50,7 +50,7 @@ export function Composer({
   onAddFiles: (list: FileList | null) => void;
   onRemoveFile: (id: string) => void;
   connected: boolean;
-  /** Chief is unreachable but messages can still be written: they wait in the outbox. The mic needs him. */
+  /** The chief is unreachable but messages can still be written: they wait in the outbox. The mic needs it. */
   offline?: boolean;
   busy: boolean;
   micStatus: MicStatus;

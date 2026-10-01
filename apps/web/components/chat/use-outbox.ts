@@ -20,7 +20,7 @@ function gone(message: string) {
 }
 
 /**
- * Messages waiting for Chief (lib/outbox.ts): kept across reloads, sent in order once `ready`, retried
+ * Messages waiting for the chief (lib/outbox.ts): kept across reloads, sent in order once `ready`, retried
  * every 15s while the network fails. `onDelivered` gets the item and its image previews (the caller
  * owns them from then on); `onDropped` gets one that expired or was refused.
  */

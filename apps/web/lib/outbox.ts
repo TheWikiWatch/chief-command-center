@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Messages waiting for Chief (PLAN-2026-09-29 phase 3). A send made while he is unreachable, or one
- * that failed on the network, waits here and goes out in order when he is back, with the same
- * client id, so a send that timed out after reaching him is not delivered twice (the bridge drops
+ * Messages waiting for the chief (PLAN-2026-09-29 phase 3). A send made while it is unreachable, or one
+ * that failed on the network, waits here and goes out in order when it is back, with the same
+ * client id, so a send that timed out after reaching it is not delivered twice (the bridge drops
  * repeats of an id for 24 hours). Text survives a reload in localStorage; files in IndexedDB (kept in
  * memory only where IndexedDB is unavailable). A queued message expires after 24 hours.
  */

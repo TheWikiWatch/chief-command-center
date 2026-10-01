@@ -11,12 +11,12 @@ const ENGAGE = 0.35;
 const RELEASE = 0.12;
 
 /**
- * Where Chief's eyes go (PLAN-2026-09-26 §3), on top of the Blobatar gaze driver, which glides
+ * Where the chief's eyes go (PLAN-2026-09-26 §3), on top of the Blobatar gaze driver, which glides
  * between targets by itself:
- *  1. straight out at you while the cursor is on him;
- *  2. the bot he is working with, while one is working (re-aimed as its seat moves);
+ *  1. straight out at you while the cursor is on it;
+ *  2. the bot it is working with, while one is working (re-aimed as its seat moves);
  *  3. your cursor while it is near and has moved recently;
- *  4. otherwise nothing: his eyes come home and his own idle glances return.
+ *  4. otherwise nothing: its eyes come home and its own idle glances return.
  */
 export function useAttentiveGaze(task: () => HTMLElement | null) {
   const { ref: gazeRef, lookAt } = useGaze({ travel: 3, lookAt: null });

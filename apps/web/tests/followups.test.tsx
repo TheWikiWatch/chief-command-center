@@ -29,7 +29,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-it("spots Chief's check-back promises and quotes the sentence", () => {
+it("spots Nova's check-back promises and quotes the sentence", () => {
   expect(detectPromise("Card is on the board. I'll check back once Ada lands it. Anything else?")).toBe("I'll check back once Ada lands it.");
   expect(detectPromise("Let me follow up with Iris after lunch")).toBe("Let me follow up with Iris after lunch");
   expect(detectPromise("I will let you know when the build is green.")).toBe("I will let you know when the build is green.");
@@ -46,7 +46,7 @@ it("counts a kanban note plus a reply, or a reply naming the bot, as a follow-up
   expect(followedUp(finished({ kind: "promise" }), [msg(12, "assistant", "Update: all green.")])).toBe(true);
 });
 
-it("waits 3 minutes after a job finishes, then shows the card unless Chief followed up", () => {
+it("waits 3 minutes after a job finishes, then shows the card unless Nova followed up", () => {
   vi.useFakeTimers({ now: 1_000_000 });
   const history = [msg(10, "assistant", "Ada's card t_1 is on the board.")];
   const { result, rerender } = renderHook(({ m, busy }) => useFollowupWatch(m, { primed: true, busy }), {
@@ -56,14 +56,14 @@ it("waits 3 minutes after a job finishes, then shows the card unless Chief follo
   expect(readFollowups()[0].afterId).toBe(10);
   act(() => vi.advanceTimersByTime(2 * 60_000));
   expect(result.current).toEqual([]);
-  // Chief is mid-turn at the deadline: stay quiet.
+  // Nova is mid-turn at the deadline: stay quiet.
   rerender({ m: history, busy: true });
   act(() => vi.advanceTimersByTime(90_000));
   expect(result.current).toEqual([]);
   rerender({ m: history, busy: false });
   act(() => vi.advanceTimersByTime(10_000));
   expect(result.current.map((f) => f.who)).toEqual(["Ada"]);
-  // Chief finally mentions Ada: the card goes away.
+  // Nova finally mentions Ada: the card goes away.
   rerender({ m: [...history, msg(11, "assistant", "Ada finished; verifying now.")], busy: false });
   expect(result.current).toEqual([]);
 });
@@ -80,13 +80,13 @@ it("starts a 20-minute reminder when a new reply promises to check back, never f
   expect(item.dueAt - Date.now()).toBe(20 * 60_000);
 });
 
-it("asks Chief from the card and clears it", async () => {
+it("asks Nova from the card and clears it", async () => {
   const onAsk = vi.fn(async () => undefined);
   const item = finished({ shown: true });
   localStorage.setItem("chief-followups", JSON.stringify([item]));
   render(<FollowupCards items={[item]} people={[ada]} chief={undefined} disabled={false} onAsk={onAsk} />);
-  expect(screen.getByText(/No word from Chief/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Ask Chief" }));
+  expect(screen.getByText(/No word from Nova/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Ask Nova" }));
   expect(onAsk).toHaveBeenCalledWith(item);
   await waitFor(() => expect(readFollowups()).toEqual([]));
   expect(followupAsk(item)).toBe('Ada just finished "Print studio". Please review it and follow up with me.');

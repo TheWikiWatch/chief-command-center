@@ -728,7 +728,7 @@ function IntentBody({
         user_message: message,
         due: due || null,
         blocker: blocker || null,
-        mode: "chief_inject",
+        mode: "chat_inject",
       });
       const kickoff = res.kickoff?.trim();
       if (!kickoff) throw new Error("Launch did not return a kickoff.");

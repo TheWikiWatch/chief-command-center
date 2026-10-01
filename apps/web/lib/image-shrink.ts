@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Photos are shrunk on the device before they go to Chief (PLAN-2026-09-29 phase 3): a 12 MP camera
- * photo is 4-10 MB, a third more as base64 JSON, over mobile data through Tailscale. Chief reads a
+ * Photos are shrunk on the device before they go to the chief (PLAN-2026-09-29 phase 3): a 12 MP camera
+ * photo is 4-10 MB, a third more as base64 JSON, over mobile data through Tailscale. The chief reads a
  * 2048 px image just as well. Settings → "Send photos full size" turns this off.
  *
  * - JPEG / WebP / HEIC (where the browser can decode it): 2048 px long edge, JPEG quality 0.85.

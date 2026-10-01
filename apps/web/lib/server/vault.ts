@@ -92,7 +92,7 @@ export async function resolveInVault(rel: string): Promise<{ root: string; abs: 
   return { root: rootReal, abs: real, rel: clean };
 }
 
-/** Turn an absolute path Chief wrote (E:\Second Brain\...) into a vault-relative one, if it is inside. */
+/** Turn an absolute path the chief wrote (E:\Second Brain\...) into a vault-relative one, if it is inside. */
 export async function relFromAbsolute(raw: string): Promise<string | null> {
   const root = await vaultRoot();
   const norm = path.resolve(String(raw).replace(/\//g, path.sep));

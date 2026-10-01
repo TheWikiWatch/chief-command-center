@@ -1,5 +1,5 @@
 /**
- * Hermes titles are usually "Name - Role" ("Chief - Chief of Staff"). New bots can have any
+ * Hermes titles are usually "Name - Role" ("The chief - Chief of Staff"). New bots can have any
  * title (VISUAL-OVERHAUL §12), so fall back to the whole title as the name.
  */
 export function splitTitle(title: string | undefined | null): { name: string; role: string } {

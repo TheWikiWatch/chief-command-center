@@ -122,7 +122,7 @@ class VoiceStudioProviderTests(unittest.TestCase):
         self.assertEqual(provider.loopback_base("http://localhost:4000/"), "http://localhost:4000")
 
     def test_voice_list_groups_designed_and_saved_voices(self):
-        http = FakeHttp(profiles=[{"id": "abc", "name": "Chief clone", "kind": "clone"}, {"id": "def", "name": "Warm", "kind": "design"}])
+        http = FakeHttp(profiles=[{"id": "abc", "name": "Nova clone", "kind": "clone"}, {"id": "def", "name": "Warm", "kind": "design"}])
         voices = self.make(http).list_voices()
         groups = {v["group"] for v in voices}
         self.assertEqual(groups, {"Designed · fast", "Your VoiceStudio voices"})
@@ -130,7 +130,7 @@ class VoiceStudioProviderTests(unittest.TestCase):
         self.assertIn("profile:abc", ids)
         self.assertIn("default", ids)
         labels = {v["id"]: v["display"] for v in voices}
-        self.assertEqual(labels["profile:abc"], "Chief clone (cloned)")
+        self.assertEqual(labels["profile:abc"], "Nova clone (cloned)")
         self.assertEqual(labels["profile:def"], "Warm (designed)")
 
     def test_voice_list_survives_a_stopped_backend(self):

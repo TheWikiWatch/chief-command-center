@@ -25,8 +25,8 @@ const FACE: Record<PresenceMood, FaceMood> = {
 };
 
 /**
- * Chief's presence (VISUAL-OVERHAUL §4.3): his face inside an aurora ring, a bloom that swells
- * with his voice, orbiting particles while he thinks, and a voice ring driven by real audio.
+ * The chief's presence (VISUAL-OVERHAUL §4.3): its face inside an aurora ring, a bloom that swells
+ * with its voice, orbiting particles while it thinks, and a voice ring driven by real audio.
  * Speaking is picked up from the speech queue, so every placement reacts without extra wiring.
  */
 export function ChiefPresence({
@@ -42,7 +42,7 @@ export function ChiefPresence({
   gazeRef?: (node: SVGSVGElement | HTMLImageElement | null) => void;
   className?: string;
 }) {
-  // Speaking follows real sound; while the voice is still being prepared Chief only gets ready.
+  // Speaking follows real sound; while the voice is still being prepared the chief only gets ready.
   const phase = useSyncExternalStore(subscribeSpeaking, getSpeechPhase, () => "idle" as const);
   const effective: PresenceMood =
     mood === "offline" || mood === "approval" || mood === "listening"

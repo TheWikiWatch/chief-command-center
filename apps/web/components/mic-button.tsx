@@ -30,7 +30,7 @@ export function MicButton({
   onTranscript: (text: string) => Promise<void> | void;
   onError: (message: string) => void;
   onStatus?: (status: MicStatus) => void;
-  /** The live microphone stream while recording (null when it stops), for the waveform and Chief's presence. */
+  /** The live microphone stream while recording (null when it stops), for the waveform and the chief's presence. */
   onStream?: (stream: MediaStream | null) => void;
   /** Finger offset from where the hold started, for the slide-to-cancel visual. */
   onDrag?: (dx: number, dy: number) => void;

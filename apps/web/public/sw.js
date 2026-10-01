@@ -32,7 +32,7 @@ self.addEventListener('push', (event) => {
       tag,
       renotify: true,
       timestamp: typeof data.at === 'number' ? data.at : Date.now(),
-      // An approval blocks Chief: on a desktop it stays until handled.
+      // An approval blocks the chief: on a desktop it stays until handled.
       requireInteraction: tag.startsWith('approval-'),
       data: { url: data.url || '/', open: openTarget(data) },
     });

@@ -22,7 +22,7 @@ afterEach(() => {
 
 const task = { current: null as HTMLElement | null };
 
-function Chief() {
+function Nova() {
   const { ref } = useAttentiveGaze(() => task.current);
   return (
     <svg
@@ -37,7 +37,7 @@ function Chief() {
 const last = () => lookAt.mock.calls.at(-1)?.[0];
 
 it("idle: his own glances (null); near cursor: follows it; parked cursor: lets go", () => {
-  render(<Chief />);
+  render(<Nova />);
   drawFaces(1);
   expect(last()).toBeNull();
   setPointerForTest({ x: 620, y: 450 });
@@ -48,9 +48,9 @@ it("idle: his own glances (null); near cursor: follows it; parked cursor: lets g
   expect(last()).toBeNull();
 });
 
-it("a working bot beats the cursor, and hovering Chief beats both", () => {
+it("a working bot beats the cursor, and hovering Nova beats both", () => {
   task.current = document.createElement("div");
-  render(<Chief />);
+  render(<Nova />);
   setPointerForTest({ x: 620, y: 450 });
   drawFaces(1);
   expect(last()).toBe(task.current);
@@ -61,7 +61,7 @@ it("a working bot beats the cursor, and hovering Chief beats both", () => {
 });
 
 it("the eyes do not flap at the edge of attention (hysteresis)", () => {
-  render(<Chief />);
+  render(<Nova />);
   // 275px out is too far to catch his eye from idle...
   setPointerForTest({ x: 450 + 275, y: 450 });
   drawFaces(1);

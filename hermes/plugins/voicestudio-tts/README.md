@@ -1,6 +1,6 @@
 # voicestudio-tts
 
-A Hermes text-to-speech provider for a local [VoiceStudio](https://github.com/debpalash/VoiceStudio) backend (OmniVoice). It adds **VoiceStudio (local)** to Chief's Speaking engines, next to Edge, ElevenLabs and the rest. Nothing else changes, and every other engine keeps working.
+A Hermes text-to-speech provider for a local [VoiceStudio](https://github.com/debpalash/VoiceStudio) backend (OmniVoice). It adds **VoiceStudio (local)** to the chief's Speaking engines, next to Edge, ElevenLabs and the rest. Nothing else changes, and every other engine keeps working.
 
 - **Designed voices (fast):** OmniVoice builds the voice from its voice-design tags (gender, age, pitch, accent) with a fixed seed. There's no reference audio, so a first chunk takes about 1s on the RTX 4070.
 - **Your VoiceStudio voices:** voices saved in the VoiceStudio app, designed or **cloned**. These use reference audio. With a short reference (~6–10s) a first chunk takes 1–2s; a 35s reference took 3.5–5s. Keep clone clips short. Only clone voices you have consent for.
@@ -23,18 +23,18 @@ C: is nearly full, so the uv cache, the Python it downloads, the models (`HF_HOM
 
 **The app:** open <http://127.0.0.1:3900> in a browser on this PC. The backend serves VoiceStudio's web UI, built once into `E:\tools\VoiceStudio\frontend\dist` (Bun 1.4.2 via scoop, package cache `E:\tools\bun-cache`). Don't use the Electron app (`bun run dev`): it starts its own backend on the same port. Design voices under **Design** and clone under **Clone**; both are saved to **Saved voices**. They show up in the dashboard's voice list within 30s. After updating VoiceStudio (`git pull`, `uv sync --frozen`), rebuild the UI with `bun install --frozen-lockfile && bun run build:web` in `E:\tools\VoiceStudio\electron`, then restart the backend (the UI only mounts at startup).
 
-## Enable for Chief
+## Enable for the chief
 
 1. `scripts/sync-bridge-plugin.ps1` copies this folder next to the bridge in both Hermes plugin directories (the desktop shortcut runs it).
 2. Add `voicestudio-tts` under `plugins.enabled` in `profiles\chief\config.yaml`.
-3. Reload Chief (`hermes -p chief gateway stop`; the guard task starts him again). Check `hermes kanban show` first: running workers are children of the gateway.
-4. Dashboard → Settings → Chief's voice → Speaking → **VoiceStudio (local)**, then pick a voice. ▷ plays a sample.
+3. Reload the chief (`hermes -p chief gateway stop`; the guard task starts it again). Check `hermes kanban show` first: running workers are children of the gateway.
+4. Dashboard → Settings → the chief's voice → Speaking → **VoiceStudio (local)**, then pick a voice. ▷ plays a sample.
 
 To go back, pick Edge (or any other engine) in the same list. The plugin can stay installed.
 
 ## Parking (currently parked, 2026-09-27)
 
-Parked means nothing runs: Chief is on Edge, `voicestudio-tts` is out of `plugins.enabled`, the backend is stopped, and `E:\tools\voicestudio.parked` exists. While that file exists, `ensure-voicestudio.ps1` (and so the desktop shortcut) won't start the backend. The marker file lists the four steps to bring it back. Nothing is deleted: the checkout, models and saved voices stay on E:.
+Parked means nothing runs: The chief is on Edge, `voicestudio-tts` is out of `plugins.enabled`, the backend is stopped, and `E:\tools\voicestudio.parked` exists. While that file exists, `ensure-voicestudio.ps1` (and so the desktop shortcut) won't start the backend. The marker file lists the four steps to bring it back. Nothing is deleted: the checkout, models and saved voices stay on E:.
 
 ## Config
 
