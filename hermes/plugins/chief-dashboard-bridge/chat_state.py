@@ -176,7 +176,8 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
             "id": str(row.get("id") or ""),
             "at": float(row.get("at") or 0),
             "text": str(row.get("message") or ""),
-            "source": "scheduled" if row.get("source") == "cron" else "notice",
+            # Hermes delivers a scheduled job's answer as "Cronjob Response: <name>"; the app's own relays say "cron".
+            "source": "scheduled" if row.get("source") == "cron" or str(row.get("message") or "").startswith("Cronjob Response:") else "notice",
         })
     return out[-limit:]
 

@@ -18,7 +18,7 @@ The Second Brain is `{{vault}}`. Every write follows these steps, however small 
 
 ## 1. Rules
 
-Read `{{vault}}\AGENTS.md` once per conversation, before the first write: the Folder Map, "Notes agents write", Tasks and Properties. If the owner has changed it, their version wins over anything here.
+Read `{{vault}}\{{rules}}` once per conversation, before the first write: the Folder Map, "Notes agents write", Tasks and Properties. If the owner has changed it, their version wins over anything here.
 
 ## 2. Search before you create
 
@@ -26,15 +26,15 @@ Look in `index.md` and search the folder for an existing note on the same thing.
 
 ## 3. The right place
 
-Put the note where the Folder Map in `AGENTS.md` says. Never invent a folder; if a kind of note isn't listed, ask. Anything with no obvious home goes to `00 Inbox/`.
+Put the note where the Folder Map in `{{rules}}` says. Never invent a folder; if a kind of note isn't listed, ask. Anything with no obvious home goes to `00 Inbox/`.
 
 ## 4. Write it properly
 
-- Properties first: `date`, `type`, `tags` (include the type) and `ai-first: true`, plus the type's own fields from `AGENTS.md`.
+- Properties first: `date`, `type`, `tags` (include the type) and `ai-first: true`, plus the type's own fields from `{{rules}}`.
 - A `## For future agent` section right after the properties: what the note is, why it was saved, what may go stale.
 - `[[wikilinks]]` for every person, project, idea and decision. Create a short stub when the linked note doesn't exist.
 - Facts that change carry `(as of YYYY-MM-DD)`; sources keep their full URL. A changed fact gets a new dated line and the old one is marked superseded, never silently overwritten.
-- Tasks use the exact syntax in `AGENTS.md` (`- [ ] … 📅 YYYY-MM-DD`; done: `- [x] … ✅ YYYY-MM-DD`). The app's Today tab reads them straight from the files.
+- Tasks use the exact syntax in `{{rules}}` (`- [ ] … 📅 YYYY-MM-DD`; done: `- [x] … ✅ YYYY-MM-DD`). The app's Today tab reads them straight from the files.
 
 ## 5. Ask before big changes
 

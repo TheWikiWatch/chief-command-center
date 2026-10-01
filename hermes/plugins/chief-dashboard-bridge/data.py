@@ -23,6 +23,7 @@ logger = logging.getLogger("chief-dashboard-bridge")
 
 _AVATAR_EXTS = ("png", "jpg", "jpeg", "webp", "gif")
 _SKIP_ROLES = {"system", "session_meta"}
+_CRON_MIRROR = "[Cron delivery:"
 _MEDIA_EXTS = (
     "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg",
     "mp4", "webm", "mov", "mkv", "avi",
@@ -1007,6 +1008,10 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                 content, attachments = parse_message_content(row["content"])
                 if role == "user":
                     content = strip_agent_attachment_notes(content)
+                    # A scheduled job's message that Hermes copied into the conversation (`attach_to_session`,
+                    # the morning brief) keeps its context for Chief; the chat already shows it as a notice.
+                    if content.lstrip().startswith(_CRON_MIRROR):
+                        continue
                 for att in attachments:
                     remember_media_path(str(att.get("path") or ""))
             if role == "tool" and not names:

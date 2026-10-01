@@ -216,5 +216,122 @@ check("an unedited earlier default becomes the current one", refreshed["seeded"]
 (home / "SOUL.md").write_text(v1 + "\nOne line of my own.\n", encoding="utf-8")
 check("an edited earlier default is kept", second_brain.seed_soul()["seeded"] is False and "One line of my own." in (home / "SOUL.md").read_text(encoding="utf-8"))
 
+# ---------------------------------------------------------------- the agent-first wiki format
+import subprocess
+
+
+def cron_jobs() -> dict:
+    raw = json.loads((home / "cron" / "jobs.json").read_text(encoding="utf-8"))
+    raw = raw.get("jobs", raw) if isinstance(raw, dict) else raw
+    return {j["name"]: j for j in raw if str(j.get("name", "")).startswith("Second Brain:")}
+
+
+def tree(root: Path) -> dict:
+    return {str(f.relative_to(root)): f.read_bytes() for f in root.rglob("*") if f.is_file()}
+
+
+wiki = work / "wiki-brain"
+seen = second_brain.inspect(str(wiki), "wiki")
+check("a new folder previews the wiki layout", seen["format"] == "wiki" and seen["choices"] == ["new"]
+      and {"_CLAUDE.md", "boards/Personal.md", "drop/README.md", "wiki/reviews/Current Analysis.md"} <= set(seen["plans"]["new"]["files"])
+      and {"raw/originals", "wiki/entities", "drop/_processing", "drop/needs-review"} <= set(seen["plans"]["new"]["folders"]), seen["plans"])
+check("an unknown format is refused", "format" in raises(lambda: second_brain.setup(str(wiki), "new", fmt="zettel")))
+made = second_brain.setup(str(wiki), "new", today=date(2026, 10, 1), fmt="wiki")
+check("the wiki layout is created", made["ok"] and made["format"] == "wiki" and made["rules"] == "_CLAUDE.md"
+      and all((wiki / d).is_dir() for d in ("raw/originals", "raw/conversations", "wiki/concepts", "wiki/tasks", "boards", "drop/_processing", "_trash")), made)
+manual_text = (wiki / "_CLAUDE.md").read_text(encoding="utf-8")
+check("its manual is filled in and carries a Folder Map", "date: 2026-10-01" in manual_text and "{{" not in manual_text
+      and "## Section 1 - Folder Map" in manual_text and "| Person, company, tool (entity) | `wiki/entities/` |" in manual_text)
+check("AGENTS.md points at the manual", second_brain._is_pointer(wiki / "AGENTS.md", "_CLAUDE") and second_brain.manual(wiki) == "_CLAUDE.md")
+board = (wiki / "boards" / "Personal.md").read_text(encoding="utf-8")
+check("the boards are Kanban boards with dated cards", board.startswith("---\n\nkanban-plugin: board") and "@{2026-10-04}" in board
+      and "## ⏳ Waiting On" in board and "%% kanban:settings" in board, board[:300])
+status = second_brain.status()
+check("status reports the format and its rules file", status["format"] == "wiki" and status["rules"] == "_CLAUDE.md" and Path(status["path"]) == wiki, status)
+check("WIKI_PATH is unset for the wiki format", not status["wiki_path"] and "WIKI_PATH=" not in (home / ".env").read_text(encoding="utf-8"), status)
+text = skill.read_text(encoding="utf-8")
+check("Chief's skill is the wiki variant, pointed at _CLAUDE.md", parse_frontmatter(text)[0].get("name") == "second-brain"
+      and f"{wiki}\\_CLAUDE.md" in text and "boards/" in text and "AGENTS.md" not in text and "{{" not in text, text[:400])
+gate = writes.read_text(encoding="utf-8")
+check("the write gate is the wiki write-gate", "Board and task note together" in gate and "write-gate: PASS" in gate and f"{wiki}\\_CLAUDE.md" in gate)
+for name in ("second-brain-drop", "second-brain-brief", "second-brain-analysis"):
+    extra = home / "skills" / "note-taking" / name / "SKILL.md"
+    body = extra.read_text(encoding="utf-8") if extra.is_file() else ""
+    check(f"the {name} skill is installed for the folder", parse_frontmatter(body)[0].get("name") == name and str(wiki) in body and "{{" not in body)
+
+ours = cron_jobs()
+listed = second_brain.routines()
+check("the wiki format arms six routines", [r["id"] for r in listed["routines"]] == ["morning", "nightly", "weekly", "health", "drop", "brief"]
+      and all(r["enabled"] for r in listed["routines"]) and len(ours) == 6, listed)
+drop_job, brief_job, night = ours["Second Brain: drop folder"], ours["Second Brain: morning brief"], ours["Second Brain: nightly"]
+check("the drop folder routine is gated by a script", drop_job.get("script") == second_brain.DROP_GATE_NAME
+      and (home / "scripts" / second_brain.DROP_GATE_NAME).is_file() and (drop_job.get("schedule") or {}).get("expr") == "5,35 * * * *"
+      and Path(drop_job.get("workdir") or "") == wiki, drop_job)
+check("the brief is mirrored into the chat session", brief_job.get("attach_to_session") is True and (brief_job.get("schedule") or {}).get("expr") == "30 8 * * 1-5", brief_job)
+check("the nightly ends with Current Analysis", "second-brain-analysis" in (night.get("skills") or []) and "Current Analysis" in night.get("prompt", ""), night)
+check("the drop routine has no time of day", "half hour" in raises(lambda: second_brain.set_routine("drop", at="09:00"))
+      and next(r for r in listed["routines"] if r["id"] == "drop")["days"] == "Every 30 minutes")
+
+
+def gate_says(folder: Path) -> str:
+    out = subprocess.run([sys.executable, str(home / "scripts" / second_brain.DROP_GATE_NAME)], cwd=folder, capture_output=True, text=True, timeout=30)
+    return out.stdout.strip()
+
+
+check("an empty drop folder never wakes the model", gate_says(wiki) == '{"wakeAgent": false}', gate_says(wiki))
+(wiki / "drop" / "receipt.txt").write_text("Paid the plumber 120.\n", encoding="utf-8")
+said = gate_says(wiki)
+check("a waiting file wakes it, named", "receipt.txt" in said and "wakeAgent" not in said and "README" not in said, said)
+(wiki / "drop" / "receipt.txt").unlink()
+again = second_brain.inspect(str(wiki))
+check("our own wiki folder is recognized", again["ours"] and again["format"] == "wiki" and again["choices"] == ["new"] and again["plans"]["new"]["files"] == [], again)
+
+# An existing agent-first vault with its own manual is used as it is
+mine = work / "my-wiki"
+for rel, body in {
+    "_CLAUDE.md": "# My vault manual\n\nSources in raw/, knowledge in wiki/, tasks on boards/. My own rules.\n",
+    "wiki/concepts/Idea.md": "An idea.\n",
+    "raw/articles/2026-09-01 - Article.md": "A source.\n",
+    "boards/Home.md": "---\n\nkanban-plugin: board\n\n---\n\n## 📥 Backlog\n\n- [ ] Fix the gate 🔴 @{2026-09-20}\n",
+    "templates/Daily Note.md": "mine\n",
+}.items():
+    (mine / rel).parent.mkdir(parents=True, exist_ok=True)
+    (mine / rel).write_text(body, encoding="utf-8")
+before = tree(mine)
+seen = second_brain.inspect(str(mine))
+check("an existing wiki vault is recognized with its manual", seen["format_detected"] == "wiki" and seen["format"] == "wiki" and seen["manual"] == "_CLAUDE.md"
+      and seen["choices"] == ["keep", "reorganize"] and seen["plans"]["keep"] == {"folders": [], "files": [], "existing": []}, seen)
+used = second_brain.setup(str(mine), "keep")
+check("it is used as it is: nothing added or changed", used["ok"] and used["created"] == [] and used["own_rules"] and tree(mine) == before, used)
+check("its routines are offered but off", used["routines_on"] is False and all(not r["enabled"] for r in second_brain.routines()["routines"])
+      and len(cron_jobs()) == 6, second_brain.routines())
+check("Chief is asked to read its manual first", "_CLAUDE.md" in used["next_prompt"] and "Don't change anything" in used["next_prompt"], used)
+text = skill.read_text(encoding="utf-8")
+check("Chief's skill follows the vault's own manual", f"{mine}\\_CLAUDE.md" in text and "AGENTS.md" not in text)
+check("status reports its own rules", second_brain.status()["rules"] == "_CLAUDE.md" and second_brain.status()["format"] == "wiki")
+
+# Its own AGENTS.md is a manual too (a PARA-style folder of the owner's)
+para_own = work / "my-para"
+(para_own / "Projects").mkdir(parents=True)
+(para_own / "AGENTS.md").write_text("# My rules\n\nProjects in Projects/.\n", encoding="utf-8")
+(para_own / "Projects" / "Garden.md").write_text("- [ ] Plant 📅 2026-10-09\n", encoding="utf-8")
+before = tree(para_own)
+seen = second_brain.inspect(str(para_own), "para")
+check("an owner's own AGENTS.md is their manual", seen["manual"] == "AGENTS.md" and seen["plans"]["keep"]["files"] == [], seen)
+used = second_brain.setup(str(para_own), "keep", fmt="para")
+check("and nothing is added there either", used["created"] == [] and tree(para_own) == before and used["rules"] == "AGENTS.md", used)
+check("switching to PARA removes the wiki-only routines", [r["id"] for r in second_brain.routines()["routines"]] == ["morning", "nightly", "weekly", "health"]
+      and "Second Brain: drop folder" not in cron_jobs(), list(cron_jobs()))
+
+# An install set up before formats existed upgrades to the right format, adding nothing to the owner's vault
+before = tree(mine)
+state_file = home / second_brain.STATE_FILE
+state_file.write_text(json.dumps({"path": str(mine), "mode": "keep", "template": 2}), encoding="utf-8")
+second_brain._configure(home, mine, "para", "AGENTS.md")  # as an old install had it
+up = second_brain.upgrade()
+state = json.loads(state_file.read_text(encoding="utf-8"))
+check("an earlier install learns its format and rules file", state.get("format") == "wiki" and state.get("rules") == "_CLAUDE.md", state)
+check("and the upgrade adds nothing to the vault", tree(mine) == before and f"{mine}\\_CLAUDE.md" in skill.read_text(encoding="utf-8"), up)
+
 print(json.dumps({"failures": failures}))
 sys.exit(1 if failures else 0)

@@ -75,6 +75,19 @@ class BridgeTests(unittest.TestCase):
         second = data.transcript("session", after_id=first["lastId"])
         self.assertEqual([m["id"] for m in second["messages"]], [722])
 
+    def test_scheduled_messages_copied_into_the_chat_stay_out_of_it(self):
+        # The morning brief is mirrored into the session (attach_to_session) so Chief knows its questions;
+        # the chat shows it once, as a notice, never as the owner's own message.
+        with self.database() as conn:
+            conn.executemany("INSERT INTO messages VALUES (?, ?, ?, '1', NULL, 's', 1)", [
+                (2, "user", "[Cron delivery: Second Brain: morning brief]\n# Morning brief\n1. Pick a date?"),
+                (3, "user", "1. Friday"),
+                (4, "assistant", "Filed: Friday."),
+            ])
+        page = data.transcript("session", after_id=1)
+        self.assertEqual([m["id"] for m in page["messages"]], [3, 4])
+        self.assertEqual(page["lastId"], 4)
+
     def test_compaction_copies_are_marked_as_replays(self):
         # Rows 2-4 are the originals. Compaction archives them and re-inserts the tail as 6-8, stamped
         # at the marker's time (assistant) or their old time (user). 9 is a genuinely new reply.

@@ -33,14 +33,14 @@ When you learn a fact that belongs there and the line is blank or out of date, u
 
 ## Every write follows the full rules
 
-Before your first write to the Second Brain in a conversation, load the **`second-brain-writes`** skill and read `{{vault}}\AGENTS.md`. Every write follows them, including small ones and scheduled routines. A fact settled in conversation but never written down is a failed write.
+Before your first write to the Second Brain in a conversation, load the **`second-brain-writes`** skill and read `{{vault}}\{{rules}}`. Every write follows them, including small ones and scheduled routines. A fact settled in conversation but never written down is a failed write.
 
 ## Which skill for what
 
 | The owner wants… | Use |
 | --- | --- |
 | "remember this", "save that" | `obsidian-save`, or `obsidian-capture` for a quick idea |
-| a task, a reminder, a due date | `obsidian-task` (task syntax in `AGENTS.md`; the app's Today tab reads it) |
+| a task, a reminder, a due date | `obsidian-task` (task syntax in `{{rules}}`; the app's Today tab reads it) |
 | today's plan, what's overdue | `obsidian-daily`, `obsidian-catchup` |
 | to find something | `obsidian-find` |
 | a person, a project | `obsidian-person`, `obsidian-project`, `obsidian-projects` |
@@ -50,6 +50,6 @@ Before your first write to the Second Brain in a conversation, load the **`secon
 | a source or article kept | `llm-wiki` into `40 Knowledge/` (raw sources are never edited) |
 | a health check of the folder | `obsidian-health` |
 
-These skills read the Folder Map in `AGENTS.md` to choose folders. The toolkit's own rules are in `{{toolkit}}/references/` (`ai-first-rules.md`, `write-rules.md`). This folder is already set up: never run `obsidian-init` on it.
+These skills read the Folder Map in `{{rules}}` to choose folders. The toolkit's own rules are in `{{toolkit}}/references/` (`ai-first-rules.md`, `write-rules.md`). This folder is already set up: never run `obsidian-init` on it.
 
 When you mention a note to the owner, give its full path in backticks or a `[[wikilink]]`, so the app can open it.

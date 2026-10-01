@@ -1136,10 +1136,12 @@ def _make_handler(bridge: BridgeServer):
                     make_default=body.get("make_default") is not False)))
                 return
             if path == "/setup/second-brain/inspect":
-                self._act(path, started, _guarded(lambda: second_brain.inspect(str(body.get("path") or ""))))
+                self._act(path, started, _guarded(lambda: second_brain.inspect(str(body.get("path") or ""), body.get("format") or None)))
                 return
             if path == "/setup/second-brain":
-                self._act(path, started, _guarded(lambda: second_brain.setup(str(body.get("path") or ""), str(body.get("mode") or ""))))
+                self._act(path, started, _guarded(lambda: second_brain.setup(
+                    str(body.get("path") or ""), str(body.get("mode") or ""), fmt=body.get("format") or None,
+                    routines_on=body.get("routines") if isinstance(body.get("routines"), bool) else None)))
                 return
             if path == "/second-brain/routines":
                 enabled = body.get("enabled")
