@@ -471,3 +471,5 @@
 - **`release-tool.mjs publish`** uploads a made release (manifest, signature, package) to the releases repository as the latest release, with the `gh` login.
 - **The releases repository was created,** private, and holds no source.
 - **Tests:** desktop 33 (parsing; reading through the redirect without the key; refused, missing and empty-release messages; resume; a full check, download and verify from a fake GitHub), and the Settings key field.
+- **Found and fixed: every update started with a minutes-long backup.** On the owner's install it was 2.5 GB and about six minutes, on each update. The backup before a new version guards against Hermes migrating the data, which can only happen when the bundled Hermes changes. The app now records the Hermes build that last opened the data (the payload's install stamp) and takes that backup only when the build differs. It keeps the two newest backups of that kind.
+- **0.1.9 published** to the releases repository. With the app's own code against GitHub: the latest release found, its manifest verified against the pinned key, and the end of the package downloaded as a resumed range through GitHub's redirect.

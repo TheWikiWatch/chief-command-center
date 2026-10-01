@@ -83,6 +83,16 @@ function hermesVersion(): string {
   }
 }
 
+/** The bundled Hermes build (the payload's install stamp): a backup before an update matters only when it changes. */
+function hermesCommit(): string {
+  try {
+    const stamp = JSON.parse(readFileSync(path.join(paths.payload, "hermes-agent", "install-stamp.json"), "utf8")) as { commit?: string };
+    return String(stamp.commit || "");
+  } catch {
+    return "";
+  }
+}
+
 /** Fleet Health's data folder: an adopted install's own, else beside the Hermes profiles. */
 function learningDir(): string {
   return store.value.learningDir || path.join(hermesRoot, "learning");
@@ -203,14 +213,18 @@ async function boot() {
     PYTHONPATH: payloadLayout(paths.payload).pythonPath.join(";"),
   });
   if (!provisioned.ok) return setStep("prepare", "error", provisioned.error || "Preparing Hermes failed.");
-  // First launch of a new version: a local backup before Hermes starts and migrates anything.
+  // First launch of a new version that brings a different Hermes: a local backup before Hermes starts and
+  // migrates anything. An update that keeps the same Hermes build can't migrate the data, so it skips the
+  // backup (it is the whole setup, databases included, and takes minutes on a large install).
   const previous = store.value.lastVersion;
-  if (previous && compareVersions(app.getVersion(), previous) > 0 && existsSync(path.join(hermesRoot, "profiles"))) {
+  const hermes = hermesCommit();
+  const hermesChanged = !hermes || store.value.lastHermes !== hermes;
+  if (previous && compareVersions(app.getVersion(), previous) > 0 && hermesChanged && existsSync(path.join(hermesRoot, "profiles"))) {
     setStep("prepare", "working", `Backing up before the first start of ${app.getVersion()}…`);
     const saved = await preUpdateBackup();
     if (!saved.ok) return setStep("prepare", "error", `The backup before this version's first start failed: ${saved.error}. Chief wasn't started, so nothing changed.`);
   }
-  store.save({ lastVersion: app.getVersion(), dataSchema: DATA_SCHEMA });
+  store.save({ lastVersion: app.getVersion(), dataSchema: DATA_SCHEMA, lastHermes: hermes });
   setStep("prepare", "done");
 
   setStep("gateway", "working");
@@ -266,7 +280,7 @@ async function boot() {
 function preUpdateBackup(): Promise<{ ok: boolean; error?: string }> {
   const layout = payloadLayout(paths.payload);
   return engineRunner(layout.python, paths.backupEngine, envFor("web"), layout.pythonPath)([
-    "backup", "--dest", backupsDir(), "--parts", "setup", "--kind", "pre-update", "--local",
+    "backup", "--dest", backupsDir(), "--parts", "setup", "--kind", "pre-update", "--local", "--keep", "2",
     "--hermes-root", hermesRoot, "--app-dir", path.join(paths.appDir, "settings-backup"), "--app-version", app.getVersion(),
   ]).then((r) => ({ ok: !!r.ok, error: r.error }));
 }

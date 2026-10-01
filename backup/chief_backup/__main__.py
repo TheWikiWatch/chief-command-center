@@ -67,8 +67,8 @@ def main(argv: list[str] | None = None) -> int:
                                     second_brain=_path(args.second_brain), passphrase=_passphrase(args), app_version=version,
                                     hermes_version=args.hermes_version or "", kind=args.kind or "manual", progress=_progress,
                                     secrets_plain=args.local)
-            if args.kind == "auto" and args.keep:
-                result["pruned"] = archive.prune(dest, args.keep)
+            if args.kind in ("auto", "pre-update") and args.keep:
+                result["pruned"] = archive.prune(dest, args.keep, args.kind)
         elif args.command == "list":
             result = _list(Path(args.dest))
         elif args.command == "inspect":

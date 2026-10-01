@@ -31,6 +31,8 @@ export type DesktopSettings = {
   /** The app version that last opened this data, and the data schema it wrote. */
   lastVersion: string;
   dataSchema: number;
+  /** The Hermes build (payload commit) that last opened this data: an update that keeps it can't migrate anything. */
+  lastHermes: string;
 };
 
 export const DEFAULTS: DesktopSettings = {
@@ -49,6 +51,7 @@ export const DEFAULTS: DesktopSettings = {
   skippedVersions: [],
   lastVersion: "",
   dataSchema: 0,
+  lastHermes: "",
 };
 
 export class Store {

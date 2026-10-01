@@ -326,9 +326,10 @@ def _verify_zip(path: Path) -> None:
                 raise BackupError(f"The backup failed its own check ({entry['path']}).")
 
 
-def prune(dest_dir: Path, keep: int) -> list[str]:
-    """Keep the newest `keep` automatic backups; manual ones are never removed."""
-    autos = sorted(dest_dir.glob(f"Chief backup (auto) *{SUFFIX}"), key=lambda p: p.name, reverse=True)
+def prune(dest_dir: Path, keep: int, kind: str = "auto") -> list[str]:
+    """Keep the newest `keep` backups of this kind ("auto" or "pre-update"); manual ones are never removed."""
+    label = backup_name(kind).rsplit(" ", 2)[0]  # "Chief backup (auto)", "Chief backup (before update)"
+    autos = sorted(dest_dir.glob(f"{label} *{SUFFIX}"), key=lambda p: p.name, reverse=True)
     removed = []
     for old in autos[max(keep, 1):]:
         try:

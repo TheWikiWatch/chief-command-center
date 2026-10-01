@@ -200,6 +200,18 @@ class BackupContents(Case):
         self.assertEqual(sorted(removed), ["Chief backup (auto) 2026-09-01 100000.chiefbackup", "Chief backup (auto) 2026-09-02 100000.chiefbackup"])
         self.assertTrue((self.dest / "Chief backup 2026-08-01 100000.chiefbackup").exists())
 
+    def test_backups_before_updates_keep_the_newest_two_and_leave_the_others_alone(self):
+        self.dest.mkdir()
+        for day in range(1, 5):
+            (self.dest / f"Chief backup (before update) 2026-09-0{day} 100000.chiefbackup").write_bytes(b"x")
+        (self.dest / "Chief backup (auto) 2026-09-01 100000.chiefbackup").write_bytes(b"x")
+        (self.dest / "Chief backup 2026-08-01 100000.chiefbackup").write_bytes(b"x")
+        removed = archive.prune(self.dest, 2, "pre-update")
+        self.assertEqual(sorted(removed), ["Chief backup (before update) 2026-09-01 100000.chiefbackup",
+                                           "Chief backup (before update) 2026-09-02 100000.chiefbackup"])
+        self.assertTrue((self.dest / "Chief backup (auto) 2026-09-01 100000.chiefbackup").exists())
+        self.assertTrue((self.dest / "Chief backup 2026-08-01 100000.chiefbackup").exists())
+
 
 class Crypto(Case):
     def test_tampering_and_truncation_are_detected(self):
