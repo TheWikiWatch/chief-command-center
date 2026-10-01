@@ -15,7 +15,8 @@ export type UsageTotals = {
   unpriced: number;
 };
 export type UsageBot = UsageTotals & { id: string; name: string };
-export type UsageModel = UsageTotals & { model: string };
+/** One model through one provider: spend follows the model each call used, even after a mid-conversation switch. */
+export type UsageModel = UsageTotals & { model: string; provider?: string; providerName?: string };
 export type UsageDay = { day: string; cost: number; tokens: number; byBot: Record<string, number> };
 export type UsageBudget = { monthly: number | null; spent: number; ratio: number | null; state: "none" | "ok" | "warn" | "over" };
 export type UsageSummary = {

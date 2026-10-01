@@ -49,20 +49,27 @@ On GitHub: Settings → Developer settings → Personal access tokens → **Fine
 
 Send the key privately. To cut someone off, delete their token; nobody else is affected. You can have up to 50 fine-grained tokens. When a key expires, the tester's app says so ("the update key was refused: it may have expired"), and you send a new one.
 
+## Maintainer: sharing with a new tester
+
+1. **The setup zip.** Every release also writes `<releasesDir>\Chief-Command-Center-setup-<version>.zip` (needs `testerCert` in `release.local.json`: the public `.cer`). To make one for an existing build: `npm run tester-kit` (newest) or `npm run tester-kit -- --version X.Y.Z`. It holds `Install Chief.cmd`, `install-chief.ps1`, a README, the certificate and the signed package (about 850 MB), and never a key.
+2. **Check it before sending** (changes nothing): unzip it and run `powershell -ExecutionPolicy Bypass -File install-chief.ps1 -CheckOnly` in the folder.
+3. **Send the zip** by a OneDrive or Google Drive link, and **their key separately** (a different channel is best).
+
+Later versions reach them through the app's update card; the zip is only for the first install (or a reinstall).
+
 ## Tester: once
 
-1. **Trust the publisher certificate** (an admin PowerShell, once per PC). The builds are signed with the publisher's own certificate, and Windows only installs a package it trusts:
+1. **Unzip** the setup folder you were sent and double-click **Install Chief.cmd**. It:
+   - checks that the package is signed by the certificate in the folder (and stops if not);
+   - asks Windows for administrator permission once, to trust that certificate for app packages (the builds are signed with the publisher's own certificate, and Windows only installs packages it trusts);
+   - installs Chief, or updates it in place, and opens it.
 
-   ```
-   Import-Certificate -FilePath .\chief-test-signing.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople
-   ```
-
-2. **Install the first package** the maintainer sent you: double-click it, or `Add-AppxPackage -Path .\ChiefCommandCenter.appx`.
-3. In the app: **Settings → Backup & updates**.
-   - **Update source:** `github:<owner>/chief-command-center-releases`, then Save.
-   - **Update key:** the key you were given, then Save key. Windows keeps it protected for your account; the page never shows it again.
+   If SmartScreen says it protected your PC, click **More info**, then **Run anyway**. Running it again later is safe.
+2. In the app: **Settings → Backup & updates → Update key:** paste the key you were given, then Save key. Windows keeps it protected for your account; the page never shows it again. The update source is already filled in.
 
 From then on, an "Update available — install?" card appears when a new release is out. Install backs up first, waits until Chief isn't working, and relaunches the app.
+
+By hand, without the script: in an administrator PowerShell, `Import-Certificate -FilePath .\chief-test-signing.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople`, then `Add-AppxPackage -Path .\ChiefCommandCenter-<version>.appx`.
 
 ## Later
 

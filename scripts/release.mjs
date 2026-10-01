@@ -87,6 +87,7 @@ if (flag("plan")) {
   console.log(`Branch: ${branch}${dirty ? " (uncommitted changes: commit them before releasing)" : " (clean)"}`);
   console.log(`Dev server: ${(await devServer()) ? "RUNNING (stop it first: it shares the build folder)" : "stopped"}`);
   for (const k of need) console.log(`  ${k}: ${local[k]}${notFound.includes(k) ? "   ← NOT FOUND" : ""}`);
+  console.log(`  testerCert: ${local.testerCert ? local.testerCert + (existsSync(local.testerCert) ? "" : "   ← NOT FOUND") : "(none: no tester setup zip)"}`);
   const gh = run("gh", ["repo", "view", local.releasesRepo, "--json", "visibility"], { capture: true, allowFail: true });
   console.log(`Releases repository: ${gh.status === 0 ? JSON.parse(gh.stdout).visibility.toLowerCase() + ", reachable with your gh login" : "NOT reachable (gh auth login?)"}`);
   process.exit(notFound.length || mismatch || gh.status !== 0 ? 1 : 0);
@@ -127,7 +128,11 @@ const build = spawnSync("npm", ["run", "dist:msix"], {
   cwd: path.join(repo, "apps", "desktop"),
   shell: true,
   encoding: "utf8",
-  env: { ...process.env, SIGNTOOL_PATH: local.signtool, CHIEF_PAYLOAD_DIR: local.payloadDir, CHIEF_RELEASE_DIR: local.releaseDir, CHIEF_SIGN_PFX: local.pfx, CHIEF_SIGN_PASSWORD: password },
+  env: {
+    ...process.env, SIGNTOOL_PATH: local.signtool, CHIEF_PAYLOAD_DIR: local.payloadDir, CHIEF_RELEASE_DIR: local.releaseDir, CHIEF_SIGN_PFX: local.pfx, CHIEF_SIGN_PASSWORD: password,
+    // A new install already knows where updates come from; testers only paste their key.
+    CHIEF_UPDATE_FEED: `github:${local.releasesRepo}`,
+  },
 });
 const buildLog = path.join(local.releasesDir, `build-${version}.log`);
 mkdirSync(local.releasesDir, { recursive: true });
@@ -162,10 +167,19 @@ run("git", ["add", "apps/desktop/package.json", "apps/desktop/package-lock.json"
 run("git", ["commit", "-q", "-m", `Release ${version}\n\n${notes}`]);
 run("git", ["push", "-q", "origin", "main"]);
 
+// The zip for a new tester (scripts/tester-kit.mjs); the release stands even if this step fails.
+function testerKit() {
+  if (!local.testerCert) return console.log("\n(No testerCert in release.local.json: skipped the tester setup zip.)");
+  step("Making the tester setup zip…");
+  run("node", ["scripts/tester-kit.mjs", "--version", version], { allowFail: true });
+}
+
 if (flag("no-publish")) {
+  testerKit();
   console.log(`\n✓ Built ${version} (not published): ${out}`);
   process.exit(0);
 }
 step(`Publishing ${version} to ${local.releasesRepo}…`);
 run("node", ["packaging/release/release-tool.mjs", "publish", "--dir", out, "--repo", local.releasesRepo]);
+testerKit();
 console.log(`\n✓ Released ${version}. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);

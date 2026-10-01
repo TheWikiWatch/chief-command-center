@@ -5,6 +5,8 @@
 //   CHIEF_SIGN_PFX        test signing certificate (.pfx; never in the repo)
 //   CHIEF_SIGN_PASSWORD   its password
 //   CHIEF_PUBLISHER       the certificate's subject, e.g. "CN=Chief Command Center Test"
+//   CHIEF_UPDATE_FEED     optional: the update source the build carries (github:owner/repo), so a new install
+//                         checks the releases repository without being told (scripts/release.mjs sets it)
 //
 // The payload, the dashboard's standalone server, the bundled plugins and the backup engine go under
 // resources/, where the shell finds them (src/paths.ts).
@@ -23,6 +25,8 @@ module.exports = {
   directories: { output: process.env.CHIEF_RELEASE_DIR || path.join(repo, "release"), buildResources: "build" },
   files: ["dist/**/*", "static/**/*", "package.json"],
   asar: true,
+  // Read by src/release-source.ts builtInFeed().
+  ...(process.env.CHIEF_UPDATE_FEED ? { extraMetadata: { chiefUpdateFeed: process.env.CHIEF_UPDATE_FEED } } : {}),
   extraResources: [
     { from: payload, to: "payload", filter: ["**/*", "!uv-cache/**", "!**/__pycache__/**", "!payload.prepare.lock"] },
     // electron-builder silently skips dot-folders and node_modules inside a resource folder, so the

@@ -49,7 +49,7 @@ it("the model picker lists every connected provider's models and re-pins the bot
   expect(screen.getByRole("option", { name: "tiny-local" })).toBeInTheDocument();
   expect(screen.getByRole("group", { name: "Local model" })).toBeInTheDocument();
   fireEvent.change(select, { target: { value: "local-model\u0001tiny-local" } });
-  await screen.findByText("Saved. It applies from the next conversation.");
+  await screen.findByText("Saved. It answers with this model from the next message.");
   expect(calls.find((c) => c.path === "fleet/model")?.body).toEqual({ profile: "research-desk", provider: "local-model", model: "tiny-local", confirm: false });
   expect(changed).toHaveBeenCalled();
 });
@@ -65,7 +65,7 @@ it("an expensive model asks first and only pins on 'Use it anyway'", async () =>
   fireEvent.change(select, { target: { value: "openrouter\u0001anthropic/claude-opus" } });
   await screen.findByText(/costs about \$75/);
   fireEvent.click(screen.getByRole("button", { name: "Use it anyway" }));
-  await screen.findByText("Saved. It applies from the next conversation.");
+  await screen.findByText("Saved. It answers with this model from the next message.");
   expect(calls.filter((c) => c.path === "fleet/model").map((c) => c.body.confirm)).toEqual([false, true]);
 });
 

@@ -7,5 +7,6 @@
   "pfx": "D:\ChiefBuild\signing\package-signing.pfx",
   "pfxPasswordFile": "D:\ChiefBuild\signing\package-signing.password",
   "releaseKey": "D:\ChiefBuild\signing\release-ed25519.pem",
-  "releasesRepo": "<owner>/chief-command-center-releases"
+  "releasesRepo": "<owner>/chief-command-center-releases",
+  "testerCert": "D:\ChiefBuild\signing\chief-test-signing.cer"
 }

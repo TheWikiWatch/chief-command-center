@@ -1,10 +1,14 @@
 """Token use and cost for the chief and every bot (contract `chief.usage.v1`), and the owner's monthly budget.
 
-Read-only on Hermes's own records: each profile's `state.db` has one row per session (input, output, cached
-and reasoning tokens, API calls, estimated cost from Hermes's pricing snapshot, actual cost when the provider
-reports it), and `session_model_usage` adds the background tasks (titles, compression, background review)
-that never touch the session counters. A session whose provider has no price is counted as unpriced, never
-as free.
+Read-only on Hermes's own records in each profile's `state.db`. `session_model_usage` is the per-model ledger:
+one row per session, model, provider and task, added to on every API call with the model that call really used
+(task '' is the conversation itself; titles, compression and background review have their own task). The
+`sessions` row holds lifetime totals under the model the session *started* on, so a model switch mid-conversation
+(which the dashboard's picker does) would put every later token under the old model if it were read alone. Spend
+comes from the ledger; whatever a session's totals hold beyond its ledger rows (sessions from before the ledger,
+or counters Hermes set as absolute totals) stays with the session's own model. A ledger row is dated by its last
+call, a remainder by the session's start. A session whose provider has no price is counted as unpriced, never as
+free.
 
 The budget (`usage_budget.json` in the chief's profile) is advisory: the app turns amber at 80 % and sends one
 notification when a month passes 100 %. Nothing is ever stopped.
@@ -74,59 +78,111 @@ def _cost(estimated: Any, actual: Any) -> float:
     return a if a > 0 else float(estimated or 0)
 
 
-def _read(home: Path, since: float) -> dict[str, Any]:
-    """One profile's sessions and background calls since `since`, grouped."""
+_COUNTERS = ("input", "output", "cache_read", "cache_write", "reasoning", "calls")
+_COUNTER_SQL = ("COALESCE(input_tokens,0) AS input, COALESCE(output_tokens,0) AS output, "
+                "COALESCE(cache_read_tokens,0) AS cache_read, COALESCE(cache_write_tokens,0) AS cache_write, "
+                "COALESCE(reasoning_tokens,0) AS reasoning, COALESCE(api_call_count,0) AS calls, "
+                "estimated_cost_usd AS estimated, actual_cost_usd AS actual, cost_status")
+
+
+def _has(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(r[1]) for r in conn.execute(f"PRAGMA table_info({table})")}
+
+
+def _read(home: Path, since: float) -> list[dict[str, Any]]:
+    """One profile's spend since `since`: one line per ledger row (session, model, provider, task), plus each
+    recent session's remainder beyond its ledger. Every line has `session`, `model`, `provider`, `task`, `when`,
+    the counters and the cost fields."""
     db = home / "state.db"
-    empty = {"sessions": [], "aux": []}
     if not db.is_file():
-        return empty
+        return []
     try:
         conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=5)
         conn.row_factory = sqlite3.Row
     except sqlite3.Error:
-        return empty
+        return []
     try:
-        sessions = conn.execute(
-            "SELECT id, model, started_at, COALESCE(input_tokens,0) AS input, COALESCE(output_tokens,0) AS output, "
-            "COALESCE(cache_read_tokens,0) AS cache_read, COALESCE(cache_write_tokens,0) AS cache_write, "
-            "COALESCE(reasoning_tokens,0) AS reasoning, COALESCE(api_call_count,0) AS calls, "
-            "estimated_cost_usd AS estimated, actual_cost_usd AS actual, cost_status "
-            "FROM sessions WHERE started_at >= ?", (since,)).fetchall()
-        try:
-            aux = conn.execute(
-                "SELECT model, task, first_seen AS started_at, COALESCE(input_tokens,0) AS input, COALESCE(output_tokens,0) AS output, "
-                "COALESCE(cache_read_tokens,0) AS cache_read, COALESCE(cache_write_tokens,0) AS cache_write, "
-                "COALESCE(reasoning_tokens,0) AS reasoning, COALESCE(api_call_count,0) AS calls, "
-                "estimated_cost_usd AS estimated, actual_cost_usd AS actual, cost_status "
-                "FROM session_model_usage WHERE COALESCE(task,'') != '' AND first_seen >= ?", (since,)).fetchall()
-        except sqlite3.Error:
-            aux = []
-        return {"sessions": [dict(r) for r in sessions], "aux": [dict(r) for r in aux]}
+        cols = _has(conn, "sessions")
+        sprov = "COALESCE(billing_provider,'')" if "billing_provider" in cols else "''"
+        sessions = [dict(r) for r in conn.execute(
+            f"SELECT id AS session, COALESCE(model,'') AS model, {sprov} AS provider, started_at AS \"when\", "
+            f"{_COUNTER_SQL} FROM sessions WHERE started_at >= ?", (since,))]
+        ledger: list[dict[str, Any]] = []
+        covered: dict[str, dict[str, float]] = {}
+        lcols = _has(conn, "session_model_usage")
+        if {"session_id", "model", "task", "first_seen"} <= lcols:
+            lprov = "COALESCE(billing_provider,'')" if "billing_provider" in lcols else "''"
+            when = "COALESCE(last_seen, first_seen)" if "last_seen" in lcols else "first_seen"
+            ledger = [dict(r) for r in conn.execute(
+                f"SELECT session_id AS session, model, {lprov} AS provider, COALESCE(task,'') AS task, {when} AS \"when\", "
+                f"{_COUNTER_SQL} FROM session_model_usage WHERE {when} >= ?", (since,))]
+            # What the ledger already holds for each recent session's conversation, over its whole life.
+            ids = [s["session"] for s in sessions]
+            for i in range(0, len(ids), 500):
+                chunk = ids[i:i + 500]
+                for r in conn.execute(
+                        f"SELECT session_id AS session, {_COUNTER_SQL} FROM session_model_usage "
+                        f"WHERE COALESCE(task,'') = '' AND session_id IN ({','.join('?' * len(chunk))})", chunk):
+                    got = covered.setdefault(r["session"], {k: 0.0 for k in (*_COUNTERS, "cost")})
+                    for k in _COUNTERS:
+                        got[k] += float(r[k] or 0)
+                    got["cost"] += _cost(r["estimated"], r["actual"])
     except sqlite3.Error:
         logger.debug("usage read failed for %s", home.name, exc_info=True)
-        return empty
+        return []
     finally:
         conn.close()
+    lines = list(ledger)
+    for s in sessions:
+        got = covered.get(s["session"])
+        if got is None:
+            lines.append({**s, "task": ""})
+            continue
+        rest = {k: max(0, int(s[k] or 0) - int(got[k])) for k in _COUNTERS}
+        if any(rest.values()):
+            cost = max(0.0, _cost(s["estimated"], s["actual"]) - got["cost"])
+            lines.append({**s, **rest, "task": "", "estimated": cost, "actual": None})
+    return lines
 
 
 def _blank() -> dict[str, Any]:
-    return {"cost": 0.0, "input": 0, "output": 0, "cacheRead": 0, "reasoning": 0, "tokens": 0, "calls": 0, "sessions": 0, "unpriced": 0}
+    return {"cost": 0.0, "input": 0, "output": 0, "cacheRead": 0, "reasoning": 0, "tokens": 0, "calls": 0,
+            "sessions": 0, "unpriced": 0, "_ids": set(), "_unpriced": set()}
 
 
-def _add(total: dict[str, Any], row: dict[str, Any], *, session: bool) -> None:
-    tokens = int(row["input"]) + int(row["output"]) + int(row["cache_read"]) + int(row["cache_write"])
-    cost = _cost(row.get("estimated"), row.get("actual"))
+def _add(total: dict[str, Any], line: dict[str, Any], key: tuple[str, str]) -> None:
+    """Add one line; `key` (profile, session) counts each conversation once, and background tasks never."""
+    tokens = int(line["input"]) + int(line["output"]) + int(line["cache_read"]) + int(line["cache_write"])
+    cost = _cost(line.get("estimated"), line.get("actual"))
     total["cost"] += cost
-    total["input"] += int(row["input"])
-    total["output"] += int(row["output"])
-    total["cacheRead"] += int(row["cache_read"])
-    total["reasoning"] += int(row["reasoning"])
+    total["input"] += int(line["input"])
+    total["output"] += int(line["output"])
+    total["cacheRead"] += int(line["cache_read"])
+    total["reasoning"] += int(line["reasoning"])
     total["tokens"] += tokens
-    total["calls"] += int(row["calls"])
-    if session:
-        total["sessions"] += 1
-    if tokens and not cost and str(row.get("cost_status") or "") not in ("included", "free"):
-        total["unpriced"] += 1
+    total["calls"] += int(line["calls"])
+    if not line["task"]:
+        total["_ids"].add(key)
+    if tokens and not cost and str(line.get("cost_status") or "") not in ("included", "free"):
+        total["_unpriced"].add(key)
+
+
+def _done(total: dict[str, Any]) -> dict[str, Any]:
+    ids, unpriced = total.pop("_ids"), total.pop("_unpriced")
+    total["sessions"], total["unpriced"] = len(ids), len(unpriced)
+    return total
+
+
+def _provider_name(slug: str) -> str:
+    """Hermes's display name for a provider ("Z.ai" for zai), or the slug itself."""
+    if not slug:
+        return ""
+    try:
+        from hermes_cli.auth import PROVIDER_REGISTRY
+
+        return str(getattr(PROVIDER_REGISTRY.get(slug), "name", "") or slug)
+    except Exception:
+        return slug
 
 
 def summary(period: str = "month", now: Optional[datetime] = None) -> dict[str, Any]:
@@ -140,30 +196,31 @@ def summary(period: str = "month", now: Optional[datetime] = None) -> dict[str, 
     totals, today, month = _blank(), _blank(), _blank()
     bots, models, days = [], {}, {}
     for profile, home in _profiles():
-        rows = _read(home, earliest)
         mine = _blank()
-        for kind in ("sessions", "aux"):
-            for row in rows[kind]:
-                started = float(row.get("started_at") or 0)
-                is_session = kind == "sessions"
-                if started >= month_since:
-                    _add(month, row, session=is_session)
-                if started >= today_since:
-                    _add(today, row, session=is_session)
-                if started < since:
-                    continue
-                _add(totals, row, session=is_session)
-                _add(mine, row, session=is_session)
-                model = str(row.get("model") or "unknown")
-                bucket = models.setdefault(model, {**_blank(), "model": model})
-                _add(bucket, row, session=is_session)
-                day = date.fromtimestamp(started).isoformat()
-                d = days.setdefault(day, {"day": day, "cost": 0.0, "tokens": 0, "byBot": {}})
-                cost = _cost(row.get("estimated"), row.get("actual"))
-                d["cost"] += cost
-                d["tokens"] += int(row["input"]) + int(row["output"]) + int(row["cache_read"]) + int(row["cache_write"])
-                d["byBot"][profile] = d["byBot"].get(profile, 0.0) + cost
-        bots.append({"id": profile, "name": _title(profile, home), **mine})
+        for line in _read(home, earliest):
+            when = float(line.get("when") or 0)
+            key = (profile, str(line["session"]))
+            if when >= month_since:
+                _add(month, line, key)
+            if when >= today_since:
+                _add(today, line, key)
+            if when < since:
+                continue
+            _add(totals, line, key)
+            _add(mine, line, key)
+            model, provider = str(line.get("model") or "unknown"), str(line.get("provider") or "")
+            bucket = models.setdefault((model, provider), {**_blank(), "model": model, "provider": provider,
+                                                           "providerName": _provider_name(provider)})
+            _add(bucket, line, key)
+            day = date.fromtimestamp(when).isoformat()
+            d = days.setdefault(day, {"day": day, "cost": 0.0, "tokens": 0, "byBot": {}})
+            cost = _cost(line.get("estimated"), line.get("actual"))
+            d["cost"] += cost
+            d["tokens"] += int(line["input"]) + int(line["output"]) + int(line["cache_read"]) + int(line["cache_write"])
+            d["byBot"][profile] = d["byBot"].get(profile, 0.0) + cost
+        bots.append({"id": profile, "name": _title(profile, home), **_done(mine)})
+    for total in (totals, today, month, *models.values()):
+        _done(total)
     # Every day of the period, including empty ones, so a chart has no gaps.
     start_day = date.fromtimestamp(since)
     span = (now.date() - start_day).days + 1

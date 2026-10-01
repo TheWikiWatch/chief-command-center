@@ -17,7 +17,7 @@ import { Supervisor } from "./supervisor";
 import { launchWeb, webHealth } from "./web";
 import { RELEASE_PUBLIC_KEY } from "./release-key";
 import { compareVersions, Updater, type Release } from "./updater";
-import { folderSource, githubSource, parseGithub } from "./release-source";
+import { builtInFeed, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
 
 /** The data layout this version writes. A later version that changes it raises this, and an older app
  * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
@@ -42,6 +42,8 @@ let quitting = false;
 let externalGateway = false;
 let steps: Step[] = [];
 let updater: Updater;
+/** The update source this build carries (a tester's install knows its releases repository from the start). */
+let shippedFeed = "";
 
 const STEPS: Step[] = [
   { id: "runtime", label: "Runtime", state: "waiting" },
@@ -447,7 +449,7 @@ function registerIpc() {
     store.save({ skippedVersions: [...new Set([...store.value.skippedVersions, String(version)])] });
     return updater.check();
   });
-  ipcMain.handle("updates:feed", () => store.value.updateFeed);
+  ipcMain.handle("updates:feed", () => effectiveFeed(store.value.updateFeed, shippedFeed));
   ipcMain.handle("updates:hasKey", () => readUpdateKey(paths.secrets, safeStorage) !== "");
   ipcMain.handle("updates:setKey", (_e, key: string) => {
     saveUpdateKey(paths.secrets, safeStorage, String(key || ""));
@@ -513,6 +515,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
   app.whenReady().then(async () => {
     paths = resolvePaths({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), env: process.env });
     store = new Store(paths.appDir);
+    shippedFeed = builtInFeed(app.getAppPath());
     const layout = payloadLayout(paths.payload);
     gateway = new Supervisor({
       launch: async () =>
@@ -538,7 +541,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     });
     updater = new Updater({
       source: () => {
-        const feed = store.value.updateFeed.trim();
+        const feed = effectiveFeed(store.value.updateFeed, shippedFeed);
         if (!feed) return null;
         const repo = parseGithub(feed);
         return repo ? githubSource(repo.owner, repo.repo, readUpdateKey(paths.secrets, safeStorage)) : folderSource(feed);

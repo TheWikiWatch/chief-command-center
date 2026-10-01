@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type UIEvent } from "react";
 
 import {
   AudioLinesIcon,
@@ -134,8 +134,15 @@ function SettingsWindow({
 }) {
   // Phone starts at the list unless a category was asked for; desktop always shows a page.
   const [current, setCurrent] = useState<SettingsCategory | null>(() => initial ?? (phone ? null : rememberedCategory()));
+  // The page scrolls under a fixed header; a divider appears once it has moved, and a new category starts at the top.
+  // tabIndex -1 lets a click inside the page focus it, so Page Down and the arrow keys scroll it too.
+  const scroller = useRef<HTMLDivElement>(null);
+  const [scrolled, setScrolled] = useState(false);
+  const onScroll = (e: UIEvent<HTMLDivElement>) => setScrolled(e.currentTarget.scrollTop > 2);
   const choose = (id: SettingsCategory | null) => {
     setCurrent(id);
+    scroller.current?.scrollTo({ top: 0 });
+    setScrolled(false);
     if (!id) return;
     try {
       localStorage.setItem(CATEGORY_KEY, id);
@@ -148,8 +155,8 @@ function SettingsWindow({
 
   if (phone) {
     return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex shrink-0 items-center gap-2 px-3 pb-2">
+      <div className="flex h-full min-h-0 flex-col">
+        <header className={`flex shrink-0 items-center gap-2 border-b px-3 pb-2 transition-colors ${scrolled ? "border-line" : "border-transparent"}`}>
           {meta ? (
             <button type="button" onClick={() => choose(null)} className="press flex min-h-11 items-center gap-1 rounded-full pl-1 pr-3 text-callout text-fg-2 hover:text-fg" aria-label="Back to Settings">
               <ChevronLeftIcon size={18} />
@@ -163,7 +170,7 @@ function SettingsWindow({
             <XIcon size={18} />
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+        <div ref={scroller} tabIndex={-1} data-scroll-region onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <AnimatePresence mode="popLayout" initial={false}>
             {meta ? (
               <motion.div key={meta.id} initial={{ x: 40, opacity: 0 }} animate={{ x: 0, opacity: 1, transition: { duration: 0.22, ease: EASE.enter } }} exit={{ x: 40, opacity: 0, transition: { duration: 0.14 } }} className="px-4 pb-10">
@@ -196,7 +203,7 @@ function SettingsWindow({
   }
 
   return (
-    <div className="flex min-h-0 flex-1">
+    <div className="flex h-full min-h-0">
       <nav aria-label="Settings" className="flex w-[240px] shrink-0 flex-col border-r border-line bg-pane/60 p-3">
         <h2 id="settings-title" className="px-2 pb-3 pt-1 text-title text-fg">
           Settings
@@ -233,7 +240,7 @@ function SettingsWindow({
             <XIcon size={18} />
           </button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-12 pt-6">
+        <div ref={scroller} tabIndex={-1} data-scroll-region className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-7 pb-12 pt-6">
           <div key={current} className="mx-auto max-w-[680px]">
             {page}
           </div>

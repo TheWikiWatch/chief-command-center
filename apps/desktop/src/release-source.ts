@@ -1,4 +1,4 @@
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
@@ -42,6 +42,24 @@ export function folderSource(dir: string): ReleaseSource {
     },
     open: async (name, start) => createReadStream(path.join(dir, name), { start }),
   };
+}
+
+/**
+ * The update source a release build carries (`chiefUpdateFeed` in its package.json, set from the maintainer's
+ * release.local.json), so a tester's install already knows where updates come from. "" when there is none.
+ */
+export function builtInFeed(appPath: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(appPath, "package.json"), "utf8")) as { chiefUpdateFeed?: unknown };
+    return typeof pkg.chiefUpdateFeed === "string" ? pkg.chiefUpdateFeed.trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+/** The source the owner saved in Settings wins; otherwise the one built in. */
+export function effectiveFeed(saved: string, builtIn: string): string {
+  return saved.trim() || builtIn.trim();
 }
 
 /** `github:owner/repo` or `https://github.com/owner/repo`, else null (a folder). */

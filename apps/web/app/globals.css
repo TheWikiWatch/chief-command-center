@@ -107,6 +107,10 @@ body {
   outline-offset: 2px;
   border-radius: 6px;
 }
+/* A scroll area that takes focus on click (so the keyboard scrolls it) is never a Tab stop: no ring. */
+[data-scroll-region]:focus-visible {
+  outline: none;
+}
 
 .glass {
   background: var(--glass);

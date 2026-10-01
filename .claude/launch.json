@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard-e2e",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "apps/web", "exec", "--", "next", "dev", "apps/web", "--hostname", "127.0.0.1", "--port", "3102"],
+      "port": 3102
+    }
+  ]
+}

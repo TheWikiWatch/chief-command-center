@@ -83,7 +83,14 @@ export function UsagePage() {
               By model
             </h3>
             <Breakdown
-              rows={data.models.map((m) => ({ key: m.model, label: m.model, cost: m.cost, tokens: m.tokens, extra: m.unpriced ? "no price known" : `${m.calls} calls` }))}
+              rows={data.models.map((m) => ({
+                key: `${m.provider || ""}:${m.model}`,
+                label: m.model,
+                sub: m.providerName || m.provider,
+                cost: m.cost,
+                tokens: m.tokens,
+                extra: m.unpriced ? "no price known" : `${m.calls} calls`,
+              }))}
               total={t.cost}
               empty="No model calls in this period."
               mono
@@ -201,7 +208,7 @@ function Breakdown({
   empty,
   mono,
 }: {
-  rows: { key: string; label: string; cost: number; tokens: number; extra: string }[];
+  rows: { key: string; label: string; sub?: string; cost: number; tokens: number; extra: string }[];
   total: number;
   empty: string;
   mono?: boolean;
@@ -215,7 +222,10 @@ function Breakdown({
         return (
           <li key={r.key} className="px-4 py-2.5">
             <div className="flex items-baseline gap-3">
-              <span className={`min-w-0 flex-1 truncate text-callout text-fg ${mono ? "font-mono text-code" : ""}`}>{r.label}</span>
+              <span className="flex min-w-0 flex-1 items-baseline gap-2">
+                <span className={`min-w-0 truncate text-callout text-fg ${mono ? "font-mono text-code" : ""}`}>{r.label}</span>
+                {r.sub ? <span className="shrink-0 text-caption text-fg-3">{r.sub}</span> : null}
+              </span>
               <span className="text-callout tabular text-fg">{money(r.cost)}</span>
             </div>
             <div className="mt-1.5 flex items-center gap-3">

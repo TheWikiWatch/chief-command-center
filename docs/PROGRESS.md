@@ -493,3 +493,22 @@
 - `npm run release -- --notes "…"` (`scripts/release.mjs`) does the whole release: checks, version bump, dashboard and signed MSIX builds, signature and password-in-log checks, signed manifest, commit and push, publish to the releases repository. `npm run release:plan` checks the setup without changing anything. Machine paths live in the git-ignored `release.local.json`.
 - It refuses a payload whose Hermes (its install stamp) differs from `hermes/pin.json`, since the manifest describes Hermes from the pin while the package carries the payload.
 - `CLAUDE.md` holds the rules, the release steps and the Hermes upgrade path for anyone (or any agent) working in the repo; this PC's specifics go in the git-ignored `CLAUDE.local.md`.
+
+**Settings scrolls, usage follows the model, and a setup zip for testers (2026-10-01).**
+
+- **Found: Chief "thinking" for a long time.** A one-word test sat for over 15 minutes. DeepSeek had an open incident: it accepted requests and sent only keep-alives. Hermes waits 600 s for a first token before retrying, up to 3 times. No app bug; switching Chief's model in the picker took effect on the next message. (Chief has no fallback model configured.)
+- **Fixed: Settings couldn't be scrolled.**
+  - The page's scroll area sat in a flex row whose height was never bounded (`flex-1` inside a block parent), so it never overflowed. Its `overscroll-behavior: contain` stopped the wheel reaching the Sheet's outer scroller.
+  - The window's root is now `h-full`, the pattern the Look drawer uses. Desktop and phone both scroll the page under a fixed title and category list.
+  - A click inside the page now focuses it, so Page Down, End and the arrow keys scroll it too, without a focus ring (`data-scroll-region`). A new category starts at the top, and the phone header gets a divider once the page has moved.
+  - Checked in the browser at 1024×768 and 375×812 against a throwaway gateway.
+- **Fixed: usage stayed under DeepSeek after switching Chief's model.**
+  - The picker switches the live conversation, but Hermes's `sessions` row keeps the model the session started on. The usage page bucketed the whole conversation by it.
+  - Usage now reads Hermes's per-model ledger (`session_model_usage`), which records each call under the model it used. Remainders beyond the ledger stay with the session's model. Rows are dated by their last call instead of the session's start, so a long conversation's recent spend no longer lands on (or before) its first day.
+  - "By model" shows each model with its provider ("glm-5.3-flash · Z.AI / GLM").
+  - The picker now says "Saved. It answers with this model from the next message." instead of "from the next conversation".
+  - New contract `run_usage_contract.py` (in the compatibility suite) drives a mid-conversation switch through the real Hermes session store: 7 checks passed on the shipped payload.
+- **Sharing with testers:**
+  - Every release writes `Chief-Command-Center-setup-<version>.zip` (`npm run tester-kit` makes one for any build). It holds `Install Chief.cmd`, which checks the package's signature against the bundled certificate, trusts that certificate after one administrator prompt, installs or updates the app, and opens it.
+  - Release builds now carry their update source, so a tester only pastes their key. `install-chief.ps1 -CheckOnly` checks a kit without changing anything: a good kit passed, and a mismatched certificate was refused.
+- Tests: Python usage 5 (3 new: a switch, last-call dating, the remainder), desktop 35 (2 new: the built-in update source).

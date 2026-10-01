@@ -39,7 +39,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
         return;
       }
       setCurrent(next);
-      setNote({ tone: "ok", text: "Saved. It applies from the next conversation." });
+      setNote({ tone: "ok", text: "Saved. It answers with this model from the next message." });
       onChanged?.();
     } catch (e) {
       setNote({ tone: "error", text: e instanceof Error ? e.message : "That model couldn't be set." });

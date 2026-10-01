@@ -6,6 +6,7 @@
   "scripts": {
     "release": "node scripts/release.mjs",
     "release:plan": "node scripts/release.mjs --plan",
+    "tester-kit": "node scripts/tester-kit.mjs",
     "check": "npm --prefix apps/web run check && npm --prefix apps/desktop run check && npm run test:python && npm run privacy",
     "test:web": "npm --prefix apps/web test",
     "test:python": "python -B -m unittest discover -s hermes/tests && python -B -m unittest discover -s backup/tests",

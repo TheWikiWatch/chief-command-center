@@ -1,12 +1,31 @@
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { githubSource, parseGithub } from "../src/release-source";
+import { builtInFeed, effectiveFeed, githubSource, parseGithub } from "../src/release-source";
 import { Updater } from "../src/updater";
+
+describe("the update source a build carries", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "chief-feed-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("reads chiefUpdateFeed from the packaged package.json, and is empty without one", () => {
+    expect(builtInFeed(dir)).toBe("");
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ name: "x" }));
+    expect(builtInFeed(dir)).toBe("");
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ chiefUpdateFeed: " github:me/chief-releases " }));
+    expect(builtInFeed(dir)).toBe("github:me/chief-releases");
+  });
+
+  it("lets a source saved in Settings win, and falls back to the built-in one when it is cleared", () => {
+    expect(effectiveFeed("E:\\ChiefReleases", "github:me/chief-releases")).toBe("E:\\ChiefReleases");
+    expect(effectiveFeed("  ", "github:me/chief-releases")).toBe("github:me/chief-releases");
+    expect(effectiveFeed("", "")).toBe("");
+  });
+});
 
 describe("parseGithub", () => {
   it("reads owner/repo from the forms the Settings field accepts, and nothing else", () => {
