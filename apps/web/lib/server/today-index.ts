@@ -12,13 +12,22 @@ import type { Board, ColumnData, FocusCard, Meta, Pulse, TaskCard, TodayItem } f
  *   - [ ] Call the plumber ⏫ 📅 2026-10-02 #waiting
  * `[ ]` open, `[/]` in progress, `[x]` done, `[-]` cancelled; 📅 due, ⏳ scheduled, ✅ done date;
  * priority 🔺 ⏫ 🔼 🔽. A board is one project or area note, or a top-level folder (Inbox, Journal, …).
+ *
+ * Kanban boards (Obsidian's Kanban plugin, the toolkit's agent-first wiki format): a note with `kanban-plugin:` in
+ * its properties is one board. `## ` headings are its columns (emoji stripped: Backlog, This Week, In Progress,
+ * Waiting On, Next Week, Done, or close matches); top-level checkboxes are its cards, `@{YYYY-MM-DD}` (or 📅) the
+ * due date, 🔴 🟡 🟢 the priority, `~~text~~` / `[x]` / `✅ date` done; a `[[…/tasks/…]]` link is the card's task
+ * note; indented lines are notes (blockers when they say "waiting on"). Reading stops at the `%%` settings block.
+ * With `sources: "boards"` (the agent-first wiki format) only boards are read, never checkboxes in other notes.
+ *
  * Read-only: nothing here writes the vault. Files are re-read only when their mtime changes.
  */
 
 export const OPEN_COLUMNS = ["In Progress", "This Week", "Waiting On", "Next Week", "Backlog"] as const;
 const DONE = "Done";
-const SKIP_DIRS = new Set([".obsidian", ".git", ".trash", "_trash", ".stfolder", "node_modules", "Templates", "Attachments", "Bases", "90 Archive"]);
-const SKIP_PATHS = ["40 Knowledge/raw"];
+const SKIP_DIRS = new Set([".obsidian", ".git", ".trash", "_trash", ".stfolder", "node_modules", "Templates", "templates", "Attachments", "Bases", "90 Archive"]);
+// Sources and the drop queue are never task lists, in either format.
+const SKIP_PATHS = ["40 Knowledge/raw", "raw", "drop", "wiki/archive"];
 const PER_NOTE_FOLDERS = new Set(["10 Projects", "20 Areas"]);
 const MAX_FILES = 8000;
 const MAX_BYTES = 1_000_000;
@@ -47,7 +56,12 @@ export type ParsedTask = {
   doneDate: string | null;
   priority: "highest" | "high" | "medium" | "low" | null;
   waiting: boolean;
+  /** A card on a Kanban board (else a checkbox in a note). */
+  card?: { column: string; color: "red" | "yellow" | "green" | null; taskNote: string | null; notes: string[]; blockers: string[] };
 };
+
+/** Where Today reads tasks: checkboxes in notes plus any boards (Organized), or boards only (Agent-first wiki). */
+export type TaskSources = "all" | "boards";
 
 export function parseTasks(file: string, content: string): ParsedTask[] {
   const out: ParsedTask[] = [];
@@ -89,6 +103,117 @@ export function parseTasks(file: string, content: string): ParsedTask[] {
       priority: body.includes("🔺") ? "highest" : body.includes("⏫") ? "high" : body.includes("🔼") ? "medium" : body.includes("🔽") ? "low" : null,
       waiting: WAITING.test(body),
     });
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------- Kanban boards
+
+const CARD = /^(\s*)[-*+] \[([ xX])\]\s+(.+)$/;
+const SUB = /^(?:\t| {2,})\s*[-*+]\s+(.*)$/;
+const INDENTED = /^(?:\t| {2,})/;
+const KANBAN_DUE = new RegExp(`(?:@\\{${DATE}\\}|📅\\s*${DATE})`);
+const KANBAN_DONE = new RegExp(`✅\\s*${DATE}`);
+const WIKILINK = /\[\[([^\]]+)\]\]/g;
+const COLORS: [string, "red" | "yellow" | "green"][] = [["🔴", "red"], ["🔺", "red"], ["⏫", "red"], ["🟡", "yellow"], ["🔼", "yellow"], ["🟢", "green"], ["🔽", "green"]];
+
+/** True for a note made by (or for) Obsidian's Kanban plugin. */
+export function isKanbanBoard(content: string): boolean {
+  const head = content.slice(0, 600).replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  if (!head.startsWith("---\n")) return false;
+  const end = head.indexOf("\n---", 3);
+  return end > 0 && /^kanban-plugin:\s*\S+/m.test(head.slice(4, end));
+}
+
+/** A board column heading → one of Today's columns (unknown headings count as Backlog). */
+export function columnOf(heading: string): string {
+  const key = heading.replace(/^#+\s*/, "").replace(/^[^\p{L}\p{N}]+/u, "").trim().toLowerCase();
+  if (/waiting|blocked|on hold/.test(key)) return "Waiting On";
+  if (/in progress|doing|progress|active/.test(key)) return "In Progress";
+  if (/^done|complete|finished|published|^archive/.test(key)) return DONE;
+  if (/next week/.test(key)) return "Next Week";
+  if (/this week|today|sprint|^now/.test(key)) return "This Week";
+  return "Backlog";
+}
+
+function taskNoteOf(body: string): string | null {
+  for (const m of body.matchAll(WIKILINK)) {
+    const target = m[1].split("|")[0].split("#")[0].trim();
+    if (/(^|\/)tasks\//i.test(target)) return /\.md$/i.test(target) ? target : `${target}.md`;
+  }
+  return null;
+}
+
+function cardText(body: string): string {
+  const cleaned = (keepLinks: boolean) =>
+    body
+      .replace(/~~([^~]+)~~/g, "$1")
+      .replace(KANBAN_DUE, " ")
+      .replace(new RegExp(KANBAN_DONE.source, "g"), " ")
+      .replace(/❌\s*cancel\w*\s*\d{4}-\d{2}-\d{2}/gi, " ")
+      .replace(/[🔴🟡🟢🔺⏫🔼🔽]\uFE0F?/gu, " ")
+      .replace(WIKILINK, (_, inner: string) => (keepLinks ? (inner.split("|")[1] ?? inner.split("|")[0].split("/").pop() ?? "").replace(/\.md$/i, "") : " "))
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s·\-]+|[\s·\-]+$/g, "")
+      .trim();
+  // A card that is only a link keeps the link's title as its text.
+  return cleaned(false) || cleaned(true);
+}
+
+/** The cards of one Kanban board note. */
+export function parseBoard(file: string, content: string): ParsedTask[] {
+  const out: ParsedTask[] = [];
+  const seen = new Map<string, number>();
+  const lines = content.split(/\r?\n/);
+  let column: string | null = null;
+  let current: ParsedTask | null = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.startsWith("%%")) break;
+    if (line.startsWith("## ")) {
+      column = columnOf(line);
+      current = null;
+      continue;
+    }
+    if (!column) continue;
+    const m = CARD.exec(line);
+    if (m && !(INDENTED.test(m[1]) && current)) {
+      const body = m[3].trimEnd();
+      const text = cardText(body);
+      if (!text) continue;
+      const checked = m[2].toLowerCase() === "x";
+      const cancelled = /❌/.test(body) && /cancel/i.test(body);
+      const key = `${file}\n${body.trim()}`;
+      const n = (seen.get(key) ?? 0) + 1;
+      seen.set(key, n);
+      current = {
+        id: createHash("sha1").update(`${key}\n${n}`).digest("hex").slice(0, 12),
+        file,
+        line: i + 1,
+        raw: line,
+        text,
+        status: cancelled ? "cancelled" : checked || column === DONE ? "done" : column === "In Progress" ? "progress" : "open",
+        due: (() => {
+          const d = KANBAN_DUE.exec(body);
+          return d ? (d[1] ?? d[2] ?? null) : null;
+        })(),
+        scheduled: null,
+        doneDate: KANBAN_DONE.exec(body)?.[1] ?? null,
+        priority: null,
+        waiting: column === "Waiting On",
+        card: { column, color: COLORS.find(([emoji]) => body.includes(emoji))?.[1] ?? null, taskNote: taskNoteOf(body), notes: [], blockers: [] },
+      };
+      out.push(current);
+      continue;
+    }
+    const sub = SUB.exec(line) ?? (m ? [line, m[3]] : null);
+    if (current?.card && sub) {
+      const note = String(sub[1]).trim();
+      if (!note) continue;
+      if (/waiting on|⏳/i.test(note)) current.card.blockers.push(note);
+      else current.card.notes.push(note);
+    }
   }
   return out;
 }
@@ -141,21 +266,23 @@ function colorFor(name: string): string {
 const PRIORITY_COLOR: Record<string, TaskCard["priority"]> = { highest: "red", high: "red", medium: "yellow", low: "green" };
 
 function card(task: ParsedTask, column: string, today: string): TaskCard {
+  const open = task.status !== "done" && task.status !== "cancelled";
   return {
     id: task.id,
     text: task.text,
     raw_line: task.raw,
     column,
-    checked: task.status === "done" || task.status === "cancelled",
-    priority: task.priority ? PRIORITY_COLOR[task.priority] : null,
+    checked: !open,
+    priority: task.card ? task.card.color : task.priority ? PRIORITY_COLOR[task.priority] : null,
     due: task.due,
-    overdue_days: task.due ? daysBetween(task.due, today) : null,
-    task_note: task.file,
-    blockers: [],
-    notes: [],
+    overdue_days: task.due && open ? daysBetween(task.due, today) : null,
+    task_note: task.card ? task.card.taskNote : task.file,
+    blockers: task.card ? task.card.blockers : [],
+    notes: task.card ? task.card.notes : [],
     completed_date: task.doneDate,
     cancelled: task.status === "cancelled",
     line_no: task.line,
+    ...(task.card ? { kind: "card" as const, board_file: task.file } : {}),
   };
 }
 
@@ -195,9 +322,10 @@ async function walk(root: string): Promise<{ files: { rel: string; abs: string; 
   return { files, truncated: false };
 }
 
-export async function readVaultTasks(root: string): Promise<ParsedTask[]> {
-  const cache = fileCache.get(root) ?? new Map<string, FileTasks>();
-  fileCache.set(root, cache);
+export async function readVaultTasks(root: string, sources: TaskSources = "all"): Promise<ParsedTask[]> {
+  const cacheKey = `${sources}\n${root}`;
+  const cache = fileCache.get(cacheKey) ?? new Map<string, FileTasks>();
+  fileCache.set(cacheKey, cache);
   const { files } = await walk(root);
   const live = new Set<string>();
   const all: ParsedTask[] = [];
@@ -208,7 +336,8 @@ export async function readVaultTasks(root: string): Promise<ParsedTask[]> {
       let tasks: ParsedTask[] = [];
       if (f.size <= MAX_BYTES) {
         try {
-          tasks = parseTasks(f.rel, await fs.readFile(f.abs, "utf8"));
+          const text = await fs.readFile(f.abs, "utf8");
+          tasks = isKanbanBoard(text) ? parseBoard(f.rel, text) : sources === "boards" ? [] : parseTasks(f.rel, text);
         } catch {
           tasks = [];
         }
@@ -229,9 +358,9 @@ export type TodayIndex = { boards: Board[]; tasks: ParsedTask[]; today: string }
 export function buildBoards(tasks: ParsedTask[], today: string, includeDone: boolean, mtimeOf: (file: string) => number = () => 0): Board[] {
   const boards = new Map<string, Board>();
   for (const task of tasks) {
-    const column = columnFor(task, today);
+    const column = task.card ? (task.status === "done" || task.status === "cancelled" ? DONE : task.card.column) : columnFor(task, today);
     if (column === DONE && !includeDone) continue;
-    const key = boardFor(task.file);
+    const key = task.card ? { name: path.basename(task.file).replace(/\.md$/i, ""), file: task.file } : boardFor(task.file);
     let board = boards.get(key.name);
     if (!board) {
       board = {
@@ -370,6 +499,7 @@ export function kickoff(req: LaunchRequest, boards: Board[], today: string): str
   if (req.intent === "area.brief") return `What's outstanding in ${board.ui_label}? Check ${where} in my Second Brain and give me a short brief.${tail}`;
   const c = Object.values(board.columns).flatMap((col) => col.cards).find((x) => x.id === req.card_id);
   if (!c) throw new Error("That task changed since Today last looked. Refresh and try again.");
+  if (c.kind === "card") return boardKickoff(req, c, board, today, tail);
   const task = `"${c.text}" (\`${c.task_note}\`, line ${c.line_no})`;
   switch (req.intent) {
     case "task.complete":
@@ -385,6 +515,30 @@ export function kickoff(req: LaunchRequest, boards: Board[], today: string): str
     }
     case "task.update":
       return `Update on ${task}:${note ? ` ${note}` : " (no details yet — ask me)."}`;
+    default:
+      return `Let's talk about this task from my Second Brain: ${task}.${tail}`;
+  }
+}
+
+/** The same hand-offs for a card on a Kanban board: the board and the card's task note change together. */
+function boardKickoff(req: LaunchRequest, c: TaskCard, board: Board, today: string, tail: string): string {
+  const note = c.task_note ? ` and its task note \`${c.task_note}\`` : "";
+  const task = `"${c.text}" (board \`${board.board_file}\`, line ${c.line_no}${c.task_note ? `; task note \`${c.task_note}\`` : ""})`;
+  const user = (req.user_message || "").trim();
+  switch (req.intent) {
+    case "task.complete":
+      return `Please mark this task done in my Second Brain: ${task}. Tick it, strike it through, add ✅ ${today}, move it to ✅ Done on the board, and update${note || " the board"} to match.${tail}`;
+    case "task.reschedule": {
+      const due = /^\d{4}-\d{2}-\d{2}$/.test(req.due || "") ? req.due : null;
+      if (!due) throw new Error("Choose a new due date.");
+      return `Please move the due date of ${task} to ${due}: @{${due}} on the board${note ? `, and \`due: ${due}\` in its task note` : ""}.${tail}`;
+    }
+    case "task.block": {
+      const blocker = (req.blocker || "").trim();
+      return `This task is blocked: ${task}.${blocker ? ` Blocker: ${blocker}.` : ""} Move it to ⏳ Waiting On with the blocker as a note under the card${note ? ", and set its task note's status to waiting" : ""}.${tail}`;
+    }
+    case "task.update":
+      return `Update on ${task}:${user ? ` ${user}` : " (no details yet — ask me)."}`;
     default:
       return `Let's talk about this task from my Second Brain: ${task}.${tail}`;
   }

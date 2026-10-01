@@ -10,31 +10,35 @@ import { bridgeJson } from "@/lib/server/bridge-client";
  */
 export type SecondBrainSource = "env" | "chief" | "none";
 
+export type SecondBrainFormat = "para" | "wiki";
+
 const TTL_MS = 15_000;
-let cache: { at: number; path: string } | null = null;
-let inflight: Promise<string> | null = null;
+let cache: { at: number; path: string; format: SecondBrainFormat | null } | null = null;
+let inflight: Promise<{ path: string; format: SecondBrainFormat | null }> | null = null;
 
 export function invalidateSecondBrain() {
   cache = null;
 }
 
-async function fromChief(): Promise<string> {
+async function fromChief(): Promise<{ path: string; format: SecondBrainFormat | null }> {
   try {
-    const status = await bridgeJson<{ ok?: boolean; configured?: boolean; path?: string }>("/setup/second-brain", {}, 3000);
-    return status.ok && status.configured && status.path ? path.resolve(status.path) : "";
+    const status = await bridgeJson<{ ok?: boolean; configured?: boolean; path?: string; format?: string | null }>("/setup/second-brain", {}, 3000);
+    const format = status.format === "wiki" || status.format === "para" ? status.format : null;
+    return status.ok && status.configured && status.path ? { path: path.resolve(status.path), format } : { path: "", format: null };
   } catch {
-    return cache?.path ?? ""; // gateway down: keep the last answer
+    return { path: cache?.path ?? "", format: cache?.format ?? null }; // gateway down: keep the last answer
   }
 }
 
-export async function secondBrain(): Promise<{ path: string; source: SecondBrainSource }> {
+/** The Second Brain's folder and, when Chief set it up, its format (Organized or Agent-first wiki). */
+export async function secondBrain(): Promise<{ path: string; source: SecondBrainSource; format: SecondBrainFormat | null }> {
   const env = vaultPath();
-  if (env) return { path: env, source: "env" };
-  if (cache && Date.now() - cache.at < TTL_MS) return { path: cache.path, source: cache.path ? "chief" : "none" };
+  if (env) return { path: env, source: "env", format: null };
+  if (cache && Date.now() - cache.at < TTL_MS) return { path: cache.path, source: cache.path ? "chief" : "none", format: cache.format };
   inflight ??= fromChief().finally(() => {
     inflight = null;
   });
   const found = await inflight;
-  cache = { at: Date.now(), path: found };
-  return { path: found, source: found ? "chief" : "none" };
+  cache = { at: Date.now(), ...found };
+  return { path: found.path, source: found.path ? "chief" : "none", format: found.format };
 }

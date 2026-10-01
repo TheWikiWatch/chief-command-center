@@ -18,7 +18,7 @@ async function proxy(req: NextRequest, path: string[]) {
     // No task service: Today reads the Second Brain itself.
     const brain = await secondBrain();
     if (!brain.path) return Response.json({ ok: false, error: "Set up your Second Brain to see Today.", setup: true }, { status: 404 });
-    return vaultToday(req, path, brain.path);
+    return vaultToday(req, path, brain.path, brain.format);
   }
   const rel = path.join("/");
   const url = new URL(req.url);

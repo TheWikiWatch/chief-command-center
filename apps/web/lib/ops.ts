@@ -26,6 +26,9 @@ export type TaskCard = {
   completed_date: string | null;
   cancelled: boolean;
   line_no: number;
+  /** A card on a Kanban board (built-in Today); its board is `board_file`, its task note `task_note`. */
+  kind?: "checkbox" | "card";
+  board_file?: string;
 };
 
 export type ColumnData = {

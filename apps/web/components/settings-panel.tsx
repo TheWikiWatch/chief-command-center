@@ -56,7 +56,7 @@ import { openTeam, type SettingsCategory } from "@/lib/settings-nav";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { PersonaEditor } from "@/components/persona/persona-editor";
 import { ModelsKeys } from "@/components/fleet/models-keys";
-import { SecondBrainSetup } from "@/components/second-brain/setup";
+import { FORMAT_INFO, SecondBrainSetup } from "@/components/second-brain/setup";
 import { CheckMySystem } from "@/components/voice/check-my-system";
 import { loadVoiceCheck, type VoiceCheckResult } from "@/lib/mic-device";
 import { secondBrain, setup, type Routine, type SecondBrainStatus, type SetupStatus } from "@/lib/setup-client";
@@ -557,7 +557,7 @@ function SecondBrainGroup({ onAskChief }: { onAskChief?: (text: string) => Promi
               (fromEnv
                 ? "Set by this install's configuration (CHIEF_VAULT_PATH)."
                 : status?.configured
-                  ? `${status.exists ? MODE_LABEL[status.mode || ""] || "Connected" : "The folder is missing"}${config.secondBrain.today === "ops" ? " · Today uses your task service" : ""}`
+                  ? `${status.exists ? (status.format ? `${FORMAT_INFO[status.format].label}${status.rules ? ` · follows ${status.rules}` : ""}` : MODE_LABEL[status.mode || ""] || "Connected") : "The folder is missing"}${config.secondBrain.today === "ops" ? " · Today uses your task service" : ""}`
                   : "Choose a folder to keep notes and tasks with your chief.")
             }
           />
@@ -585,19 +585,23 @@ function RoutineRow({ routine: r, busy, onChange }: { routine: Routine; busy: st
         <Switch label={`${r.title} ${r.enabled ? "on" : "off"}`} checked={r.enabled} disabled={!!busy} onChange={(on) => onChange({ enabled: on })} />
       </div>
       <div className={`mt-2 flex items-center gap-2 ${r.enabled ? "" : "opacity-50"}`}>
-        <label className="sr-only" htmlFor={`routine-${r.id}`}>
-          {r.title} time
-        </label>
-        <input
-          id={`routine-${r.id}`}
-          type="time"
-          value={time}
-          disabled={!!busy}
-          onChange={(e) => setTime(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => e.key === "Enter" && commit()}
-          className="min-h-9 w-[8rem] rounded-ctl border border-line-2 bg-canvas px-2 text-callout text-fg outline-none focus:border-line-3 disabled:opacity-60"
-        />
+        {r.time ? (
+          <>
+            <label className="sr-only" htmlFor={`routine-${r.id}`}>
+              {r.title} time
+            </label>
+            <input
+              id={`routine-${r.id}`}
+              type="time"
+              value={time}
+              disabled={!!busy}
+              onChange={(e) => setTime(e.target.value)}
+              onBlur={commit}
+              onKeyDown={(e) => e.key === "Enter" && commit()}
+              className="min-h-9 w-[8rem] rounded-ctl border border-line-2 bg-canvas px-2 text-callout text-fg outline-none focus:border-line-3 disabled:opacity-60"
+            />
+          </>
+        ) : null}
         <span className="text-caption text-fg-3">{r.days}</span>
       </div>
     </li>

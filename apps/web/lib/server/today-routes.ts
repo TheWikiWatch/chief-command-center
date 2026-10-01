@@ -11,6 +11,7 @@ import {
   rankToday,
   readVaultTasks,
   type LaunchRequest,
+  type TaskSources,
 } from "@/lib/server/today-index";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
@@ -23,8 +24,14 @@ async function exists(root: string): Promise<boolean> {
   }
 }
 
+/** Boards only for the agent-first wiki format (set up by Chief, or recognized by its `wiki/` and `raw/`). */
+async function sourcesFor(root: string, format: "para" | "wiki" | null | undefined): Promise<TaskSources> {
+  if (format) return format === "wiki" ? "boards" : "all";
+  return (await exists(`${root}/wiki`)) && (await exists(`${root}/raw`)) ? "boards" : "all";
+}
+
 /** The Ops API's Today endpoints, answered from the Second Brain (lib/server/today-index.ts). Read-only. */
-export async function vaultToday(req: Request, path: string[], root: string): Promise<Response> {
+export async function vaultToday(req: Request, path: string[], root: string, format?: "para" | "wiki" | null): Promise<Response> {
   const op = path[0];
   if (op === "health") return json({ ok: true, source: "vault" });
   const here = await exists(root);
@@ -35,7 +42,7 @@ export async function vaultToday(req: Request, path: string[], root: string): Pr
   }
   if (op === "focus") return json(EMPTY_FOCUS);
   if (op === "pulse") return json(EMPTY_PULSE);
-  const tasks = here ? await readVaultTasks(root) : [];
+  const tasks = here ? await readVaultTasks(root, await sourcesFor(root, format)) : [];
   const includeDone = new URL(req.url).searchParams.get("include_done") === "true";
   const boards = buildBoards(tasks, today, includeDone && op === "boards");
   switch (op) {

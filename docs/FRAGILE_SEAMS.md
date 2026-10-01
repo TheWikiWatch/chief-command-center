@@ -83,3 +83,13 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Built-in routines are found by name** (`Second Brain: …`, `Fleet: …`), as before.
 - **Usage cost** is a session's actual cost when Hermes has one, else its estimate. A session with tokens and no cost is counted as unpriced, not as free. Auxiliary model calls (`session_model_usage` rows with a task) are added on top, because Hermes doesn't count them in the session row. The budget lives in the chief's profile (`usage_budget.json`). One notification is sent per month, and nothing is ever stopped.
 
+## Second Brain formats
+
+`second_brain.py`, `second_brain/template-wiki/`, the `skill-*` folders beside it, `drop_gate.py`, and `apps/web/lib/server/today-index.ts`. Test map: `hermes/tests/contract/run_second_brain_contract.py` (the wiki section), `apps/web/tests/today-kanban.test.ts`, `apps/web/tests/second-brain-setup.test.tsx`.
+
+- **The rules file decides.** `manual()` treats `_CLAUDE.md` as the folder's own manual unless it is the app's short pointer (`# Rules for agents` … `[[AGENTS]]`), then `AGENTS.md` unless it is the pointer the other way. If those pointer texts change, an app-made vault looks like an owner's own manual, and keep-mode setup adds nothing to it.
+- **Format detection:** `wiki/` plus `raw/`, or a `_CLAUDE.md` mentioning both, means the wiki format. A PARA vault with a `wiki/` and a `raw/` folder of its own would be detected as wiki; setup then offers a one-click switch back.
+- **Folder Map.** The toolkit's skills read the `## Folder Map` table in `_CLAUDE.md` (`references/folder-map.md`); the wiki template's manual has one. Without it, the toolkit falls back to its wiki-style defaults, which match.
+- **The drop gate** is a cron `script` in the profile's `scripts/` (Hermes runs scripts only from there). It runs from the vault (the job's `workdir`) and prints `{"wakeAgent": false}` when there is nothing to file. If Hermes changes the wake-gate contract (`cron/scheduler_prompt.py`), the contract fails at "an empty drop folder never wakes the model".
+- **The morning brief is mirrored into the chat session** (`attach_to_session`). Hermes stores the copy as a user row starting `[Cron delivery:`; `data.transcript` hides those rows, and the notice shows the brief once. If Hermes changes that prefix, the brief appears twice, once as if the owner had sent it. `test_bridge` covers the filter.
+- **Kanban boards** are recognized by `kanban-plugin:` in the properties block only. The column mapping is by keywords (Backlog, This Week, In Progress, Waiting On, Next Week, Done; unknown headings count as Backlog), and reading stops at `%%`.

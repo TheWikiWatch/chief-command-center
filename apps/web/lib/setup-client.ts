@@ -54,6 +54,9 @@ export function sortProviders(rows: ProviderRow[]): { featured: ProviderRow[]; m
 
 /** The Second Brain folder (bridge contract chief.second_brain.v1). */
 export type SecondBrainMode = "new" | "keep" | "reorganize";
+/** `para`: Organized (PARA folders, 📅 tasks in notes, rules in AGENTS.md). `wiki`: Agent-first wiki (raw/ sources,
+ * wiki/ pages, Kanban boards with task notes, a drop/ folder, rules in _CLAUDE.md). */
+export type SecondBrainFormat = "para" | "wiki";
 export type SecondBrainStatus = {
   ok: boolean;
   configured: boolean;
@@ -61,6 +64,9 @@ export type SecondBrainStatus = {
   exists: boolean;
   wiki_path: string;
   mode: SecondBrainMode | null;
+  format?: SecondBrainFormat | null;
+  /** The rules file Chief follows (`AGENTS.md`, `_CLAUDE.md`). */
+  rules?: string | null;
   skill_installed: boolean;
   default_path: string;
   error?: string;
@@ -81,8 +87,27 @@ export type FolderInspection = {
   truncated: boolean;
   choices: SecondBrainMode[];
   plans: Partial<Record<SecondBrainMode, FolderPlan>>;
+  /** The format the plans are for (the one asked for, else the folder's, else PARA). */
+  format?: SecondBrainFormat;
+  /** The format the folder already uses, if any. */
+  format_detected?: SecondBrainFormat | null;
+  /** The folder's own rules file (`_CLAUDE.md`, `AGENTS.md`), or "": with one, nothing is added. */
+  manual?: string;
 };
-export type SecondBrainResult = { ok: boolean; error?: string; path: string; mode: SecondBrainMode; created: string[]; kept: string[]; next_prompt: string };
+export type SecondBrainResult = {
+  ok: boolean;
+  error?: string;
+  path: string;
+  mode: SecondBrainMode;
+  format?: SecondBrainFormat;
+  rules?: string;
+  /** The folder had its own rules file: nothing was added. */
+  own_rules?: boolean;
+  routines_on?: boolean;
+  created: string[];
+  kept: string[];
+  next_prompt: string;
+};
 
 /** The Second Brain's scheduled routines (morning note, nightly tidy, weekly review, health check). */
 export type Routine = {
@@ -91,7 +116,7 @@ export type Routine = {
   about: string;
   exists: boolean;
   enabled: boolean;
-  /** HH:MM, local time. */
+  /** HH:MM, local time; "" for a routine with no time of day (the drop folder, every 30 minutes). */
   time: string;
   days: string;
   next_run: string | null;
@@ -102,8 +127,9 @@ export type RoutinesResult = { ok: boolean; error?: string; routines: Routine[] 
 
 export const secondBrain = {
   status: () => requestJson<SecondBrainStatus>(`${PREFIX}/second-brain`, { cache: "no-store" }, 15_000),
-  inspect: (path: string) => post<FolderInspection>("second-brain/inspect", { path }, 30_000),
-  setUp: (path: string, mode: SecondBrainMode) => post<SecondBrainResult>("second-brain", { path, mode }, 60_000),
+  inspect: (path: string, format?: SecondBrainFormat) => post<FolderInspection>("second-brain/inspect", format ? { path, format } : { path }, 30_000),
+  setUp: (path: string, mode: SecondBrainMode, format?: SecondBrainFormat, routines?: boolean) =>
+    post<SecondBrainResult>("second-brain", { path, mode, ...(format ? { format } : {}), ...(routines === undefined ? {} : { routines }) }, 60_000),
   seedSoul: () => post<{ ok: boolean; seeded?: boolean; error?: string }>("soul/seed", {}, 15_000),
   routines: () => requestJson<RoutinesResult>("/api/bridge/second-brain/routines", { cache: "no-store" }, 15_000),
   setRoutine: (id: string, change: { enabled?: boolean; time?: string }) =>

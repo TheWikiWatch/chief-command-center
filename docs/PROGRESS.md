@@ -374,3 +374,40 @@
 - Built `Chief Command Center 0.1.4.appx` (about 896 MB). The signature verifies, the build log holds no password, and the package holds the new bridge modules (threads, routines, usage) and the new app. It installs over 0.1.3 with data kept.
 - **0.1.5:** the thread switcher moved from beside the name to the right of the chat header, next to the voice button. Its menu opens right-aligned. A long thread title truncates rather than the name or the status line (on the phone, the pill gives way first).
 - **0.1.6:** the thread menu was cut off when the chat pane was narrow. It now sizes and places itself inside the pane's visible area. The pill keeps a minimum width, and a narrow pane's header tightens its spacing and drops the full-screen button (also in Settings), so nothing is pushed out.
+
+**Two Second Brain formats; an existing vault is used as it is; Today reads Kanban boards (plan `PLAN-2026-10-01-second-brain-formats.md`).**
+
+- **Setup asks for the format first,** then whether to start a new folder or use an existing one:
+  - **Organized:** PARA folders, `📅` tasks in notes, rules in `AGENTS.md`;
+  - **Agent-first wiki:** the toolkit's wiki-style layout. `raw/` sources, `wiki/` pages, Kanban `boards/` with task notes, a `drop/` folder, and the operating manual and write-gate in `_CLAUDE.md`.
+  The same flow runs in onboarding and Settings. Settings → Second Brain shows the format and the rules file Chief follows.
+- **A folder with its own rules file is used as it is** (`_CLAUDE.md`, or an `AGENTS.md` the app didn't write). Nothing is added, its format is detected and preselected, and a folder in the other format is pointed out with a one-click switch. Its routines are offered but left off. Chief's first task is to read its rules and say how he'll work with it.
+- **Chief follows the format.** The always-loaded `second-brain` skill and the write gate come in two variants, and both name the vault's actual rules file. The wiki variant brings the full write-gate: sources first, fan-out, board ↔ task note, verify, `write-gate: PASS | PARTIAL`. The default SOUL now says "the folder's rules file". `WIKI_PATH` is set only for Organized.
+- **New built-in routines for the wiki format**, written generically:
+  - **Drop folder,** every 30 minutes. A script gate checks `drop/` first, so an empty folder never calls the model. It files one file per run with local readers only; anything that would need a download or a paid service is quarantined with a reason.
+  - **Morning brief,** weekdays at 08:30, with up to five numbered questions. It is copied into the chat session, so Chief knows the questions when the owner answers. The chat hides that copy and shows the brief once, as a scheduled notice.
+  - **Current Analysis,** as the last step of the nightly routine.
+  Existing routines follow a folder or format change (prompt, skills, folder), and keep their times.
+- **Today reads Kanban boards:**
+  - columns from the headings;
+  - `@{date}` due dates and 🔴🟡🟢 priorities;
+  - the card's task note, plus its notes and blockers;
+  - Done and cancelled cards.
+  For the wiki format it reads boards only; `raw/`, `drop/` and templates are never task sources. Done, move and block from Today ask Chief to update the board and the task note together.
+- **Earlier installs upgrade quietly:** a Second Brain set up before formats existed learns its format and rules file from the folder.
+- **Evidence:**
+  - Second Brain contract on the payload, all passing:
+    - PARA as before;
+    - a new wiki vault (layout, manual, boards, skills, six routines, the drop gate silent when empty and naming a waiting file);
+    - an adopted wiki vault and an owner's own `AGENTS.md` vault, both byte-identical after setup;
+    - switching back to PARA removes the wiki-only routines;
+    - an earlier install upgrading to the right format.
+  - A scratch copy of a real agent-first vault (782 files), set up in the browser:
+    - "This folder has its own rules", nothing added (identical fingerprint before and after);
+    - Chief's skill pointing at its `_CLAUDE.md`;
+    - Today showing 44 open, 22 overdue and 1 waiting, the same as the vault's existing task service, board by board.
+    The copy was deleted afterwards.
+  - Browser: a new Agent-first wiki created from Settings, with Today showing its starter cards and Settings its six routines.
+  - The brief, run on the throwaway gateway, reached the chat session and showed once, as a scheduled notice.
+  - Compatibility suite 12/12 on the payload.
+  - Tests: web 326, desktop 28, Python 89 + 20, privacy clean.
