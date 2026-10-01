@@ -116,7 +116,7 @@ export function ThreadSwitcher({
   );
 
   return (
-    <div ref={root} className="relative min-w-0">
+    <div ref={root} className="relative flex min-w-0">
       <button
         type="button"
         aria-haspopup="menu"
@@ -126,7 +126,7 @@ export function ThreadSwitcher({
           setOpen((v) => !v);
           load();
         }}
-        className="press flex min-h-8 max-w-[11rem] items-center gap-1.5 rounded-full border border-line-2 bg-white/[0.04] py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-[14rem]"
+        className="press flex min-h-8 min-w-0 max-w-[11rem] items-center gap-1.5 rounded-full border border-line-2 bg-white/[0.04] py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-[14rem]"
       >
         <span className="truncate">{title}</span>
         {elsewhere ? <Dot kind={elsewhere} /> : null}
@@ -144,8 +144,8 @@ export function ThreadSwitcher({
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.16, ease: EASE.enter } }}
               exit={{ opacity: 0, y: -4, transition: { duration: 0.1 } }}
-              style={{ transformOrigin: "top left" }}
-              className="absolute left-0 top-full z-50 mt-2 w-[340px] rounded-card border border-line-2 bg-raised p-2 shadow-e4"
+              style={{ transformOrigin: "top right" }}
+              className="absolute right-0 top-full z-50 mt-2 w-[min(340px,calc(100vw-24px))] rounded-card border border-line-2 bg-raised p-2 shadow-e4"
             >
               {menu}
             </motion.div>

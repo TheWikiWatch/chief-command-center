@@ -372,3 +372,4 @@
   - Compatibility suite 12/12 on the payload.
   - Tests: web 316, desktop 28, Python 88 + 20, privacy clean.
 - Built `Chief Command Center 0.1.4.appx` (about 896 MB). The signature verifies, the build log holds no password, and the package holds the new bridge modules (threads, routines, usage) and the new app. It installs over 0.1.3 with data kept.
+- **0.1.5:** the thread switcher moved from beside the name to the right of the chat header, next to the voice button. Its menu opens right-aligned. A long thread title truncates rather than the name or the status line (on the phone, the pill gives way first).

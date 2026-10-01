@@ -62,7 +62,7 @@ export function ChatHeader({
   face?: ReactNode;
   /** A status line that wins over the mood's own (e.g. "Has a question for you"). */
   status?: { text: string; tone: string } | null;
-  /** The thread switcher, beside the name. */
+  /** The thread switcher, between the name and the header's buttons. */
   switcher?: ReactNode;
 }) {
   const thinkingFor = useSince(mood === "thinking");
@@ -110,10 +110,9 @@ export function ChatHeader({
             </div>
           ) : null)}
       </div>
-      <div className="min-w-0 flex-1">
+      <div className="min-w-[3.25rem] flex-1 sm:shrink-0 sm:basis-auto">
         <div className="flex items-center gap-2">
           <h1 className="min-w-[2.75rem] truncate text-headline text-fg">{name}</h1>
-          {switcher}
           {/* DeepSeek's peak/off-peak pricing only matters when the chief runs on DeepSeek. */}
           {chief?.provider === "deepseek" ? <DeepseekChip peakOnly /> : null}
         </div>
@@ -131,6 +130,7 @@ export function ChatHeader({
           </motion.p>
         </AnimatePresence>
       </div>
+      {switcher ? <div className="flex min-w-0 shrink items-center">{switcher}</div> : null}
       <AnimatePresence initial={false}>
         {speakingish || mood === "preparing" ? (
           <motion.div
