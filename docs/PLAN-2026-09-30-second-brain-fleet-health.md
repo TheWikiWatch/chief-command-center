@@ -1,6 +1,6 @@
 # Plan: Second Brain parity, Fleet Health and self-improvement, and a chat that never hides a question
 
-Status: approved 2026-09-30 from the owner's notes on 0.1.1. Decisions below are the owner's answers. §3.0 (the hotfix, shipped as 0.1.2), §3.1 and §3.2 are built and tested.
+Status: approved 2026-09-30 from the owner's notes on 0.1.1. Decisions below are the owner's answers. Every section is built and tested: §3.0 shipped as 0.1.2, the rest as 0.1.3.
 
 **Decisions (owner, 2026-09-30):**
 1. **Second Brain: bundle upstream.** Ship a pinned, unmodified release of the public `obsidian-second-brain` toolkit (MIT, Eugeniu Ghelbur, Hermes build) with attribution. Add a generic write-gate skill written for the app. Adapt the vault template to the toolkit's conventions.

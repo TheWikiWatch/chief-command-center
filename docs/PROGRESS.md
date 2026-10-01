@@ -332,3 +332,4 @@
 - **Evidence:**
   - Compatibility suite 11/11 on the payload.
   - Tests: web 291, desktop 28, Python 83 + 20, privacy clean.
+- Built `Chief Command Center 0.1.3.appx` (about 896 MB). The signature verifies, and the build log holds no password. The package was checked for the toolkit (`resources/vendor`), the ledger, the write gate, the distill skill, the command buttons and the crash filter. It installs over 0.1.1 or 0.1.2 with data kept; the bridge upgrades the Second Brain and arms the jobs at first start.
