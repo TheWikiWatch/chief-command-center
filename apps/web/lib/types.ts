@@ -75,6 +75,8 @@ export type ChatMessage = {
   queueNote?: string;
   /** Client-only: files in a queued bubble that have no preview to show. */
   queueFiles?: string[];
+  /** Client-only: sent while the chief was working, so it was added to that work (steer), not a new turn. */
+  steered?: boolean;
 };
 
 export type Transcript = {

@@ -349,6 +349,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
           {text ? <EmojiText text={text} /> : null}
           <MessageMedia attachments={m.attachments} />
         </div>
+        {m.steered ? <span className="mt-1 pr-1 text-caption text-fg-3">Added while working</span> : null}
         {m.delivery === "queued" ? (
           <QueuedFooter m={m} onCancel={onCancelQueued} />
         ) : last && time ? (

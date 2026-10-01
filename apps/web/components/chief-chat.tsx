@@ -14,11 +14,11 @@ import { VoiceMode } from "@/components/chat/voice-mode";
 import { FollowupCards, followupAsk, useFollowupWatch } from "@/components/chat/followup-cards";
 import { Composer, type PendingFile } from "@/components/chat/composer";
 import { Thread } from "@/components/chat/thread";
-import { CheckIcon, PaperclipIcon } from "@/components/icons";
+import { CheckIcon, PaperclipIcon, XIcon } from "@/components/icons";
 import { type MicStatus } from "@/components/mic-button";
 import { meterStream } from "@/lib/audio-level";
 import { fx } from "@/lib/fx";
-import { fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, speakText, type OutboundAttachment } from "@/lib/bridge";
+import { fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, speakText, stopTurn, type OutboundAttachment } from "@/lib/bridge";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { SHOW_APPROVAL_EVENT } from "@/lib/open-target";
 import { chatTone, isMachineNote } from "@/lib/chat-tone";
@@ -120,6 +120,13 @@ export function ChiefChat({
   const [pendingReply, setPendingReply] = useState(false);
   const busyRef = useRef(false);
   const [generating, setGenerating] = useState(false);
+  const generatingRef = useRef(false);
+  generatingRef.current = generating;
+  // Messages to send once the chief finishes the current turn ("Send after"), oldest first.
+  const [afterQueue, setAfterQueue] = useState<{ id: string; text: string }[]>([]);
+  // What was added to running work this session, so its stored copy keeps the "Added while working" tag.
+  const steeredTexts = useRef(new Set<string>());
+  const [stopping, setStopping] = useState(false);
   const [resolving, setResolving] = useState(false);
   const resolvingRef = useRef(false);
   const [approvalError, setApprovalError] = useState("");
@@ -226,7 +233,12 @@ export function ChiefChat({
     [messages, prefs.compactChat],
   );
   // Messages waiting in the outbox show after the thread, with Cancel.
-  const threadMessages = useMemo(() => (outbox.bubbles.length ? [...visible, ...outbox.bubbles] : visible), [visible, outbox.bubbles]);
+  const threadMessages = useMemo(() => {
+    const tagged = steeredTexts.current.size
+      ? visible.map((m) => (m.role === "user" && !m.steered && steeredTexts.current.has(m.content.trim()) ? { ...m, steered: true } : m))
+      : visible;
+    return outbox.bubbles.length ? [...tagged, ...outbox.bubbles] : tagged;
+  }, [visible, outbox.bubbles]);
   const awaiting = computeThinkingChrome({
     connected,
     pendingReply,
@@ -587,12 +599,16 @@ export function ChiefChat({
       kind: file.mime.startsWith("image/") ? "image" : file.mime.startsWith("video/") ? "video" : file.mime.startsWith("audio/") ? "audio" : "file",
       mime: file.mime,
     }));
+    // Sent while the chief works: it is added to that work (steer mode), not a new turn.
+    const steered = generatingRef.current && !files.length;
+    if (steered) steeredTexts.current.add(trimmed);
     const optimistic: ChatMessage = {
       id: Date.now(),
       role: "user",
       content: trimmed,
       timestamp: new Date().toISOString(),
       attachments: localAttachments.filter(item => item.path || item.name),
+      ...(steered ? { steered: true } : {}),
     };
     setMessages(m => [...m, optimistic]);
     // Retrying the same draft reuses its id, so a send that timed out after Chief got it is not doubled.
@@ -614,7 +630,7 @@ export function ChiefChat({
       if (previews.length) sentPreviews.current.set(optimistic.id, previews);
       // Chief has it; the bubble stays until the transcript brings the stored copy.
       setMessages(m => m.map(item => (item === optimistic ? { ...item, delivery: "sent" } : item)));
-      showNotice(`Sent to ${assistantName()}.`);
+      showNotice(steered ? `Added to what ${assistantName()} is doing.` : `Sent to ${assistantName()}.`);
       fx("send");
     } catch (error) {
       setPendingReply(false);
@@ -647,11 +663,51 @@ export function ChiefChat({
     noticeTimer.current = setTimeout(() => setSendNotice(""), 4000);
   }
 
+  /** Stop the chief's current turn (Hermes's /stop). The partial reply stays in the thread. */
+  async function stopWork() {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      const res = await stopTurn();
+      if (!res.ok) throw new Error(res.error || "Couldn't stop.");
+      setPendingReply(false);
+      showNotice(`Stopped ${assistantName()}.`);
+      fx("send");
+    } catch (error) {
+      setSendError(error instanceof Error ? `${error.message}` : "Couldn't stop.");
+      fx("error");
+    } finally {
+      setStopping(false);
+    }
+  }
+
+  /** "Send after": the draft waits as a chip and goes, in order, once the chief finishes. */
+  function sendAfter() {
+    const draft = text.trim();
+    if (!draft) return;
+    setAfterQueue((q) => [...q, { id: newSendId(), text: draft }]);
+    setText("");
+    showNotice(`Will send when ${assistantName()} finishes.`);
+  }
+
   /** Files now owned by the outbox leave the composer (their composer previews are released). */
   function releasePending(files: PendingFile[]) {
     setPendingFiles(current => current.filter(item => !files.some(file => file.id === item.id)));
     for (const file of files) if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
   }
+  // Send-after chips go one at a time, each when the chief is idle again (the send itself makes him busy).
+  useEffect(() => {
+    if (!afterQueue.length || generating || busy || !connected || authFailed) return;
+    const timer = setTimeout(() => {
+      if (generatingRef.current || busyRef.current) return;
+      const [next, ...rest] = afterQueue;
+      setAfterQueue(rest);
+      void sendBody(next.text, []).catch(() => setAfterQueue((q) => [next, ...q]));
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [afterQueue, generating, busy, connected, authFailed]);
+
   const sendRef = useRef<ChatSend>(sendBody);
   sendRef.current = sendBody;
   useEffect(() => {
@@ -851,6 +907,36 @@ export function ChiefChat({
           onExpand={() => setApprovalMin(false)}
           onChoose={chooseApproval}
         />
+        {afterQueue.length ? (
+          <ul className="flex flex-col gap-1.5 px-4 pb-2" aria-label={`Waiting to send when ${assistantName()} finishes`}>
+            {afterQueue.map((item) => (
+              <li key={item.id} className="flex items-center gap-2 rounded-card border border-line-2 bg-card px-3 py-2">
+                <span className="shrink-0 text-caption text-fg-3">After {assistantName()} finishes:</span>
+                <span className="min-w-0 flex-1 truncate text-callout text-fg">{item.text}</span>
+                {generating ? (
+                  <button
+                    type="button"
+                    className="press min-h-9 shrink-0 rounded-full px-2.5 text-caption font-medium text-fg-2 hover:text-fg"
+                    onClick={() => {
+                      setAfterQueue((q) => q.filter((x) => x.id !== item.id));
+                      void sendBody(item.text, []).catch(() => setAfterQueue((q) => [item, ...q]));
+                    }}
+                  >
+                    Add now
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  aria-label={`Remove: ${item.text}`}
+                  className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:text-fg"
+                  onClick={() => setAfterQueue((q) => q.filter((x) => x.id !== item.id))}
+                >
+                  <XIcon size={15} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
         <Composer
           text={text}
           onText={setText}
@@ -866,6 +952,9 @@ export function ChiefChat({
           onMicError={setVoiceHint}
           onMicStream={onMicStream}
           phone={!!compact}
+          working={generating && connected && !authFailed}
+          onStop={stopping ? undefined : () => void stopWork()}
+          onSendAfter={sendAfter}
         />
       </form>
       <VoiceMode

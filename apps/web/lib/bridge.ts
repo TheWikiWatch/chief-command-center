@@ -132,6 +132,10 @@ export async function patchSettings(body: {
   if (!data.ok) throw new Error(data.error || "Could not save settings");
   return data;
 }
+/** Stop what the chief is doing now (Hermes's own /stop for this chat). */
+export const stopTurn = () => write<{ ok: boolean; error?: string; generating?: boolean }>("stop", {}, 15_000);
+/** Queue a message for after the current turn (Hermes's /queue). */
+export const queueTurn = (text: string) => write<{ ok: boolean; error?: string }>("queue", { text }, 15_000);
 export const transcribeAudio = (dataUrl: string, mimeType: string) =>
   write<{ ok: boolean; transcript?: string; error?: string; code?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);
 export async function speakText(text: string, timeoutMs = 185_000) {

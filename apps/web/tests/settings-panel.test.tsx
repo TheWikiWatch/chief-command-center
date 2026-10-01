@@ -11,6 +11,7 @@ vi.mock("@/lib/bridge", () => ({
       providers: [
         { id: "edge", name: "Edge", status: "ready" },
         { id: "openai", name: "OpenAI", status: "ready" },
+        { id: "elevenlabs", name: "ElevenLabs", status: "needs_keys", env_key: "ELEVENLABS_API_KEY" },
       ],
     },
   })),
@@ -69,4 +70,14 @@ it("still picks Chief's voice engine through Hermes", async () => {
   expect(edge).toHaveAttribute("aria-checked", "true");
   fireEvent.click(screen.getByRole("radio", { name: /OpenAI/ }));
   await waitFor(() => expect(patchSettings).toHaveBeenCalledWith({ tts: { provider: "openai" } }));
+});
+
+it("a provider's key box opens only when that provider is picked", async () => {
+  render(<SettingsPanel open phone onClose={() => {}} />);
+  const eleven = await screen.findByRole("radio", { name: /ElevenLabs/ });
+  expect(screen.queryByPlaceholderText("API key")).toBeNull();
+  fireEvent.click(eleven);
+  expect(screen.getByPlaceholderText("API key")).toBeInTheDocument();
+  fireEvent.click(eleven);
+  expect(screen.queryByPlaceholderText("API key")).toBeNull();
 });

@@ -88,6 +88,19 @@ def _live_command_center_adapter() -> Any:
     return found[0] if found else None
 
 
+def _busy_input_mode() -> str:
+    """The chief's `display.busy_input_mode` (Hermes's default is "interrupt")."""
+    try:
+        from hermes_cli.config import load_config
+
+        with data.chief_config_scope():
+            display = (load_config() or {}).get("display") or {}
+        mode = str(display.get("busy_input_mode") or os.environ.get("HERMES_GATEWAY_BUSY_INPUT_MODE") or "interrupt").lower()
+        return mode if mode in ("queue", "steer") else "interrupt"
+    except Exception:
+        return "interrupt"
+
+
 def _queue_inbound(adapter: Any, text: str, media: list | None = None, message_type: str = "text") -> bool:
     """Return once the turn is queued. Do not wait for the model."""
     media = media or []
@@ -437,6 +450,51 @@ class BridgeServer:
             self._release_send(client_id)
         return result
 
+    def _attached_adapter(self, wait_s: float = 15.0):
+        """The Command Center adapter. Right after the gateway starts, /health answers a few seconds before the
+        adapter attaches; a message sent in that window waits for it instead of failing."""
+        end = time.monotonic() + wait_s
+        while self.command_center_adapter is None and time.monotonic() < end and not self._watch_stop.is_set():
+            time.sleep(0.25)
+        return self.command_center_adapter
+
+    def control(self, action: str, text: str = "") -> dict[str, Any]:
+        """Stop the chief's current turn, add context to it (steer), or queue a message for after it.
+
+        These are Hermes's own chat commands (`/stop`, `/steer <text>`, `/queue <text>`), sent into the chief's
+        Command Center chat, so Hermes applies its own rules: a steer lands at the next safe point and falls
+        back to the queue when the turn has already ended; nothing is lost.
+        """
+        action = str(action or "").strip().lower()
+        text = " ".join(str(text or "").split())
+        if action not in ("stop", "steer", "queue"):
+            return {"ok": False, "error": "Unknown control."}
+        if action != "stop" and not text:
+            return {"ok": False, "error": "Message is empty."}
+        if len(text) > 8000:
+            return {"ok": False, "error": "That message is too long to add mid-turn; send it as a message instead."}
+        cc = self._attached_adapter()
+        sk = self.binding().get("sessionKey") or ""
+        if cc is None or not sk:
+            return {"ok": False, "error": "Command Center is not attached. Relaunch Chief Command Center."}
+        if action == "steer":
+            # Hermes steers plain text when the chief's busy_input_mode is "steer"; in "interrupt" mode the same
+            # text would STOP the turn, so refuse rather than surprise.
+            if _busy_input_mode() != "steer":
+                return {"ok": False, "code": "mode", "error": "Adding to running work needs the chief's busy mode set to steer."}
+            command = text
+        else:
+            command = "/stop" if action == "stop" else f"/queue {text}"
+        try:
+            accepted = _queue_inbound(cc, command)
+        except Exception as exc:
+            logger.warning("command_center control failed: %s", type(exc).__name__)
+            return {"ok": False, "error": "Command Center send failed."}
+        if not accepted:
+            return {"ok": False, "error": f"{identity.assistant_name()} did not accept that. Command Center is not ready."}
+        self.broadcast({"type": f"control_{action}", "at": time.time()})
+        return {"ok": True, "action": action, "generating": self.generating(sk)}
+
     def _send_once(self, text: str, attachments: list | None = None) -> dict[str, Any]:
         if not (text or "").strip() and not attachments:
             return {"ok": False, "error": "Message is empty."}
@@ -445,7 +503,7 @@ class BridgeServer:
         platform = bind.get("platform") or ("command_center" if ":command_center:" in sk else "discord")
         # Command Center is the front door. Never inject into a dead Discord session.
         use_cc = platform == "command_center" or data._command_center_enabled()
-        cc = self.command_center_adapter
+        cc = self._attached_adapter() if use_cc else self.command_center_adapter
         # Check the target before writing uploads, so a failed send leaves no files behind.
         if use_cc and (cc is None or not sk):
             return {
@@ -800,6 +858,9 @@ def _make_handler(bridge: BridgeServer):
             if path == "/outbox/notify":
                 bridge.broadcast({"type": "cc_outbox", "at": time.time(), "id": body.get("id")})
                 self._json({"ok": True})
+                return
+            if path in ("/stop", "/steer", "/queue"):
+                self._act(path, started, bridge.control(path[1:], str(body.get("text") or "")))
                 return
             if path == "/approve":
                 request_id = str(body.get("request_id") or body.get("requestId") or "")

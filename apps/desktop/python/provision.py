@@ -9,6 +9,9 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
   plugins are user plugins that the app keeps current.
 - Enables them in config.yaml, with gateway injection allowed (the bridge's chat platform needs it).
 - Sets the bridge port and turns on the Command Center platform in the profile .env.
+- Gives the chief the `kanban` toolset (delegating to workers) and, unless the owner chose otherwise,
+  `display.busy_input_mode: steer`, so a message sent while the chief works is added to that work instead of
+  stopping it.
 
 Prints one JSON object: {"ok": true, "changed": [...]}.
 """
@@ -88,6 +91,23 @@ def main() -> int:
             changed.append(f"{name} gateway injection")
         if "allow_tool_override" not in entry:
             save_config_value(f"plugins.entries.{name}.allow_tool_override", False)
+
+    toolsets = list(config.get("toolsets") or ["hermes-cli"])
+    if "kanban" not in toolsets:
+        toolsets.append("kanban")
+        save_config_value("toolsets", toolsets)
+        changed.append("kanban toolset")
+    # load_config() merges Hermes's defaults in, so read the file itself to see what the owner actually set.
+    try:
+        import yaml
+
+        raw = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
+    except (OSError, ValueError):
+        raw = {}
+    display = raw.get("display") if isinstance(raw.get("display"), dict) else {}
+    if not display.get("busy_input_mode"):
+        save_config_value("display.busy_input_mode", "steer")
+        changed.append("busy input: steer")
 
     env = load_env()
     for key, value in (("COMMAND_CENTER_ENABLED", "true"), ("COMMAND_CENTER_ALLOW_ALL_USERS", "true"), ("CHIEF_DASHBOARD_PORT", str(args.bridge_port))):

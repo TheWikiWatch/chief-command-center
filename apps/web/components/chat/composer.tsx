@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { RecordingBar } from "@/components/chat/recording-bar";
 import { EmojiPicker } from "@/components/emoji-picker";
-import { ArrowUpIcon, FileIcon, FilmIcon, ImageIcon, PaperclipIcon, PlusIcon, SmileIcon, XIcon } from "@/components/icons";
+import { ArrowUpIcon, ClockIcon, FileIcon, FilmIcon, ImageIcon, PaperclipIcon, PlusIcon, SmileIcon, SquareIcon, XIcon } from "@/components/icons";
 import { MicButton, type MicStatus } from "@/components/mic-button";
 import { useAssistantName } from "@/lib/identity";
 import { SPRING } from "@/lib/motion";
@@ -31,7 +31,14 @@ export function Composer({
   onMicError,
   onMicStream,
   phone = false,
+  working = false,
+  onStop,
+  onSendAfter,
 }: {
+  /** The chief is mid-turn: Enter adds to that work (steer), Stop / Esc ends it, Alt+Enter sends after it. */
+  working?: boolean;
+  onStop?: () => void;
+  onSendAfter?: () => void;
   /** Phone keyboards: Enter adds a line and the arrow sends (desktop: Enter sends, Shift+Enter adds a line). */
   phone?: boolean;
   text: string;
@@ -203,6 +210,16 @@ export function Composer({
             onKeyDown={(e) => {
               // Enter while an input method is composing (accents, predictive text) only confirms it.
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Escape" && working && onStop) {
+                e.preventDefault();
+                onStop();
+                return;
+              }
+              if (e.key === "Enter" && e.altKey && working && onSendAfter && text.trim() && !pendingFiles.length) {
+                e.preventDefault();
+                onSendAfter();
+                return;
+              }
               if (e.key !== "Enter" || e.shiftKey) return;
               if (phone && !(e.ctrlKey || e.metaKey)) return;
               e.preventDefault();
@@ -216,12 +233,47 @@ export function Composer({
               onAddFiles(files);
             }}
             enterKeyHint={phone ? "enter" : "send"}
-            placeholder={connected ? `Message ${assistant}` : offline ? `${assistant} is offline · it will wait` : "Gateway down"}
+            placeholder={
+              connected ? (working ? `Add to what ${assistant} is doing…` : `Message ${assistant}`) : offline ? `${assistant} is offline · it will wait` : "Gateway down"
+            }
             disabled={!writable || busy}
             rows={1}
-            className="max-h-[168px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-3 leading-6 text-fg outline-none placeholder:text-fg-3 disabled:opacity-60"
+            className="max-h-[168px] min-w-0 flex-1 resize-none bg-transparent px-1.5 py-3 leading-6 text-fg outline-none focus-visible:outline-none placeholder:text-fg-3 disabled:opacity-60"
           />
         </div>
+
+        <AnimatePresence initial={false}>
+          {working && connected && onSendAfter && hasContent && !pendingFiles.length ? (
+            <motion.button
+              key="after"
+              type="button"
+              aria-label={`Send after ${assistant} finishes`}
+              title={`Send after ${assistant} finishes (Alt+Enter)`}
+              onClick={onSendAfter}
+              className="press flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-full border border-line-2 text-fg-2 hover:text-fg"
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1, transition: SPRING.snappy }}
+              exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.12 } }}
+            >
+              <ClockIcon size={18} />
+            </motion.button>
+          ) : null}
+          {working && connected && onStop ? (
+            <motion.button
+              key="stop"
+              type="button"
+              aria-label={`Stop ${assistant}`}
+              title={`Stop ${assistant} (Esc)`}
+              onClick={onStop}
+              className="press flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-full border border-line-2 bg-raised text-fg hover:border-line-3"
+              initial={{ opacity: 0, scale: 0.6 }}
+              animate={{ opacity: 1, scale: 1, transition: SPRING.snappy }}
+              exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.12 } }}
+            >
+              <SquareIcon size={14} fill="currentColor" />
+            </motion.button>
+          ) : null}
+        </AnimatePresence>
 
         <div className="relative flex h-12 w-12 shrink-0 items-center justify-center">
           <AnimatePresence initial={false} mode="popLayout">
@@ -229,7 +281,8 @@ export function Composer({
               <motion.button
                 key="send"
                 type="submit"
-                aria-label={connected ? "Send" : `Queue for ${assistant}`}
+                aria-label={connected ? (working ? `Add to ${assistant}'s current work` : "Send") : `Queue for ${assistant}`}
+                title={connected && working ? `Add to ${assistant}'s current work (Enter)` : undefined}
                 disabled={!writable || busy}
                 className="press flex h-11 w-11 items-center justify-center rounded-full bg-accent-solid text-white shadow-[0_4px_18px_rgb(var(--c-accent)/0.35)] disabled:opacity-40"
                 initial={{ opacity: 0, scale: 0.6, rotate: -90 }}

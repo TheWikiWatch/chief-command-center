@@ -429,7 +429,6 @@ function VoiceGroup() {
               providers={tts?.providers || []}
               current={tts?.provider || "edge"}
               saving={saving}
-              preferOpen="elevenlabs"
               onSelect={(id) => void apply({ tts: { provider: id } }).catch(() => undefined)}
               onSaveKey={(envKey, apiKey) => apply({ secrets: { [envKey]: apiKey } })}
             />
@@ -771,7 +770,6 @@ function ProviderList({
   providers,
   current,
   saving,
-  preferOpen,
   onSelect,
   onSaveKey,
 }: {
@@ -779,16 +777,11 @@ function ProviderList({
   providers: SettingsProvider[];
   current: string;
   saving: boolean;
-  preferOpen?: string;
   onSelect: (id: string) => void;
   onSaveKey: (envKey: string, apiKey: string) => Promise<void>;
 }) {
-  const prefer = providers.find((p) => p.id === preferOpen && p.status === "needs_keys");
-  const [openId, setOpenId] = useState<string | null>(prefer?.id || null);
-
-  useEffect(() => {
-    if (prefer?.id) setOpenId(prefer.id);
-  }, [prefer?.id]);
+  // A key box opens only when the owner picks a provider that needs one.
+  const [openId, setOpenId] = useState<string | null>(null);
 
   return (
     <div>
