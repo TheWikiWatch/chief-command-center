@@ -77,12 +77,15 @@ const config = (phase: string): NextConfig => ({
   // The desktop app runs the production server from `.next/standalone` (server.js plus only the
   // node_modules it needs); packaging copies `.next/static` and `public` next to it.
   output: "standalone",
+  // This folder is the app's root, even though the repository root has a package-lock.json too (its Python
+  // tooling): otherwise Next traces from the repository root and nests the server under standalone/apps/web.
+  outputFileTracingRoot: process.cwd(),
   // Hide the floating Next.js N badge in next dev (errors still surface).
   // https://nextjs.org/docs/app/api-reference/config/next-config-js/devIndicators
   devIndicators: false,
   allowedDevOrigins: phase === PHASE_DEVELOPMENT_SERVER ? ["127.0.0.1", "localhost", ...serveHosts()] : [],
   // KaTeX stays out of the bundle (lib/no-katex.ts): math in replies shows as code instead of typeset.
-  turbopack: { resolveAlias: { "rehype-katex": "./lib/no-katex.ts" } },
+  turbopack: { root: process.cwd(), resolveAlias: { "rehype-katex": "./lib/no-katex.ts" } },
   experimental: {
     // Above the bridge's 80 MB /send cap. Next truncates (not rejects) bodies past this.
     // Composer limits live in lib/upload-limits.ts.
