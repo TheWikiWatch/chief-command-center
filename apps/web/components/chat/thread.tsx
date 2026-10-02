@@ -91,15 +91,17 @@ export function withNotices(messages: ChatMessage[], notices: ChatNotice[] | und
 /** Groups, day separators and collapsed tool runs. */
 export function buildRows(messages: ChatMessage[]): Row[] {
   const rows: Row[] = [];
-  let lastDay = "";
+  // Each day's separator once: rows are in transcript order, and a row's time can step back to an earlier day
+  // (a notice, or a message the gateway dated late), which would repeat a separator (and its key).
+  const shownDays = new Set<string>();
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     const ms = m.id >= OPTIMISTIC ? Date.now() : messageTimeMs(m.timestamp);
     if (Number.isFinite(ms)) {
       const day = new Date(ms).toDateString();
-      if (day !== lastDay) {
+      if (!shownDays.has(day)) {
         rows.push({ kind: "day", key: `day-${day}`, label: dayLabel(ms) });
-        lastDay = day;
+        shownDays.add(day);
       }
     }
     // The question itself shows as a card, and later as the question and its answer: no tool chip for it.
