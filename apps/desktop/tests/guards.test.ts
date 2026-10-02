@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { bootUrl, dialogOptions, fileFilters, isBootPage, navigateDecision, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision } from "../src/guards";
+import { BOOT_URL, dialogOptions, fileFilters, isBootPage, navigateDecision, permissionAllowed, permissionCheckAllowed, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision } from "../src/guards";
 
 const ORIGIN = "http://127.0.0.1:3000";
 // User-info look-alike (`origin` + "@" + another host), assembled so the privacy scan doesn't read it as an address.
 const USERINFO = `${ORIGIN}${"@"}evil.example/`;
-const BOOT = bootUrl("C:\\Program Files\\WindowsApps\\Chief\\resources\\static");
+const BOOT = BOOT_URL;
 
 describe("origins are compared exactly, never by prefix", () => {
   it("accepts the dashboard's own pages", () => {
@@ -39,9 +39,12 @@ describe("origins are compared exactly, never by prefix", () => {
     expect(navigateDecision("chrome://settings", ORIGIN, BOOT)).toBe("deny");
   });
 
-  it("recognises the boot page whatever the drive letter case", () => {
-    expect(isBootPage(BOOT.replace("file:///C:", "file:///c:"), BOOT)).toBe(true);
-    expect(isBootPage(BOOT.replace("boot.html", "other.html"), BOOT)).toBe(false);
+  it("recognises only the boot page under its scheme, never a file", () => {
+    expect(isBootPage(BOOT)).toBe(true);
+    expect(isBootPage(`${BOOT}#steps`)).toBe(true);
+    expect(isBootPage(BOOT.replace("boot.html", "other.html"))).toBe(false);
+    expect(isBootPage("chief-boot://elsewhere/boot.html")).toBe(false);
+    expect(isBootPage("file:///C:/app/static/boot.html")).toBe(false);
   });
 });
 
@@ -85,5 +88,32 @@ describe("IPC arguments", () => {
     expect(dialogOptions(null)).toEqual({ title: undefined, defaultPath: undefined });
     expect(fileFilters([{ name: "Backups", extensions: ["chiefbackup", "../x", 5] }])).toEqual([{ name: "Backups", extensions: ["chiefbackup", "5"] }]);
     expect(fileFilters("nope")).toBeUndefined();
+  });
+});
+
+describe("permissions", () => {
+  it("lets the dashboard use the microphone (audio only), notifications, the clipboard and full screen", () => {
+    expect(permissionAllowed("media", "http://127.0.0.1:3000/", ORIGIN, ["audio"])).toBe(true);
+    expect(permissionAllowed("notifications", "http://127.0.0.1:3000/", ORIGIN)).toBe(true);
+    expect(permissionAllowed("clipboard-sanitized-write", "http://127.0.0.1:3000/", ORIGIN)).toBe(true);
+    expect(permissionAllowed("fullscreen", "http://127.0.0.1:3000/", ORIGIN)).toBe(true);
+  });
+
+  it("refuses the camera, screen capture, devices and location, and every request from elsewhere", () => {
+    expect(permissionAllowed("media", "http://127.0.0.1:3000/", ORIGIN, ["audio", "video"])).toBe(false);
+    expect(permissionAllowed("media", "http://127.0.0.1:3000/", ORIGIN, [])).toBe(false);
+    for (const p of ["geolocation", "hid", "usb", "serial", "midi", "display-capture", "openExternal", "pointerLock"]) {
+      expect(permissionAllowed(p, "http://127.0.0.1:3000/", ORIGIN), p).toBe(false);
+    }
+    expect(permissionAllowed("notifications", USERINFO, ORIGIN)).toBe(false);
+    expect(permissionAllowed("media", "https://evil.example/", ORIGIN, ["audio"])).toBe(false);
+  });
+
+  it("answers permission checks the same way", () => {
+    expect(permissionCheckAllowed("media", "http://127.0.0.1:3000", ORIGIN, "audio")).toBe(true);
+    expect(permissionCheckAllowed("media", "http://127.0.0.1:3000/", ORIGIN)).toBe(true);
+    expect(permissionCheckAllowed("media", "http://127.0.0.1:3000", ORIGIN, "video")).toBe(false);
+    expect(permissionCheckAllowed("geolocation", "http://127.0.0.1:3000", ORIGIN)).toBe(false);
+    expect(permissionCheckAllowed("notifications", "http://127.0.0.1:30001", ORIGIN)).toBe(false);
   });
 });

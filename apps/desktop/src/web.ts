@@ -58,7 +58,9 @@ export function launchWeb(utility: Utility, cfg: WebConfig, onExit: (code: numbe
 
 export async function webHealth(port: number, timeoutMs = 2500): Promise<{ ok: boolean; detail?: string }> {
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/api/app/config`, { signal: AbortSignal.timeout(timeoutMs) });
+    // A static route: it answers without the gateway (a hung gateway mustn't make the dashboard look down)
+    // and without the session cookie.
+    const res = await fetch(`http://127.0.0.1:${port}/api/healthz`, { signal: AbortSignal.timeout(timeoutMs) });
     return res.ok ? { ok: true } : { ok: false, detail: `The dashboard server answered ${res.status}.` };
   } catch {
     return { ok: false, detail: "No answer yet." };

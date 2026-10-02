@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 /**
@@ -19,8 +19,15 @@ export function bridgeToken(dir: string, sealer: Sealer, adopt?: string): string
     return adopt;
   }
   if (existsSync(file)) {
-    const token = sealer.decryptString(readFileSync(file));
-    if (token.length >= 32) return token;
+    try {
+      const token = sealer.decryptString(readFileSync(file));
+      if (token.length >= 32) return token;
+    } catch {
+      // Sealed under a key this app can no longer reach (its Chromium key store was lost or replaced). The
+      // gateway and the dashboard both receive the token afresh at every start, so a new one is safe; the
+      // unreadable file is kept beside it for diagnosis.
+      renameSync(file, path.join(dir, `bridge-token.unreadable-${Date.now()}.bin`));
+    }
   }
   const token = randomBytes(32).toString("base64url");
   mkdirSync(dir, { recursive: true });

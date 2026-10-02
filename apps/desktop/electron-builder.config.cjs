@@ -25,10 +25,25 @@ module.exports = {
   directories: { output: process.env.CHIEF_RELEASE_DIR || path.join(repo, "release"), buildResources: "build" },
   files: ["dist/**/*", "static/**/*", "package.json"],
   asar: true,
+  // Electron fuses, flipped in the binary before signing. The dashboard server runs under utilityProcess,
+  // which doesn't need RunAsNode; nothing loads the app from outside app.asar, and the boot page is the
+  // only file:// page (it fetches nothing). ASAR integrity covers app.asar; the payload and web server
+  // under resources/ are protected by the MSIX install folder (read-only, ACL'd). With file:// privileges off a
+// file:// page can't read inside app.asar, so the boot page is served under its own scheme (src/boot-protocol.ts).
+  electronFuses: {
+    runAsNode: false,
+    enableCookieEncryption: true,
+    enableNodeOptionsEnvironmentVariable: false,
+    enableNodeCliInspectArguments: false,
+    enableEmbeddedAsarIntegrityValidation: true,
+    onlyLoadAppFromAsar: true,
+    grantFileProtocolExtraPrivileges: false,
+  },
   // Read by src/release-source.ts builtInFeed().
   ...(process.env.CHIEF_UPDATE_FEED ? { extraMetadata: { chiefUpdateFeed: process.env.CHIEF_UPDATE_FEED } } : {}),
   extraResources: [
-    { from: payload, to: "payload", filter: ["**/*", "!uv-cache/**", "!**/__pycache__/**", "!payload.prepare.lock"] },
+    // Left out: the offline uv cache, bytecode caches, the builder's lock and its leftover .build-* work folders.
+    { from: payload, to: "payload", filter: ["**/*", "!uv-cache/**", "!**/__pycache__/**", "!payload.prepare.lock", "!.build-*/**"] },
     // electron-builder silently skips dot-folders and node_modules inside a resource folder, so the
     // standalone server's own `.next` and `node_modules` are listed explicitly.
     { from: path.join(repo, "apps", "web", ".next", "standalone"), to: "web", filter: ["**/*"] },

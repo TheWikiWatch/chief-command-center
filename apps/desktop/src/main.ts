@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSyn
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, safeStorage, session, shell, Tray, utilityProcess } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, protocol, safeStorage, session, shell, Tray, utilityProcess } from "electron";
 
 import { activeWork, fromBridgeSnapshot } from "./active-work";
 import { curatedEnv, payloadLayout } from "./env";
@@ -20,7 +20,9 @@ import { compareVersions, Updater, type Release } from "./updater";
 import { builtInFeed, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
 import { cacheRelease, recordInstall, syncGithubHistory } from "./release-history";
 import { choosePort, disableServe, enableServe, findTailscale, phoneUrl, readState } from "./tailscale";
-import { bootUrl, dialogOptions, fileFilters, navigateDecision, originOf, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision } from "./guards";
+import { newSessionSecret, openTicket, sessionCookieName } from "./session";
+import { registerBootScheme, serveBootPage } from "./boot-protocol";
+import { BOOT_URL, dialogOptions, fileFilters, navigateDecision, originOf, permissionAllowed, permissionCheckAllowed, senderAllowed, validFeed, validServePort, windowOpenDecision } from "./guards";
 
 /** The data layout this version writes. A later version that changes it raises this, and an older app
  * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
@@ -35,6 +37,8 @@ type Step = { id: string; label: string; state: "waiting" | "working" | "done" |
 let paths: DesktopPaths;
 let store: Store;
 let token = "";
+/** The dashboard's session secret for this launch (session.ts); never written to disk. */
+const sessionSecret = newSessionSecret();
 let hermesRoot = "";
 let window: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -163,6 +167,7 @@ function envFor(kind: "gateway" | "web"): Record<string, string> {
       ...store.value.webEnv,
       CHIEF_BRIDGE_URL: `http://127.0.0.1:${store.value.ports.bridge}`,
       CHIEF_DASHBOARD_TOKEN: token,
+      CHIEF_SESSION_SECRET: sessionSecret,
       CHIEF_APP_DATA: paths.appDir,
       CHIEF_HERMES_ROOT: hermesRoot,
       CHIEF_PYTHON: layout.python,
@@ -176,6 +181,13 @@ function envFor(kind: "gateway" | "web"): Record<string, string> {
       CHIEF_HERMES_VERSION: hermesVersion(),
     },
   });
+}
+
+/** The same environment for a one-off Python tool (provisioning, the backup engine, a scoped stop), without the
+ * bridge token and session secret: none of them talks to the bridge or the dashboard. */
+function toolEnv(kind: "gateway" | "web"): Record<string, string> {
+  const { CHIEF_DASHBOARD_TOKEN: _token, CHIEF_SESSION_SECRET: _session, ...rest } = envFor(kind);
+  return rest;
 }
 
 function runPython(script: string, args: string[], env: Record<string, string>): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> {
@@ -210,7 +222,7 @@ async function choosePorts() {
 
 async function boot() {
   steps = STEPS.map((s) => ({ ...s }));
-  await window?.loadFile(path.join(paths.staticDir, "boot.html"));
+  await window?.loadURL(BOOT_URL);
   window?.webContents.send("boot:status", steps);
 
   setStep("runtime", "working");
@@ -238,11 +250,11 @@ async function boot() {
     );
   }
   await choosePorts();
-  const engine = engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, envFor("web"), payloadLayout(paths.payload).pythonPath);
+  const engine = engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, toolEnv("web"), payloadLayout(paths.payload).pythonPath);
   const recovered = await engine(["recover", "--state-dir", path.join(paths.appDir, "restore")]);
   if (recovered.ok && recovered.action === "rolled-back") setStep("prepare", "working", "An interrupted restore was undone.");
   const provisioned = await runPython(paths.provision, ["--plugins-src", paths.plugins, "--bridge-port", String(store.value.ports.bridge), ...(store.value.adopted ? ["--adopted"] : [])], {
-    ...envFor("gateway"),
+    ...toolEnv("gateway"),
     HERMES_HOME: profileHome(hermesRoot),
     PYTHONPATH: payloadLayout(paths.payload).pythonPath.join(";"),
   });
@@ -280,7 +292,7 @@ async function boot() {
     if (choice.response === 0) {
       // Only that gateway, in this profile home (never `hermes gateway stop`; see gateway.ts).
       const layout = payloadLayout(paths.payload);
-      requestScopedStop({ python: layout.python, pythonPath: layout.pythonPath, hermesRoot, profile: "chief", env: envFor("gateway") }, owner.pid);
+      requestScopedStop({ python: layout.python, pythonPath: layout.pythonPath, hermesRoot, profile: "chief", env: toolEnv("gateway") }, owner.pid);
       await waitFor(async () => ({ ok: gatewayOwner(hermesRoot, "").state === "none" }), 25_000);
       if (gatewayOwner(hermesRoot, "").state !== "none") killTree(owner.pid);
     } else externalGateway = true;
@@ -295,6 +307,7 @@ async function boot() {
   if (web.state !== "running") return setStep("web", "error", web.detail || "The dashboard didn't start.");
   setStep("web", "done");
 
+  await setSessionCookie();
   await window?.loadURL(uiUrl());
   notifier?.stop();
   notifier = new Notifier({
@@ -313,9 +326,19 @@ async function boot() {
   void updater.check().then(() => syncHistory());
 }
 
+/** The window's session cookie for the dashboard's port (set again whenever the port may have moved). */
+async function setSessionCookie() {
+  await session.defaultSession.cookies.set({ url: uiUrl(), name: sessionCookieName(store.value.ports.ui), value: sessionSecret, httpOnly: true, sameSite: "strict" });
+}
+
+/** Chief in the owner's own browser on this PC: a link with a ticket the dashboard swaps for the session cookie. */
+function openInBrowser() {
+  void shell.openExternal(`${uiUrl()}/?open=${openTicket(sessionSecret)}`);
+}
+
 function preUpdateBackup(): Promise<{ ok: boolean; error?: string }> {
   const layout = payloadLayout(paths.payload);
-  return engineRunner(layout.python, paths.backupEngine, envFor("web"), layout.pythonPath)([
+  return engineRunner(layout.python, paths.backupEngine, toolEnv("web"), layout.pythonPath)([
     "backup", "--dest", backupsDir(), "--parts", "setup", "--kind", "pre-update", "--local", "--keep", "2",
     "--hermes-root", hermesRoot, "--app-dir", path.join(paths.appDir, "settings-backup"), "--app-version", app.getVersion(),
   ]).then((r) => ({ ok: !!r.ok, error: r.error }));
@@ -417,6 +440,9 @@ function createWindow() {
     show: !hiddenLaunch(),
     backgroundColor: "#0c0d10",
     title: "Chief Command Center",
+    // Electron 44 remembers the window's size, position and maximized state between starts (by this name).
+    name: "chief-main",
+    windowStatePersistence: true,
     icon: paths.icon,
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
@@ -428,7 +454,7 @@ function createWindow() {
     return { action: decision === "allow" ? "allow" : "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    const decision = navigateDecision(url, uiOrigin(), bootUrl(paths.staticDir));
+    const decision = navigateDecision(url, uiOrigin(), BOOT_URL);
     if (decision === "allow") return;
     event.preventDefault();
     if (decision === "external") void shell.openExternal(url);
@@ -453,6 +479,7 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open Chief", click: showWindow },
+      { label: "Open in browser", click: openInBrowser },
       { label: "Restart Chief", click: () => void gateway.stop(true).then(() => gateway.start()) },
       { label: "Open logs", click: () => void shell.openPath(paths.logs) },
       { type: "separator" },
@@ -597,7 +624,7 @@ const OPENABLE = /^https:\/\/((login\.|www\.)?tailscale\.com|apps\.apple\.com|pl
 function handle(channel: string, fn: (...args: unknown[]) => unknown, opts: { boot?: boolean } = {}) {
   ipcMain.handle(channel, (event, ...args: unknown[]) => {
     const fromWindow = !!window && event.sender === window.webContents;
-    if (!fromWindow || !senderAllowed(event.senderFrame?.url, uiOrigin(), bootUrl(paths.staticDir), opts)) {
+    if (!fromWindow || !senderAllowed(event.senderFrame?.url, uiOrigin(), BOOT_URL, opts)) {
       logLine("desktop.log", `refused IPC ${channel} from ${originOf(event.senderFrame?.url || "") || "an unknown frame"}`);
       throw new Error("Not allowed.");
     }
@@ -660,7 +687,7 @@ function registerIpc() {
     }
     notifier?.stop();
     const result = await applyRestore({
-      engine: engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, envFor("web"), payloadLayout(paths.payload).pythonPath),
+      engine: engineRunner(payloadLayout(paths.payload).python, paths.backupEngine, toolEnv("web"), payloadLayout(paths.payload).pythonPath),
       stateDir: path.join(paths.appDir, "restore"),
       safetyDir: path.join(paths.appDir, "safety-backups"),
       appVersion: app.getVersion(),
@@ -670,7 +697,12 @@ function registerIpc() {
       finishInDashboard: async () => {
         const res = await fetch(`${uiUrl()}/api/backup/restore/finish`, {
           method: "POST",
-          headers: { "Content-Type": "application/json", Origin: uiUrl(), Host: `127.0.0.1:${store.value.ports.ui}` },
+          headers: {
+            "Content-Type": "application/json",
+            Origin: uiUrl(),
+            Host: `127.0.0.1:${store.value.ports.ui}`,
+            Cookie: `${sessionCookieName(store.value.ports.ui)}=${sessionSecret}`,
+          },
           body: "{}",
         });
         return (await res.json()) as { ok: boolean; error?: string };
@@ -683,6 +715,8 @@ function registerIpc() {
 
 /* ------------------------------------------------------------------ start */
 
+registerBootScheme(protocol);
+
 if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app.isReady())) {
   app.quit();
 } else {
@@ -692,6 +726,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
   app.whenReady().then(async () => {
     paths = resolvePaths({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), env: process.env });
     store = new Store(paths.appDir);
+    serveBootPage(protocol, paths.staticDir);
     shippedFeed = builtInFeed(app.getAppPath());
     const last = store.value.lastVersion;
     updatedFrom = last && compareVersions(app.getVersion(), last) > 0 ? last : "";
@@ -764,10 +799,14 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
       },
     });
     setInterval(() => void updater.check().then(() => syncHistory()), 24 * 3600 * 1000).unref();
-    session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
-      const ours = sameOrigin(wc.getURL(), uiOrigin());
-      callback(ours && ["media", "notifications", "clipboard-sanitized-write", "fullscreen"].includes(permission));
+    // Default deny (guards.ts): Electron grants every permission unless a handler says otherwise.
+    session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+      const media = (details as { mediaTypes?: string[] }).mediaTypes || [];
+      callback(permissionAllowed(permission, details.requestingUrl || wc.getURL(), uiOrigin(), media));
     });
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, requestingOrigin, details) =>
+      permissionCheckAllowed(permission, requestingOrigin, uiOrigin(), (details as { mediaType?: string }).mediaType),
+    );
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: store.value.startAtLogin, args: ["--hidden"] });
     registerIpc();
     createWindow();

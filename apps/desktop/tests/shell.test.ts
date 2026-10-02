@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -305,6 +305,11 @@ describe("secrets and settings", () => {
     expect(bridgeToken(dir, sealer)).toBe(first);
     expect(bridgeToken(dir, sealer, "adopted-token-from-existing-install-000000")).toBe("adopted-token-from-existing-install-000000");
     expect(() => bridgeToken(dir, { ...sealer, isEncryptionAvailable: () => false })).toThrow(/DPAPI/);
+    // A token sealed under a key the app can no longer reach is replaced, not a dead end at start.
+    const broken = { ...sealer, decryptString: () => { throw new Error("Error while decrypting the ciphertext"); } };
+    const fresh = bridgeToken(dir, broken);
+    expect(fresh.length).toBeGreaterThanOrEqual(32);
+    expect(readdirSync(dir).some((f) => f.startsWith("bridge-token.unreadable-"))).toBe(true);
   });
 
   it("stores the shell's settings with defaults", () => {
