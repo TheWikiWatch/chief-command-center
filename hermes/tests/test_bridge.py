@@ -42,6 +42,18 @@ identity = importlib.import_module("test_bridge_plugin.identity")
 bridge_token = importlib.import_module("test_bridge_plugin.bridge_token")
 
 
+class AttachmentNoteTests(unittest.TestCase):
+    def test_hermes_image_notes_and_the_vision_hint_leave_the_bubble(self):
+        stored = (
+            "[The user sent an image~ Here's what I can see:\nA red square.]\n"
+            "[If you need a closer look, use vision_analyze with image_url: D:\\synthetic\\cache\\inbound\\up_1_dot.png ~]\n\n"
+            "stream check with a picture"
+        )
+        self.assertEqual(data.strip_agent_attachment_notes(stored), "stream check with a picture")
+        alone = "[If you need a closer look, use vision_analyze with image_url: /tmp/x.png]\nwhat is this?"
+        self.assertEqual(data.strip_agent_attachment_notes(alone), "what is this?")
+
+
 class ByteRangeTests(unittest.TestCase):
     def test_ranges_including_the_suffix_form(self):
         self.assertEqual(server.byte_range("bytes=0-99", 1000), (0, 99, True))

@@ -152,6 +152,39 @@ def busy_line(text: str) -> bool:
     return bool(_BUSY.match(str(text or "")))
 
 
+_CRON_DIVIDER = "\n-------------\n\n"
+_CRON_FOOTER = '\n\nTo stop or manage this job, send me a new message (e.g. "stop reminder '
+
+
+def unwrap_cron(text: str) -> tuple[str, dict[str, str] | None]:
+    """Hermes wraps a scheduled job's answer (cron/scheduler_delivery.py, `cron.wrap_response`):
+
+        Cronjob Response: <name>
+        (job_id: <id>)
+        -------------
+
+        <the answer>
+
+        To stop or manage this job, send me a new message (e.g. "stop reminder <name>").
+
+    The app shows the routine's name in its own card header and a Manage link instead, so this returns the
+    answer alone and the routine. Anything that doesn't have exactly this shape is returned unchanged."""
+    if not text.startswith("Cronjob Response: "):
+        return text, None
+    divider = text.find(_CRON_DIVIDER)
+    footer = text.rfind(_CRON_FOOTER)
+    head = text[:divider] if divider > 0 else ""
+    if divider < 0 or footer <= divider or "\n(job_id: " not in head:
+        return text, None
+    name_line, _, id_line = head.partition("\n")
+    name = name_line[len("Cronjob Response: "):].strip()
+    job_id = id_line.strip().removeprefix("(job_id: ").removesuffix(")").strip()
+    body = text[divider + len(_CRON_DIVIDER):footer].strip()
+    if not body:
+        return text, None
+    return body, {"name": name, "jobId": job_id}
+
+
 def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str = "") -> list[dict[str, Any]]:
     """Gateway sends at or after `since` that aren't replies: newest `limit`, oldest first. With `chat_id`, only
     that thread's (the main chat also gets sends without a chat)."""
@@ -172,13 +205,18 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
         # A long reply can reach the adapter in pieces: a piece of a reply is a reply too.
         if any(text == reply or text in reply for reply in replies):
             continue
-        out.append({
+        raw = str(row.get("message") or "")
+        body, routine = unwrap_cron(raw)
+        item: dict[str, Any] = {
             "id": str(row.get("id") or ""),
             "at": float(row.get("at") or 0),
-            "text": str(row.get("message") or ""),
+            "text": body,
             # Hermes delivers a scheduled job's answer as "Cronjob Response: <name>"; the app's own relays say "cron".
-            "source": "scheduled" if row.get("source") == "cron" or str(row.get("message") or "").startswith("Cronjob Response:") else "notice",
-        })
+            "source": "scheduled" if row.get("source") == "cron" or raw.startswith("Cronjob Response:") else "notice",
+        }
+        if routine:
+            item["routine"] = routine
+        out.append(item)
     return out[-limit:]
 
 

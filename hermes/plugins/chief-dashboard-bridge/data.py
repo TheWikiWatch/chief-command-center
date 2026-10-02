@@ -620,6 +620,9 @@ MAX_ATTACHMENTS = 8
 MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024
 _NOTE_BLOCK = re.compile(r"\[The user sent[^\]]*\]\s*", re.DOTALL)
 _USER_SENT_BLOCK = re.compile(r"\[User sent[^\]]*\]\s*")
+# Hermes adds this after its description of an image (gateway/run_inbound.py, agent/vision_message_prep.py); it
+# carries the image's full path on this PC, which has no place in the owner's own bubble.
+_VISION_HINT = re.compile(r"\[If you need a closer look, use vision_analyze with\s+image_url: [^\]]*\]\s*")
 _CONTENT_BLOCK = re.compile(r"\[Content of ([^\]]+)\]:\n.*?\[End of \1\]\s*", re.DOTALL)
 
 
@@ -632,6 +635,7 @@ def strip_agent_attachment_notes(text: str) -> str:
     cleaned = _CONTENT_BLOCK.sub("", text or "")
     cleaned = _NOTE_BLOCK.sub("", cleaned)
     cleaned = _USER_SENT_BLOCK.sub("", cleaned)
+    cleaned = _VISION_HINT.sub("", cleaned)
     return cleaned.strip()
 
 

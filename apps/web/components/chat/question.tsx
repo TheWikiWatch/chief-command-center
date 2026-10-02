@@ -12,6 +12,7 @@ import type { AskedQuestion, ChatNotice, PendingQuestion, Person } from "@/lib/t
 import { linkifyVaultRefs } from "@/lib/vault-client";
 import { field as fieldClass } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
+import { openTeam } from "@/lib/settings-nav";
 
 /** Hermes appends this to the choice it recommends; the card shows it as a badge instead. */
 const RECOMMENDED = /\s*\(recommended\)\s*$/i;
@@ -220,15 +221,36 @@ export function quickReplies(text: string): string[] {
 export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQuickReply?: (text: string) => Promise<void> }) {
   const [sent, setSent] = useState("");
   const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
   const replies = onQuickReply ? quickReplies(notice.text) : [];
   const scheduled = notice.source === "scheduled";
-  const Icon = scheduled ? ClockIcon : BellIcon;
+  // A gateway notice (a restart, a reminder that it is busy) is a quiet line; it opens to the full text.
+  if (!scheduled && !replies.length) {
+    const times = notice.repeat && notice.until ? `${notice.repeat}× · until ${new Date(notice.until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "";
+    return (
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="press group flex w-full items-start gap-2 rounded-ctl px-2 py-1.5 text-left text-callout text-fg-3 hover:bg-fill-1 hover:text-fg-2"
+      >
+        <BellIcon size={14} className="mt-0.5 shrink-0" />
+        <span className={`min-w-0 flex-1 ${open ? "whitespace-pre-wrap" : "truncate"}`}>{open ? notice.text.trim() : notice.text.replace(/\s+/g, " ").trim()}</span>
+        {times ? <span className="shrink-0 rounded-chip bg-fill-2 px-1.5 font-mono text-micro text-fg-3">{times}</span> : null}
+      </button>
+    );
+  }
   return (
     <div className="rounded-card border border-line bg-card/60 px-3.5 py-2.5">
-      <p className="flex items-center gap-1.5 text-caption font-medium text-fg-3">
-        <Icon size={13} />
-        {scheduled ? "Scheduled job" : "Notice"}
-      </p>
+      <div className="flex items-center gap-1.5 text-caption font-medium text-fg-3">
+        {scheduled ? <ClockIcon size={13} /> : <BellIcon size={13} />}
+        <span className="min-w-0 flex-1 truncate">{notice.routine?.name || (scheduled ? "Scheduled job" : "Notice")}</span>
+        {notice.routine ? (
+          <button type="button" onClick={() => openTeam("routines")} className="press -my-1 shrink-0 rounded-full px-2 py-1 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg">
+            Manage
+          </button>
+        ) : null}
+      </div>
       <Streamdown className="chat-md mt-1 max-w-none">{linkifyVaultRefs(notice.text)}</Streamdown>
       {replies.length ? (
         <div className="mt-2.5 flex flex-wrap gap-2">

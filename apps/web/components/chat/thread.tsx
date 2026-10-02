@@ -96,6 +96,36 @@ export function withNotices(messages: ChatMessage[], notices: ChatNotice[] | und
     out.push(m);
   }
   while (next < items.length) out.push(items[next++]);
+  return foldRepeats(out);
+}
+
+// A run of the same gateway notice (a restart says the same thing each time) shows once, with a count.
+const folded = new WeakMap<ChatNotice, { count: number; until: number; item: ChatMessage }>();
+
+function foldRepeats(rows: ChatMessage[]): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const first = rows[i].notice;
+    if (!first || first.source !== "notice") {
+      out.push(rows[i]);
+      continue;
+    }
+    let j = i;
+    while (j + 1 < rows.length && rows[j + 1].notice?.source === "notice" && rows[j + 1].notice!.text.trim() === first.text.trim()) j++;
+    if (j === i) {
+      out.push(rows[i]);
+      continue;
+    }
+    const count = j - i + 1;
+    const until = rows[j].notice!.at;
+    let hit = folded.get(first);
+    if (!hit || hit.count !== count || hit.until !== until) {
+      hit = { count, until, item: { ...rows[i], notice: { ...first, repeat: count, until } } };
+      folded.set(first, hit);
+    }
+    out.push(hit.item);
+    i = j;
+  }
   return out;
 }
 
@@ -195,8 +225,11 @@ export function Thread({
   question,
   onAnswer,
   onQuickReply,
+  loading = false,
 }: {
   messages: ChatMessage[];
+  /** The first transcript hasn't arrived yet: placeholders instead of the empty-chat greeting. */
+  loading?: boolean;
   chief: Person | undefined;
   awaiting: boolean;
   waitingApproval: boolean;
@@ -346,7 +379,9 @@ export function Thread({
         }}
       >
         {messages.length === 0 && header ? <div className="mx-auto max-w-3xl">{header}</div> : null}
-        {messages.length === 0 ? (
+        {messages.length === 0 && loading ? (
+          <ThreadSkeleton />
+        ) : messages.length === 0 ? (
           <EmptyState chief={chief} connected={connected} authFailed={authFailed} onSuggestion={onSuggestion} />
         ) : (
           <div ref={content} className="mx-auto flex max-w-3xl flex-col">
@@ -755,5 +790,29 @@ function EmptyState({
         </>
       )}
     </motion.div>
+  );
+}
+
+/** Placeholder rows while the first transcript loads: a reply, your message, a reply. */
+function ThreadSkeleton() {
+  return (
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 pt-6" role="status" aria-label="Loading the conversation">
+      <div className="flex gap-3">
+        <div className="skeleton size-8 shrink-0 rounded-full" />
+        <div className="flex-1 space-y-2.5 pt-1">
+          <div className="skeleton h-3.5 w-[88%] rounded-full" />
+          <div className="skeleton h-3.5 w-[64%] rounded-full" />
+        </div>
+      </div>
+      <div className="skeleton ml-auto h-10 w-[46%] rounded-card" />
+      <div className="flex gap-3">
+        <div className="skeleton size-8 shrink-0 rounded-full" />
+        <div className="flex-1 space-y-2.5 pt-1">
+          <div className="skeleton h-3.5 w-[92%] rounded-full" />
+          <div className="skeleton h-3.5 w-[78%] rounded-full" />
+          <div className="skeleton h-3.5 w-[40%] rounded-full" />
+        </div>
+      </div>
+    </div>
   );
 }

@@ -89,7 +89,17 @@ export type AskedQuestion = { question: string; choices: string[]; answer: strin
 export type PendingQuestion = { id: string; question: string; choices: string[]; multi: boolean };
 
 /** A message the gateway sent that isn't a reply: a scheduled job's result or a notice. */
-export type ChatNotice = { id: string; at: number; text: string; source: "scheduled" | "notice" };
+export type ChatNotice = {
+  id: string;
+  at: number;
+  text: string;
+  source: "scheduled" | "notice";
+  /** A scheduled job's answer, unwrapped by the bridge: which routine it came from. */
+  routine?: { name: string; jobId: string };
+  /** Client-only: the same notice repeated this many times in a row (restarts), and when the last one came. */
+  repeat?: number;
+  until?: number;
+};
 
 /** What the running turn is doing: since when (epoch seconds), how many steps, and the current one. */
 export type TurnActivity = { since: number; steps: number; label: string };

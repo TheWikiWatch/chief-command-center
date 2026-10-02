@@ -43,6 +43,27 @@ def _fake_clarify(entry):
     return {"tools": tools, "tools.clarify_gateway": mod}
 
 
+class CronUnwrapTests(unittest.TestCase):
+    """Hermes's scheduled-job wrapper (cron/scheduler_delivery.py) becomes a routine name and the answer."""
+
+    WRAPPED = (
+        "Cronjob Response: Second Brain: nightly\n"
+        "(job_id: a94696753a42)\n"
+        "-------------\n\n"
+        "Logged three changes to the Inbox.\n\n"
+        "To stop or manage this job, send me a new message (e.g. \"stop reminder Second Brain: nightly\")."
+    )
+
+    def test_the_answer_and_the_routine(self):
+        body, routine = chat_state.unwrap_cron(self.WRAPPED)
+        self.assertEqual(body, "Logged three changes to the Inbox.")
+        self.assertEqual(routine, {"name": "Second Brain: nightly", "jobId": "a94696753a42"})
+
+    def test_anything_else_is_left_alone(self):
+        for text in ("A plain notice.", "Cronjob Response: half a wrapper", self.WRAPPED.replace("(job_id: ", "(id: ")):
+            self.assertEqual(chat_state.unwrap_cron(text), (text, None))
+
+
 class ChatStateTests(unittest.TestCase):
     def setUp(self):
         scratch = ROOT / "hermes/tests/.runtime"

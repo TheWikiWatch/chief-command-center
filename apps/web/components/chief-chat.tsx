@@ -176,6 +176,8 @@ export function ChiefChat({
   const [voiceMounted, setVoiceMounted] = useState(false);
   if (voiceOpen && !voiceMounted) setVoiceMounted(true);
   const [voiceLabel, setVoiceLabel] = useState("");
+  // Until the first transcript arrives, the thread shows it is loading, not "no messages yet".
+  const [loadedOnce, setLoadedOnce] = useState(false);
   const [micStatus, setMicStatus] = useState<MicStatus>({ state: "idle", cancelling: false });
   const micPrev = useRef<MicStatus>({ state: "idle", cancelling: false });
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -289,7 +291,8 @@ export function ChiefChat({
     const show = () => {
       if (!alive || !base) return;
       const fallback = Date.now() < fallbackUntil;
-      setVoiceLabel(fallback ? `${base} \u00b7 Edge fallback` : base);
+      // The header says "Online" when voice is fine; which engines speak and listen is in Settings → Voice.
+      setVoiceLabel(fallback ? "Online \u00b7 speaking with the backup voice" : "");
       window.clearTimeout(clear);
       if (fallback) clear = window.setTimeout(show, fallbackUntil - Date.now() + 50);
     };
@@ -410,6 +413,7 @@ export function ChiefChat({
       const data = await fetchTranscript(after, signal, live, after ? noticeSince.current : 0);
       if (signal.aborted) return;
       applyTranscript(data, after);
+      setLoadedOnce(true);
       bridgeState.current = {
         generating: !!data.generating,
         approval: data.approval?.requestId || "",
@@ -829,6 +833,7 @@ export function ChiefChat({
       <ChatAurora mood={mood} color={chief ? botIdentity({ id: chief.id, name: chief.name, color: chief.color, shape: chief.shape, custom: chief.custom, isChief: true }).color : undefined} />
       <Thread
         messages={threadMessages}
+        loading={!loadedOnce && connected && !authFailed}
         onCancelQueued={cancelQueued}
         earlier={messages.length ? earlier : undefined}
         onLoadEarlier={loadEarlier}
