@@ -28,6 +28,8 @@ export type DesktopPaths = {
   /** The third-party notices the release generates (scripts/licenses.mjs); absent in a dev checkout until made. */
   notices: string;
   icon: string;
+  /** The face alone, for the 16px tray (a whole tile doesn't read that small). */
+  trayIcon: string;
 };
 
 export function resolvePaths(opts: { packaged: boolean; resourcesPath: string; appPath: string; env: NodeJS.ProcessEnv }): DesktopPaths {
@@ -54,6 +56,7 @@ export function resolvePaths(opts: { packaged: boolean; resourcesPath: string; a
     staticDir: path.join(opts.appPath, "static"),
     notices: packaged ? path.join(res, "THIRD_PARTY_NOTICES.md") : path.join(opts.appPath, "build", "THIRD_PARTY_NOTICES.md"),
     icon: packaged ? path.join(res, "icon.png") : path.join(repo, "apps", "web", "public", "icons", "icon-192.png"),
+    trayIcon: packaged ? path.join(res, "tray.png") : path.join(repo, "apps", "web", "public", "icons", "tray-32.png"),
   };
 }
 

@@ -738,3 +738,9 @@
 - **No more "Couldn't deliver the image attachment" after an image arrived.** Hermes hands a reply's attachments to the platform after the text, and the chat platform had no way to take them, so Hermes's default warning showed even though the reply had already shown the image. The chat platform now takes images, files, video and audio. One the reply already showed stays hidden. One sent on its own, such as an image from a routine (scheduled jobs kept their attachments too, which used to be dropped), shows in the chat under the notice.
 - **The fleet orbit's "+N" badge no longer shows through the Team & Routines sheet** on the phone.
 - **The phone chat header has a presence dot** next to "Online": green when the chief is online and the connection is healthy, amber when degraded, red when offline. It is a little smaller than the connection dot elsewhere.
+
+**A new app icon: the chief's face.**
+
+- The icon is now the chief's faceted hexagon face, glowing on a deep teal-black tile. It's drawn once (`apps/web/scripts/gen-pwa-icons.mjs`) and rendered everywhere it appears: the home screen (with a full-bleed version for Android's launcher shapes and iPhone), Android's themed icon (new: a monochrome version tinted to the wallpaper), notifications, the browser tab, the desktop window, and the tray (now the face alone, which reads at 16px).
+- **Windows had been showing electron-builder's sample logos** in the Start menu and taskbar, because the package carried no artwork of its own. It now has a full set, including unplated taskbar sizes from 16 to 256px.
+- On iPhone, a home-screen icon changes only after it's removed and added again; Android picks up the new one by itself.

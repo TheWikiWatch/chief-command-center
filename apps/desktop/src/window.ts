@@ -176,7 +176,7 @@ export function createWindow() {
 }
 
 export function createTray() {
-  const tray = new Tray(nativeImage.createFromPath(ctx.paths.icon).resize({ width: 16, height: 16 }));
+  const tray = new Tray(nativeImage.createFromPath(ctx.paths.trayIcon).resize({ width: 16, height: 16 }));
   ctx.tray = tray;
   tray.setToolTip("Chief Command Center");
   tray.on("click", showWindow);
