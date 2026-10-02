@@ -385,7 +385,7 @@ function RoutineEditor({
       </Labeled>
 
       <fieldset className="space-y-2.5">
-        <legend className="mb-1.5 px-1 text-caption font-medium uppercase tracking-wider text-fg-3">When</legend>
+        <legend className="mb-1.5 px-1 text-caption font-medium text-fg-3">When</legend>
         <Segmented label="How often" value={schedule.kind} options={KINDS} onChange={(kind) => setSchedule((s) => ({ ...s, kind }))} />
         {schedule.kind === "weekly" ? (
           <div role="group" aria-label="Days" className="flex justify-between gap-1">
@@ -460,7 +460,7 @@ function RoutineEditor({
       </fieldset>
 
       <fieldset className="space-y-2">
-        <legend className="mb-1.5 px-1 text-caption font-medium uppercase tracking-wider text-fg-3">Runs as</legend>
+        <legend className="mb-1.5 px-1 text-caption font-medium text-fg-3">Runs as</legend>
         {creating ? (
           <div role="radiogroup" aria-label="Who runs it" className="flex flex-wrap gap-2">
             {bots.map((b) => {
@@ -577,7 +577,7 @@ function RoutineEditor({
 function Labeled({ id, label, hint, children }: { id: string; label: string; hint?: string; children: ReactNode }) {
   return (
     <div>
-      <label htmlFor={id} className="mb-1.5 block px-1 text-caption font-medium uppercase tracking-wider text-fg-3">
+      <label htmlFor={id} className="mb-1.5 block px-1 text-caption font-medium text-fg-3">
         {label}
       </label>
       {children}

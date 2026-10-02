@@ -46,7 +46,7 @@ export function SwitchRow({
 export function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1.5 block px-1 text-caption font-medium uppercase tracking-wider text-fg-3">{label}</span>
+      <span className="mb-1.5 block px-1 text-caption font-medium text-fg-3">{label}</span>
       {children}
     </label>
   );

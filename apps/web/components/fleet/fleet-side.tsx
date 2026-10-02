@@ -24,7 +24,7 @@ export function FleetInvite({ onAsk, floating = false }: { onAsk: (text: string)
   const assistant = useAssistantName();
   return (
     <motion.div
-      className={floating ? "w-[min(30rem,calc(100%-2rem))] rounded-sheet border border-line-2 bg-raised/90 p-4 shadow-e3 backdrop-blur-md" : "rounded-card border border-line bg-card p-4"}
+      className={floating ? "w-[min(30rem,calc(100%-2rem))] rounded-sheet border border-line-2 bg-raised/95 p-4 shadow-e3" : "rounded-card border border-line bg-card p-4"}
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0, transition: { delay: 0.5, duration: 0.36, ease: EASE.enter } }}
     >

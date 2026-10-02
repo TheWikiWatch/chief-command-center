@@ -98,7 +98,7 @@ export function BotTip({
       {showTitle ? <div className="text-white/55">{title}</div> : null}
       {desc ? <div className="bot-tip-desc mt-1 text-white/70">{desc}</div> : null}
       {person.flavor ? (
-        <div className="mt-1.5 text-micro uppercase tracking-[0.14em] text-accent/85">{person.flavor}</div>
+        <div className="mt-1.5 text-micro text-accent/85">{person.flavor}</div>
       ) : null}
     </div>,
     document.body,

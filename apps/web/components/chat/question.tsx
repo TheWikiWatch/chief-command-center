@@ -74,7 +74,7 @@ export function QuestionCard({
     >
       <div className="w-7 shrink-0 pt-0.5">{chief ? <BotFace {...faceProps(chief)} mood="waiting" size={28} /> : null}</div>
       <div className="min-w-0 flex-1 rounded-card border border-accent/30 bg-accent/6 px-3.5 py-3">
-        <p className="text-caption font-medium uppercase tracking-wide text-accent-text">{assistant} is asking</p>
+        <p className="text-caption font-medium text-accent-text">{assistant} is asking</p>
         <h3 id={headingId} className="mt-1 text-body font-medium text-fg">
           {question.question}
         </h3>

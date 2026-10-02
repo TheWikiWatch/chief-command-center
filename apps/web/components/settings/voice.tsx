@@ -223,7 +223,7 @@ export function ProviderList({
 
   return (
     <div>
-      <p className="mb-1.5 px-1 text-caption font-medium uppercase tracking-wider text-fg-3">{label}</p>
+      <p className="mb-1.5 px-1 text-caption font-medium text-fg-3">{label}</p>
       <div role="radiogroup" aria-label={label} className="overflow-hidden rounded-ctl border border-line bg-well">
         {providers.map((p, i) => {
           const selected = p.id === current;

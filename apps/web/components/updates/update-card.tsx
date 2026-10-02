@@ -150,7 +150,7 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
   // The floating card (bottom of the app) gets its own surface; in Settings it sits inside its group.
   return compact ? (
     <section aria-label="App update" className="rounded-card border border-line-2 bg-raised/95 p-3.5 shadow-e4 backdrop-blur-sm">
-      <p className="mb-2 text-caption font-medium uppercase tracking-wider text-fg-3">App update</p>
+      <p className="mb-2 text-caption font-medium text-fg-3">App update</p>
       {content}
     </section>
   ) : (

@@ -71,7 +71,7 @@ export function Browser({
             </nav>
             {!dir && recents.length ? (
               <section className="mb-2">
-                <h3 className="px-2.5 pb-1 pt-2 text-caption font-medium uppercase tracking-wider text-fg-3">Recent</h3>
+                <h3 className="px-2.5 pb-1 pt-2 text-caption font-medium text-fg-3">Recent</h3>
                 {recents.slice(0, 4).map((r) => {
                   const name = r.path.split("/").pop() || r.path;
                   return (
@@ -85,7 +85,7 @@ export function Browser({
                     />
                   );
                 })}
-                <h3 className="px-2.5 pb-1 pt-3 text-caption font-medium uppercase tracking-wider text-fg-3">Folders</h3>
+                <h3 className="px-2.5 pb-1 pt-3 text-caption font-medium text-fg-3">Folders</h3>
               </section>
             ) : null}
             {error ? <p className="mx-2 mt-2 rounded-card border border-danger/30 bg-danger/10 px-3 py-2.5 text-callout text-danger">{error}</p> : null}
