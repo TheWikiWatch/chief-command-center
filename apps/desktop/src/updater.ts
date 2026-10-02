@@ -28,7 +28,13 @@ export type Release = {
   package: { file: string; bytes: number; sha256: string };
   hermes: { base_version: string; commit: string };
   data: { schema: number; min_reader: string };
+  /** Which pinned key signed it (release-key.ts); older manifests have none and are checked against every key. */
+  signing?: { key_id?: string };
 };
+
+/** A pinned release key; `expires` (ISO date): manifests published after it don't verify with this key. */
+export type ReleaseKey = { id: string; publicKey: string; expires?: string };
+export type ReleaseKeys = string | ReleaseKey[];
 
 export type UpdateState =
   | { status: "idle" }
@@ -47,7 +53,7 @@ export type UpdaterDeps = {
   /** Where releases come from: a folder or a private GitHub repo (release-source.ts); wins over `feed`. */
   source?: () => ReleaseSource | null;
   currentVersion: string;
-  publicKey: string;
+  publicKey: ReleaseKeys;
   updatesDir: string;
   skipped: () => string[];
   freeBytes: (dir: string) => Promise<number>;
@@ -58,6 +64,9 @@ export type UpdaterDeps = {
   startChief?: () => Promise<void>;
   install: (file: string) => Promise<{ ok: boolean; error?: string }>;
   onState?: (state: UpdateState) => void;
+  /** The verified release descriptions this install keeps (release-history.ts), for "Go back to X.Y.Z". */
+  history?: () => Release[];
+  now?: () => number;
   /** Each release description that verified (newer or not): the update history keeps it. */
   onVerified?: (bytes: Buffer, signature: string, release: Release) => void;
 };
@@ -72,15 +81,34 @@ export function compareVersions(a: string, b: string): number {
   return 0;
 }
 
-export function verifyRelease(bytes: Buffer, signatureB64: string, publicKeyB64: string): Release {
-  const key = createPublicKey({ key: Buffer.from(publicKeyB64, "base64"), format: "der", type: "spki" });
-  let ok = false;
+function verifiesWith(bytes: Buffer, signatureB64: string, publicKeyB64: string): boolean {
   try {
-    ok = verify(null, bytes, key, Buffer.from(signatureB64.trim(), "base64"));
+    const key = createPublicKey({ key: Buffer.from(publicKeyB64, "base64"), format: "der", type: "spki" });
+    return verify(null, bytes, key, Buffer.from(signatureB64.trim(), "base64"));
   } catch {
-    ok = false;
+    return false;
   }
-  if (!ok) throw new UpdateError("This update couldn't be verified (its signature doesn't match). Nothing was downloaded.");
+}
+
+/**
+ * Check a release description's signature against the pinned key(s), then its shape. With a key list, the
+ * manifest's `signing.key_id` picks the key (an unknown id fails); a manifest without one is tried against every
+ * key; a key whose `expires` is before the manifest's `published` date doesn't count.
+ */
+export function verifyRelease(bytes: Buffer, signatureB64: string, keys: ReleaseKeys): Release {
+  const list: ReleaseKey[] = typeof keys === "string" ? [{ id: "", publicKey: keys }] : keys;
+  let claimed: Partial<Release> = {};
+  try {
+    claimed = JSON.parse(bytes.toString("utf8")) as Partial<Release>;
+  } catch {
+    claimed = {};
+  }
+  const keyId = claimed.signing?.key_id;
+  const published = Date.parse(String(claimed.published || ""));
+  const usable = list.filter((k) => (keyId && typeof keys !== "string" ? k.id === keyId : true)).filter((k) => !k.expires || !(published > Date.parse(k.expires)));
+  if (!usable.some((k) => verifiesWith(bytes, signatureB64, k.publicKey))) {
+    throw new UpdateError("This update couldn't be verified (its signature doesn't match). Nothing was downloaded.");
+  }
   const release = JSON.parse(bytes.toString("utf8")) as Release;
   if (release.format !== "chief-release" || !/^\d+\.\d+\.\d+$/.test(release.version) || !/^[a-f0-9]{64}$/.test(release.package?.sha256 || "")) {
     throw new UpdateError("This update's description is malformed.");
@@ -90,6 +118,17 @@ export function verifyRelease(bytes: Buffer, signatureB64: string, publicKeyB64:
 }
 
 export class UpdateError extends Error {}
+
+/** A release's package file name (packaging/release/release-tool.mjs names them so). */
+export function packageName(version: string): string {
+  return `ChiefCommandCenter-${version}.msix`;
+}
+
+/** Download progress reaches the page at most this often. */
+export const PROGRESS_EVERY_MS = 250;
+
+/** An earlier version this PC can go back to: its verified description and its package, still on disk. */
+export type RollbackOption = { version: string; published: string; file: string };
 
 async function sha256(file: string): Promise<string> {
   const hash = createHash("sha256");
@@ -101,6 +140,42 @@ export class Updater {
   state: UpdateState = { status: "idle" };
 
   constructor(private readonly deps: UpdaterDeps) {}
+
+  private now(): number {
+    return this.deps.now ? this.deps.now() : Date.now();
+  }
+
+  /** Earlier versions whose verified package is still in `updates\`, newest first (Settings → "Go back to X.Y.Z"). */
+  async rollbackOptions(): Promise<RollbackOption[]> {
+    const out: RollbackOption[] = [];
+    for (const release of this.deps.history?.() ?? []) {
+      if (compareVersions(release.version, this.deps.currentVersion) >= 0) continue;
+      const file = path.join(this.deps.updatesDir, release.package.file);
+      try {
+        if ((await fs.stat(file)).size !== release.package.bytes) continue;
+      } catch {
+        continue;
+      }
+      out.push({ version: release.version, published: release.published, file });
+    }
+    return out.sort((a, b) => compareVersions(b.version, a.version));
+  }
+
+  /**
+   * Go back to an earlier version: its package is checked against its signed description again, then it installs
+   * like an update (backup first, Chief stopped, Windows installs it and relaunches the app).
+   */
+  async rollback(version: string, force = false): Promise<UpdateState> {
+    const option = (await this.rollbackOptions()).find((o) => o.version === version);
+    const release = this.deps.history?.().find((r) => r.version === version);
+    if (!option || !release) return this.set({ status: "error", error: `Version ${version} isn't kept on this PC any more, so the app can't go back to it.` });
+    if ((await sha256(option.file)) !== release.package.sha256) {
+      await fs.rm(option.file, { force: true });
+      return this.set({ status: "error", error: `The kept package for ${version} doesn't match its description, so it was deleted.` });
+    }
+    this.set({ status: "ready", release, file: option.file });
+    return this.install(force);
+  }
 
   private source(): ReleaseSource | null {
     if (this.deps.source) return this.deps.source();
@@ -171,10 +246,16 @@ export class Updater {
       await new Promise<void>((resolve, reject) => {
         const output = createWriteStream(part, { flags: "a" });
         let done = have;
+        let reported = 0;
         input.on("data", (chunk) => {
           done += (chunk as Buffer).length;
           if (done > release.package.bytes) input.destroy(new UpdateError("The update is larger than its description says."));
-          this.set({ status: "downloading", release, done, total: release.package.bytes });
+          // A few progress messages a second is plenty for the card (an 850 MB download is thousands of chunks).
+          const now = this.now();
+          if (now - reported >= PROGRESS_EVERY_MS || done >= release.package.bytes) {
+            reported = now;
+            this.set({ status: "downloading", release, done, total: release.package.bytes });
+          }
         });
         input.on("error", reject);
         output.on("error", reject);
@@ -195,7 +276,32 @@ export class Updater {
       return this.set({ status: "error", release, error: "This update couldn't be verified (the download didn't match its checksum), so it was deleted." });
     }
     await fs.rename(part, target);
+    await this.prune([release.package.file]);
     return this.set({ status: "ready", release, file: target });
+  }
+
+  /**
+   * Packages kept in `updates\`: the one being installed and the installed version's own (what "Go back" needs).
+   * Older packages and abandoned partial downloads go; files that aren't app packages are never touched.
+   */
+  async prune(keep: string[] = []): Promise<string[]> {
+    const wanted = new Set([...keep, packageName(this.deps.currentVersion)]);
+    const removed: string[] = [];
+    let names: string[] = [];
+    try {
+      names = await fs.readdir(this.deps.updatesDir);
+    } catch {
+      return removed;
+    }
+    for (const name of names) {
+      const base = name.replace(/\.part$/, "");
+      if (!/^ChiefCommandCenter-\d+\.\d+\.\d+\.msix$/.test(base)) continue;
+      if (wanted.has(base) && !name.endsWith(".part")) continue;
+      if (name.endsWith(".part") && keep.includes(base)) continue; // a download that resumes
+      await fs.rm(path.join(this.deps.updatesDir, name), { force: true }).catch(() => undefined);
+      removed.push(name);
+    }
+    return removed;
   }
 
   /** `force`: the owner chose "Install now" although Chief is busy. */

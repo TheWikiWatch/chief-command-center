@@ -167,9 +167,13 @@ const out = path.join(local.feedDir, version);
 rmSync(out, { recursive: true, force: true });
 
 step("Writing and checking the signed release description…");
-run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--out", out, "--notes", notesFile]);
-const pinned = /RELEASE_PUBLIC_KEY = "([^"]+)"/.exec(readFileSync(path.join(repo, "apps", "desktop", "src", "release-key.ts"), "utf8"))[1];
-run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pub", pinned]);
+// The pinned keys (apps/desktop/src/release-key.ts); this PC's private key signs as `releaseKeyId` (default: the first).
+const pinnedKeys = [...readFileSync(path.join(repo, "apps", "desktop", "src", "release-key.ts"), "utf8").matchAll(/\{\s*id:\s*"([^"]+)",\s*publicKey:\s*"([^"]+)"/g)].map((m) => ({ id: m[1], publicKey: m[2] }));
+const signer = pinnedKeys.find((k) => k.id === (local.releaseKeyId || pinnedKeys[0]?.id));
+if (!signer) fail(`No pinned release key with id "${local.releaseKeyId}" in apps/desktop/src/release-key.ts.`);
+run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--out", out, "--notes", notesFile]);
+// The app checks it against the pinned key it names: so does this (a private key that isn't the pinned one fails here).
+run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pub", signer.publicKey]);
 rmSync(feedPkg, { force: true });
 
 step("Committing the version…");

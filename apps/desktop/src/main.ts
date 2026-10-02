@@ -13,8 +13,8 @@ import { registerIpc, sendEngineState, syncHistory } from "./ipc";
 import { Notifier } from "./notifier";
 import { missing, resolvePaths } from "./paths";
 import { isFree, pickPort } from "./ports";
-import { cacheRelease, recordInstall } from "./release-history";
-import { RELEASE_PUBLIC_KEY } from "./release-key";
+import { cacheRelease, readReleases, recordInstall } from "./release-history";
+import { RELEASE_KEYS } from "./release-key";
 import { builtInFeed, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
 import { engine, envFor, hermesCommit, hermesUpstream, logLine, preUpdateBackup, provisionKey, runPython, toolEnv } from "./runtime";
 import { bridgeToken, readUpdateKey } from "./secrets";
@@ -153,6 +153,32 @@ const boot = createBoot({
   log: (event, fields) => log.info(event, fields),
 });
 
+/**
+ * A start, counted per version: a version that reaches the dashboard is "healthy". One that fails to start twice
+ * (and never did) gets "Go back to X.Y.Z" on the boot page, when that version's package is still on this PC.
+ */
+async function runBoot() {
+  if (boot.running) return boot.run();
+  const version = app.getVersion();
+  const last = ctx.store.value.bootAttempts;
+  const count = last?.version === version ? last.count + 1 : 1;
+  ctx.store.save({ bootAttempts: { version, count } });
+  const result = await boot.run();
+  if (result === "ready") {
+    ctx.store.save({ bootAttempts: { version, count: 0 }, healthyVersion: version });
+    return result;
+  }
+  if (result === "error" && count >= 2 && ctx.store.value.healthyVersion !== version) {
+    const [previous] = await ctx.updater.rollbackOptions().catch(() => []);
+    if (previous) {
+      ctx.rollbackOffer = previous.version;
+      log.warn("boot.rollback-offered", { from: version, to: previous.version, attempts: count });
+      ctx.window?.webContents.send("boot:offer", { rollback: previous.version });
+    }
+  }
+  return result;
+}
+
 /** Supervisor events: logged, sent to the page's banner, and a Windows notification when Chief stops for good. */
 function onSupervisorEvent(name: "gateway" | "web", e: SupervisorEvent) {
   if (e.type === "state") log.write(e.state === "failed" ? "error" : e.state === "backoff" ? "warn" : "info", `${name}.${e.state}`, e.detail ? { detail: e.detail } : {});
@@ -232,7 +258,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         return repo ? githubSource(repo.owner, repo.repo, readUpdateKey(ctx.paths.secrets, safeStorage)) : folderSource(feed);
       },
       currentVersion: app.getVersion(),
-      publicKey: RELEASE_PUBLIC_KEY,
+      publicKey: RELEASE_KEYS,
       // Beside the backups when the owner moved those off a full system drive.
       updatesDir: ctx.store.value.backupDir ? path.join(path.dirname(ctx.store.value.backupDir), "updates") : path.join(ctx.paths.data, "updates"),
       skipped: () => ctx.store.value.skippedVersions,
@@ -255,11 +281,12 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         ctx.notifier?.start();
       },
       install: (file) => installPackage(file),
+      history: () => readReleases(ctx.paths.appDir, RELEASE_KEYS),
       onState: (state) => ctx.window?.webContents.send("updates:state", state),
       // Every verified release is kept for the update history (a folder feed's included).
       onVerified: (bytes, signature) => {
         try {
-          cacheRelease(ctx.paths.appDir, bytes, signature, RELEASE_PUBLIC_KEY);
+          cacheRelease(ctx.paths.appDir, bytes, signature, RELEASE_KEYS);
         } catch {
           /* the check already reported it */
         }
@@ -275,7 +302,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
       permissionCheckAllowed(permission, requestingOrigin, uiOrigin(), (details as { mediaType?: string }).mediaType),
     );
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: ctx.store.value.startAtLogin, args: ["--hidden"] });
-    registerIpc(boot);
+    registerIpc({ run: runBoot });
     createWindow();
     createTray();
     setJumpList();
@@ -283,7 +310,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
       logLine("update-install.log", `reopened ${app.getVersion()} (replacing ${ctx.updatedFrom})`);
       bringToFront();
     }
-    await boot.run();
+    await runBoot();
   });
   app.on("before-quit", (event) => {
     if (!ctx.quitting) {

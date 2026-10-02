@@ -181,6 +181,18 @@ describe("Updater", () => {
     expect(await thrown.updater.install()).toEqual(expect.objectContaining({ status: "error", error: "powershell missing" }));
   });
 
+  it("reports download progress a few times a second, not once per chunk", async () => {
+    publish("1.1.0");
+    let t = 0;
+    const { updater, states } = make({ now: () => (t += 10) });
+    await updater.check();
+    await updater.download();
+    const progress = states.filter((s) => s.status === "downloading");
+    expect(progress.length).toBeGreaterThan(1);
+    expect(progress.length).toBeLessThan(12); // ~50 chunks of 64 KB, at most one report per 250 ms
+    expect(progress.at(-1)).toMatchObject({ done: pkg.length, total: pkg.length });
+  });
+
   it("compares versions numerically", () => {
     expect(compareVersions("1.10.0", "1.9.9")).toBe(1);
     expect(compareVersions("1.0.0", "1.0.0")).toBe(0);

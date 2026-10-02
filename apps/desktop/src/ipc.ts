@@ -6,7 +6,7 @@ import { createDiagnostics } from "./diagnostics";
 import { bridgeHealth, profileHome } from "./gateway";
 import { BOOT_URL, dialogOptions, fileFilters, originOf, senderAllowed, validFeed, validServePort } from "./guards";
 import { disablePhone, enablePhone, OPENABLE, phoneState, setPhoneAccess } from "./phone";
-import { RELEASE_PUBLIC_KEY } from "./release-key";
+import { RELEASE_KEYS } from "./release-key";
 import { syncGithubHistory } from "./release-history";
 import { effectiveFeed, parseGithub } from "./release-source";
 import { applyRestore } from "./restore";
@@ -39,7 +39,7 @@ export async function syncHistory(): Promise<{ ok: boolean; added?: number; erro
   const key = readUpdateKey(ctx.paths.secrets, safeStorage);
   if (!repo || !key) return { ok: true, added: 0 };
   try {
-    return { ok: true, added: await syncGithubHistory(repo.owner, repo.repo, key, ctx.paths.appDir, RELEASE_PUBLIC_KEY) };
+    return { ok: true, added: await syncGithubHistory(repo.owner, repo.repo, key, ctx.paths.appDir, RELEASE_KEYS) };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -118,6 +118,13 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
     return updater.check();
   });
   handle("updates:history", () => syncHistory());
+  handle("updates:rollbackOptions", () => updater.rollbackOptions());
+  handle("updates:rollback", (version) => {
+    const v = String(version ?? "");
+    if (!/^\d+\.\d+\.\d+$/.test(v)) throw new Error("Not a version.");
+    log.info("update.rollback-requested", { version: v });
+    return updater.rollback(v);
+  });
   handle("phone:state", () => phoneState());
   handle("phone:enable", (port) => enablePhone(validServePort(port)));
   handle("phone:disable", () => disablePhone());
@@ -125,6 +132,16 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
   handle("phone:open", (url) => (OPENABLE.test(String(url)) ? shell.openExternal(String(url)).then(() => true) : false));
   handle("boot:retry", () => boot.run(), { boot: true });
   handle("boot:logs", () => shell.openPath(ctx.paths.logs), { boot: true });
+  // The boot page's "Go back to X.Y.Z" (offered only after this version failed to start twice): Chief is down anyway.
+  handle(
+    "boot:rollback",
+    () => {
+      if (!ctx.rollbackOffer) return { status: "error", error: "Nothing to go back to." };
+      log.info("update.rollback-from-boot", { version: ctx.rollbackOffer });
+      return updater.rollback(ctx.rollbackOffer, true);
+    },
+    { boot: true },
+  );
   handle("desktop:openLogs", () => shell.openPath(ctx.paths.logs));
   handle("desktop:diagnostics", () => makeDiagnostics());
   handle("desktop:engine", () => engineState());

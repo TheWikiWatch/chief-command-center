@@ -35,6 +35,9 @@ export type DesktopSettings = {
   lastHermes: string;
   /** What the last successful provisioning depended on (runtime.ts provisionKey); unchanged, a start skips it. */
   provisionKey: string;
+  /** Starts of this version that haven't reached the dashboard yet, and the last version that did (a healthy start). */
+  bootAttempts: { version: string; count: number } | null;
+  healthyVersion: string;
   /** Phone access the app turned on: the Tailscale Serve HTTPS port, and the dashboard port it pointed at then. */
   phoneServe: { port: number; uiPort: number } | null;
 };
@@ -57,6 +60,8 @@ export const DEFAULTS: DesktopSettings = {
   dataSchema: 0,
   lastHermes: "",
   provisionKey: "",
+  bootAttempts: null,
+  healthyVersion: "",
   phoneServe: null,
 };
 

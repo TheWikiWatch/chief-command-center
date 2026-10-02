@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import path from "node:path";
 
 import { githubApi, type GithubRelease } from "./release-source";
-import { compareVersions, verifyRelease, type Release } from "./updater";
+import { compareVersions, verifyRelease, type Release, type ReleaseKeys } from "./updater";
 
 /**
  * Update history (Settings → Backup & updates → History, and "What's new" after an update).
@@ -20,7 +20,7 @@ export const historyDir = (appDir: string) => path.join(appDir, "release-history
 export const installsFile = (appDir: string) => path.join(appDir, "update-history.json");
 
 /** Verify a release's signed description and keep it. Throws when it doesn't verify. */
-export function cacheRelease(appDir: string, bytes: Buffer, signature: string, publicKey: string): Release {
+export function cacheRelease(appDir: string, bytes: Buffer, signature: string, publicKey: ReleaseKeys): Release {
   const release = verifyRelease(bytes, signature, publicKey);
   const dir = historyDir(appDir);
   mkdirSync(dir, { recursive: true });
@@ -35,7 +35,7 @@ export function cacheRelease(appDir: string, bytes: Buffer, signature: string, p
 }
 
 /** The cached releases that still verify, newest first. */
-export function readReleases(appDir: string, publicKey: string): Release[] {
+export function readReleases(appDir: string, publicKey: ReleaseKeys): Release[] {
   const dir = historyDir(appDir);
   if (!existsSync(dir)) return [];
   const out: Release[] = [];
@@ -83,7 +83,7 @@ export function recordInstall(appDir: string, version: string, previous: string,
  * Fetch, verify and keep every published release this install hasn't seen yet (one listing call, then two small
  * files per new release). Returns how many were added.
  */
-export async function syncGithubHistory(owner: string, repo: string, key: string, appDir: string, publicKey: string, fetchImpl: typeof fetch = fetch): Promise<number> {
+export async function syncGithubHistory(owner: string, repo: string, key: string, appDir: string, publicKey: ReleaseKeys, fetchImpl: typeof fetch = fetch): Promise<number> {
   const gh = githubApi(owner, repo, key, fetchImpl);
   const releases = await gh.json<GithubRelease[]>("/releases?per_page=100");
   const dir = historyDir(appDir);

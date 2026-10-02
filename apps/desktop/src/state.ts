@@ -38,6 +38,8 @@ export const ctx = {
   shippedFeed: "",
   /** The version this start replaced, when it is the first start after an update ("" otherwise). */
   updatedFrom: "",
+  /** The earlier version the boot page offers to go back to, after this version failed to start twice. */
+  rollbackOffer: "",
   /** A jump-list action from the launch that started the app, until the dashboard takes it. */
   pendingAction: null as DesktopAction | null,
 };

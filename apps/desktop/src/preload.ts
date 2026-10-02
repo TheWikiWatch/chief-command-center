@@ -37,6 +37,8 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
     hasKey: () => ipcRenderer.invoke("updates:hasKey"),
     setKey: (key: string) => ipcRenderer.invoke("updates:setKey", key),
     history: () => ipcRenderer.invoke("updates:history"),
+    rollbackOptions: () => ipcRenderer.invoke("updates:rollbackOptions"),
+    rollback: (version: string) => ipcRenderer.invoke("updates:rollback", version),
     onState: (fn: (state: unknown) => void) => {
       const listener = (_e: unknown, state: unknown) => fn(state);
       ipcRenderer.on("updates:state", listener);
@@ -58,4 +60,7 @@ contextBridge.exposeInMainWorld("chiefBoot", {
   onStatus: (fn: (steps: unknown) => void) => ipcRenderer.on("boot:status", (_e, steps) => fn(steps)),
   retry: () => ipcRenderer.invoke("boot:retry"),
   openLogs: () => ipcRenderer.invoke("boot:logs"),
+  /** After two failed starts of a new version: "Go back to X.Y.Z" when its package is still on this PC. */
+  onOffer: (fn: (offer: unknown) => void) => ipcRenderer.on("boot:offer", (_e, offer) => fn(offer)),
+  rollback: () => ipcRenderer.invoke("boot:rollback"),
 });

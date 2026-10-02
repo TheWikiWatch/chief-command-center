@@ -35,6 +35,9 @@ export type DesktopUpdates = {
   setKey?: (key: string) => Promise<UpdateState>;
   /** Fetch and verify releases not kept yet for the update history; older shells lack it. */
   history?: () => Promise<{ ok: boolean; added?: number; error?: string }>;
+  /** Earlier versions whose verified package is still on this PC, and going back to one (backup first). */
+  rollbackOptions?: () => Promise<{ version: string; published: string; file: string }[]>;
+  rollback?: (version: string) => Promise<UpdateState>;
   onState: (fn: (state: UpdateState) => void) => () => void;
 };
 

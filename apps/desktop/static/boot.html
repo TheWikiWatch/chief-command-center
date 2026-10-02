@@ -39,6 +39,7 @@
   <div class="actions" id="actions">
     <button class="primary" id="retry">Try again</button>
     <button id="logs">Open logs</button>
+    <button id="rollback" hidden></button>
   </div>
 </main>
 <script>
@@ -70,6 +71,17 @@
   window.chiefBoot.onStatus(render);
   document.getElementById("retry").onclick = () => window.chiefBoot.retry();
   document.getElementById("logs").onclick = () => window.chiefBoot.openLogs();
+  // After two failed starts of a new version, when the previous version's package is still on this PC.
+  const back = document.getElementById("rollback");
+  window.chiefBoot.onOffer?.((offer) => {
+    back.hidden = !(offer && offer.rollback);
+    if (offer && offer.rollback) back.textContent = "Go back to " + offer.rollback;
+  });
+  back.onclick = () => {
+    back.disabled = true;
+    back.textContent = "Going back…";
+    window.chiefBoot.rollback();
+  };
 </script>
 </body>
 </html>
