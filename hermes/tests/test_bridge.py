@@ -772,7 +772,8 @@ class LivePathTests(unittest.TestCase):
         self.add_row(151, 0.15)
         started = time.monotonic()
         payload = self.bridge.live_transcript(150, wait=5, gen="0", approval="")
-        self.assertLess(time.monotonic() - started, 2)
+        # Well before the 5 s wait: the watcher wakes it within ~0.3 s, and on a busy machine the 2 s re-check does.
+        self.assertLess(time.monotonic() - started, 3)
         self.assertEqual([m["id"] for m in payload["messages"]], [151])
         self.assertTrue(payload["longpoll"])
         self.assertIsNone(payload["approval"])

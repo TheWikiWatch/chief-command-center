@@ -199,3 +199,12 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **`PYTHONPYCACHEPREFIX`** points at `<data>\pycache` for every bundled Python. Deleting that folder is safe (the next start compiles again, about 6 s longer).
 - **The log redacts** the token and session secret by value (`log.addSecret`), plus `Bearer …`, `token=`, `key=`, `open=` and similar. A new secret must be added with `addSecret` as soon as it exists.
 - **The backup lock** (`<app data>\backup-running.json`) holds the engine's pid; a pid that is gone, or a record older than 6 hours, is cleared. Windows can reuse a pid, so a stale record within 6 hours can at worst make the dashboard say a backup is running until the record expires.
+
+## Bridge routes and Hermes names
+
+`hermes/plugins/chief-dashboard-bridge/routes.py` (the route table), `hermes_api.py` (the Hermes names the bridge uses), `apps/web/lib/proxy-policy.ts` (the proxy's allow-list). Test map: `hermes/tests/test_routes.py`, `test_hermes_api.py`; the upstream suite's "Hermes names the bridge uses".
+
+- **A new bridge route** goes in `routes.py` with its body limit (1 MB unless it needs more) and `dashboard=True` only if the page calls it; then add it to `proxy-policy.ts`. `test_routes.py` fails until both agree. Routes the page never calls (`/outbox`, `/outbox/notify`, `/voice/model/use`) stay off the proxy.
+- **A new Hermes import** in the plugin goes in `hermes_api.CAPABILITIES` under the feature that needs it, or `test_hermes_api.py` fails. Code that must not fail quietly reads the name with `hermes_api.get()` (approvals do): a missing name is logged once and shows in Status.
+- **The legacy Discord paths** stay until an install's diagnostics show it doesn't use them: `/health` lists any used since the gateway started (`legacy`), and the bridge log has a warning the first time.
+- **Python style** is `ruff format` (line length 160, each file keeps its line endings) and `ruff check`; types are checked with pyright (basic). All three run in `npm run check`.
