@@ -615,3 +615,25 @@
 - **Measured for later:** the dashboard's first load is 615 KB of gzipped JavaScript. Phase 4's code splitting targets it.
 - **Not changed:** Streamdown stays on 1.x, because 2.x fetches its highlighting assets from a CDN, which the new content security policy blocks.
 - Tests: web 359, desktop 61, Python 103 + 21; lint has no errors.
+
+**Architecture review, Phase 3: live data.**
+
+- **The bridge wakes on changes instead of re-reading on a timer.** Before, each waiting long-poll re-read Hermes's files and database every half second, per client (the desktop window, the phone, the desktop notifier).
+  - Now one change signal wakes them. Its sources are replies and notices, the chief's questions, live steps and broadcasts.
+  - Commits to the chief's `state.db` and the install's `kanban.db` are seen through SQLite's `data_version`, and working sessions and the pending approval are compared in memory, every 250 ms.
+  - Waiters still re-check every 2 s as a safety net.
+- **The outbox file no longer grows forever**, nor is it re-read whole on most transcript responses. Only appended bytes are parsed, appends are locked, and past 2 MB it keeps 30 days (never fewer than 500 messages).
+- **A live channel for the dashboard.** `/events` streams through the dashboard's server, and the page keeps one connection.
+  - On each change, the snapshot, approvals and thread list refresh at once.
+  - Their timers relax while the channel is up: snapshot every 30 s, link check every 15 s.
+  - When the channel drops they return to the old rates, and it retries with backoff (2 s doubling to 30 s).
+  - **Measured over 30 idle seconds:** requests to the bridge went from 30 to 6, and all API requests from 42 to 18.
+- **Smaller changes:**
+  - Today's three views share one walk of the vault, and Today checks once a minute while its phone tab is hidden.
+  - The thread switcher and usage strip go through the shared poller (paused while hidden, no re-render on a quiet poll).
+  - `/snapshot` no longer queries the database once per thread.
+  - Usage re-syncs its journal at most every 15 s on reads.
+  - Uploads stream through the dashboard's server instead of being buffered.
+  - The bridge answers a broken request with a 500 instead of dropping it, times out idle connections, and supports `Range: bytes=-N`.
+- **Changed from the plan:** TanStack Query was not adopted. The existing poller already allows one request per resource, refreshes on return and keeps unchanged data identical. With the live channel waking it, a query cache would add a dependency and touch every data hook without a visible gain.
+- Tests: Python 109 (new: the change signal, its watcher, the incremental outbox, byte ranges), web 363 (new: the live channel, backoff, waking a poll); the chat controls contract passes on the real payload.
