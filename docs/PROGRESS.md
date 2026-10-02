@@ -663,3 +663,26 @@
   - Behaviour is unchanged: same tests, same screens.
 - **Not done in this phase:** the React Compiler stays off. Its lint rules still flag 122 places where components read or write refs during render, mostly in the chat's speech, scroll and outbox code. Rewriting those is risky for little gain now that the measured hot paths (thread rows, the draft, live updates) are already memoized. The warnings are capped so the number can only go down.
 - Tests: web 370 (new: the modal hook, the view switch, fields, notice rows not re-rendering, typing not re-rendering the thread, readable math); every capture scene checked against the previous build.
+
+**Architecture review, Phase 5: the visual and UX pass.**
+
+- **The window's title bar is the app's own.** The app draws behind Windows' minimize, maximize and close buttons (dark, in the canvas colour), the headers are the drag area, and content keeps clear of the buttons. Snap layouts still work. During first run a strip at the top moves the window.
+- **A command palette (Ctrl+K)** goes anywhere: Today, Fleet, the Vault, a thread, a bot, any Settings page, the Vault's notes as you type. It also runs actions: new thread, voice mode, check for updates, open the logs folder. Recently run commands come first, and anything else typed becomes "Ask Chief: …" (the text goes to the message box, never sent on its own).
+- **Keyboard shortcuts** with a "?" sheet: Ctrl+1–3 switch surfaces, Ctrl+Alt+N starts a thread, Ctrl+Shift+V opens voice mode, Ctrl+, opens Settings, "/" focuses the message box. The header's icons have labelled tooltips with their shortcut.
+- **The taskbar's jump list and the tray menu** have New thread, Voice mode and Today.
+- **Desktop width is used:**
+  - Today shows Waiting on, Due this week and Areas beside Do first when its pane is wide.
+  - Fleet shows the crew and this session's activity (who was brought on, picked up work, finished) beside the orbit.
+  - A fleet with fewer than two specialists invites you to have the chief bring one on, with suggestions that fill the message box.
+- **One colour per chief.** The chief's own colour drives the ring around its face, its glow, the chat's aurora and the orbit's rays; crimson stays for "needs you" and "active". A chosen colour too dark to see on the dark canvas is lifted just enough (tested against every palette colour).
+- **Chat reads like a person, not a log:**
+  - Tool steps fold into one line in plain words ("2 steps · Ran a command · Read a file · 9 s") that opens to a timeline with each step's time; a failed step is tinted and shows its output.
+  - Replies have Read aloud beside Copy; a message that failed to send has Retry now.
+  - On the phone, the header is the face, the name, the state line and one menu (voice mode, connection status, Settings).
+- **One visual language:**
+  - Loading shows skeletons everywhere instead of "Loading…" or "…"; empty and out-of-reach states show the chief's face in a fitting pose (asleep when the vault can't be read, celebrating when the list is clear).
+  - Today's list and the phone's Settings list are rows on the pane instead of boxed cards.
+  - No all-caps labels, and backdrop blur only where it was budgeted; a test keeps both rules.
+  - Settings has a search field ("microphone" finds Voice), and desktop surfaces swap with a short slide (a fade with reduced motion).
+- **Also:** focus rings sit in the base style layer, so components can style their own; async test waits allow 4 s, so a busy machine's timing isn't a failure.
+- Tests: web 389 (new: palette, recents and Vault search, shortcuts, settings search, Today's side lists, Fleet panel and invitation, colour contrast, tool timeline, reply actions, phone overflow, design rules), desktop 62 (jump-list arguments), Python 112 + 21. Checked in the unpackaged desktop app on throwaway data: the caption buttons, and a jump-list launch reaching the running window.
