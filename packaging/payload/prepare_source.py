@@ -38,7 +38,8 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(f"{dest} exists and is not the prepared checkout of {commit[:7]}")
         print(f"{dest} is already prepared ({branch})")
         return 0
-    git("clone", "--filter=blob:none", "--no-checkout", PIN["upstream"], str(dest))
+    # Upstream's files exactly as committed, whatever this machine's core.autocrlf: the patches match those bytes.
+    git("clone", "-c", "core.autocrlf=false", "--filter=blob:none", "--no-checkout", PIN["upstream"], str(dest))
     git("checkout", "-q", "-b", branch, commit, cwd=dest)
     for patch in PIN["patches"]:
         path = REPO / "hermes" / "patches" / patch["file"]

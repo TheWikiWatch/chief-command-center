@@ -1,2 +1,4 @@
 # Windows batch files need CRLF line endings.
 *.cmd text eol=crlf
+# Patches apply byte for byte: a Windows checkout with core.autocrlf (GitHub's Windows runners) must not convert them.
+*.patch -text

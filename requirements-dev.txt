@@ -5,5 +5,7 @@ pyyaml==6.0.3
 cryptography==50.0.1
 requests==2.33.0
 ruff==0.14.14
-# The capture gallery comparison (scripts/gallery_compare.py).
-pillow==12.2.0
+# requests' own dependency, pinned to what the payload ships (older versions have known advisories).
+idna==3.19
+# The capture gallery comparison (scripts/gallery_compare.py); the version the payload ships.
+pillow==12.3.0
