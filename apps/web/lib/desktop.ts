@@ -85,6 +85,10 @@ export type ChiefDesktop = {
    * Apply the staged restore: stop Chief (asking about work in progress first), swap in the restored data,
    * start Chief and check its health, then finish or roll back. Only the desktop app can stop Chief.
    */
+  /** Opens the app's logs folder in Explorer; older shells lack it. */
+  openLogs?: () => Promise<string>;
+  /** Taskbar jump-list and tray shortcuts ("new-thread", "voice", "today"); returns an unsubscribe. */
+  onAction?: (fn: (action: string) => void) => () => void;
   applyRestore?: () => Promise<{ ok: boolean; error?: string; report?: { remapped: string[]; review: { file: string; line: number; text: string }[]; missing_secrets: string[] } }>;
 };
 

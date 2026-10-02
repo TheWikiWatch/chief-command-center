@@ -13,13 +13,43 @@ import { useModal } from "@/lib/use-modal";
 export type PaletteCommand = {
   id: string;
   label: string;
-  group: "Go to" | "Chat" | "Settings" | "App";
+  group: "Recent" | "Go to" | "Chat" | "Threads" | "Fleet" | "Vault" | "Settings" | "App";
   icon?: ReactNode;
   /** Other words that find it ("preferences" finds Settings). */
   keywords?: string;
   shortcut?: ShortcutId;
   run: () => void;
 };
+
+const RECENT_KEY = "chief-palette-recent";
+const RECENT_MAX = 5;
+
+/** Ids of the commands run most recently, newest first (per device). */
+export function loadRecent(): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string").slice(0, RECENT_MAX) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberRecent(id: string) {
+  if (id === "ask" || id.startsWith("vault:")) return;
+  try {
+    localStorage.setItem(RECENT_KEY, JSON.stringify([id, ...loadRecent().filter((x) => x !== id)].slice(0, RECENT_MAX)));
+  } catch {
+    // Private mode or storage full: the palette just has no recents.
+  }
+}
+
+/** With no query: the recent commands first (as "Recent"), then the rest. */
+export function withRecent(commands: PaletteCommand[], recent: string[]): PaletteCommand[] {
+  const byId = new Map(commands.map((c) => [c.id, c]));
+  const top = recent.map((id) => byId.get(id)).filter((c): c is PaletteCommand => !!c);
+  const ids = new Set(top.map((c) => c.id));
+  return [...top.map((c) => ({ ...c, group: "Recent" as const })), ...commands.filter((c) => !ids.has(c.id))];
+}
 
 /** Every word of the query appears in the label or the keywords. */
 export function matches(command: Pick<PaletteCommand, "label" | "keywords" | "group">, query: string): boolean {
@@ -36,12 +66,39 @@ export function matches(command: Pick<PaletteCommand, "label" | "keywords" | "gr
  * ask the chief (the text goes to the message box, never sent on its own). Arrow keys move, Enter runs,
  * Escape closes.
  */
-export function CommandPalette({ open, onClose, commands, assistant, onAsk }: { open: boolean; onClose: () => void; commands: PaletteCommand[]; assistant: string; onAsk: (text: string) => void }) {
-  return <AnimatePresence>{open ? <Palette key="palette" onClose={onClose} commands={commands} assistant={assistant} onAsk={onAsk} /> : null}</AnimatePresence>;
+type PaletteProps = {
+  onClose: () => void;
+  commands: PaletteCommand[];
+  assistant: string;
+  onAsk: (text: string) => void;
+  /** More results for a query (the Vault's notes), fetched as the owner types. */
+  search?: (query: string, signal: AbortSignal) => Promise<PaletteCommand[]>;
+};
+
+export function CommandPalette({ open, ...props }: PaletteProps & { open: boolean }) {
+  return <AnimatePresence>{open ? <Palette key="palette" {...props} /> : null}</AnimatePresence>;
 }
 
-function Palette({ onClose, commands, assistant, onAsk }: { onClose: () => void; commands: PaletteCommand[]; assistant: string; onAsk: (text: string) => void }) {
+function Palette({ onClose, commands, assistant, onAsk, search }: PaletteProps) {
   const [query, setQuery] = useState("");
+  const [recent] = useState(loadRecent);
+  const [found, setFound] = useState<{ query: string; items: PaletteCommand[] }>({ query: "", items: [] });
+  // Search results arrive a moment after typing stops; stale ones (an older query) are never shown.
+  useEffect(() => {
+    const q = query.trim();
+    if (!search || q.length < 2) return;
+    const ac = new AbortController();
+    const t = window.setTimeout(() => {
+      search(q, ac.signal).then(
+        (items) => setFound({ query: q, items }),
+        () => undefined,
+      );
+    }, 180);
+    return () => {
+      window.clearTimeout(t);
+      ac.abort();
+    };
+  }, [query, search]);
   const [active, setActive] = useState(0);
   const listId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -49,13 +106,13 @@ function Palette({ onClose, commands, assistant, onAsk }: { onClose: () => void;
   useLayer(true, onClose);
 
   const shown = useMemo(() => {
-    const found = commands.filter((c) => matches(c, query));
     const q = query.trim();
-    const ask: PaletteCommand[] = q
-      ? [{ id: "ask", label: `Ask ${assistant}: “${q}”`, group: "Chat", icon: <MessageCircleIcon size={17} />, run: () => onAsk(q) }]
-      : [];
-    return [...found, ...ask];
-  }, [commands, query, assistant, onAsk]);
+    if (!q) return withRecent(commands, recent);
+    const hits = commands.filter((c) => matches(c, query));
+    const extra = found.query === q ? found.items : [];
+    const ask: PaletteCommand[] = [{ id: "ask", label: `Ask ${assistant}: “${q}”`, group: "Chat", icon: <MessageCircleIcon size={17} />, run: () => onAsk(q) }];
+    return [...hits, ...extra, ...ask];
+  }, [commands, query, assistant, onAsk, recent, found]);
 
   const list = useRef<HTMLUListElement>(null);
   useEffect(() => {
@@ -64,12 +121,12 @@ function Palette({ onClose, commands, assistant, onAsk }: { onClose: () => void;
 
   const run = (command: PaletteCommand | undefined) => {
     if (!command) return;
+    rememberRecent(command.id);
     onClose();
     // After the palette is gone, so focus lands where the command sends it.
     window.setTimeout(command.run, 0);
   };
 
-  let lastGroup = "";
   return (
     <div className="fixed inset-0" style={{ zIndex: LAYER.drawer }}>
       <motion.div
@@ -127,8 +184,7 @@ function Palette({ onClose, commands, assistant, onAsk }: { onClose: () => void;
         <ul ref={list} id={listId} role="listbox" aria-label="Commands" className="min-h-0 flex-1 overflow-y-auto p-1.5">
           {shown.length === 0 ? <li className="px-3 py-6 text-center text-body text-fg-3">Nothing matches.</li> : null}
           {shown.map((command, i) => {
-            const header = command.group !== lastGroup ? command.group : "";
-            lastGroup = command.group;
+            const header = i === 0 || shown[i - 1].group !== command.group ? command.group : "";
             return (
               <li key={command.id} role="presentation">
                 {header ? <p className="px-3 pb-1 pt-2.5 text-caption font-medium text-fg-3">{header}</p> : null}

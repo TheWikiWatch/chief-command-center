@@ -52,11 +52,13 @@ import { useOpenedOnce, usePrefetchLater } from "@/components/shell/loading";
 import { FLEET_VIEW_KEY, FleetView, PHONE_TAB_KEY, STORAGE_KEY, SURFACE_KEY, loadChief, loadPhoneTab, loadSplit, loadSurface, rememberChief } from "@/components/shell/persisted";
 import { CommandPalette, ShortcutList, type PaletteCommand } from "@/components/command-palette";
 import { Sheet } from "@/components/ui/sheet";
-import { AudioLinesIcon, BookOpenIcon, HashIcon, ListChecksIcon, MessageCircleIcon, OrbitIcon, PlusIcon, SettingsIcon, UsersIcon, WifiIcon, ZapIcon } from "@/components/icons";
+import { AudioLinesIcon, BookOpenIcon, BotIcon, FileTextIcon, HashIcon, ListChecksIcon, MessageCircleIcon, OrbitIcon, PlusIcon, RefreshCwIcon, SettingsIcon, UsersIcon, WifiIcon, ZapIcon } from "@/components/icons";
 import { focusComposer, isTyping, openVoiceMode, setDraft } from "@/lib/app-events";
 import { matchShortcut } from "@/lib/shortcuts";
 import { openSettings as openSettingsAt, openTeam } from "@/lib/settings-nav";
-import { threadsApi } from "@/lib/threads-client";
+import { threadsApi, type ChatThread } from "@/lib/threads-client";
+import { desktop } from "@/lib/desktop";
+import { openInVault, vaultSearch } from "@/lib/vault-client";
 import { toggleFullscreen } from "@/lib/use-fullscreen";
 import { SETTINGS_PAGES } from "@/components/settings/pages";
 
@@ -71,6 +73,12 @@ const Onboarding = dynamic(() => import("@/components/onboarding/onboarding").th
 const EMPTY_ROSTER: Person[] = [];
 const HEALTH_FAILS = 3;
 const SNAP_FRESH_MS = 8000;
+
+/** The palette's Vault results: notes matching the query (opening one brings the Vault into view). */
+async function searchVaultNotes(query: string, signal: AbortSignal): Promise<PaletteCommand[]> {
+  const { hits } = await vaultSearch(query, signal);
+  return hits.slice(0, 6).map((hit) => ({ id: `vault:${hit.path}`, label: hit.name, group: "Vault", icon: <FileTextIcon size={17} />, keywords: hit.path, run: () => openInVault(hit.path) }));
+}
 
 export function CommandShell() {
   const assistant = useAssistantName();
@@ -395,6 +403,19 @@ export function CommandShell() {
 
   // The command palette (Ctrl+K) and the keyboard map (lib/shortcuts.ts).
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // The threads, fresh each time the palette opens.
+  const [paletteThreads, setPaletteThreads] = useState<ChatThread[]>([]);
+  useEffect(() => {
+    if (!paletteOpen) return;
+    let alive = true;
+    void threadsApi.list().then(
+      (res) => alive && res.ok && setPaletteThreads(res.threads.filter((t) => !t.archived)),
+      () => undefined,
+    );
+    return () => {
+      alive = false;
+    };
+  }, [paletteOpen]);
   const [helpOpen, setHelpOpen] = useState(false);
   const goToPlace = (target: Surface | "chat") => {
     if (phone) changePhoneTab(target);
@@ -406,6 +427,10 @@ export function CommandShell() {
     goToPlace("chat");
     window.setTimeout(() => setDraft(text), 50);
   };
+  const openVoice = () => {
+    goToPlace("chat");
+    window.setTimeout(openVoiceMode, 50);
+  };
   const newThread = async () => {
     const res = await threadsApi.create().catch(() => null);
     if (res?.ok && res.thread) {
@@ -414,6 +439,16 @@ export function CommandShell() {
       window.setTimeout(focusComposer, 50);
     } else showToast({ id: "thread", title: "Couldn't start a thread", body: res?.error || `${assistantName()} isn't answering.`, tone: "warn", icon: "alert" });
   };
+  // The taskbar's jump list and the tray (desktop app): New thread, Voice mode, Today.
+  const desktopAction = useRef<(action: string) => void>(() => {});
+  useEffect(() => {
+    desktopAction.current = (action) => {
+      if (action === "new-thread") void newThread();
+      else if (action === "voice") openVoice();
+      else if (action === "today") goToPlace("today");
+    };
+  });
+  useEffect(() => desktop()?.onAction?.((action) => desktopAction.current(action)), []);
   const commands: PaletteCommand[] = [
     { id: "chat", label: `Chat with ${assistant}`, group: "Go to", icon: <MessageCircleIcon size={17} />, keywords: "message talk write", shortcut: "composer", run: () => goToPlace("chat") },
     { id: "fleet", label: "Fleet", group: "Go to", icon: <OrbitIcon size={17} />, keywords: "bots team orbit", shortcut: phone ? undefined : "surface1", run: () => { goToPlace("fleet"); changeFleetView("crew"); } },
@@ -422,12 +457,16 @@ export function CommandShell() {
     ...(fleetHealthOn ? [{ id: "health", label: "Fleet Health", group: "Go to" as const, icon: <ChartColumnIcon size={17} />, keywords: "skills learning flags", run: () => { goToPlace("fleet"); changeFleetView("health"); } }] : []),
     { id: "team", label: "Team & Routines", group: "Go to", icon: <UsersIcon size={17} />, keywords: "bots routines schedule cron", run: () => openTeam("team") },
     { id: "new-thread", label: "New thread", group: "Chat", icon: <PlusIcon size={17} />, keywords: "conversation", shortcut: "newThread", run: () => void newThread() },
-    { id: "voice", label: "Voice mode", group: "Chat", icon: <AudioLinesIcon size={17} />, keywords: "talk speak microphone", shortcut: "voice", run: () => { goToPlace("chat"); window.setTimeout(openVoiceMode, 50); } },
+    { id: "voice", label: "Voice mode", group: "Chat", icon: <AudioLinesIcon size={17} />, keywords: "talk speak microphone", shortcut: "voice", run: openVoice },
     { id: "status", label: "Connection status", group: "App", icon: <WifiIcon size={17} />, keywords: "health gateway online", run: openStatus },
     { id: "fullscreen", label: "Full screen", group: "App", icon: <ZapIcon size={17} />, keywords: "maximize f11", run: () => void toggleFullscreen() },
     { id: "shortcuts", label: "Keyboard shortcuts", group: "App", icon: <HashIcon size={17} />, keywords: "keys help", shortcut: "help", run: () => setHelpOpen(true) },
     { id: "settings", label: "Settings", group: "Settings", icon: <SettingsIcon size={17} />, keywords: "preferences options", shortcut: "settings", run: () => openSettingsAt() },
     ...SETTINGS_PAGES.map((page) => ({ id: `settings-${page.id}`, label: `Settings: ${page.label}`, group: "Settings" as const, icon: page.icon, keywords: page.keywords, run: () => openSettingsAt(page.id) })),
+    ...(desktop()?.updates ? [{ id: "updates", label: "Check for updates", group: "App" as const, icon: <RefreshCwIcon size={17} />, keywords: "new version upgrade", run: () => { openSettingsAt("backup"); void desktop()?.updates?.check(); } }] : []),
+    ...(desktop()?.openLogs ? [{ id: "logs", label: "Open logs folder", group: "App" as const, icon: <FileTextIcon size={17} />, keywords: "debug diagnostics troubleshoot", run: () => void desktop()?.openLogs?.() }] : []),
+    ...paletteThreads.map((t) => ({ id: `thread:${t.id}`, label: t.title || "Untitled thread", group: "Threads" as const, icon: <MessageCircleIcon size={17} />, keywords: "thread conversation", run: () => { changeThread(t.id); goToPlace("chat"); } })),
+    ...people.filter((p) => !p.isChief).map((p) => ({ id: `bot:${p.id}`, label: splitTitle(p.name).name || p.name, group: "Fleet" as const, icon: <BotIcon size={17} />, keywords: `${splitTitle(p.name).role} bot specialist ${p.jobTitle}`, run: () => { goToPlace("fleet"); setLooking(p); } })),
   ];
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -440,7 +479,7 @@ export function CommandShell() {
       else if (id === "composer") goToPlace("chat");
       else if (id === "help") setHelpOpen(true);
       else if (id === "newThread") void newThread();
-      else if (id === "voice") { goToPlace("chat"); window.setTimeout(openVoiceMode, 50); }
+      else if (id === "voice") openVoice();
       else if (id === "surface1") phone ? changePhoneTab("chat") : goToPlace("fleet");
       else if (id === "surface2") goToPlace(phone ? "today" : "today");
       else if (id === "surface3") goToPlace(phone ? "fleet" : "vault");
@@ -598,7 +637,7 @@ export function CommandShell() {
         </div>
       )}
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={askChief} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={askChief} search={searchVaultNotes} />
       <AnimatePresence>
         {helpOpen ? (
           <Sheet open={helpOpen} onClose={() => setHelpOpen(false)} side={phone ? "bottom" : "right"} title="Keyboard shortcuts" subtitle="Single keys work when you're not typing in a box.">

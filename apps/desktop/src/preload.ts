@@ -8,6 +8,14 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
   pickFolder: (options?: { title?: string; defaultPath?: string }) => ipcRenderer.invoke("desktop:pickFolder", options),
   pickFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => ipcRenderer.invoke("desktop:pickFile", options),
   applyRestore: () => ipcRenderer.invoke("desktop:applyRestore"),
+  openLogs: () => ipcRenderer.invoke("desktop:openLogs"),
+  /** Jump-list and tray shortcuts (guards.ts DESKTOP_ACTIONS); the one a launch brought is delivered first. */
+  onAction: (fn: (action: string) => void) => {
+    const listener = (_event: unknown, action: string) => fn(action);
+    ipcRenderer.on("desktop:action", listener);
+    void ipcRenderer.invoke("desktop:takeAction").then((action: string | null) => action && fn(action));
+    return () => void ipcRenderer.removeListener("desktop:action", listener);
+  },
   updates: {
     state: () => ipcRenderer.invoke("updates:state"),
     check: () => ipcRenderer.invoke("updates:check"),

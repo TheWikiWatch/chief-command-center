@@ -128,3 +128,21 @@ export function permissionCheckAllowed(permission: string, requestingOrigin: str
   if (permission === "media") return !mediaType || mediaType === "audio" || mediaType === "unknown";
   return true;
 }
+
+/** Shortcuts from the taskbar jump list and the tray, passed to a launch as `--action=<id>`. */
+export const DESKTOP_ACTIONS = [
+  { id: "new-thread", title: "New thread", description: "Start a new thread with Chief" },
+  { id: "voice", title: "Voice mode", description: "Talk with Chief" },
+  { id: "today", title: "Today", description: "See what to do first" },
+] as const;
+export type DesktopAction = (typeof DESKTOP_ACTIONS)[number]["id"];
+
+/** The action a launch asks for (only the known ones; anything else on the command line is ignored). */
+export function actionFromArgv(argv: readonly string[]): DesktopAction | null {
+  for (const arg of argv) {
+    const m = /^--action=([a-z-]+)$/.exec(arg);
+    const found = m && DESKTOP_ACTIONS.find((a) => a.id === m[1]);
+    if (found) return found.id;
+  }
+  return null;
+}

@@ -22,7 +22,7 @@ import { cacheRelease, recordInstall, syncGithubHistory } from "./release-histor
 import { choosePort, disableServe, enableServe, findTailscale, phoneUrl, readState } from "./tailscale";
 import { newSessionSecret, openTicket, sessionCookieName } from "./session";
 import { registerBootScheme, serveBootPage } from "./boot-protocol";
-import { BOOT_URL, dialogOptions, fileFilters, navigateDecision, originOf, permissionAllowed, permissionCheckAllowed, senderAllowed, validFeed, validServePort, windowOpenDecision } from "./guards";
+import { actionFromArgv, BOOT_URL, DESKTOP_ACTIONS, dialogOptions, fileFilters, navigateDecision, originOf, permissionAllowed, permissionCheckAllowed, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision, type DesktopAction } from "./guards";
 
 /** The data layout this version writes. A later version that changes it raises this, and an older app
  * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
@@ -389,6 +389,35 @@ function showWindow() {
   window.focus();
 }
 
+/** A jump-list or tray shortcut: show the window and hand the action to the dashboard (or keep it until the
+ * dashboard has loaded, for a launch that started the app). */
+let pendingAction: DesktopAction | null = null;
+function runAction(action: DesktopAction) {
+  showWindow();
+  const url = window?.webContents.getURL() || "";
+  if (window && sameOrigin(url, uiOrigin()) && !window.webContents.isLoading()) window.webContents.send("desktop:action", action);
+  else pendingAction = action;
+}
+
+/** The taskbar's jump list (Windows): each task relaunches the app with `--action=…`, which reaches this instance. */
+function setJumpList() {
+  if (process.platform !== "win32") return;
+  try {
+    app.setUserTasks(
+      DESKTOP_ACTIONS.map((a) => ({
+        program: process.execPath,
+        arguments: [...(app.isPackaged ? [] : [app.getAppPath()]), `--action=${a.id}`].join(" "),
+        iconPath: process.execPath,
+        iconIndex: 0,
+        title: a.title,
+        description: a.description,
+      })),
+    );
+  } catch (error) {
+    logLine("desktop.log", `jump list not set: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
 /**
  * The first start after an update is launched by the installer, a hidden background process, and Windows'
  * focus-stealing protection keeps such a window behind the others (or only in the taskbar). Raise it above
@@ -484,6 +513,8 @@ function createTray() {
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: "Open Chief", click: showWindow },
+      ...DESKTOP_ACTIONS.map((a) => ({ label: a.title, click: () => runAction(a.id) })),
+      { type: "separator" },
       { label: "Open in browser", click: openInBrowser },
       { label: "Restart Chief", click: () => void gateway.stop(true).then(() => gateway.start()) },
       { label: "Open logs", click: () => void shell.openPath(paths.logs) },
@@ -667,6 +698,13 @@ function registerIpc() {
   handle("phone:open", (url) => (OPENABLE.test(String(url)) ? shell.openExternal(String(url)).then(() => true) : false));
   handle("boot:retry", () => boot(), { boot: true });
   handle("boot:logs", () => shell.openPath(paths.logs), { boot: true });
+  handle("desktop:openLogs", () => shell.openPath(paths.logs));
+  // The dashboard asks once its shell has mounted: an action from the launch that started the app.
+  handle("desktop:takeAction", () => {
+    const action = pendingAction;
+    pendingAction = null;
+    return action;
+  });
   handle("desktop:pickFolder", async (opts) => {
     const o = dialogOptions(opts);
     const res = await dialog.showOpenDialog(window!, { title: o.title, defaultPath: o.defaultPath, properties: ["openDirectory", "createDirectory"] });
@@ -726,7 +764,13 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
   app.quit();
 } else {
   // A second launch shows the window; `--quit` (an installer or updater) asks this instance to quit cleanly.
-  app.on("second-instance", (_event, argv) => (argv.includes("--quit") ? void quit() : showWindow()));
+  app.on("second-instance", (_event, argv) => {
+    if (argv.includes("--quit")) return void quit();
+    const action = actionFromArgv(argv);
+    if (action) runAction(action);
+    else showWindow();
+  });
+  pendingAction = actionFromArgv(process.argv);
   app.setAppUserModelId("org.chiefcommandcenter.desktop");
   app.whenReady().then(async () => {
     paths = resolvePaths({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), env: process.env });
@@ -816,6 +860,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     registerIpc();
     createWindow();
     createTray();
+    setJumpList();
     if (updatedFrom && !hiddenLaunch()) {
       logLine("update-install.log", `reopened ${app.getVersion()} (replacing ${updatedFrom})`);
       bringToFront();

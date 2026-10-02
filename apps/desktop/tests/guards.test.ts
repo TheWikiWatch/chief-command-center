@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { BOOT_URL, dialogOptions, fileFilters, isBootPage, navigateDecision, permissionAllowed, permissionCheckAllowed, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision } from "../src/guards";
+import { actionFromArgv, BOOT_URL, dialogOptions, fileFilters, isBootPage, navigateDecision, permissionAllowed, permissionCheckAllowed, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision } from "../src/guards";
 
 const ORIGIN = "http://127.0.0.1:3000";
 // User-info look-alike (`origin` + "@" + another host), assembled so the privacy scan doesn't read it as an address.
@@ -115,5 +115,15 @@ describe("permissions", () => {
     expect(permissionCheckAllowed("media", "http://127.0.0.1:3000", ORIGIN, "video")).toBe(false);
     expect(permissionCheckAllowed("geolocation", "http://127.0.0.1:3000", ORIGIN)).toBe(false);
     expect(permissionCheckAllowed("notifications", "http://127.0.0.1:30001", ORIGIN)).toBe(false);
+  });
+});
+
+describe("jump-list actions", () => {
+  it("reads a known --action from a launch, and ignores anything else", () => {
+    expect(actionFromArgv(["chief.exe", "--action=new-thread"])).toBe("new-thread");
+    expect(actionFromArgv(["chief.exe", "--action=today", "--hidden"])).toBe("today");
+    expect(actionFromArgv(["chief.exe", "--action=rm-rf"])).toBeNull();
+    expect(actionFromArgv(["chief.exe", "--action=voice;calc"])).toBeNull();
+    expect(actionFromArgv(["chief.exe"])).toBeNull();
   });
 });
