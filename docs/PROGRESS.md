@@ -574,4 +574,4 @@
   - The status sheet no longer claims port 7790.
   - The bridge plugin is versioned with the app (the release script bumps it).
 - **The tester installer checks the certificate's fingerprint.** It sent and checked the certificate in the same zip, so a tampered folder could vouch for itself. It now requires an intact signature, asks for the first 8 characters of the fingerprint sent with each update key (`npm run tester-kit` prints it), and checks the signature again once the certificate is trusted.
-- Tests: web 350 (3 new), desktop 58 (9 new guards, failed-install restart), Python 103 (6 new: token leaves the environment, Hermes folders, profile names) + 21; chat controls contract on the real payload: 52 checks.
+- Tests: web 350 (3 new), desktop 58 (9 new guards, failed-install restart), Python 103 (6 new: token leaves the environment, Hermes folders, profile names) + 21; chat controls contract on the real payload: every check passes, the new one included.
