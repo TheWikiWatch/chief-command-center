@@ -61,6 +61,10 @@ async function proxy(req: NextRequest, path: string[]) {
     ? (wait + 10) * 1000
     : path[0] === "setup"
       ? 60000
+    : rel === "tools/test"
+      ? 180000
+    : path[0] === "tools"
+      ? 30000
     : path[0] === "file" || path[0] === "preview" || path[0] === "thumb" || path[0] === "transcribe" || path[0] === "speak"
       ? 180000
       : path[0] === "snapshot"

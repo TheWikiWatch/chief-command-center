@@ -1,4 +1,4 @@
-import type { ApprovalChoice, ExecApproval, Person, Snapshot, Transcript, Peek } from "@/lib/types";
+import type { ApprovalChoice, ChatAttachment, ExecApproval, Person, Snapshot, Transcript, Peek } from "@/lib/types";
 import { requestJson, RequestError } from "@/lib/request";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { currentChatThread } from "@/lib/chat-thread";
@@ -165,6 +165,44 @@ export async function patchSettings(body: {
   if (!data.ok) throw new Error(data.error || "Could not save settings");
   return data;
 }
+/* Settings → Tools: the services the chief uses to make images and search the web (bridge tools_settings.py). */
+export type ToolKey = { key: string; label: string; url: string; set: boolean };
+export type ToolService = {
+  name: string;
+  label: string;
+  blurb: string;
+  badge: string;
+  status: "ready" | "needs_keys" | "needs_auth" | "needs_setup" | string;
+  hint: string;
+  keys: ToolKey[];
+  active: boolean;
+  recommended: boolean;
+  /** Web only: it searches but can't read pages (reading stays with the service that does). */
+  searchOnly?: boolean;
+};
+export type ToolModelChoice = { id: string; label: string; detail: string };
+export type ToolsState = {
+  ok: boolean;
+  error?: string;
+  image: { active: string | null; providers: ToolService[]; model: { current: string; options: ToolModelChoice[] } | null };
+  web: { active: string | null; providers: ToolService[]; backends: { search: string; extract: string } };
+};
+export type ToolName = "image" | "web";
+export type ToolTestResult = { ok: boolean; error?: string; image?: ChatAttachment; results?: { title: string; url: string }[] };
+
+export async function fetchTools(): Promise<ToolsState> {
+  const data = await get<ToolsState>("tools", undefined, 30_000);
+  if (!data.ok) throw new Error(data.error || "Tools unavailable");
+  return data;
+}
+export async function patchTools(body: { tool: ToolName; provider?: string; model?: string; keys?: Record<string, string> }): Promise<ToolsState> {
+  const data = await write<ToolsState>("tools", body, 30_000, "PATCH");
+  if (!data.ok) throw new Error(data.error || "Could not save");
+  return data;
+}
+/** Runs the real tool once (one image can take a minute or two on the slower models). */
+export const testTool = (tool: ToolName) => write<ToolTestResult>("tools/test", { tool }, 190_000);
+
 /** Stop what the chief is doing now (Hermes's own /stop for this chat). */
 export const stopTurn = () => write<{ ok: boolean; error?: string; generating?: boolean }>("stop", withThread({}), 15_000);
 /** Queue a message for after the current turn (Hermes's /queue). */

@@ -744,3 +744,11 @@
 - The icon is now the chief's faceted hexagon face, glowing on a deep teal-black tile. It's drawn once (`apps/web/scripts/gen-pwa-icons.mjs`) and rendered everywhere it appears: the home screen (with a full-bleed version for Android's launcher shapes and iPhone), Android's themed icon (new: a monochrome version tinted to the wallpaper), notifications, the browser tab, the desktop window, and the tray (now the face alone, which reads at 16px).
 - **Windows had been showing electron-builder's sample logos** in the Start menu and taskbar, because the package carried no artwork of its own. It now has a full set, including unplated taskbar sizes from 16 to 256px.
 - On iPhone, a home-screen icon changes only after it's removed and added again; Android picks up the new one by itself.
+
+**Settings → Tools: making images and searching the web.**
+
+- **How a person adds image generation now:** Settings → Tools → Making images lists the services Hermes offers (OpenAI, FAL, OpenRouter, xAI, a ChatGPT sign-in, and more under "More services"), each marked ready, "add key" or what it still needs. Picking one that needs a key opens a box for it (with where to get one); "Save and use" saves the key to the chief's profile and switches the chief to that service in one step. A model list follows, and **Make a test image** runs the real tool once and shows the picture. Before this, a saved OpenAI key alone did nothing for images: Hermes only uses the service named in its config, which nothing in the app could set.
+- **Searching the web** works the same way. The free services (Exa, Parallel) need no key and take one tap; **Try a search** shows the first results. A search-only service (Brave Free, DuckDuckGo) takes searches and leaves reading pages with the service that can.
+- Everything goes through Hermes's own rows, readiness checks and config writes (the ones `hermes tools` and Hermes's web dashboard use), so new services Hermes adds appear by themselves. A failed test says what happened in one plain line ("The service turned down the key. …").
+- The chief now knows to point you to Settings → Tools when it can't make an image or search because nothing is set up.
+- Tests: a new contract (`run_tools_contract.py`, 27 checks, part of the upgrade compatibility suite) against the real Hermes; web tests for the page and the proxy rules.

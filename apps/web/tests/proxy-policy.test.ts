@@ -24,6 +24,12 @@ describe("proxy trust boundary", () => {
     expect(permittedOperation("bridge", "GET", ["setup", "key"])).toBe(false);
     expect(permittedOperation("bridge", "POST", ["setup", "status"])).toBe(false);
     expect(permittedOperation("bridge", "POST", ["setup", "secrets"])).toBe(false);
+    // Settings → Tools: read by GET, change by PATCH, run a test by POST; nothing else.
+    expect(permittedOperation("bridge", "GET", ["tools"])).toBe(true);
+    expect(permittedOperation("bridge", "PATCH", ["tools"])).toBe(true);
+    expect(permittedOperation("bridge", "POST", ["tools", "test"])).toBe(true);
+    expect(permittedOperation("bridge", "POST", ["tools"])).toBe(false);
+    expect(permittedOperation("bridge", "PATCH", ["tools", "test"])).toBe(false);
     expect(permittedOperation("ops", "PUT", ["settings"])).toBe(true);
     expect(permittedOperation("ops", "PUT", ["boards"])).toBe(false);
     // Settings → Phone: the alert device count by GET; a test alert and stopping alerts by POST.

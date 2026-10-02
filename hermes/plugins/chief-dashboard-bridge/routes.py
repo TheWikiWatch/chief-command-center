@@ -60,6 +60,7 @@ def build(bridge) -> list[Route]:
     """The table, bound to one BridgeServer."""
     from . import data, fleet, hermes_api, identity, media, persona, providers, push, routines, second_brain, speech_model, threads, usage, voice
     from . import settings as hermes_settings
+    from . import tools_settings
     from .server import _about, _cc_push, _flag, _float_param, _guarded, _thread_body, _thread_param, byte_range, legacy_in_use
 
     def int_q(req: Request, name: str, default: int) -> int:
@@ -363,6 +364,9 @@ def build(bridge) -> list[Route]:
         Route(P, "/usage/budget", lambda r: _guarded(lambda: usage.set_budget(r.body.get("monthly"))), **A),
         Route(G, "/settings", lambda r: hermes_settings.get_settings()),
         Route("PATCH", "/settings", lambda r: hermes_settings.patch_settings(r.body), limit=64 * KB, **A),
+        Route(G, "/tools", lambda r: tools_settings.get_tools()),
+        Route("PATCH", "/tools", lambda r: tools_settings.patch_tools(r.body), limit=64 * KB, **A),
+        Route(P, "/tools/test", lambda r: tools_settings.test_tool(r.body), limit=4 * KB, **A),
         Route(G, "/about", lambda r: _about()),
         # Phone alerts
         Route(G, "/push/vapidPublicKey", push_call(lambda r: {"ok": True, "publicKey": _cc_push().public_key()})),

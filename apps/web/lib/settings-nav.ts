@@ -1,5 +1,5 @@
 /** Settings categories, and a way for any part of the app to open Settings at one (the usage strip opens Usage). */
-export type SettingsCategory = "general" | "models" | "voice" | "second-brain" | "notifications" | "phone" | "usage" | "backup" | "about";
+export type SettingsCategory = "general" | "models" | "tools" | "voice" | "second-brain" | "notifications" | "phone" | "usage" | "backup" | "about";
 
 export const OPEN_SETTINGS_EVENT = "chief:open-settings";
 

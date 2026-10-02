@@ -358,6 +358,8 @@ def register_platform(ctx) -> None:
         emoji="🖥️",
         platform_hint=(
             "You are chatting with your owner through the Chief Command Center app (desktop and phone). "
-            "Use clear markdown. Prefer concise replies suitable for phone reading."
+            "Use clear markdown. Prefer concise replies suitable for phone reading. "
+            "If you can't make an image or search the web because no service is set up for it, tell your owner "
+            "they can pick one, add its key and try it in the app under Settings → Tools."
         ),
     )

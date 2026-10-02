@@ -5,7 +5,7 @@
 Runs, against that payload's own Python and launcher, on throwaway homes only:
 
 1. Plugin import: every bridge module imports; imports of Hermes's private (underscore) names are listed.
-2. The contract runners: providers, persona, Second Brain, speech model (offline unless --network).
+2. The contract runners: providers, persona, Second Brain, tools, speech model (offline unless --network).
 3. The bridge's unit tests under the payload interpreter.
 4. Gateway smoke: provision a fresh profile the way the app does, start `hermes -p chief gateway run` on a
    free port with its own lock folder, check /health, /snapshot, /transcript, /setup/status, /voice/model and
@@ -263,6 +263,7 @@ def main() -> int:
     check("Fleet Health contract", lambda: contract("run_learning_contract.py"))
     check("routines contract", lambda: contract("run_routines_contract.py"))
     check("usage contract", lambda: contract("run_usage_contract.py"))
+    check("tools contract (images, web search)", lambda: contract("run_tools_contract.py"))
     check("second brain contract", lambda: contract("run_second_brain_contract.py", str(work / "second-brain-work")))
     check("speech model contract" + (" + network" if args.network else ""), lambda: contract("run_speech_model_contract.py", network=args.network))
     check("bridge unit tests", lambda: run([str(p.python), "-B", "-m", "unittest", "discover", "-s", "hermes/tests"], p.env(), cwd=REPO))

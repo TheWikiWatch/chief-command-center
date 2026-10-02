@@ -17,6 +17,7 @@ import { ConnectionGroup, ModelsKeysGroup } from "@/components/settings/models";
 import { HapticsGroup, NotificationsGroup, SoundGroup } from "@/components/settings/notifications";
 import { SecondBrainGroup } from "@/components/settings/second-brain";
 import { VoiceGroup } from "@/components/settings/voice";
+import { ToolsPage } from "@/components/settings/tools";
 import { SETTINGS_PAGES } from "@/components/settings/pages";
 
 export type ApplyBody = {
@@ -251,6 +252,8 @@ function CategoryPage({
           <ConnectionGroup />
           <ModelsKeysGroup />
         </>
+      ) : id === "tools" ? (
+        <ToolsPage />
       ) : id === "voice" ? (
         <VoiceGroup />
       ) : id === "second-brain" ? (

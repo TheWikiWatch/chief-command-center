@@ -95,6 +95,22 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "hermes_cli.tools_config_providers": ("STT_MODEL_CATALOG", "_STT_MODEL_CONFIG_KEY", "_visible_providers", "provider_readiness_status"),
         "tools.tool_backend_helpers": ("resolve_provider_secret",),
     },
+    "images and web search": {
+        "hermes_cli.tools_config": (
+            "TOOL_CATEGORIES",
+            "IMAGEGEN_BACKENDS",
+            "_is_provider_active",
+            "_plugin_image_gen_catalog",
+            "_visible_providers",
+            "apply_provider_selection",
+            "get_nous_subscription_features",
+            "provider_readiness_status",
+            "web_provider_capabilities",
+        ),
+        "hermes_cli.config": ("get_env_value", "load_config", "save_config"),
+        "tools.web_tools": ("_get_extract_backend", "_get_search_backend"),
+        "tools.registry": ("registry",),
+    },
 }
 
 

@@ -48,7 +48,7 @@ class RouteTableTests(unittest.TestCase):
         exact = [r for r in self.table if r.dashboard and not r.prefix]
         self.assertEqual({r.path[1:] for r in exact if r.method == "GET"}, ts_set("bridgeGet"))
         self.assertEqual({r.path[1:] for r in exact if r.method == "POST"}, ts_set("bridgePost"))
-        self.assertEqual({r.path[1:] for r in exact if r.method == "PATCH"}, set(re.findall(r'method === "PATCH" && route === "([^"]+)"', POLICY)))
+        self.assertEqual({r.path[1:] for r in exact if r.method == "PATCH"}, ts_set("bridgePatch"))
         prefixes = {r.path[1:] for r in self.table if r.dashboard and r.prefix}
         self.assertEqual(prefixes, set(re.findall(r'"([a-z]+)"', re.search(r"\[(\"profile\", \"avatar\")\]", POLICY).group(1))))
 
