@@ -4,6 +4,8 @@ import { useEffect, useId, useRef, useState } from "react";
 
 import { CircleAlertIcon } from "@/components/icons";
 import { renameProfile } from "@/lib/bridge";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 /**
  * A bot's name and role (the chief's too). Saving rewrites the profile's title, and unless unticked the
@@ -68,7 +70,7 @@ export function NameEditor({
           value={draftName}
           maxLength={40}
           onChange={(e) => setDraftName(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3"
+          className={field({ extra: "mt-1 w-full" })}
         />
       </label>
       <label htmlFor={`${id}-role`} className="block text-caption text-fg-3">
@@ -79,7 +81,7 @@ export function NameEditor({
           maxLength={60}
           placeholder="e.g. Chief of Staff"
           onChange={(e) => setDraftRole(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+          className={field({ extra: "mt-1 w-full" })}
         />
       </label>
       <label className="flex items-start gap-2.5 py-1 text-callout text-fg-2">
@@ -93,7 +95,7 @@ export function NameEditor({
         </p>
       ) : null}
       <div className="flex gap-2 pt-1">
-        <button type="submit" disabled={busy || !draftName.trim() || !changed} className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50">
+        <button type="submit" disabled={busy || !draftName.trim() || !changed} className={btn("primary", "md")}>
           {busy ? "Saving…" : "Save"}
         </button>
         <button type="button" onClick={onCancel} className="press min-h-10 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg">

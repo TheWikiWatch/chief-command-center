@@ -65,6 +65,8 @@ import { CheckMySystem } from "@/components/voice/check-my-system";
 import { loadVoiceCheck, type VoiceCheckResult } from "@/lib/mic-device";
 import { secondBrain, setup, type Routine, type SecondBrainStatus, type SetupStatus } from "@/lib/setup-client";
 import { useAppConfig } from "@/lib/app-config";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 type ApplyBody = {
   stt?: { provider?: string; model?: string; api_key?: string };
@@ -171,7 +173,7 @@ function SettingsWindow({
           <h2 id="settings-title" className={`min-w-0 flex-1 truncate text-title text-fg ${meta ? "sr-only" : "pl-2"}`}>
             {meta ? meta.label : "Settings"}
           </h2>
-          <button type="button" onClick={onClose} aria-label="Close settings" className="press grid size-11 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
+          <button type="button" onClick={onClose} aria-label="Close settings" className="press grid size-11 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
             <XIcon size={18} />
           </button>
         </header>
@@ -187,8 +189,8 @@ function SettingsWindow({
               <motion.ul key="list" initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1, transition: { duration: 0.2, ease: EASE.enter } }} exit={{ x: -30, opacity: 0, transition: { duration: 0.12 } }} className="mx-4 divide-y divide-(--line-1) overflow-hidden rounded-card border border-line bg-card">
                 {CATEGORIES.map(({ id, label, blurb, Icon }) => (
                   <li key={id}>
-                    <button type="button" onClick={() => choose(id)} className="press flex min-h-14 w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-white/3">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/6 text-fg-2">
+                    <button type="button" onClick={() => choose(id)} className="press flex min-h-14 w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-fill-1">
+                      <span className="grid size-8 shrink-0 place-items-center rounded-ctl bg-fill-2 text-fg-2">
                         <Icon className="size-4" />
                       </span>
                       <span className="min-w-0 flex-1">
@@ -222,9 +224,9 @@ function SettingsWindow({
                   type="button"
                   aria-current={on ? "page" : undefined}
                   onClick={() => choose(id)}
-                  className={`press relative flex min-h-10 w-full items-center gap-3 rounded-ctl px-2.5 text-left text-callout transition-colors ${on ? "text-fg" : "text-fg-2 hover:bg-white/4 hover:text-fg"}`}
+                  className={`press relative flex min-h-10 w-full items-center gap-3 rounded-ctl px-2.5 text-left text-callout transition-colors ${on ? "text-fg" : "text-fg-2 hover:bg-fill-1 hover:text-fg"}`}
                 >
-                  {on ? <motion.span layoutId="settings-nav" className="absolute inset-0 rounded-ctl bg-white/8" transition={SPRING.snappy} /> : null}
+                  {on ? <motion.span layoutId="settings-nav" className="absolute inset-0 rounded-ctl bg-fill-3" transition={SPRING.snappy} /> : null}
                   <Icon className={`relative size-4 ${on ? "text-fg" : "text-fg-3"}`} />
                   <span className="relative">{label}</span>
                 </button>
@@ -241,7 +243,7 @@ function SettingsWindow({
             </h3>
             <p className="mt-1 text-callout text-fg-3">{meta?.blurb}</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="Close settings" className="press -mr-2 grid size-10 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
+          <button type="button" onClick={onClose} aria-label="Close settings" className="press -mr-2 grid size-10 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
             <XIcon size={18} />
           </button>
         </header>
@@ -504,7 +506,7 @@ function SystemCheckRow() {
   const [last, setLast] = useState<VoiceCheckResult | null>(null);
   useEffect(() => setLast(loadVoiceCheck()), [open]);
   return (
-    <div className="rounded-ctl bg-white/3 px-3 py-2.5">
+    <div className="rounded-ctl bg-fill-1 px-3 py-2.5">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-body text-fg">Check my system</p>
@@ -616,7 +618,7 @@ function RoutineRow({ routine: r, busy, onChange }: { routine: Routine; busy: st
               onChange={(e) => setTime(e.target.value)}
               onBlur={commit}
               onKeyDown={(e) => e.key === "Enter" && commit()}
-              className="min-h-9 w-32 rounded-ctl border border-line-2 bg-canvas px-2 text-callout text-fg outline-hidden focus:border-line-3 disabled:opacity-60"
+              className={field({ extra: "min-h-9 w-32 px-2 text-callout disabled:opacity-60" })}
             />
           </>
         ) : null}
@@ -757,7 +759,7 @@ function VoiceGroup() {
           type="button"
           aria-label="Refresh"
           title="Refresh from Hermes"
-          className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg disabled:opacity-40"
+          className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg disabled:opacity-40"
           disabled={loading || saving}
           onClick={() => void load()}
         >
@@ -769,13 +771,13 @@ function VoiceGroup() {
         <SystemCheckRow />
         {loading && !data ? (
           <div className="space-y-2" role="status" aria-label="Loading Hermes…">
-            <div className="h-11 rounded-ctl bg-white/4" />
-            <div className="h-11 rounded-ctl bg-white/3" />
-            <div className="h-11 rounded-ctl bg-white/2" />
+            <div className="h-11 rounded-ctl bg-fill-1" />
+            <div className="h-11 rounded-ctl bg-fill-1" />
+            <div className="h-11 rounded-ctl bg-fill-1" />
           </div>
         ) : null}
         {!loading && !pickerReady ? (
-          <p className="rounded-ctl bg-white/4 px-3 py-2 text-callout text-fg-2">
+          <p className="rounded-ctl bg-fill-1 px-3 py-2 text-callout text-fg-2">
             Voice picker needs a relaunch of Chief Command Center. Current: {stt?.provider || "local"} /{" "}
             {tts?.provider || "edge"}.
           </p>
@@ -1043,7 +1045,7 @@ function EventRow({ kind, event, checked, disabled }: { kind: "sound" | "haptics
           <button
             type="button"
             aria-label={`Preview ${label.toLowerCase()} sound`}
-            className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg disabled:opacity-40"
+            className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg disabled:opacity-40"
             disabled={disabled}
             onClick={() => previewSound(event, PREVIEW_VARIANT[event])}
           >
@@ -1112,7 +1114,7 @@ function NotificationsGroup() {
               .then(() => pushStatus().then(setDevice))
               .finally(() => setPushBusy(false));
           }}
-          className="press min-h-11 rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-4"
+          className={btn("primary", "md")}
         >
           {pushBusy ? "Enabling…" : device === "on" ? "Re-register this device" : "Enable notifications"}
         </button>
@@ -1188,7 +1190,7 @@ function ProviderList({
                   if (!selected) onSelect(p.id);
                 }}
                 className={`flex min-h-12 w-full items-center gap-3 px-3 text-left transition-colors duration-fast disabled:opacity-45 ${
-                  selected ? "bg-white/5" : "hover:bg-white/3"
+                  selected ? "bg-fill-2" : "hover:bg-fill-1"
                 }`}
               >
                 <span
@@ -1277,7 +1279,7 @@ function KeyField({
           onKeyDown={(e) => {
             if (e.key === "Enter") void submit();
           }}
-          className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden focus:border-line-3"
+          className={field({ mono: true, extra: "min-w-0 flex-1" })}
         />
         <button type="button" className="chat-type-btn min-h-11 px-3" disabled={saving} onClick={() => setReveal((v) => !v)}>
           {reveal ? "Hide" : "Show"}
@@ -1298,7 +1300,7 @@ function KeyField({
         )}
         <button
           type="button"
-          className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-4"
+          className={btn("primary", "md")}
           disabled={saving || !envKey || !value.trim()}
           onClick={() => void submit()}
         >

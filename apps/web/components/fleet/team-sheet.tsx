@@ -11,6 +11,8 @@ import { fleetApi, type Archive } from "@/lib/fleet-client";
 import { useAssistantName } from "@/lib/identity";
 import { OPEN_TEAM_EVENT, type TeamTab } from "@/lib/settings-nav";
 import type { Person } from "@/lib/types";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 const TAB_KEY = "chief-team-tab";
 
@@ -51,7 +53,7 @@ export function TeamButton({ phone, people = [], onAskChief }: { phone: boolean;
   return (
     <>
       {phone ? (
-        <button type="button" aria-label="Team & Routines" title="Team & Routines" onClick={() => setOpen(true)} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
+        <button type="button" aria-label="Team & Routines" title="Team & Routines" onClick={() => setOpen(true)} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
           <UsersIcon size={19} />
         </button>
       ) : (
@@ -157,7 +159,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
           value={need}
           onChange={(e) => setNeed(e.target.value)}
           placeholder="e.g. Keep an eye on my supplier invoices and flag anything odd"
-          className="w-full resize-none rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+          className={field({ extra: "w-full resize-none py-2" })}
         />
         <button
           type="button"
@@ -173,7 +175,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
               setAsking(false);
             }
           }}
-          className="press min-h-11 w-full rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:opacity-50"
+          className={btn("primary", "md", "w-full")}
         >
           {asking ? "Sending…" : `Ask ${assistant}`}
         </button>

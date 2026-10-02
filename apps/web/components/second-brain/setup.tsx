@@ -16,6 +16,8 @@ import {
   type SecondBrainResult,
   type SecondBrainStatus,
 } from "@/lib/setup-client";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 type Source = "new" | "existing";
 type Stage =
@@ -180,7 +182,7 @@ export function SecondBrainSetup({
                 role="radio"
                 aria-checked={on}
                 onClick={() => setFormat(f)}
-                className={`press flex flex-col rounded-card border px-4 py-3.5 text-left transition-colors ${on ? "border-fg/60 bg-white/6" : "border-line hover:border-line-2"}`}
+                className={`press flex flex-col rounded-card border px-4 py-3.5 text-left transition-colors ${on ? "border-fg/60 bg-fill-2" : "border-line hover:border-line-2"}`}
               >
                 <span className="flex items-center gap-2.5">
                   <span className={`grid size-8 shrink-0 place-items-center rounded-full ${on ? "bg-fg text-canvas" : "bg-well text-fg-2"}`}>
@@ -208,7 +210,7 @@ export function SecondBrainSetup({
           type="button"
           disabled={!format}
           onClick={() => go({ name: "source" })}
-          className="press min-h-11 w-full rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-4"
+          className={btn("primary", "md", "w-full")}
         >
           Continue
         </button>
@@ -259,7 +261,7 @@ export function SecondBrainSetup({
             }}
             spellCheck={false}
             placeholder={source === "new" ? "C:\\Users\\you\\Documents\\Second Brain" : "D:\\Notes"}
-            className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+            className={field({ mono: true, extra: "min-w-0 flex-1 py-2" })}
           />
           {pick ? (
             <button
@@ -281,7 +283,7 @@ export function SecondBrainSetup({
         type="button"
         disabled={busy || !folder.trim()}
         onClick={() => void check()}
-        className="press min-h-11 w-full rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-4"
+        className={btn("primary", "md", "w-full")}
       >
         {busy ? "Looking…" : "Check this folder"}
       </button>
@@ -292,7 +294,7 @@ export function SecondBrainSetup({
 
 function Choice({ icon, title, body, onClick }: { icon: ReactNode; title: string; body: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="press flex w-full items-start gap-3 rounded-card border border-line px-4 py-3.5 text-left hover:border-line-2 hover:bg-white/3">
+    <button type="button" onClick={onClick} className="press flex w-full items-start gap-3 rounded-card border border-line px-4 py-3.5 text-left hover:border-line-2 hover:bg-fill-1">
       <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-well text-fg-2">{icon}</span>
       <span className="min-w-0">
         <span className="block text-body font-medium text-fg">{title}</span>
@@ -357,7 +359,7 @@ function Review({
     <Panel heading={heading} title={title} subtitle={summary} onBack={onBack}>
       <p className="break-all rounded-ctl border border-line bg-canvas px-3 py-2 font-mono text-code text-fg-2">{found.path}</p>
       {mismatch ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line-2 bg-white/4 px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line-2 bg-fill-1 px-4 py-3">
           <p className="min-w-0 flex-1 text-callout text-fg-2">
             This folder already looks like an <span className="font-medium text-fg">{FORMAT_INFO[detected].label}</span> Second Brain.
           </p>
@@ -390,7 +392,7 @@ function Review({
                 role="radio"
                 aria-checked={mode === choice}
                 onClick={() => setMode(choice)}
-                className={`press block w-full rounded-card border px-4 py-3 text-left ${mode === choice ? "border-line-3 bg-white/5" : "border-line hover:border-line-2"}`}
+                className={`press block w-full rounded-card border px-4 py-3 text-left ${mode === choice ? "border-line-3 bg-fill-2" : "border-line hover:border-line-2"}`}
               >
                 <span className="flex items-center gap-2">
                   <span className={`grid size-4 shrink-0 place-items-center rounded-full border ${mode === choice ? "border-fg" : "border-line-3"}`}>
@@ -416,7 +418,7 @@ function Review({
         type="button"
         disabled={busy || !found.writable}
         onClick={() => onCreate(ownRules ? "keep" : mode, ownRules ? routines : undefined)}
-        className="press min-h-11 w-full rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-4"
+        className={btn("primary", "md", "w-full")}
       >
         {busy ? "Setting up…" : !found.exists ? "Create my Second Brain" : nothingToAdd ? "Use this folder" : hasNotes ? "Set up this folder" : "Add the layout"}
       </button>
@@ -584,7 +586,7 @@ function Panel({
     <section className="space-y-4">
       <div className="flex items-start gap-2">
         {onBack ? (
-          <button type="button" onClick={onBack} aria-label="Back" className="press -ml-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg">
+          <button type="button" onClick={onBack} aria-label="Back" className="press -ml-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg">
             <ArrowLeftIcon className="size-4" />
           </button>
         ) : null}

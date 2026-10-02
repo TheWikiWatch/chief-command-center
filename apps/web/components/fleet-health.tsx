@@ -44,6 +44,7 @@ import { share } from "@/lib/share";
 import { showToast } from "@/lib/toast-store";
 import type { Person } from "@/lib/types";
 import { useAssistantName } from "@/lib/identity";
+import { btn } from "@/components/ui/button";
 
 /** Dismissals from before decisions were shared (2026-09-29); sent to the server once, then cleared. */
 const LEGACY_DISMISSED_KEY = "chief-fleet-dismissed";
@@ -127,11 +128,11 @@ export function FleetHealth({
           <div className="space-y-3" role="status" aria-label="Loading fleet health">
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
               {[0, 1, 2, 3].map((i) => (
-                <div key={i} className="h-[74px] rounded-card bg-white/[0.035]" />
+                <div key={i} className="h-[74px] rounded-card bg-fill-1" />
               ))}
             </div>
             {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-14 rounded-card bg-white/3" style={{ opacity: 1 - i * 0.15 }} />
+              <div key={i} className="h-14 rounded-card bg-fill-1" style={{ opacity: 1 - i * 0.15 }} />
             ))}
           </div>
         )}
@@ -264,7 +265,7 @@ function RefreshButton({ busy, onClick, label, small = false }: { busy: boolean;
 function EmptyCard({ icon, title, body, action }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center rounded-card border border-dashed border-line-2 px-5 py-6 text-center">
-      <span className="grid size-10 place-items-center rounded-full bg-white/5 text-fg-3">{icon}</span>
+      <span className="grid size-10 place-items-center rounded-full bg-fill-2 text-fg-3">{icon}</span>
       <p className="mt-2.5 text-body font-medium text-fg">{title}</p>
       <p className="mt-1 max-w-sm text-callout text-fg-3">{body}</p>
       {action ? <div className="mt-4">{action}</div> : null}
@@ -316,7 +317,7 @@ function FlagRow({ flag: f, onShowSkill, onSendToChief }: { flag: Flag; onShowSk
                 type="button"
                 disabled={!onSendToChief || sending || asked}
                 onClick={() => void ask()}
-                className="press inline-flex min-h-9 items-center gap-1.5 rounded-full bg-fg px-3 text-caption font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-3"
+                className="press inline-flex min-h-9 items-center gap-1.5 rounded-full bg-fg px-3 text-caption font-semibold text-canvas disabled:bg-fill-3 disabled:text-fg-3"
               >
                 {asked ? <CheckIcon size={13} /> : null}
                 {asked ? `Sent to ${assistant}` : sending ? "Sending…" : `Ask ${assistant}`}
@@ -349,7 +350,7 @@ function MemoryBar({ used, limit, label }: { used: number; limit: number; label:
   return (
     <div className="flex items-center gap-2" title={`${label}: ${used} of ${limit} characters`}>
       <span className="w-12 text-caption text-fg-3">{label}</span>
-      <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+      <span className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-fill-2">
         <span className={`absolute inset-y-0 left-0 rounded-full ${tone}`} style={{ width: `${Math.round(f * 100)}%` }} />
       </span>
       <span className={`w-9 text-right font-mono text-caption tabular ${f >= 0.9 ? "text-warn" : "text-fg-3"}`}>{Math.round(f * 100)}%</span>
@@ -366,7 +367,7 @@ function DeskRow({ card, person }: { card: DeskCard; person?: Person }) {
   return (
     <li className="border-b border-line px-3 py-3 last:border-b-0">
       <div className="flex items-center gap-3">
-        {person ? <BotFace {...faceProps(person)} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-white/6 text-fg-3"><WrenchIcon size={16} /></span>}
+        {person ? <BotFace {...faceProps(person)} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-fill-2 text-fg-3"><WrenchIcon size={16} /></span>}
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className="truncate text-body font-semibold text-fg">{name}</span>
@@ -396,7 +397,7 @@ function DeskRow({ card, person }: { card: DeskCard; person?: Person }) {
 const VERDICT: Record<string, string> = {
   helped: "bg-ok/15 text-ok",
   worse: "bg-danger/15 text-danger",
-  "no clear change": "bg-white/[0.07] text-fg-2",
+  "no clear change": "bg-fill-2 text-fg-2",
   confounded: "bg-warn/15 text-warn",
 };
 
@@ -443,7 +444,7 @@ function SkillRow({ skill: s, open, onToggle, onReverted }: { skill: SkillSummar
   const growth = s.size14d ? Math.round((s.size / s.size14d - 1) * 100) : null;
   return (
     <li id={skillAnchor(s.key)} className="scroll-mt-16 overflow-hidden rounded-card border border-line bg-card">
-      <button type="button" className="press flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/2" onClick={onToggle} aria-expanded={open}>
+      <button type="button" className="press flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-fill-1" onClick={onToggle} aria-expanded={open}>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
             <span className="truncate text-body font-medium text-fg">{s.name}</span>
@@ -554,7 +555,7 @@ function ChangeRow({ change: c, title, compact = false, onReverted }: { change: 
 
   return (
     <li className={`overflow-hidden border border-line ${compact ? "rounded-ctl bg-card" : "rounded-card bg-card"}`}>
-      <button type="button" className={`press flex w-full items-center gap-3 text-left hover:bg-white/2 ${compact ? "px-2.5 py-2" : "px-3 py-2.5"}`} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+      <button type="button" className={`press flex w-full items-center gap-3 text-left hover:bg-fill-1 ${compact ? "px-2.5 py-2" : "px-3 py-2.5"}`} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="min-w-0 flex-1">
           <span className={`block truncate ${compact ? "text-callout text-fg-2" : "text-body font-medium text-fg"}`}>{title}</span>
           <span className="block truncate text-caption text-fg-3">
@@ -622,7 +623,7 @@ function DiffView({ text }: { text: string }) {
   const lines = text.split(/\r?\n/).filter((l) => !l.startsWith("---") && !l.startsWith("+++"));
   if (!lines.length || !text.trim()) return <p className="mt-2 text-caption text-fg-3">No text differences.</p>;
   return (
-    <pre className="mt-2 max-h-72 overflow-auto rounded-ctl border border-line bg-canvas py-2 font-mono text-[12px] leading-5">
+    <pre className="mt-2 max-h-72 overflow-auto rounded-ctl border border-line bg-canvas py-2 font-mono text-caption leading-5">
       {lines.map((l, i) => (
         <div
           key={i}
@@ -692,7 +693,7 @@ const STATUS: Record<string, { label: string; tone: string }> = {
   applied: { label: "Applied", tone: "bg-ok/15 text-ok" },
   // Keys are the ledger's status strings; {name} is the chief's display name.
   "waiting on the chief": { label: "Waiting on {name}", tone: "bg-warn/15 text-warn" },
-  "sent to the chief": { label: "Sent to {name}", tone: "bg-white/[0.07] text-fg-2" },
+  "sent to the chief": { label: "Sent to {name}", tone: "bg-fill-2 text-fg-2" },
   dismissed: { label: "Dismissed", tone: "border border-line-2 text-fg-3" },
 };
 
@@ -766,7 +767,7 @@ function Proposals({ items, onSendToChief, onDecided }: { items: Proposal[]; onS
                 className="rounded-card border border-line bg-card px-3.5 py-3"
               >
                 <div className="flex items-baseline gap-2">
-                  <span className="shrink-0 rounded-full bg-white/[0.07] px-1.5 py-0.5 text-caption font-medium text-fg-2">{p.kind}</span>
+                  <span className="shrink-0 rounded-full bg-fill-2 px-1.5 py-0.5 text-caption font-medium text-fg-2">{p.kind}</span>
                   <span className="truncate text-body font-medium text-fg">{p.target}</span>
                 </div>
                 <p className="mt-1.5 text-callout text-fg">{p.change}</p>
@@ -776,7 +777,7 @@ function Proposals({ items, onSendToChief, onDecided }: { items: Proposal[]; onS
                     type="button"
                     disabled={!onSendToChief || sending === p.id}
                     onClick={() => void decide(p, "approve")}
-                    className="press inline-flex min-h-10 items-center gap-1.5 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-3"
+                    className={btn("primary", "md", "inline-flex items-center gap-1.5 disabled:text-fg-3")}
                   >
                     <CheckIcon size={15} />
                     {sending === p.id ? "Sending…" : "Approve"}

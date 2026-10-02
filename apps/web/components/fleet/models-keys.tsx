@@ -6,6 +6,7 @@ import { CircleAlertIcon, CircleCheckIcon } from "@/components/icons";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { useAssistantName } from "@/lib/identity";
 import { setup, type ProviderRow } from "@/lib/setup-client";
+import { btn } from "@/components/ui/button";
 
 /**
  * Settings → Models & keys: the providers this install can use (keys and local endpoints), which one the chief
@@ -97,7 +98,7 @@ export function ModelsKeys() {
             </button>
           </div>
         ) : (
-          <button type="button" onClick={() => setAdding(true)} className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas">
+          <button type="button" onClick={() => setAdding(true)} className={btn("primary", "md")}>
             Add or replace a key
           </button>
         )}

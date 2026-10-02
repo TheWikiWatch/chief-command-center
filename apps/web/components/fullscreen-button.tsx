@@ -50,7 +50,7 @@ export function FullscreenButton() {
       aria-label="Full screen"
       aria-pressed={on}
       title={label}
-      className="fs-btn press flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
+      className="fs-btn press flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
       onClick={() => {
         if (fs.browser) {
           showToast({ tone: "neutral", title: "Press F11 to leave full screen" });

@@ -8,6 +8,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { useAssistantName } from "@/lib/identity";
 import { SPRING } from "@/lib/motion";
 import type { ApprovalChoice, ExecApproval } from "@/lib/types";
+import { LAYER } from "@/lib/layers";
 
 /**
  * Approval arrives as a sheet over the thread (VISUAL-OVERHAUL §3.2, §5 #9). "Always allow" is
@@ -38,7 +39,7 @@ export function ApprovalSheet({
         onClose={onMinimize}
         closeLabel="Minimize"
         scope="container"
-        zIndex={40}
+        zIndex={LAYER.paneSheet}
         title="Command approval required"
         subtitle={`${assistant} wants to run this on your PC`}
         className="approval-glow"

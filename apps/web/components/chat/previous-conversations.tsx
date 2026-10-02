@@ -44,7 +44,7 @@ export function PreviousConversations({ items, chief, phone }: { items: Previous
       <ul>
         {shown.map((item) => (
           <li key={item.id}>
-            <button type="button" onClick={() => show(item)} className="press flex min-h-10 w-full items-center gap-2 rounded-ctl px-1.5 text-left hover:bg-white/4">
+            <button type="button" onClick={() => show(item)} className="press flex min-h-10 w-full items-center gap-2 rounded-ctl px-1.5 text-left hover:bg-fill-1">
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-callout text-fg-2">{item.title || "Previous conversation"}</span>
                 <span className="block text-caption text-fg-3">

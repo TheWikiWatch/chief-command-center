@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { CircleAlertIcon } from "@/components/icons";
 import { useAssistantName } from "@/lib/identity";
 import { money, tokens, usageApi, type UsageDay, type UsagePeriod, type UsageSummary } from "@/lib/usage-client";
+import { btn } from "@/components/ui/button";
 
 const PERIODS: { id: UsagePeriod; label: string }[] = [
   { id: "today", label: "Today" },
@@ -44,7 +45,7 @@ export function UsagePage() {
             role="radio"
             aria-checked={period === p.id}
             onClick={() => setPeriod(p.id)}
-            className={`min-h-9 rounded-full px-3.5 text-callout font-medium transition-colors ${period === p.id ? "bg-white/10 text-fg" : "text-fg-3 hover:text-fg-2"}`}
+            className={`min-h-9 rounded-full px-3.5 text-callout font-medium transition-colors ${period === p.id ? "bg-fill-3 text-fg" : "text-fg-3 hover:text-fg-2"}`}
           >
             {p.label}
           </button>
@@ -237,7 +238,7 @@ function Breakdown({
               <span className="text-callout tabular text-fg">{money(r.cost)}</span>
             </div>
             <div className="mt-1.5 flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/6" aria-hidden="true">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill-2" aria-hidden="true">
                 <div className="h-full rounded-full bg-data" style={{ width: `${Math.max(share > 0 ? 2 : 0, share * 100)}%` }} />
               </div>
               <span className="w-40 shrink-0 text-right text-caption tabular text-fg-3">
@@ -289,7 +290,7 @@ function Budget({ summary, onSaved }: { summary: UsageSummary; onSaved: () => vo
                 {b.state === "over" ? "Over budget" : b.state === "warn" ? "Near the budget" : `${Math.round(ratio * 100)}%`}
               </span>
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/6" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(ratio, 1) * 100)} aria-label="Budget used">
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-fill-2" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(ratio, 1) * 100)} aria-label="Budget used">
               <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(ratio, 1) * 100}%` }} />
             </div>
           </div>
@@ -319,7 +320,7 @@ function Budget({ summary, onSaved }: { summary: UsageSummary; onSaved: () => vo
             />
             <span className="pr-3 text-caption text-fg-3">a month</span>
           </div>
-          <button type="submit" disabled={busy} className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50">
+          <button type="submit" disabled={busy} className={btn("primary", "md")}>
             {busy ? "Saving…" : "Save"}
           </button>
           {b.monthly ? (

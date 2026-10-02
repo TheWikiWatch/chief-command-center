@@ -1,13 +1,14 @@
 "use client";
 
 import { AnimatePresence, motion, useDragControls } from "motion/react";
-import { useEffect, useId, useRef, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 
 import { XIcon } from "@/components/icons";
 import { DUR, EASE } from "@/lib/motion";
 import { useLayer } from "@/lib/overlay-stack";
+import { useModal } from "@/lib/use-modal";
+import { LAYER } from "@/lib/layers";
 
-const FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
 
 type SheetProps = {
   open: boolean;
@@ -57,7 +58,7 @@ function SheetBody({
   labelledBy,
   children,
   className = "",
-  zIndex = 60,
+  zIndex = LAYER.sheet,
 }: SheetProps) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
@@ -75,36 +76,8 @@ function SheetBody({
     onCloseRef.current();
   });
 
-  useEffect(() => {
-    const previous = document.activeElement as HTMLElement | null;
-    const el = panel.current;
-    const target = el?.querySelector<HTMLElement>("[data-autofocus]") || el;
-    target?.focus({ preventScroll: true });
-    return () => {
-      if (previous && document.contains(previous)) previous.focus({ preventScroll: true });
-    };
-  }, []);
-
-  // aria-modal: Tab and Shift+Tab stay inside the sheet instead of wandering into the page behind.
-  const trapTab = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    const el = panel.current;
-    if (e.key !== "Tab" || !el) return;
-    const items = [...el.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((item) => !item.closest("[inert],[aria-hidden='true']"));
-    if (!items.length) {
-      e.preventDefault();
-      return;
-    }
-    const first = items[0];
-    const last = items[items.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey && (active === first || active === el)) {
-      e.preventDefault();
-      last.focus();
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault();
-      first.focus();
-    }
-  };
+  // Focus in and back out, Tab kept inside, and (over the whole app) the page behind made inert (lib/use-modal.ts).
+  const trapTab = useModal(panel, { inert: scope === "viewport" });
 
   const position = scope === "viewport" ? "fixed" : "absolute";
 
@@ -166,7 +139,7 @@ function SheetBody({
             }}
             aria-hidden="true"
           >
-            <span className="h-1 w-10 rounded-full bg-white/20" />
+            <span className="h-1 w-10 rounded-full bg-fill-4" />
           </div>
         ) : null}
         {bare ? null : (
@@ -190,7 +163,7 @@ function SheetBody({
               onClick={onClose}
               disabled={closeDisabled}
               aria-label={closeLabel}
-              className="press -mr-1 flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg disabled:opacity-40"
+              className="press -mr-1 flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg disabled:opacity-40"
             >
               <XIcon size={20} />
             </button>

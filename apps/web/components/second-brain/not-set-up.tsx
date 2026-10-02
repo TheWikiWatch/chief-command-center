@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 
 import { BookOpenIcon } from "@/components/icons";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
+import { btn } from "@/components/ui/button";
 
 /**
  * Today and Vault before a Second Brain folder exists. Calm, not an error: nothing is broken, there is
@@ -45,7 +46,7 @@ export function SecondBrainNotSetUp({
           Choose a notes folder and your chief organizes it with you: tasks show up in Today, and every note is browsable in Vault.
         </p>
         {onSetUp ? (
-          <button type="button" onClick={onSetUp} className="press mt-6 min-h-11 rounded-full bg-fg px-5 text-callout font-semibold text-canvas">
+          <button type="button" onClick={onSetUp} className={btn("primary", "md", "mt-6")}>
             Set up my Second Brain
           </button>
         ) : null}

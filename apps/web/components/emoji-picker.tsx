@@ -44,7 +44,7 @@ export function EmojiPicker({
         <button
           key={emoji}
           type="button"
-          className="press flex h-9 w-9 items-center justify-center rounded-ctl text-xl leading-none hover:bg-white/10"
+          className="press flex h-9 w-9 items-center justify-center rounded-ctl text-xl leading-none hover:bg-fill-3"
           onClick={() => {
             onPick(emoji);
             onClose();

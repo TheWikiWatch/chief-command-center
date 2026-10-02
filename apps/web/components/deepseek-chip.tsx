@@ -40,7 +40,7 @@ export function DeepseekChip({ peakOnly = false, detail = false }: { peakOnly?: 
 
   const chip = (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium ${
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-micro font-medium ${
         changed ? "border-line-2 text-fg-3" : peak ? "border-warn/40 bg-warn/10 text-warn" : "border-line-2 text-fg-3"
       }`}
       title={copy.detail}

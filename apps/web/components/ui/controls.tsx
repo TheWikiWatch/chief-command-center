@@ -26,7 +26,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={`relative flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors duration-base disabled:cursor-not-allowed ${
-        checked ? "justify-end bg-accent-solid" : "justify-start bg-white/[0.14]"
+        checked ? "justify-end bg-accent-solid" : "justify-start bg-fill-4"
       }`}
     >
       <motion.span

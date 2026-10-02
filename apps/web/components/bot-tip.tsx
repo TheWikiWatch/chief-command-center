@@ -4,6 +4,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 import { createPortal } from "react-dom";
 
 import type { Person } from "@/lib/types";
+import { LAYER } from "@/lib/layers";
 
 const TIP_WIDTH = 264;
 
@@ -70,7 +71,7 @@ export function BotTip({
       const maxT = p ? p.bottom - h - 8 : window.innerHeight - h - 8;
       left = Math.min(Math.max(left, minL), Math.max(minL, maxL));
       top = Math.min(Math.max(top, minT), Math.max(minT, maxT));
-      setStyle({ position: "fixed", left, top, width: TIP_WIDTH, zIndex: 80 });
+      setStyle({ position: "fixed", left, top, width: TIP_WIDTH, zIndex: LAYER.hoverCard });
     };
 
     place();
@@ -97,7 +98,7 @@ export function BotTip({
       {showTitle ? <div className="text-white/55">{title}</div> : null}
       {desc ? <div className="bot-tip-desc mt-1 text-white/70">{desc}</div> : null}
       {person.flavor ? (
-        <div className="mt-1.5 text-[10px] uppercase tracking-[0.14em] text-accent/85">{person.flavor}</div>
+        <div className="mt-1.5 text-micro uppercase tracking-[0.14em] text-accent/85">{person.flavor}</div>
       ) : null}
     </div>,
     document.body,

@@ -641,10 +641,10 @@ function FleetViewSwitch({ view, onChange, flags = 0 }: { view: FleetView; onCha
           onClick={() => onChange(id)}
           className={`relative min-h-9 rounded-full px-3 text-callout font-medium transition-colors duration-fast ${view === id ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
         >
-          {view === id ? <motion.span layoutId="fleet-view" className="absolute inset-0 rounded-full bg-white/10" transition={SPRING.snappy} /> : null}
+          {view === id ? <motion.span layoutId="fleet-view" className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
           <span className="relative">{id === "crew" ? "Crew" : "Health"}</span>
           {id === "health" && flags ? (
-            <span className="relative ml-1.5 inline-grid min-w-[18px] place-items-center rounded-full bg-warn/20 px-1 font-mono text-[11px] leading-[18px] text-warn tabular" aria-label={`${flags} new ${flags === 1 ? "flag" : "flags"}`}>
+            <span className="relative ml-1.5 inline-grid min-w-[18px] place-items-center rounded-full bg-warn/20 px-1 font-mono text-micro leading-[18px] text-warn tabular" aria-label={`${flags} new ${flags === 1 ? "flag" : "flags"}`}>
               {flags}
             </span>
           ) : null}

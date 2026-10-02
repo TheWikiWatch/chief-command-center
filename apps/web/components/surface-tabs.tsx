@@ -39,7 +39,7 @@ export function SurfaceTabs({
               }`}
               onClick={() => onChange(id)}
             >
-              {on ? <motion.span layoutId="surface-pill" className="absolute inset-0 rounded-full bg-white/10" transition={SPRING.snappy} /> : null}
+              {on ? <motion.span layoutId="surface-pill" className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
               <span className="relative">{label}</span>
             </button>
           );

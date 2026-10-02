@@ -519,7 +519,7 @@ function CopyReply({ text }: { text: string }) {
       type="button"
       aria-label={copied ? "Copied" : "Copy reply"}
       title={copied ? "Copied" : "Copy reply"}
-      className={`press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-white/6 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70 ${copied ? "opacity-100" : "opacity-0"}`}
+      className={`press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-fill-2 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70 ${copied ? "opacity-100" : "opacity-0"}`}
       onClick={() => {
         void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined);
       }}

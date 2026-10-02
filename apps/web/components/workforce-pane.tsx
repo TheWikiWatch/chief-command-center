@@ -234,7 +234,7 @@ function DesktopOrbit({
             aria-label={`${splitTitle(chief.name).name || chief.name}, chief of staff`}
           >
             <ChiefPresence chief={chief} size={100} mood={chiefMood} gazeRef={gazeRef} />
-            <span className="orbit-bot-name text-[13px] font-semibold">{splitTitle(chief.name).name || chief.name}</span>
+            <span className="orbit-bot-name text-callout font-semibold">{splitTitle(chief.name).name || chief.name}</span>
           </button>
         </div>
       ) : null}
@@ -322,9 +322,9 @@ function OrbitSeat({
       </span>
       <span className="orbit-bot-name">{name || person.name}</span>
       {working && person.jobTitle ? (
-        <span className="max-w-40 truncate rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent-text">{person.jobTitle}</span>
+        <span className="max-w-40 truncate rounded-full bg-accent/15 px-2 py-0.5 text-micro font-medium text-accent-text">{person.jobTitle}</span>
       ) : role ? (
-        <span className="max-w-40 truncate text-[11px] text-fg-3 opacity-0 transition-opacity duration-fast group-hover:opacity-100">{role}</span>
+        <span className="max-w-40 truncate text-micro text-fg-3 opacity-0 transition-opacity duration-fast group-hover:opacity-100">{role}</span>
       ) : null}
       <BotTip person={person} open={tip.open} id={tip.tipId} anchor={anchor} paneRef={paneRef} placement="orbit" />
     </button>
@@ -540,7 +540,7 @@ export function StatusPill({ person }: { person: Person }) {
 function FleetRow({ person, onOpen, mood, minted }: { person: Person; onOpen: (p: Person) => void; mood?: FaceMood; minted: boolean }) {
   const { name, role } = splitTitle(person.name);
   return (
-    <button type="button" onClick={() => onOpen(person)} className={`press flex min-h-16 w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/3 ${minted ? "mint-row" : ""}`}>
+    <button type="button" onClick={() => onOpen(person)} className={`press flex min-h-16 w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-fill-1 ${minted ? "mint-row" : ""}`}>
       <BotFace {...faceProps(person)} mood={mood} size={42} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-body font-semibold text-fg">{name || person.name}</span>

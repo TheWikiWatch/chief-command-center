@@ -4,6 +4,8 @@ import { useEffect, useId, useState } from "react";
 
 import { CircleAlertIcon, CircleCheckIcon } from "@/components/icons";
 import { fleetApi, type ModelsResult } from "@/lib/fleet-client";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 /**
  * A bot's model (the chief's too): every model of a connected provider, grouped by provider. Changing it pins
@@ -63,7 +65,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
           const [p, m] = e.target.value.split("\u0001");
           void choose({ provider: p, model: m });
         }}
-        className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3 disabled:opacity-60"
+        className={field({ extra: "w-full disabled:opacity-60" })}
       >
         {!known ? <option value={value}>{current.model ? `${current.model} (${current.provider || "unknown"})` : "Not set"}</option> : null}
         {(options?.groups || []).map((g) => (
@@ -82,7 +84,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
         <div className="space-y-2 rounded-card border border-warn/30 bg-warn/6 px-3 py-2">
           <Line tone="warn">{note.text}</Line>
           <div className="flex gap-2">
-            <button type="button" disabled={saving} onClick={() => void choose(note.pending!, true)} className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50">
+            <button type="button" disabled={saving} onClick={() => void choose(note.pending!, true)} className={btn("primary", "md")}>
               Use it anyway
             </button>
             <button type="button" onClick={() => setNote(null)} className="press min-h-10 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg">

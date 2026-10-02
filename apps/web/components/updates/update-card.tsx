@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { CircleAlertIcon, CircleCheckIcon, DownloadIcon } from "@/components/icons";
 import { desktop, type UpdateState } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
+import { field } from "@/components/ui/field";
 
 /** The shell's update state, live. `null` outside the desktop app (a browser or the phone never updates). */
 export function useUpdates(): { state: UpdateState | null; api: NonNullable<ReturnType<typeof desktop>>["updates"] | null } {
@@ -77,7 +78,7 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
         return (
           <div className="space-y-1.5">
             <p className="text-callout text-fg-2">Downloading {state.release.version}…</p>
-            <div className="h-2 overflow-hidden rounded-full bg-white/6" role="progressbar" aria-label="Update download" aria-valuemin={0} aria-valuemax={state.total} aria-valuenow={state.done}>
+            <div className="h-2 overflow-hidden rounded-full bg-fill-2" role="progressbar" aria-label="Update download" aria-valuemin={0} aria-valuemax={state.total} aria-valuenow={state.done}>
               <div className="h-full rounded-full bg-accent" style={{ width: `${Math.round((state.done / state.total) * 100)}%` }} />
             </div>
             <p className="font-mono text-caption tabular text-fg-3">
@@ -189,7 +190,7 @@ export function UpdatesPanel() {
             onChange={(e) => setFeed(e.target.value)}
             spellCheck={false}
             placeholder="github:owner/releases-repo, or a release folder"
-            className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+            className={field({ mono: true, extra: "min-w-0 flex-1 py-2" })}
           />
           {feed.trim() !== saved ? (
             <Button
@@ -224,7 +225,7 @@ export function UpdatesPanel() {
               onChange={(e) => setKey(e.target.value)}
               spellCheck={false}
               placeholder={hasKey ? "A key is saved; paste a new one to replace it" : "Paste the key you were given"}
-              className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+              className={field({ mono: true, extra: "min-w-0 flex-1 py-2" })}
             />
             {key.trim() ? (
               <Button

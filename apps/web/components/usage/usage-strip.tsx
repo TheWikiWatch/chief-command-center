@@ -66,7 +66,7 @@ export function UsageStrip({ people, onOpen }: { people: Person[]; onOpen: () =>
                 {budget?.monthly ? `${money(data.month.cost)} of ${money(budget.monthly)}` : money(data.month.cost)}
               </p>
             </div>
-            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/8">
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-fill-3">
               <div className={`h-full rounded-full ${tone}`} style={{ width: `${ratio === null ? (data.month.cost > 0 ? 100 : 0) : Math.min(ratio, 1) * 100}%`, opacity: ratio === null ? 0.35 : 1 }} />
             </div>
           </div>

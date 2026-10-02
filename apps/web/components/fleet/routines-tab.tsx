@@ -21,6 +21,8 @@ import {
 } from "@/lib/routines-client";
 import { threadsApi, type ChatThread } from "@/lib/threads-client";
 import type { Person } from "@/lib/types";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 type View = { mode: "list" } | { mode: "new" } | { mode: "edit"; id: string; profile: string };
 type Note = { tone: "ok" | "error"; text: string };
@@ -99,7 +101,7 @@ export function RoutinesTab({ people }: { people: Person[] }) {
                 setNote(null);
                 setView({ mode: "new" });
               }}
-              className="press flex min-h-10 shrink-0 items-center gap-1.5 rounded-full bg-fg px-3.5 text-callout font-semibold text-canvas"
+              className={btn("primary", "md", "flex shrink-0 items-center gap-1.5 px-3.5")}
             >
               <PlusIcon size={15} />
               New routine
@@ -184,7 +186,7 @@ function RoutineList({
         const label = routineLabel(r);
         return (
           <li key={`${r.profile}/${r.id}`} className={`flex items-center gap-3 pr-3 ${busy === r.id ? "opacity-60" : ""}`}>
-            <button type="button" onClick={() => onOpen(r)} className="press flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left hover:bg-white/3">
+            <button type="button" onClick={() => onOpen(r)} className="press flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left hover:bg-fill-1">
               <span className="shrink-0" title={`Runs as ${r.bot}`}>
                 {person ? <BotFace {...faceProps(person)} size={30} still /> : <span aria-hidden className="grid size-[30px] place-items-center rounded-full bg-well text-caption text-fg-3">{r.bot.slice(0, 1)}</span>}
               </span>
@@ -323,7 +325,7 @@ function RoutineEditor({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onBack} aria-label="Back to routines" className="press -ml-2 grid size-10 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
+        <button type="button" onClick={onBack} aria-label="Back to routines" className="press -ml-2 grid size-10 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
           <ChevronLeftIcon size={18} />
         </button>
         <div className="min-w-0 flex-1">
@@ -365,7 +367,7 @@ function RoutineEditor({
           maxLength={60}
           onChange={(e) => setName(e.target.value)}
           placeholder="Morning brief"
-          className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3 disabled:opacity-70"
+          className={field({ extra: "w-full disabled:opacity-70" })}
         />
       </Labeled>
 
@@ -378,7 +380,7 @@ function RoutineEditor({
           maxLength={4000}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Summarize what's due today from my tasks and calendar, and flag anything overdue."
-          className="w-full resize-y rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3 disabled:opacity-70"
+          className={field({ extra: "w-full resize-y py-2 disabled:opacity-70" })}
         />
       </Labeled>
 
@@ -414,7 +416,7 @@ function RoutineEditor({
                 type="time"
                 value={schedule.time || ""}
                 onChange={(e) => setSchedule((s) => ({ ...s, time: e.target.value }))}
-                className="min-h-11 w-34 rounded-ctl border border-line-2 bg-canvas px-2 text-body text-fg outline-hidden focus:border-line-3"
+                className={field({ extra: "w-34 px-2" })}
               />
             </>
           ) : null}
@@ -430,7 +432,7 @@ function RoutineEditor({
                 max={24}
                 value={schedule.every ?? ""}
                 onChange={(e) => setSchedule((s) => ({ ...s, every: Math.max(1, Math.min(24, Number(e.target.value) || 1)) }))}
-                className="min-h-11 w-20 rounded-ctl border border-line-2 bg-canvas px-2 text-body tabular text-fg outline-hidden focus:border-line-3"
+                className={field({ extra: "w-20 px-2 tabular" })}
               />
               <span className="text-callout text-fg-2">{schedule.every === 1 ? "hour" : "hours"}</span>
             </>
@@ -446,7 +448,7 @@ function RoutineEditor({
                 onChange={(e) => setSchedule((s) => ({ ...s, cron: e.target.value }))}
                 placeholder="30 7 * * 1-5"
                 spellCheck={false}
-                className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+                className={field({ mono: true, extra: "w-full" })}
               />
               <p className="mt-1 px-1 text-caption text-fg-3">A cron line (minute hour day month weekday), or an interval like &quot;every 2h&quot;.</p>
             </div>
@@ -497,7 +499,7 @@ function RoutineEditor({
             id={`${ids}-thread`}
             value={thread}
             onChange={(e) => setThread(e.target.value)}
-            className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3"
+            className={field({ extra: "w-full" })}
           >
             {routine?.silent ? <option value="">Nowhere</option> : null}
             {threadOptions.map((t) => (
@@ -516,7 +518,7 @@ function RoutineEditor({
           type="button"
           disabled={!dirty || !!saving}
           onClick={() => void save()}
-          className="press min-h-11 rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:opacity-50"
+          className={btn("primary", "md")}
         >
           {saving === "save" ? "Saving…" : creating ? "Create routine" : "Save changes"}
         </button>

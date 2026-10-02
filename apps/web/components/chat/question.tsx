@@ -10,6 +10,8 @@ import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
 import type { AskedQuestion, ChatNotice, PendingQuestion, Person } from "@/lib/types";
 import { linkifyVaultRefs } from "@/lib/vault-client";
+import { field as fieldClass } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 /** Hermes appends this to the choice it recommends; the card shows it as a badge instead. */
 const RECOMMENDED = /\s*\(recommended\)\s*$/i;
@@ -130,9 +132,9 @@ export function QuestionCard({
                 }
               }}
               placeholder="Your answer"
-              className="w-full resize-none rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+              className={fieldClass({ extra: "w-full resize-none py-2" })}
             />
-            <button type="submit" disabled={!text.trim() || !!busy} className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50">
+            <button type="submit" disabled={!text.trim() || !!busy} className={btn("primary", "md")}>
               {busy === "own" ? "Sending…" : "Send answer"}
             </button>
           </form>
@@ -143,7 +145,7 @@ export function QuestionCard({
               type="button"
               disabled={!picked.length || !!busy}
               onClick={() => void send(picked, "multi")}
-              className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50"
+              className={btn("primary", "md")}
             >
               {busy === "multi" ? "Sending…" : picked.length ? `Send ${picked.length} choice${picked.length === 1 ? "" : "s"}` : "Pick at least one"}
             </button>

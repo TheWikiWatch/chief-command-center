@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 import { ChevronLeftIcon, ChevronRightIcon, DownloadIcon, FileIcon, FileTextIcon, HardDriveDownloadIcon, PauseIcon, PlayIcon, XIcon } from "@/components/icons";
 import { EASE, SPRING } from "@/lib/motion";
 import { useLayer } from "@/lib/overlay-stack";
+import { useModal } from "@/lib/use-modal";
 import type { ChatAttachment } from "@/lib/types";
 
 function passthrough(path: string) {
@@ -112,7 +113,7 @@ function VideoCard({ a }: { a: ChatAttachment }) {
                 <PlayIcon size={24} className="translate-x-px fill-current" />
               </motion.span>
               {length ? (
-                <span className="absolute bottom-2 right-2 rounded-chip bg-black/60 px-1.5 py-0.5 font-mono text-[11px] tabular text-white">
+                <span className="absolute bottom-2 right-2 rounded-chip bg-black/60 px-1.5 py-0.5 font-mono text-micro tabular text-white">
                   {duration(length)}
                 </span>
               ) : null}
@@ -122,7 +123,7 @@ function VideoCard({ a }: { a: ChatAttachment }) {
       </div>
       <div className="flex items-center justify-between gap-2 px-3 py-2 text-caption text-fg-3">
         <span className="truncate">{a.name}</span>
-        <a href={src} className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-fg-2 hover:bg-white/6 hover:text-fg">
+        <a href={src} className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-fg-2 hover:bg-fill-2 hover:text-fg">
           <HardDriveDownloadIcon size={14} />
           Full quality
         </a>
@@ -203,7 +204,7 @@ function FileChip({ a }: { a: ChatAttachment }) {
       download={a.name}
       className="press mt-2 flex items-center gap-3 rounded-card border border-line-2 bg-card px-3 py-2.5 hover:border-line-3"
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl bg-white/6 text-fg-2">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl bg-fill-2 text-fg-2">
         <Icon size={18} />
       </span>
       <span className="min-w-0 flex-1">
@@ -240,6 +241,8 @@ function Lightbox({
   const stepRef = useRef(step);
   stepRef.current = step;
   useLayer(!!item, onClose);
+  const dialog = useRef<HTMLDivElement>(null);
+  const trapTab = useModal(dialog, { active: !!item, inert: true });
   useEffect(() => {
     if (!item || !many) return;
     const onKey = (e: KeyboardEvent) => {
@@ -255,10 +258,13 @@ function Lightbox({
       {item ? (
         <motion.div
           key="lightbox"
-          className="fixed inset-0 z-80 flex items-center justify-center p-4"
+          ref={dialog}
+          className="fixed inset-0 z-80 flex items-center justify-center p-4 outline-hidden"
           role="dialog"
           aria-modal="true"
           aria-label={item.name}
+          tabIndex={-1}
+          onKeyDown={trapTab}
         >
           <motion.button
             type="button"

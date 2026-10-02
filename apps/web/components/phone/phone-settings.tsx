@@ -9,6 +9,7 @@ import { desktop, type PhoneState } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
 import { canPromptInstall, isStandalone, onInstallPromptChange, phonePlatform, promptInstall } from "@/lib/install-prompt";
 import { disableWebPush, enableWebPush, pushCapability, pushDeviceCount, pushStatus, sendTestPush, type PushStatus } from "@/lib/web-push";
+import { btn } from "@/components/ui/button";
 
 const LINKS = {
   windows: "https://tailscale.com/download/windows",
@@ -219,7 +220,7 @@ function YourPhone({ url, login, onOpen }: { url: string; login: string; onOpen:
             <span className="min-w-0 flex-1 truncate font-mono text-code text-fg" title={url}>
               {url}
             </span>
-            <button type="button" onClick={copy} aria-label="Copy the address" className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
+            <button type="button" onClick={copy} aria-label="Copy the address" className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
               {copied ? <CheckIcon className="size-4 text-ok" /> : <CopyIcon className="size-4" />}
             </button>
           </div>
@@ -264,7 +265,7 @@ function WhoCanOpen({ state, busy, onChange }: { state: PhoneState; busy: boolea
               aria-checked={on}
               disabled={busy}
               onClick={() => onChange(o.mode)}
-              className={`press flex items-start gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${on ? "border-accent/60 bg-accent/8" : "border-line-2 hover:bg-white/3"}`}
+              className={`press flex items-start gap-2.5 rounded-ctl border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${on ? "border-accent/60 bg-accent/8" : "border-line-2 hover:bg-fill-1"}`}
             >
               <span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border ${on ? "border-accent" : "border-line-3"}`}>
                 {on ? <span className="size-2 rounded-full bg-accent" /> : null}
@@ -432,7 +433,7 @@ function Step({ n, status, title, hint, children }: { n: number; status: StepSta
       <span
         aria-hidden="true"
         className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-caption font-semibold tabular ${
-          status === "done" ? "bg-ok/15 text-ok" : status === "warn" ? "bg-warn/15 text-warn" : status === "todo" ? "bg-accent/15 text-accent-text" : "bg-white/6 text-fg-3"
+          status === "done" ? "bg-ok/15 text-ok" : status === "warn" ? "bg-warn/15 text-warn" : status === "todo" ? "bg-accent/15 text-accent-text" : "bg-fill-2 text-fg-3"
         }`}
       >
         {status === "done" ? <CheckIcon className="size-3.5" /> : status === "warn" ? "!" : n}
@@ -452,7 +453,7 @@ function Step({ n, status, title, hint, children }: { n: number; status: StepSta
 function Numbered({ n, title, children }: { n: number; title: string; children?: ReactNode }) {
   return (
     <li className="flex gap-2.5">
-      <span aria-hidden="true" className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-white/6 text-caption font-semibold tabular text-fg-2">
+      <span aria-hidden="true" className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-fill-2 text-caption font-semibold tabular text-fg-2">
         {n}
       </span>
       <div className="min-w-0 flex-1 text-callout text-fg">
@@ -469,7 +470,7 @@ function Action({ children, onClick, disabled, primary, icon }: { children: Reac
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`press inline-flex min-h-9 items-center gap-1.5 rounded-full px-3.5 text-callout font-medium disabled:opacity-45 ${primary ? "bg-fg text-canvas" : "border border-line-2 text-fg-2 hover:text-fg"}`}
+      className={btn(primary ? "primary" : "secondary", "sm")}
     >
       {children}
       {icon}

@@ -49,7 +49,7 @@ export function PhoneNav({
               {on ? (
                 <motion.span
                   layoutId="phone-tab-pill"
-                  className="absolute inset-0 rounded-[22px] bg-white/8 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]"
+                  className="absolute inset-0 rounded-[22px] bg-fill-3 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]"
                   transition={SPRING.snappy}
                 />
               ) : null}

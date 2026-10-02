@@ -184,7 +184,7 @@ export function Composer({
           <div ref={menuBox} className="relative shrink-0 self-end pb-1">
             <button
               type="button"
-              className={`press flex h-10 w-10 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg disabled:opacity-40 ${menu ? "bg-white/8 text-fg" : ""}`}
+              className={`press flex h-10 w-10 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg disabled:opacity-40 ${menu ? "bg-fill-3 text-fg" : ""}`}
               aria-label="Add attachment or emoji"
               aria-expanded={menu}
               disabled={!writable || busy}
@@ -217,7 +217,7 @@ export function Composer({
                       type="button"
                       role="menuitem"
                       aria-label={label}
-                      className="flex min-h-11 w-full items-center gap-3 rounded-ctl px-3 text-body text-fg hover:bg-white/6"
+                      className="flex min-h-11 w-full items-center gap-3 rounded-ctl px-3 text-body text-fg hover:bg-fill-2"
                       initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0, transition: { delay: i * 0.03, duration: 0.18 } }}
                       onClick={() => {

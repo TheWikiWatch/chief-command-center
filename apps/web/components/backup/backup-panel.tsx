@@ -7,6 +7,7 @@ import { CircleAlertIcon, CircleCheckIcon } from "@/components/icons";
 import { agoLabel, backups, sizeLabel, type BackupFile, type BackupParts, type BackupStatus } from "@/lib/backup-client";
 import { desktop } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
+import { field } from "@/components/ui/field";
 
 const PARTS: { id: BackupParts; label: string; hint: string }[] = [
   { id: "everything", label: "Everything", hint: "Your setup and your Second Brain" },
@@ -124,7 +125,7 @@ export function BackupPanel() {
             onChange={(e) => setFolder(e.target.value)}
             spellCheck={false}
             placeholder={status.suggestedFolder}
-            className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+            className={field({ mono: true, extra: "min-w-0 flex-1 py-2" })}
           />
           {pick ? (
             <SmallButton
@@ -215,8 +216,8 @@ export function BackupPanel() {
         </label>
         {encrypt ? (
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <input type="password" autoComplete="new-password" placeholder="Passphrase" value={pass1} onChange={(e) => setPass1(e.target.value)} className="min-h-11 rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3" />
-            <input type="password" autoComplete="new-password" placeholder="Again" value={pass2} onChange={(e) => setPass2(e.target.value)} className="min-h-11 rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3" />
+            <input type="password" autoComplete="new-password" placeholder="Passphrase" value={pass1} onChange={(e) => setPass1(e.target.value)} className={field()} />
+            <input type="password" autoComplete="new-password" placeholder="Again" value={pass2} onChange={(e) => setPass2(e.target.value)} className={field()} />
           </div>
         ) : null}
       </div>
@@ -224,7 +225,7 @@ export function BackupPanel() {
       {running && job ? (
         <div className="space-y-1.5">
           <p className="text-callout text-fg-2">Backing up… {assistant} keeps working meanwhile.</p>
-          <div className="h-2 overflow-hidden rounded-full bg-white/6" role="progressbar" aria-label="Backup progress" aria-valuemin={0} aria-valuemax={job.total || 1} aria-valuenow={job.done}>
+          <div className="h-2 overflow-hidden rounded-full bg-fill-2" role="progressbar" aria-label="Backup progress" aria-valuemin={0} aria-valuemax={job.total || 1} aria-valuenow={job.done}>
             <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${job.total ? Math.round((job.done / job.total) * 100) : 5}%` }} />
           </div>
         </div>

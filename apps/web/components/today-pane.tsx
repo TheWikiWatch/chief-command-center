@@ -27,6 +27,9 @@ import {
 import { useAssistantName } from "@/lib/identity";
 import { useAppConfig } from "@/lib/app-config";
 import { SecondBrainNotSetUp } from "@/components/second-brain/not-set-up";
+import { LAYER } from "@/lib/layers";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 const OPEN_COLS = ["In Progress", "This Week", "Waiting On", "Next Week", "Backlog"];
 
@@ -250,7 +253,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
   const vaultButton = (
     <button
       type="button"
-      className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
+      className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
       aria-label={builtin ? "Second Brain folder" : "Vault settings"}
       onClick={openFolderSettings}
     >
@@ -346,7 +349,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
                           className={`relative min-h-9 rounded-full px-3 text-callout font-medium transition-colors duration-fast ${opt.on ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
                           onClick={() => setAttention(opt.set)}
                         >
-                          {opt.on ? <motion.span layoutId="today-order" className="absolute inset-0 rounded-full bg-white/10" transition={SPRING.snappy} /> : null}
+                          {opt.on ? <motion.span layoutId="today-order" className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
                           <span className="relative">{opt.label}</span>
                         </button>
                       ))}
@@ -553,7 +556,7 @@ function TaskRow({ item, rank, selected, onClick }: { item: TodayItem; rank: num
   return (
     <button
       type="button"
-      className={`press grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2 px-3.5 py-3 text-left hover:bg-white/3 ${selected ? "bg-white/5" : ""}`}
+      className={`press grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2 px-3.5 py-3 text-left hover:bg-fill-1 ${selected ? "bg-fill-2" : ""}`}
       onClick={onClick}
     >
       <span className="pt-px font-mono text-callout tabular text-fg-3">{String(rank).padStart(2, "0")}</span>
@@ -645,7 +648,7 @@ function AreaDrill({
                     <li key={card.id} className="border-b border-line last:border-b-0">
                       <button
                         type="button"
-                        className={`press block w-full px-3.5 py-3 text-left hover:bg-white/3 ${selectedId === card.id ? "bg-white/5" : ""}`}
+                        className={`press block w-full px-3.5 py-3 text-left hover:bg-fill-1 ${selectedId === card.id ? "bg-fill-2" : ""}`}
                         onClick={() => onTask(card)}
                       >
                         <span className="block text-body font-medium text-fg">{card.text}</span>
@@ -678,7 +681,7 @@ export function IntentSheet({
 }) {
   const [busy, setBusy] = useState(false);
   return (
-    <Sheet open={open} onClose={onClose} bare scope="container" zIndex={40} closeDisabled={busy}>
+    <Sheet open={open} onClose={onClose} bare scope="container" zIndex={LAYER.paneSheet} closeDisabled={busy}>
       <IntentBody target={target} onClose={onClose} onSent={onSent} onBusy={setBusy} />
     </Sheet>
   );
@@ -757,7 +760,7 @@ function IntentBody({
         </div>
         <button
           type="button"
-          className="press -mr-1 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-white/6 hover:text-fg disabled:opacity-40"
+          className="press -mr-1 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-fill-2 hover:text-fg disabled:opacity-40"
           disabled={busy}
           onClick={onClose}
         >
@@ -776,7 +779,7 @@ function IntentBody({
             }`}
             onClick={() => setIntent(row.id)}
           >
-            {intent === row.id ? <motion.span layoutId="intent-pill" className="absolute inset-0 rounded-full bg-white/10" transition={SPRING.snappy} /> : null}
+            {intent === row.id ? <motion.span layoutId="intent-pill" className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
             <span className="relative">{row.label}</span>
           </button>
         ))}
@@ -838,7 +841,7 @@ function IntentBody({
 function SettingsSheet({ open, onClose, onSaved }: { open: boolean; onClose: () => void; onSaved: () => void }) {
   const assistant = useAssistantName();
   return (
-    <Sheet open={open} onClose={onClose} title="Vault" subtitle={`Boards are read from this folder. ${assistant} writes the vault.`} scope="container" zIndex={40}>
+    <Sheet open={open} onClose={onClose} title="Vault" subtitle={`Boards are read from this folder. ${assistant} writes the vault.`} scope="container" zIndex={LAYER.paneSheet}>
       <VaultBody onSaved={onSaved} />
     </Sheet>
   );
@@ -877,13 +880,13 @@ function VaultBody({ onSaved }: { onSaved: () => void }) {
           value={vaultPath}
           onChange={(e) => setVaultPath(e.target.value)}
           placeholder="D:\Notes\Second Brain"
-          className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
+          className={field({ mono: true, extra: "mt-1.5 w-full py-2" })}
         />
       </label>
       <button
         type="button"
         disabled={busy || !vaultPath.trim()}
-        className="press mt-4 min-h-11 w-full rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:opacity-50"
+        className={btn("primary", "md", "mt-4 w-full")}
         onClick={() => void save()}
       >
         {busy ? "Saving…" : "Save settings"}

@@ -143,7 +143,7 @@ export function ChatHeader({
             {mood !== "preparing" ? (
             <button
               type="button"
-              className="speak-pause-btn press flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-full border border-line-2 bg-white/4 px-2.5 text-callout text-fg-2 hover:text-fg"
+              className="speak-pause-btn press flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-full border border-line-2 bg-fill-1 px-2.5 text-callout text-fg-2 hover:text-fg"
               aria-label={mood === "paused" ? "Resume speaking" : "Pause speaking"}
               aria-pressed={mood === "paused"}
               onClick={onPauseToggle}
@@ -169,7 +169,7 @@ export function ChatHeader({
           type="button"
           aria-label="Voice mode"
           title="Voice mode"
-          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
+          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
           onClick={onVoiceMode}
         >
           <AudioLinesIcon size={19} />

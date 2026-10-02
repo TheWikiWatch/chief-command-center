@@ -33,6 +33,7 @@ export function ToastViewport() {
     <div
       className="pointer-events-none fixed inset-x-0 top-0 z-70 flex flex-col items-center gap-2 px-3 pt-[calc(env(safe-area-inset-top)+10px)]"
       aria-live="polite"
+      data-modal-keep
       aria-atomic="false"
     >
       <AnimatePresence initial={false}>
@@ -63,7 +64,7 @@ function ToastCard({ toast }: { toast: Toast }) {
       onClick={() => dismissToast(toast.id)}
     >
       {Icon ? (
-        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/6 ${TONE[toast.tone || "neutral"]}`}>
+        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-fill-2 ${TONE[toast.tone || "neutral"]}`}>
           <Icon size={17} />
         </span>
       ) : null}

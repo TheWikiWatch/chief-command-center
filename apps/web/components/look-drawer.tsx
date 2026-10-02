@@ -19,6 +19,8 @@ import { fetchPeek } from "@/lib/bridge";
 import { EASE, SPRING } from "@/lib/motion";
 import { splitTitle } from "@/lib/names";
 import type { Peek, Person } from "@/lib/types";
+import { LAYER } from "@/lib/layers";
+import { btn } from "@/components/ui/button";
 
 const TABS = ["Job", "Soul", "Memory", "Tools"] as const;
 type Tab = (typeof TABS)[number];
@@ -52,7 +54,7 @@ export function LookDrawer({
 
   const { name, role } = splitTitle(person.name);
   return (
-    <Sheet open={open} onClose={() => setOpen(false)} side={full ? "bottom" : "right"} tall={full} bare scope={full ? "viewport" : "container"} zIndex={90}>
+    <Sheet open={open} onClose={() => setOpen(false)} side={full ? "bottom" : "right"} tall={full} bare scope={full ? "viewport" : "container"} zIndex={LAYER.drawer}>
       <LookBody person={person} name={name || person.name} role={role || person.section} retired={retired} onClose={() => setOpen(false)} />
     </Sheet>
   );
@@ -94,12 +96,12 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
               if (editing) setReload((n) => n + 1);
               setEditing((v) => !v);
             }}
-            className="press absolute left-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-white/6 hover:text-fg"
+            className="press absolute left-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-fill-2 hover:text-fg"
           >
             {editing ? "Done" : "Edit"}
           </button>
         ) : null}
-        <button type="button" onClick={onClose} className="press absolute right-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-white/6 hover:text-fg">
+        <button type="button" onClick={onClose} className="press absolute right-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-fill-2 hover:text-fg">
           Close
         </button>
         <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1, transition: SPRING.bouncy }} className={`my-3 ${retired ? "opacity-50 grayscale" : ""}`}>
@@ -133,7 +135,7 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
                   aria-label={`Rename ${shown.name}`}
                   title="Rename"
                   onClick={() => setRenaming(true)}
-                  className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
+                  className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
                 >
                   <PencilIcon size={16} />
                 </button>
@@ -177,7 +179,7 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
               onClick={() => setTab(t)}
               className={`relative min-h-9 flex-1 rounded-full text-callout font-medium transition-colors duration-fast ${tab === t ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
             >
-              {tab === t ? <motion.span layoutId={`look-tab-${person.id}`} className="absolute inset-0 rounded-full bg-white/10" transition={SPRING.snappy} /> : null}
+              {tab === t ? <motion.span layoutId={`look-tab-${person.id}`} className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
               <span className="relative">{t}</span>
             </button>
           ))}
@@ -318,7 +320,7 @@ function RetireRow({ person, onRetired }: { person: Person; onRetired: () => voi
               setBusy(false);
             }
           }}
-          className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50"
+          className={btn("primary", "md")}
         >
           {busy ? "Retiring…" : "Retire"}
         </button>

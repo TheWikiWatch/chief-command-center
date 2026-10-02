@@ -10,6 +10,7 @@ import { ChiefPresence } from "@/components/presence";
 import { botIdentity } from "@/lib/bot-identity";
 import { EASE, SPRING } from "@/lib/motion";
 import { useLayer } from "@/lib/overlay-stack";
+import { useModal } from "@/lib/use-modal";
 import type { Person } from "@/lib/types";
 
 /**
@@ -62,6 +63,8 @@ export function VoiceMode({
 
   // Android's back gesture and Escape close voice mode instead of leaving the app.
   useLayer(open, () => onCloseRef.current());
+  const dialog = useRef<HTMLDivElement>(null);
+  const trapTab = useModal(dialog, { active: open, inert: true });
   useEffect(() => {
     if (open) closeRef.current?.focus();
   }, [open]);
@@ -96,9 +99,12 @@ export function VoiceMode({
       {open ? (
         <motion.div
           key="voice"
+          ref={dialog}
           role="dialog"
           aria-modal="true"
           aria-label="Voice mode"
+          tabIndex={-1}
+          onKeyDown={trapTab}
           className="voice-mode fixed inset-0 z-75 flex flex-col overflow-hidden bg-canvas pb-[max(env(safe-area-inset-bottom),16px)] pt-[max(env(safe-area-inset-top),8px)]"
           style={color ? ({ ["--chief" as string]: color } as CSSProperties) : undefined}
           initial={{ opacity: 0 }}
@@ -115,7 +121,7 @@ export function VoiceMode({
               ref={closeRef}
               type="button"
               aria-label="Close voice mode"
-              className="press grid size-11 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
+              className="press grid size-11 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
               onClick={onClose}
             >
               <ChevronDownIcon size={22} />
@@ -161,7 +167,7 @@ export function VoiceMode({
                 </button>
               ) : null}
               {!speakOn ? (
-                <button type="button" className="press flex min-h-10 items-center gap-2 rounded-full bg-white/[0.07] px-4 text-callout text-fg-2 hover:text-fg" onClick={onEnableSpeech}>
+                <button type="button" className="press flex min-h-10 items-center gap-2 rounded-full bg-fill-2 px-4 text-callout text-fg-2 hover:text-fg" onClick={onEnableSpeech}>
                   <VolumeXIcon size={16} /> Replies are silent · Turn on
                 </button>
               ) : null}
@@ -175,7 +181,7 @@ export function VoiceMode({
                       key="pause"
                       type="button"
                       aria-label={mood === "paused" ? "Resume speaking" : "Pause speaking"}
-                      className="press grid size-12 place-items-center rounded-full bg-white/[0.07] text-fg-2 hover:text-fg"
+                      className="press grid size-12 place-items-center rounded-full bg-fill-2 text-fg-2 hover:text-fg"
                       initial={{ opacity: 0, scale: 0.8 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.8 }}
@@ -202,7 +208,7 @@ export function VoiceMode({
                       key="stop"
                       type="button"
                       aria-label="Stop speaking"
-                      className="press grid size-12 place-items-center rounded-full bg-white/[0.07] text-fg-2 hover:text-fg"
+                      className="press grid size-12 place-items-center rounded-full bg-fill-2 text-fg-2 hover:text-fg"
                       initial={{ opacity: 0, scale: 0.8 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.8 }}

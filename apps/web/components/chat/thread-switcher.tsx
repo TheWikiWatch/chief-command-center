@@ -11,6 +11,7 @@ import { liveInterval, liveWake } from "@/lib/live";
 import { poll } from "@/lib/poll";
 import { share } from "@/lib/share";
 import { markSeen, readSeen, threadsApi, type ChatThread } from "@/lib/threads-client";
+import { field } from "@/components/ui/field";
 
 function ago(epoch: number): string {
   if (!epoch) return "";
@@ -151,7 +152,7 @@ export function ThreadSwitcher({
           setOpen((v) => !v);
           load();
         }}
-        className="press flex min-h-8 min-w-19 max-w-44 items-center gap-1.5 rounded-full border border-line-2 bg-white/4 py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-48"
+        className="press flex min-h-8 min-w-19 max-w-44 items-center gap-1.5 rounded-full border border-line-2 bg-fill-1 py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-48"
       >
         <span className="truncate">{title}</span>
         {elsewhere ? <Dot kind={elsewhere} /> : null}
@@ -327,7 +328,7 @@ function ThreadRow({
           value={title}
           maxLength={60}
           onChange={(e) => setTitle(e.target.value)}
-          className="min-h-9 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-2.5 text-callout text-fg outline-hidden focus:border-line-3"
+          className={field({ extra: "min-h-9 min-w-0 flex-1 px-2.5 text-callout" })}
         />
         <button type="submit" disabled={busy} className="press min-h-9 rounded-full bg-fg px-3 text-caption font-semibold text-canvas disabled:opacity-50">
           Save
@@ -369,9 +370,9 @@ function ThreadRow({
   }
 
   return (
-    <li className={`rounded-ctl ${current ? "bg-white/6" : ""}`}>
+    <li className={`rounded-ctl ${current ? "bg-fill-2" : ""}`}>
       <div className="flex items-center gap-1">
-        <button type="button" role="menuitemradio" aria-checked={current} onClick={onPick} className="press flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-ctl px-2 text-left hover:bg-white/4">
+        <button type="button" role="menuitemradio" aria-checked={current} onClick={onPick} className="press flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-ctl px-2 text-left hover:bg-fill-1">
           <Dot kind={attention} />
           <span className={`min-w-0 flex-1 truncate text-callout ${current ? "font-medium text-fg" : "text-fg-2"}`}>{t.title}</span>
           <span className="shrink-0 text-caption tabular text-fg-3">{attention === "question" ? "needs you" : ago(t.lastActivity)}</span>
@@ -382,7 +383,7 @@ function ThreadRow({
           aria-label={`More for ${t.title}`}
           aria-expanded={mode !== ""}
           onClick={() => setMode((m) => (m ? "" : "actions"))}
-          className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
+          className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
         >
           <EllipsisIcon size={16} />
         </button>

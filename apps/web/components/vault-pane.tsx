@@ -55,6 +55,7 @@ import {
 import { useAssistantName } from "@/lib/identity";
 import { useAppConfig } from "@/lib/app-config";
 import { SecondBrainNotSetUp } from "@/components/second-brain/not-set-up";
+import { btn } from "@/components/ui/button";
 
 type Open = { path: string; kind: VaultKind; heading?: string };
 
@@ -353,7 +354,7 @@ function Browser({
             {entries === null ? (
               <div className="space-y-1.5 px-1 pt-1" role="status" aria-label="Loading the vault">
                 {Array.from({ length: 7 }, (_, i) => (
-                  <div key={i} className="h-12 rounded-ctl bg-white/[0.035]" style={{ opacity: 1 - i * 0.11 }} />
+                  <div key={i} className="h-12 rounded-ctl bg-fill-1" style={{ opacity: 1 - i * 0.11 }} />
                 ))}
               </div>
             ) : entries.length === 0 && !error ? (
@@ -415,10 +416,10 @@ function Row({
       type="button"
       onClick={onClick}
       className={`press group flex min-h-12 w-full items-center gap-3 rounded-ctl px-2.5 py-1.5 text-left transition-colors duration-fast ${
-        active ? "bg-white/[0.07]" : "hover:bg-white/[0.035]"
+        active ? "bg-fill-2" : "hover:bg-fill-1"
       }`}
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/4.5">{icon}</span>
+      <span className="grid size-8 shrink-0 place-items-center rounded-ctl bg-fill-1">{icon}</span>
       <span className="min-w-0 flex-1">
         <span className={`block truncate text-body ${active ? "font-medium text-fg" : "text-fg"}`}>{title}</span>
         {meta ? <span className="block truncate text-caption text-fg-3">{meta}</span> : null}
@@ -455,9 +456,9 @@ function SearchResults({
           <button
             type="button"
             onClick={() => onOpen({ name: h.name, path: h.path, dir: false, kind: h.kind, mtime: 0 })}
-            className={`press flex w-full items-start gap-3 rounded-ctl px-2.5 py-2 text-left ${h.path === openPath ? "bg-white/[0.07]" : "hover:bg-white/[0.035]"}`}
+            className={`press flex w-full items-start gap-3 rounded-ctl px-2.5 py-2 text-left ${h.path === openPath ? "bg-fill-2" : "hover:bg-fill-1"}`}
           >
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/4.5">
+            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-ctl bg-fill-1">
               <KindIcon kind={h.kind} />
             </span>
             <span className="min-w-0 flex-1">
@@ -523,13 +524,13 @@ function EmptyReader({ home, recents, onOpen }: { home: string; recents: Recent[
   return (
     <div className="grid h-full place-items-center p-8">
       <div className="max-w-sm text-center">
-        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-white/5 text-fg-2">
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-fill-2 text-fg-2">
           <BookOpenIcon size={26} />
         </span>
         <h2 className="mt-4 text-title text-fg">Your Second Brain</h2>
         <p className="mt-1.5 text-callout text-fg-3">Pick a note on the left, search for anything, or tap a file {assistant} links in chat.</p>
         <div className="mt-5 flex flex-wrap justify-center gap-2">
-          <button type="button" className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas" onClick={() => onOpen(home)}>
+          <button type="button" className={btn("primary", "md")} onClick={() => onOpen(home)}>
             {home === "Home.md" ? "Open Home" : "Open index"}
           </button>
           {recents[0] ? (
@@ -567,7 +568,7 @@ function Reader({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-1 border-b border-line px-2 py-1.5">
         {canBack ? (
-          <button type="button" aria-label="Back" className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg" onClick={onBack}>
+          <button type="button" aria-label="Back" className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg" onClick={onBack}>
             <ChevronLeftIcon size={20} />
           </button>
         ) : (
@@ -583,7 +584,7 @@ function Reader({
           type="button"
           aria-label={copied ? "Path copied" : "Copy path"}
           title="Copy the full path"
-          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
+          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
           onClick={() => {
             void navigator.clipboard?.writeText(absoluteVaultPath(open.path)).then(() => {
               setCopied(true);
@@ -599,7 +600,7 @@ function Reader({
           rel="noreferrer"
           aria-label="Open in a new tab"
           title="Open in a new tab"
-          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
+          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
         >
           <ExternalLinkIcon size={17} />
         </a>
@@ -675,9 +676,9 @@ function NoteView({ path, heading, fontPx, onFollow }: { path: string; heading?:
   if (!parsed) {
     return (
       <div className="space-y-3 p-5" role="status" aria-label="Loading note">
-        <div className="h-7 w-2/3 rounded-ctl bg-white/5" />
+        <div className="h-7 w-2/3 rounded-ctl bg-fill-2" />
         {[92, 100, 84, 96, 70].map((w, i) => (
-          <div key={i} className="h-4 rounded-sm bg-white/[0.035]" style={{ width: `${w}%` }} />
+          <div key={i} className="h-4 rounded-sm bg-fill-1" style={{ width: `${w}%` }} />
         ))}
       </div>
     );
@@ -770,7 +771,7 @@ function Properties({ props, onFollow }: { props: [string, string | string[]][];
               {Array.isArray(value) ? (
                 <span className="flex flex-wrap gap-1">
                   {value.map((v) => (
-                    <span key={v} className="rounded-chip bg-white/6 px-1.5 py-0.5 text-caption text-fg-2">
+                    <span key={v} className="rounded-chip bg-fill-2 px-1.5 py-0.5 text-caption text-fg-2">
                       <PropText text={v} onFollow={onFollow} />
                     </span>
                   ))}
@@ -833,14 +834,14 @@ function FileCard({ name, url, note, primary }: { name: string; url: string; not
   return (
     <div className="grid min-h-full place-items-center p-6">
       <div className="w-full max-w-sm rounded-card border border-line bg-card p-5 text-center">
-        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white/5 text-fg-2">
+        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-fill-2 text-fg-2">
           <FileIcon size={22} />
         </span>
         <p className="mt-3 wrap-break-word text-body font-medium text-fg">{name}</p>
         <p className="mt-1 text-callout text-fg-3">{note}</p>
         <div className="mt-4 flex justify-center gap-2">
           {primary ? (
-            <a href={url} target="_blank" rel="noreferrer" className="press flex min-h-11 items-center gap-2 rounded-full bg-fg px-5 text-callout font-semibold text-canvas">
+            <a href={url} target="_blank" rel="noreferrer" className={btn("primary", "md", "flex items-center gap-2")}>
               <ExternalLinkIcon size={16} /> {primary}
             </a>
           ) : null}

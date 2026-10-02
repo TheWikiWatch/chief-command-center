@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { CircleAlertIcon, HistoryIcon, PlusIcon, TriangleAlertIcon, XIcon } from "@/components/icons";
 import { memoryOps, memoryUsed, persona, type MemoryRow, type MemoryTarget, type Persona, type Soul, type SoulVersion } from "@/lib/persona-client";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 type Tab = "soul" | "memory" | "user";
 
@@ -40,7 +42,7 @@ export function PersonaEditor({ profile, name }: { profile: string; name: string
             role="tab"
             aria-selected={tab === t.id}
             onClick={() => setTab(t.id)}
-            className={`press min-h-9 flex-1 truncate rounded-full px-3 text-callout font-medium ${tab === t.id ? "bg-white/10 text-fg" : "text-fg-3 hover:text-fg-2"}`}
+            className={`press min-h-9 flex-1 truncate rounded-full px-3 text-callout font-medium ${tab === t.id ? "bg-fill-3 text-fg" : "text-fg-3 hover:text-fg-2"}`}
           >
             {t.label}
           </button>
@@ -117,7 +119,7 @@ function SoulEditor({ profile, soul, onSaved }: { profile: string; soul: Soul; o
           onChange={(e) => setText(e.target.value)}
           rows={14}
           spellCheck
-          className="mt-1.5 w-full resize-y rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code leading-5 text-fg outline-hidden focus:border-line-3"
+          className={field({ mono: true, extra: "mt-1.5 w-full resize-y py-2 leading-5" })}
         />
       </label>
       <p className={`text-caption tabular ${over ? "text-warn" : "text-fg-3"}`}>
@@ -299,7 +301,7 @@ function MemoryEditor({
               type="button"
               aria-label={row.deleted ? `Keep entry ${i + 1}` : `Delete entry ${i + 1}`}
               onClick={() => (row.from === undefined ? setRows((rs) => rs.filter((r) => r.key !== row.key)) : update(row.key, { deleted: !row.deleted }))}
-              className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
+              className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
             >
               {row.deleted ? <span className="text-caption">Undo</span> : <XIcon className="size-4" />}
             </button>
@@ -337,7 +339,7 @@ function Meter({ used, limit }: { used: number; limit: number }) {
   const tone = used > limit ? "bg-danger" : pct >= 90 ? "bg-warn" : "bg-ok";
   return (
     <div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/6" role="meter" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used} aria-label="Memory used">
+      <div className="h-1.5 overflow-hidden rounded-full bg-fill-2" role="meter" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used} aria-label="Memory used">
         <div className={`h-full ${tone}`} style={{ width: `${pct}%` }} />
       </div>
       <p className={`mt-1 text-caption tabular ${used > limit ? "text-danger" : "text-fg-3"}`}>
@@ -361,7 +363,7 @@ function Problem({ text, action }: { text: string; action?: ReactNode }) {
 
 function Primary({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className="press min-h-11 rounded-full bg-fg px-5 text-callout font-semibold text-canvas disabled:bg-white/10 disabled:text-fg-4">
+    <button type="button" onClick={onClick} disabled={disabled} className={btn("primary", "md")}>
       {children}
     </button>
   );
@@ -369,7 +371,7 @@ function Primary({ children, onClick, disabled }: { children: ReactNode; onClick
 
 function Ghost({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} className="press flex min-h-11 items-center gap-1.5 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg disabled:opacity-40">
+    <button type="button" onClick={onClick} disabled={disabled} className={btn("secondary", "md")}>
       {children}
     </button>
   );

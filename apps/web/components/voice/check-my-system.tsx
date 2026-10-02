@@ -9,6 +9,8 @@ import { useAssistantName } from "@/lib/identity";
 import { loadMicDevice, micConstraints, micProblem, saveMicDevice, saveVoiceCheck, type MicProblem, type VoiceCheckResult } from "@/lib/mic-device";
 import { blobToDataUrl, pickRecorderMime, playableAudioUrl } from "@/lib/voice-client";
 import { megabytes, speechModel, type SpeechModelStatus } from "@/lib/voice-model-client";
+import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
 
 type MicState = "idle" | "testing" | "ok" | "silent" | MicProblem;
 type SpeakerState = "idle" | "playing" | "asking" | "heard" | "not-heard" | "failed";
@@ -242,7 +244,7 @@ export function CheckMySystem({
             <select
               value={device}
               onChange={(e) => chooseDevice(e.target.value)}
-              className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3"
+              className={field({ extra: "mt-1.5 w-full" })}
             >
               <option value="">System default</option>
               {devices
@@ -257,7 +259,7 @@ export function CheckMySystem({
         ) : null}
         {mic === "testing" || mic === "ok" || mic === "silent" ? (
           <div className="flex items-center gap-3">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/6" role="meter" aria-label="Input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)}>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-fill-2" role="meter" aria-label="Input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)}>
               <div className="h-full rounded-full bg-accent transition-[width] duration-75" style={{ width: `${Math.round(level * 100)}%` }} />
             </div>
             <button type="button" onClick={stopMic} className="press min-h-9 rounded-full px-3 text-callout text-fg-3 hover:text-fg-2">
@@ -299,7 +301,7 @@ export function CheckMySystem({
           downloading && job ? (
             <div className="space-y-2">
               <p className="text-callout text-fg-2">{job.state === "verifying" ? "Checking the download…" : "Downloading the speech model…"}</p>
-              <div className="h-2 overflow-hidden rounded-full bg-white/6" role="progressbar" aria-label="Download progress" aria-valuemin={0} aria-valuemax={job.total} aria-valuenow={job.received}>
+              <div className="h-2 overflow-hidden rounded-full bg-fill-2" role="progressbar" aria-label="Download progress" aria-valuemin={0} aria-valuemax={job.total} aria-valuenow={job.received}>
                 <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${job.total ? Math.round((job.received / job.total) * 100) : 0}%` }} />
               </div>
               <p className="font-mono text-caption tabular text-fg-3">
@@ -420,9 +422,7 @@ function Action({ children, onClick, disabled, subtle }: { children: ReactNode; 
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={`press inline-flex min-h-10 items-center gap-2 rounded-full px-4 text-callout font-medium disabled:opacity-50 ${
-        subtle ? "border border-line-2 text-fg-2 hover:text-fg" : "bg-fg text-canvas"
-      }`}
+      className={btn(subtle ? "secondary" : "primary", "md")}
     >
       {children}
     </button>
