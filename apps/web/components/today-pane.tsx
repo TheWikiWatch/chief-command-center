@@ -10,6 +10,7 @@ import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
 import { ChevronLeftIcon, CircleCheckIcon, ClockIcon, RefreshCwIcon, SearchIcon, SlidersHorizontalIcon, TriangleAlertIcon, WifiOffIcon, XIcon } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
 import { EASE, SPRING } from "@/lib/motion";
+import { useScopeVisible } from "@/lib/overlay-stack";
 import {
   ops,
   fetchOpsHealth,
@@ -118,7 +119,9 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
     }
   }, [builtin, resourceHealth]);
 
-  useEffect(() => poll(refresh, () => pollSeconds.current * 1000), [refresh, tick]);
+  // A phone tab that isn't showing checks once a minute, and refreshes the moment it is shown again.
+  const visible = useScopeVisible();
+  useEffect(() => poll(refresh, () => (visible ? pollSeconds.current * 1000 : 60_000)), [refresh, tick, visible]);
 
   useEffect(() => {
     // Escape is handled by whichever sheet is on top (lib/overlay-stack.ts).

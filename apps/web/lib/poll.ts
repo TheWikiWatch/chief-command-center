@@ -4,10 +4,14 @@
  */
 export const HIDDEN_MIN_MS = 5_000;
 
-/** One request per resource, with immediate refresh after returning to the app. */
+/**
+ * One request per resource, with immediate refresh after returning to the app. `wake` subscribes to something
+ * that should refresh it at once (the live channel, lib/live.ts) and returns how to unsubscribe.
+ */
 export function poll(
   run: (signal: AbortSignal) => Promise<void>,
   interval: number | (() => number),
+  opts: { wake?: (fire: () => void) => () => void } = {},
 ): () => void {
   let stopped = false;
   let inFlight = false;
@@ -39,9 +43,11 @@ export function poll(
   };
   document.addEventListener("visibilitychange", resume);
   window.addEventListener("online", resume);
+  const unwake = opts.wake?.(resume);
   void tick();
   return () => {
     stopped = true;
+    unwake?.();
     controller?.abort();
     clearTimeout(timer);
     document.removeEventListener("visibilitychange", resume);

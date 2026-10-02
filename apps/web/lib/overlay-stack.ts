@@ -133,6 +133,11 @@ export function LayerScope({ visible, children }: { visible: boolean; children: 
   return createElement(ScopeVisible.Provider, { value: parent && visible }, children);
 }
 
+/** Whether this part of the page is on screen (false inside a phone tab that isn't showing). */
+export function useScopeVisible(): boolean {
+  return useContext(ScopeVisible);
+}
+
 /**
  * While `active`, this component is a layer: Escape and Back call `onDismiss` (return false to refuse).
  */

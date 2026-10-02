@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 
 import { BotFace, faceProps } from "@/components/bot-face";
 import { EASE } from "@/lib/motion";
+import { poll } from "@/lib/poll";
+import { share } from "@/lib/share";
 import type { Person } from "@/lib/types";
 import { money, tokens, usageApi, type UsageSummary } from "@/lib/usage-client";
 
@@ -15,24 +17,21 @@ import { money, tokens, usageApi, type UsageSummary } from "@/lib/usage-client";
 export function UsageStrip({ people, onOpen }: { people: Person[]; onOpen: () => void }) {
   const [data, setData] = useState<UsageSummary | null>(null);
   const [failed, setFailed] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    const load = () =>
-      usageApi
-        .summary("month")
-        .then((r) => {
-          if (!alive) return;
+  // Once a minute, and not while the app is hidden (poll() slows hidden pages down).
+  useEffect(
+    () =>
+      poll(async (signal) => {
+        try {
+          const r = await usageApi.summary("month");
+          if (signal.aborted) return;
           setFailed(!r.ok);
-          if (r.ok) setData(r);
-        })
-        .catch(() => alive && setFailed(true));
-    void load();
-    const timer = window.setInterval(load, 60_000);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-    };
-  }, []);
+          if (r.ok) setData((prev) => share(prev, r));
+        } catch {
+          if (!signal.aborted) setFailed(true);
+        }
+      }, 60_000),
+    [],
+  );
 
   const budget = data?.budget;
   const ratio = budget?.ratio ?? null;

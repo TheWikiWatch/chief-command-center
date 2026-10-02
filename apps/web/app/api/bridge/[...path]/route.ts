@@ -22,11 +22,25 @@ async function proxy(req: NextRequest, path: string[]) {
     const file = url.searchParams.get("path") || "";
     if (deniedFilePath(file)) return Response.json({ ok: false, error: "not found" }, { status: 404 });
   }
-  // Plugin SSE is not proxied: it holds App Router requests open and 502-floods a down gateway.
-  if (path[0] === "events") {
-    return new Response(null, { status: 204 });
-  }
   const rel = path.join("/");
+  // The live channel (lib/live.ts): streamed through, closed when the page goes away. A gateway that is down
+  // answers at once (502), and the page backs off before trying again, so nothing floods.
+  if (path[0] === "events") {
+    try {
+      const upstream = await fetch(`${bridgeBase()}/events`, {
+        headers: { Authorization: `Bearer ${token()}` },
+        cache: "no-store",
+        signal: AbortSignal.any([AbortSignal.timeout(3000 + 6 * 3600 * 1000), req.signal]),
+      });
+      if (!upstream.ok || !upstream.body) return new Response(null, { status: 502 });
+      return new Response(upstream.body, {
+        status: 200,
+        headers: { "content-type": "text/event-stream", "cache-control": "no-cache, no-transform", "x-accel-buffering": "no" },
+      });
+    } catch {
+      return new Response(null, { status: 502 });
+    }
+  }
   const target = `${bridgeBase()}/${rel}${url.search}`;
   const headers = new Headers();
   headers.set("Authorization", `Bearer ${token()}`);
@@ -35,10 +49,10 @@ async function proxy(req: NextRequest, path: string[]) {
   const range = req.headers.get("range");
   if (range) headers.set("Range", range);
 
-  let body: ArrayBuffer | undefined;
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    body = await req.arrayBuffer();
-  }
+  // Bodies stream through (an 80 MB send isn't held in this process a second time).
+  const body = req.method !== "GET" && req.method !== "HEAD" ? req.body : null;
+  const length = req.headers.get("content-length");
+  if (length) headers.set("Content-Length", length);
 
   // A long-poll (/transcript?wait=N) is held by the bridge for up to N seconds (at most 25).
   const wait = path[0] === "transcript" ? Math.min(25, Math.max(0, Number(url.searchParams.get("wait")) || 0)) : 0;
@@ -65,6 +79,8 @@ async function proxy(req: NextRequest, path: string[]) {
       method: req.method,
       headers,
       body,
+      // Required by Node's fetch for a streamed request body.
+      ...(body ? { duplex: "half" as const } : {}),
       cache: "no-store",
       // A long-poll the browser gave up on (tab closed, app backgrounded) is not waited out here.
       signal: wait ? AbortSignal.any([AbortSignal.timeout(timeoutMs), req.signal]) : AbortSignal.timeout(timeoutMs),

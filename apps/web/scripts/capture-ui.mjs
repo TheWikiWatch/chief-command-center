@@ -54,6 +54,7 @@ const SCROLLER = `document.querySelector('.chief-chat .overflow-y-auto')`;
 const FROM_BOTTOM = `(() => { const el = ${SCROLLER}; return { fromBottom: Math.round(el.scrollHeight - el.scrollTop - el.clientHeight), pill: !!document.querySelector('.chief-chat button.glass') }; })()`;
 const LAST_CHIEF = JSON.stringify({ id: "chief", name: "Nova - Chief of Staff", shape: "blobatar::hexagon", color: "hsl(0 68% 58%)", isChief: true, custom: true, imageKind: "shape", avatarUrl: null, ring: "idle" });
 
+const IDLE_REQUESTS = `new Promise((done) => { performance.setResourceTimingBufferSize(5000); performance.clearResourceTimings(); setTimeout(() => { const e = performance.getEntriesByType("resource").filter((x) => x.name.includes("/api/")); const by = {}; for (const x of e) { const k = new URL(x.name).pathname.replace("/api/bridge/", "bridge/"); by[k] = (by[k] || 0) + 1; } done({ total: e.length, by }); }, 30000); })`;
 const click = (expr) => `(() => { const el = ${expr}; if (el) { el.click(); return true } return false })()`;
 const byText = (t) => `[...document.querySelectorAll('button')].find(b => b.textContent.trim() === ${JSON.stringify(t)})`;
 const byLabel = (t) => `document.querySelector('[aria-label=${JSON.stringify(t)}]')`;
@@ -118,6 +119,8 @@ const scenarios = [
   { name: "phone-fleet-working-last", vp: PHONE, ls: { "chief-phone-tab": "fleet" }, patch: { "/api/bridge/snapshot": lastWorking }, wait: 9000 },
   { name: "phone-fleet-working-list", vp: PHONE, ls: { "chief-phone-tab": "fleet" }, patch: { "/api/bridge/snapshot": lastWorking }, wait: 9000, js: [`document.getElementById("fleet-list")?.scrollIntoView(); true`], settle: 1200 },
   { name: "desktop-fleet-working", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "60" }, patch: { "/api/bridge/snapshot": lastWorking }, wait: 9000 },
+  // Requests to the dashboard's API over 30 idle seconds (Today surface, chat open): what the live channel saves.
+  { name: "chk-idle-requests", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, wait: 8000, check: IDLE_REQUESTS },
   { name: "chk-desktop-orbit-moves", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "60" }, wait: 9000, check: `new Promise((done) => { const a = ${SEAT_POS}; setTimeout(() => done({ before: a, after: ${SEAT_POS} }), 3000); })` },
   { name: "chk-desktop-orbit-hover", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "60" }, wait: 9000, js: [`(() => { const b = document.querySelector('[data-orbit-seat] button'); b.dispatchEvent(new PointerEvent("pointerover", { bubbles: true })); return true; })()`], settle: 2500, check: `new Promise((done) => { const a = ${SEAT_POS}; setTimeout(() => done({ before: a, after: ${SEAT_POS} }), 3000); })` },
   // Perf probes (§7): 4x CPU throttle approximates a mid-range Android; prints fps, p95 frame and long tasks.
@@ -155,9 +158,9 @@ async function main() {
   let seq = 0;
   const pending = new Map();
   let current = null;
-  const send = (method, params = {}) => new Promise((resolve, reject) => {
+  const send = (method, params = {}, timeoutMs = 15000) => new Promise((resolve, reject) => {
     const id = ++seq;
-    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${method} timed out`)); }, 15000);
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error(`${method} timed out`)); }, timeoutMs);
     pending.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
     ws.send(JSON.stringify({ id, method, params }));
   });
@@ -232,7 +235,7 @@ async function main() {
       } else console.log(`  ! ${s.name}: hold target not found`);
     }
     if (s.check) {
-      const r = await send("Runtime.evaluate", { expression: s.check, returnByValue: true, awaitPromise: true });
+      const r = await send("Runtime.evaluate", { expression: s.check, returnByValue: true, awaitPromise: true }, 60000);
       console.log(`check ${s.name} ${JSON.stringify(r?.result?.value)}`);
       continue;
     }

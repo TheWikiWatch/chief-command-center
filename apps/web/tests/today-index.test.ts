@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 
-import { boardFor, buildBoards, columnFor, kickoff, parseTasks, rankToday, readVaultTasks } from "@/lib/server/today-index";
+import { boardFor, buildBoards, columnFor, forgetRecentWalks, kickoff, parseTasks, rankToday, readVaultTasks } from "@/lib/server/today-index";
 
 const TODAY = "2026-10-01";
 
@@ -133,6 +133,9 @@ describe("readVaultTasks", () => {
     const later = new Date(Date.now() + 5000);
     utimesSync(path.join(root, "10 Projects/Garden.md"), later, later);
     rmSync(path.join(root, "40 Knowledge/concepts/x.md"));
+    // Requests within 2 seconds share one walk (Today asks for several views at once).
+    expect(await readVaultTasks(root)).toBe(await readVaultTasks(root));
+    forgetRecentWalks();
     expect((await readVaultTasks(root)).map((t) => t.text).sort()).toEqual(["Buy seeds", "Plant them"]);
   });
 });

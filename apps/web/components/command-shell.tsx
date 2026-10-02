@@ -28,6 +28,7 @@ import { WorkforcePane } from "@/components/workforce-pane";
 import { FleetHealth } from "@/components/fleet-health";
 import { TeamButton } from "@/components/fleet/team-sheet";
 import { fetchApprovals, fetchHealth, fetchSnapshot, subscribeBridge } from "@/lib/bridge";
+import { liveConnected, liveInterval, liveWake, useLiveConnected } from "@/lib/live";
 import { useDashboardPrefs } from "@/lib/dashboard-prefs";
 import { SPRING } from "@/lib/motion";
 import { fx } from "@/lib/fx";
@@ -66,11 +67,13 @@ export function CommandShell() {
   const phone = usePhoneShell();
   const prefs = useDashboardPrefs(phone);
   useFullscreenShortcut(!phone);
-  const snapshotHealth = useResourceHealth("Fleet", 5_000);
+  // With the live channel up, the snapshot refreshes on changes and every 30 s: "stale" means something else then.
+  const live = useLiveConnected();
+  const snapshotHealth = useResourceHealth("Fleet", live ? 45_000 : 5_000);
   // Approvals arrive with the chat's transcript on bridges that long-poll; the own poll is then a slow fallback.
   const [approvalsViaChat, setApprovalsViaChat] = useState(false);
   const approvalsViaChatAt = useRef(0);
-  const approvalHealth = useResourceHealth("Approvals", approvalsViaChat ? 60_000 : 8_000);
+  const approvalHealth = useResourceHealth("Approvals", approvalsViaChat || live ? 60_000 : 8_000);
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(true);
   const onboarding = useNeedsOnboarding(connected);
@@ -251,8 +254,10 @@ export function CommandShell() {
     }
   }, [connected, authFailed]);
 
+  // With the live channel up, the bridge says when anything changes: the ping only confirms the link now and
+  // then, and the snapshot and approvals refresh on each change (lib/live.ts). Without it, the old rates.
   useEffect(() => {
-    return subscribeBridge(ping, 2500);
+    return subscribeBridge(ping, () => liveInterval(2500, 15_000), { wake: liveWake });
   }, [ping]);
 
   useEffect(() => {
@@ -262,7 +267,7 @@ export function CommandShell() {
 
   useEffect(() => {
     // Rings and beams don't need sub-second updates; the chief's replies and approvals come with the chat.
-    return subscribeBridge(refresh, 2500);
+    return subscribeBridge(refresh, () => liveInterval(2500, 30_000), { wake: liveWake });
   }, [refresh]);
 
   useEffect(() => subscribeBridge(async (signal) => {
@@ -272,7 +277,7 @@ export function CommandShell() {
       if (data.approval?.requestId !== dismissedApproval.current) setApproval((prev) => share(prev, data.approval ?? null));
       approvalHealth.success();
     } catch (error) { if (!signal.aborted) approvalHealth.failure(error); }
-  }, () => (Date.now() - approvalsViaChatAt.current < 60_000 ? 30_000 : approvalRef.current || thinkingRef.current ? 800 : 4000)), [approvalHealth]);
+  }, () => (Date.now() - approvalsViaChatAt.current < 60_000 ? 30_000 : liveConnected() ? 30_000 : approvalRef.current || thinkingRef.current ? 800 : 4000), { wake: liveWake }), [approvalHealth]);
 
   useEffect(() => {
     const n = loadSplit();

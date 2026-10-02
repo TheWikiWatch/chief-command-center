@@ -7,6 +7,9 @@ import { CheckIcon, ChevronDownIcon, EllipsisIcon, PlusIcon } from "@/components
 import { Sheet } from "@/components/ui/sheet";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
+import { liveInterval, liveWake } from "@/lib/live";
+import { poll } from "@/lib/poll";
+import { share } from "@/lib/share";
 import { markSeen, readSeen, threadsApi, type ChatThread } from "@/lib/threads-client";
 
 function ago(epoch: number): string {
@@ -58,18 +61,18 @@ export function ThreadSwitcher({
   const [seen, setSeen] = useState<Record<string, number>>({});
   const root = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(() => {
-    threadsApi
-      .list()
-      .then((r) => r.ok && setItems(r.threads))
-      .catch(() => undefined);
-    setSeen(readSeen());
+  const load = useCallback(async () => {
+    try {
+      const r = await threadsApi.list();
+      // Unchanged lists keep their identity, so a quiet poll doesn't re-render the switcher.
+      if (r.ok) setItems((prev) => share(prev, r.threads));
+    } catch {
+      /* the next poll tries again */
+    }
+    setSeen((prev) => share(prev, readSeen()));
   }, []);
-  useEffect(() => {
-    load();
-    const timer = window.setInterval(load, open ? 3000 : 6000);
-    return () => window.clearInterval(timer);
-  }, [load, open]);
+  // Refreshes on every change the bridge reports (lib/live.ts); the timer is the fallback.
+  useEffect(() => poll(load, () => liveInterval(open ? 3000 : 6000, open ? 15_000 : 30_000), { wake: liveWake }), [load, open]);
   // What is on screen counts as seen.
   const active = items.find((t) => t.id === current);
   useEffect(() => {

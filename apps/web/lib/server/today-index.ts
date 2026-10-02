@@ -322,7 +322,24 @@ async function walk(root: string): Promise<{ files: { rel: string; abs: string; 
   return { files, truncated: false };
 }
 
-export async function readVaultTasks(root: string, sources: TaskSources = "all"): Promise<ParsedTask[]> {
+/**
+ * Today asks for meta, boards and today together on every poll: they share one walk of the vault (a result is
+ * reused for 2 seconds, and requests that arrive while a walk runs wait for it).
+ */
+const recentWalks = new Map<string, { at: number; tasks: Promise<ParsedTask[]> }>();
+const WALK_REUSE_MS = 2000;
+
+export function readVaultTasks(root: string, sources: TaskSources = "all"): Promise<ParsedTask[]> {
+  const key = `${sources}\n${root}`;
+  const recent = recentWalks.get(key);
+  if (recent && Date.now() - recent.at < WALK_REUSE_MS) return recent.tasks;
+  const tasks = readVaultTasksNow(root, sources);
+  recentWalks.set(key, { at: Date.now(), tasks });
+  tasks.catch(() => recentWalks.delete(key));
+  return tasks;
+}
+
+async function readVaultTasksNow(root: string, sources: TaskSources): Promise<ParsedTask[]> {
   const cacheKey = `${sources}\n${root}`;
   const cache = fileCache.get(cacheKey) ?? new Map<string, FileTasks>();
   fileCache.set(cacheKey, cache);
@@ -542,4 +559,9 @@ function boardKickoff(req: LaunchRequest, c: TaskCard, board: Board, today: stri
     default:
       return `Let's talk about this task from my Second Brain: ${task}.${tail}`;
   }
+}
+
+/** Tests: read the vault again now instead of reusing a walk from the last 2 seconds. */
+export function forgetRecentWalks() {
+  recentWalks.clear();
 }
