@@ -1,7 +1,7 @@
 // Read-only UI capture via headless Edge + CDP. No dependencies (Node 22 WebSocket).
 // Every write endpoint is blocked inside the browser, so nothing reaches Nova or the vault.
-// Usage: node docs/visual-overhaul/capture-ui.mjs <outDir> [scenarioRegex]
-// Needs the dashboard running on 127.0.0.1:3000. Output contains real chat content: keep it untracked.
+// Usage: node apps/web/scripts/capture-ui.mjs <outDir> [scenarioRegex]   (CAPTURE_ORIGIN=http://127.0.0.1:3102 for the e2e dashboard)
+// Needs the dashboard running (default 127.0.0.1:3000). Output contains real chat content: keep it untracked.
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -21,6 +21,8 @@ const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false 
 const WRITES = /\/api\/(bridge\/(send|approve|transcribe|speak|settings|push\/subscribe)|ops\/(launch|settings))/;
 const json = (o) => ({ status: 200, body: JSON.stringify(o) });
 const MOCK_APPROVAL = { ok: true, approval: { requestId: "capture-1", command: "git push --force origin main", reason: "Dangerous command: force push rewrites remote history", patternKey: "git-force", allowSession: true, allowPermanent: true }, approvals: [] };
+// Approvals ride along with the transcript (the chat feeds the shell), so the transcript carries the mock too.
+const WITH_APPROVAL = (b) => (b && typeof b === "object" ? { ...b, approval: MOCK_APPROVAL.approval } : b);
 const EMPTY_TRANSCRIPT = { ok: true, sessionKey: "agent:main:command_center:dm:owner", lastId: 0, messages: [], generating: false };
 const DOWN = "fail";
 // Fleet churn fixtures: after the third snapshot a synthetic bot appears (or one disappears). Headless only.
@@ -67,9 +69,9 @@ const scenarios = [
   { name: "phone-chat-compact", vp: PHONE, ls: { "chief-phone-tab": "chat", "chief-chat-compact": "1" } },
   { name: "phone-chat-empty", vp: PHONE, ls: { "chief-phone-tab": "chat" }, mock: { "/api/bridge/transcript": json(EMPTY_TRANSCRIPT) } },
   { name: "phone-chat-thinking", vp: PHONE, ls: { "chief-phone-tab": "chat" }, patch: { "/api/bridge/transcript": (b) => ({ ...b, generating: true }) } },
-  { name: "phone-chat-approval", vp: PHONE, ls: { "chief-phone-tab": "chat" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) } },
-  { name: "phone-chat-approval-armed", vp: PHONE, ls: { "chief-phone-tab": "chat" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) }, js: [click(byText("Always allow"))], settle: 600 },
-  { name: "phone-today-with-approval-banner", vp: PHONE, ls: { "chief-phone-tab": "today" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) } },
+  { name: "phone-chat-approval", vp: PHONE, ls: { "chief-phone-tab": "chat" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) }, patch: { "/api/bridge/transcript": WITH_APPROVAL } },
+  { name: "phone-chat-approval-armed", vp: PHONE, ls: { "chief-phone-tab": "chat" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) }, patch: { "/api/bridge/transcript": WITH_APPROVAL }, js: [click(byText("Always allow"))], settle: 600 },
+  { name: "phone-today-with-approval-banner", vp: PHONE, ls: { "chief-phone-tab": "today" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) }, patch: { "/api/bridge/transcript": WITH_APPROVAL } },
   { name: "phone-chat-emoji", vp: PHONE, ls: { "chief-phone-tab": "chat" }, js: [click(byLabel("Add attachment or emoji")), click(byLabel("Insert emoji"))], settle: 600 },
   { name: "phone-chat-plus-menu", vp: PHONE, ls: { "chief-phone-tab": "chat" }, js: [click(byLabel("Add attachment or emoji"))], settle: 600 },
   { name: "phone-chat-recording", vp: PHONE, ls: { "chief-phone-tab": "chat" }, hold: '[aria-label="Hold to talk"]', settle: 1800 },
@@ -104,7 +106,7 @@ const scenarios = [
   { name: "desktop-fleet-rail", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "40" } },
   { name: "desktop-fleet-look", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "60" }, js: [click(orbitSeat(1))], settle: 1500, wait: 8000 },
   { name: "desktop-thinking-orbit", vp: DESKTOP, ls: { "chief-surface": "fleet", "chief-split": "60" }, patch: { "/api/bridge/transcript": (b) => ({ ...b, generating: true }) }, wait: 9000 },
-  { name: "desktop-approval", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) } },
+  { name: "desktop-approval", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, mock: { "/api/bridge/approvals": json(MOCK_APPROVAL) }, patch: { "/api/bridge/transcript": WITH_APPROVAL } },
   { name: "desktop-today-intent", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, js: [click(firstTask)], settle: 800 },
   { name: "desktop-today-area", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, js: [click(firstArea)], settle: 800 },
   { name: "desktop-settings", vp: DESKTOP, ls: { "chief-surface": "today", "chief-split": "60" }, js: [click(`document.querySelector('.chief-chat [aria-label="Settings"]')`)], settle: 2500 },

@@ -8,6 +8,7 @@
 // (the public .cer, never the .pfx) and the signed package. It never holds an update key: send each person's key
 // separately. Reads testerCert and releasesDir from release.local.json; writes
 // <releasesDir>\Chief-Command-Center-setup-<version>.zip.
+import { X509Certificate } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
@@ -58,4 +59,8 @@ const r = spawnSync("tar.exe", ["-a", "-c", "-f", zip, "-C", stage, name], { std
 rmSync(stage, { recursive: true, force: true });
 if (r.status !== 0) fail(`tar failed (exit ${r.status}).`);
 console.log(`\n✓ ${zip} (${Math.round(statSync(zip).size / 1048576)} MB)`);
+// The installer asks for the certificate's fingerprint, which travels with each key (never in the zip), so a
+// tampered folder with its own certificate can't vouch for itself.
+const thumbprint = new X509Certificate(readFileSync(local.testerCert)).fingerprint.replace(/:/g, "").toUpperCase();
 console.log("Send it (a OneDrive or Google Drive link works), and each person's update key separately.");
+console.log(`With each key, send the certificate fingerprint: ${thumbprint}`);

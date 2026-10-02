@@ -3,6 +3,8 @@ Chief Command Center - setup
 
 1. Unzip this folder anywhere (Downloads is fine). Don't run it from inside the zip.
 2. Double-click "Install Chief.cmd".
+   - It shows the certificate's fingerprint and asks for the first 8 characters of the fingerprint you
+     were sent with your update key. If they don't match, stop and ask the person who sent the folder.
    - If Windows SmartScreen says it protected your PC: click "More info", then "Run anyway".
    - The first time, Windows asks for administrator permission once. That lets it install apps signed
      with the certificate in this folder (chief-test-signing.cer). Nothing else on your PC is changed.

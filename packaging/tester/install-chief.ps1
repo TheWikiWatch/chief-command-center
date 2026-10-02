@@ -1,13 +1,16 @@
 # Installs (or updates) Chief Command Center from this folder. Run it with "Install Chief.cmd".
 #
 # 1. Checks Windows (64-bit, Windows 10 2004 or later).
-# 2. Checks that the package in this folder is signed by the certificate in this folder.
+# 2. Checks that the package in this folder is signed by the certificate in this folder, that the signature
+#    is intact, and that the certificate is the one you were told about separately (its fingerprint comes
+#    with your update key, never in this folder, so a tampered folder can't vouch for itself).
 # 3. Trusts that certificate for app packages on this PC (one administrator prompt, first time only).
 # 4. Installs the package, then opens the app.
 #
 # Nothing is downloaded and nothing else on the PC is changed. Kept to plain ASCII and Windows PowerShell 5.1.
 # -CheckOnly runs steps 1 and 2 and changes nothing (for checking a setup folder before sending it).
-param([switch]$CheckOnly)
+# -Fingerprint <thumbprint> skips the question in step 2 (the value you were sent).
+param([switch]$CheckOnly, [string]$Fingerprint = "")
 $ErrorActionPreference = "Stop"
 $here = $PSScriptRoot
 $identity = "ChiefCommandCenter"
@@ -36,11 +39,30 @@ Step "Checking the package signature"
 $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($cerFile.FullName)
 $signature = Get-AuthenticodeSignature -FilePath $package.FullName
 if (-not $signature.SignerCertificate) { Stop-With "The package isn't signed. Don't install it; ask for the setup folder again." }
+# Before the certificate is trusted Windows reports the chain as untrusted (UnknownError or NotTrusted); any
+# other status (HashMismatch above all) means the package was changed after it was signed.
+if (@("Valid", "UnknownError", "NotTrusted") -notcontains [string]$signature.Status) {
+  Stop-With "The package's signature is broken ($($signature.Status)). Don't install it; ask for the setup folder again."
+}
 if ($signature.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
   Stop-With "The package wasn't signed with the certificate in this folder. Don't install it; ask for the setup folder again."
 }
-Say "Signed by $($cert.Subject) (thumbprint $($cert.Thumbprint))."
+Say "Signed by $($cert.Subject)."
+$expected = ($Fingerprint -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
+if (-not $CheckOnly) {
+  if (-not $expected) {
+    Say ""
+    Say "Certificate fingerprint: $($cert.Thumbprint)"
+    Say "Compare it with the fingerprint you were sent together with your update key."
+    $expected = ((Read-Host "Type the first 8 characters of the fingerprint you were sent") -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
+  }
+  if ($expected.Length -lt 8 -or -not $cert.Thumbprint.ToUpperInvariant().StartsWith($expected)) {
+    Stop-With "That doesn't match this folder's certificate, so nothing was installed. Ask the person who sent it to check the fingerprint with you."
+  }
+  Say "Fingerprint matches."
+}
 if ($CheckOnly) {
+  Say "Certificate fingerprint (send it with each update key): $($cert.Thumbprint)"
   Say ""
   Say "Check only: $($package.Name) is ready to install. Nothing was changed."
   exit 0
@@ -64,6 +86,9 @@ if ($trusted) {
   if (-not $trusted) { Stop-With "The certificate couldn't be trusted (exit code $($p.ExitCode)). Nothing was installed." }
   Say "Trusted."
 }
+# Now that the certificate is trusted, the signature must verify completely.
+$signature = Get-AuthenticodeSignature -FilePath $package.FullName
+if ([string]$signature.Status -ne "Valid") { Stop-With "Windows doesn't accept the package's signature ($($signature.Status)). Nothing was installed." }
 
 Step "Installing Chief"
 $installed = Get-AppxPackage -Name $identity

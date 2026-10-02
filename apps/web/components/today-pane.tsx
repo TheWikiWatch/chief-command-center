@@ -13,6 +13,7 @@ import { EASE, SPRING } from "@/lib/motion";
 import {
   ops,
   fetchOpsHealth,
+  pulseLine,
   type Board,
   type FocusCard,
   type Intent,
@@ -215,7 +216,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
         ui_label: item.ui_label,
         color: item.color,
         title: item.text,
-        kicker: `${item.ui_label} · pour pulse`,
+        kicker: `${item.ui_label} · pulse`,
       });
       return;
     }
@@ -235,7 +236,8 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
 
   const activeBoard = area ? boards.find((b) => b.board_name === area) : null;
   const activeFocus = area ? focusCards.find((c) => c.board_name === area) : null;
-  const hcv = boards.find((b) => b.board_name.includes("Concrete"));
+  // The board an Ops service's live count belongs to, when it names one.
+  const pulseBoard = pulse?.board_name ? boards.find((b) => b.board_name === pulse.board_name) : undefined;
 
   const waitingTotal = boards.reduce((n, b) => n + (b.waiting_count || 0), 0);
   const morning = useMorning(!!meta);
@@ -311,13 +313,13 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
               </button>
             ) : null}
             {meta?.lock_present ? <Banner tone="warn">Vault write lock is on. Wait before asking {assistant} to update boards.</Banner> : null}
-            {stale ? <Banner tone="neutral">Current Analysis looks stale. Trust board dates and the pour pulse.</Banner> : null}
+            {stale ? <Banner tone="neutral">The focus summary looks stale. Trust the board dates.</Banner> : null}
 
             {area && activeBoard ? (
               <AreaDrill
                 board={activeBoard}
                 focus={activeFocus ?? undefined}
-                pulse={activeBoard.board_name === hcv?.board_name ? pulse : null}
+                pulse={pulseBoard && activeBoard.board_name === pulseBoard.board_name ? pulse : null}
                 query={q}
                 selectedId={launch?.card?.id}
                 onBack={() => setArea(null)}
@@ -392,11 +394,9 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
 
                 {pulse?.grand != null ? (
                   <div className="mt-5 flex items-center gap-3 rounded-card border border-line bg-card px-4 py-3">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: hcv?.color || "#f2a05a" }} />
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" style={pulseBoard?.color ? { background: pulseBoard.color } : undefined} />
                     <span className="min-w-0 flex-1 text-callout text-fg-2">
-                      <span className="font-medium text-fg">HandCast</span> · <span className="font-mono tabular">{pulse.grand}</span> vessels
-                      {pulse.last_pour?.time ? ` · fill ${pulse.last_pour.time}` : ""}
-                      {pulse.demold_time ? ` → demold ${pulse.demold_time}` : ""}
+                      <span className="font-medium text-fg">{pulseLine(pulse).label}</span> · <span className="tabular">{pulseLine(pulse).detail}</span>
                     </span>
                   </div>
                 ) : null}
@@ -613,7 +613,7 @@ function AreaDrill({
         ) : null}
         {pulse?.grand != null ? (
           <span className="rounded-full border border-line-2 px-2.5 py-1 text-fg-2">
-            <span className="font-mono tabular">{pulse.grand}</span> vessels{pulse.demold_time ? ` · demold ${pulse.demold_time}` : ""}
+            <span className="tabular">{pulseLine(pulse, { short: true }).detail}</span>
           </span>
         ) : null}
       </div>

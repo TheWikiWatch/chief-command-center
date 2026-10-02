@@ -24,7 +24,7 @@ import { MessageMedia } from "@/components/message-media";
 import { StickState } from "@/lib/stick-to-bottom";
 import { linkifyVaultRefs, openInVault, parseVaultHref } from "@/lib/vault-client";
 import { chatTone, isMachineNote, notePreview, type ChatTone } from "@/lib/chat-tone";
-import { withDiscordEmojiMarkdown } from "@/lib/emoji";
+import { plainCustomEmoji } from "@/lib/emoji";
 import { EASE, SPRING } from "@/lib/motion";
 import { messageTimeMs, uniqueToolNames } from "@/lib/thinking-chrome";
 import type { ChatMessage, ChatNotice, PendingQuestion, Person, TurnActivity } from "@/lib/types";
@@ -451,7 +451,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
         ) : null}
       </div>
       <div className="min-w-0 flex-1">
-        {text ? <Streamdown className="chat-md max-w-none">{withDiscordEmojiMarkdown(linkifyVaultRefs(text))}</Streamdown> : null}
+        {text ? <Streamdown className="chat-md max-w-none">{plainCustomEmoji(linkifyVaultRefs(text))}</Streamdown> : null}
         <MessageMedia attachments={m.attachments} />
         {!text && !m.attachments?.length ? <span className="text-fg-3">…</span> : null}
         {(last && time) || text ? (

@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 /*
- * Design tokens: docs/VISUAL-OVERHAUL.md §2 and §3. Dark only.
+ * Design tokens: docs/design/VISUAL-OVERHAUL.md §2 and §3. Dark only.
  * Colors are RGB triplets so Tailwind opacity modifiers work (bg-accent/20).
  */
 :root {
@@ -611,22 +611,13 @@ body {
   font-size: max(16px, var(--chat-fs));
 }
 
-.chat-emoji {
-  display: inline;
-  height: 1.2em;
-  width: 1.2em;
-  margin: 0 0.05em;
-  vertical-align: -0.2em;
-  object-fit: contain;
-}
-
+/* Images in a reply's Markdown (custom emoji are text now, so these are real pictures). */
 .chat-md img {
-  display: inline;
-  height: 1.2em;
-  width: auto;
-  max-height: 1.35em;
-  margin: 0 0.05em;
-  vertical-align: -0.2em;
+  display: block;
+  max-width: min(100%, 28rem);
+  height: auto;
+  margin: 0.5rem 0;
+  border-radius: 10px;
 }
 
 .chat-type-btn {

@@ -1,7 +1,7 @@
 # Chief Command Center — Visual Overhaul Plan
 
-Status: **proposal, awaiting approval.** Nothing below is implemented yet.
-Branch: `visual-overhaul` (local only; commit per phase, never push).
+Status: **implemented** (Sept 2026), except where noted in `docs/PLAN-2026-10-01-architecture-review.md` §2.4–§3, which plans the next pass.
+The capture tool now lives at `apps/web/scripts/capture-ui.mjs` (galleries stay untracked).
 
 ## 0. Decisions from the interview (2026-09-22)
 

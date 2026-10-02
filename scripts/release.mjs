@@ -117,6 +117,9 @@ const lock = JSON.parse(readFileSync(desktopLock, "utf8"));
 lock.version = version;
 if (lock.packages?.[""]) lock.packages[""].version = version;
 writeFileSync(desktopLock, JSON.stringify(lock, null, 2) + "\n");
+// The bridge plugin ships inside every app version, so it carries the app's version (Hermes lists it).
+const pluginYaml = path.join(repo, "hermes", "plugins", "chief-dashboard-bridge", "plugin.yaml");
+writeFileSync(pluginYaml, readFileSync(pluginYaml, "utf8").replace(/^version:.*$/m, `version: ${version}`));
 
 step("Building the dashboard…");
 run("npm", ["--prefix", "apps/web", "run", "build:standalone"], { shell: true, what: "the dashboard build" });
@@ -163,7 +166,7 @@ run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pu
 rmSync(feedPkg, { force: true });
 
 step("Committing the version…");
-run("git", ["add", "apps/desktop/package.json", "apps/desktop/package-lock.json"]);
+run("git", ["add", "apps/desktop/package.json", "apps/desktop/package-lock.json", "hermes/plugins/chief-dashboard-bridge/plugin.yaml"]);
 run("git", ["commit", "-q", "-m", `Release ${version}\n\n${notes}`]);
 run("git", ["push", "-q", "origin", "main"]);
 

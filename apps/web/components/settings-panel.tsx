@@ -861,7 +861,7 @@ function AppGroup({ phone }: { phone: boolean }) {
     <Group
       icon={<SlidersHorizontalIcon className="size-4" />}
       title="This app"
-      hint="Only this window. Does not change Discord."
+      hint="Only this device. Other devices keep their own settings."
     >
       <Row label="Interface size" stacked>
         <Segmented<UiScale>
@@ -890,7 +890,7 @@ function AppGroup({ phone }: { phone: boolean }) {
           Morning. Three things need you today.
         </p>
       </Row>
-      <Row label="Motion" hint="System follows Android’s remove-animations setting." stacked>
+      <Row label="Motion" hint={phone ? "System follows your phone’s remove-animations setting." : "System follows Windows’ animation effects setting."} stacked>
         <Segmented<MotionPref>
           label="Motion"
           value={fx.motion}

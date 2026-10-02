@@ -1,6 +1,6 @@
 import type { Config } from "tailwindcss";
 
-// Tokens live in app/globals.css (docs/VISUAL-OVERHAUL.md §2). RGB triplets keep opacity modifiers working.
+// Tokens live in app/globals.css (docs/design/VISUAL-OVERHAUL.md §2). RGB triplets keep opacity modifiers working.
 const rgb = (name: string) => `rgb(var(--c-${name}) / <alpha-value>)`;
 
 const config: Config = {

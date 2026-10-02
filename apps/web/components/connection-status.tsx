@@ -91,7 +91,7 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
             <div className="min-w-0 flex-1">
               <p className="text-body font-medium text-fg">{assistant}&apos;s gateway</p>
               <p className="text-callout text-fg-3">
-                {authFailed ? "Bridge token does not match the plugin." : connected ? "Connected on 127.0.0.1:7790" : "Not answering. It will reconnect on its own."}
+                {authFailed ? "Bridge token does not match the plugin." : connected ? "Connected and answering on this PC." : "Not answering. It will reconnect on its own."}
               </p>
             </div>
           </div>

@@ -89,7 +89,23 @@ export type Pulse = {
   last_pour: { date: string; time: string | null; summary: string } | null;
   demold_time: string | null;
   in_mold_skus: string[];
+  /** The service's own words for this count (all optional): what it is, its unit, its board, and the
+   * names of its last and next times. Without them the line reads "Pulse · 12 in progress · last 9:00". */
+  label?: string;
+  unit?: string;
+  board_name?: string;
+  last_label?: string;
+  next_label?: string;
 };
+
+/** One line for an Ops service's live count, in the service's own words when it sends them. */
+export function pulseLine(p: Pulse, opts: { short?: boolean } = {}): { label: string; detail: string } {
+  const label = (p.label || "").trim() || "Pulse";
+  const parts = [`${p.grand ?? 0} ${(p.unit || "").trim() || "in progress"}`];
+  if (!opts.short && p.last_pour?.time) parts.push(`${(p.last_label || "").trim() || "last"} ${p.last_pour.time}`);
+  if (p.demold_time) parts.push(`${(p.next_label || "").trim() || "next"} ${p.demold_time}`);
+  return { label, detail: parts.join(" · ") };
+}
 
 export type TodayItem = {
   kind: "task" | "pulse";
