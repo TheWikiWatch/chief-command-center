@@ -205,6 +205,9 @@ def gateway_smoke(p: Payload, work: Path) -> tuple[bool, str]:
 
 
 def main() -> int:
+    # A Windows runner's console is cp1252: the report can hold characters it can't print (box drawing, arrows).
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--payload", required=True)
     parser.add_argument("--work", default="")

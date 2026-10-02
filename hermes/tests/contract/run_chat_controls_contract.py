@@ -152,15 +152,20 @@ def main() -> int:
         if env_reply is None:
             # Say what happened instead (a CI runner never answered here): the turn's last messages and the gateway's
             # log tail, with anything token-like left out.
-            for m in messages()[start:][-6:]:
-                print(f"      {m.get('role')}: {str(m.get('content'))[:300]!r} tools={m.get('tools')}")
+            # Log first and the turn last: the suite's report keeps only the end of each check's output.
             try:
-                tail = (work / "gateway.log").read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
+                tail = (work / "gateway.log").read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
                 for line in tail:
                     if "token" not in line.lower():
-                        print(f"      log: {line[:300]}")
+                        print(f"      log: {line[:200]!a}")
             except OSError:
                 pass
+            try:
+                print(f"      approvals waiting: {json.dumps(call('/approvals'))[:400]}")
+            except Exception as exc:
+                print(f"      approvals: unreadable ({type(exc).__name__})")
+            for m in messages()[start:][-6:]:
+                print(f"      {m.get('role')}: {str(m.get('content'))[:300]!a} tools={m.get('tools')}")
         check(
             "the agent's terminal doesn't see the bridge token",
             env_reply is not None and "TOKEN-ABSENT" in str(env_reply.get("content")),
