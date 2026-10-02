@@ -66,6 +66,10 @@ Send the key privately. To cut someone off, delete their token; nobody else is a
 
 Later versions reach them through the app's update card; the zip is only for the first install (or a reinstall).
 
+**After each release, on this PC only:** `afterRelease` in `release.local.json` (optional) is a command the release
+script runs once the release is live, with `{version}` filled in; a failure there never undoes the release. Use it
+for anything kept outside the repository, such as refreshing a personal installer kit.
+
 ## Tester: once
 
 1. **Unzip** the setup folder you were sent and double-click **Install Chief.cmd**. It:

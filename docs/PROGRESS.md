@@ -773,3 +773,9 @@
 **Install from the releases page.**
 
 - Every published release now carries the setup zip (`Chief-Command-Center-setup-<version>.zip`) next to the package, so the install link is simply the latest release. 0.1.21's zip was attached by hand (its checksum on GitHub matches the local file). Both repositories' READMEs have the install steps and the certificate fingerprint to compare with; the releases README also explains how updates are verified.
+
+**Install on another drive.**
+
+- The installer (`Install Chief.cmd`, in the setup zip) asks which drive to install on when a PC has more than one fixed NTFS drive with at least 6 GB free, suggesting the Windows drive if it has room. Only the program (about 3 GB) goes there; chats, notes and settings stay in the user's folders (the app writes its data unvirtualized). A drive Windows doesn't keep apps on yet is set up in the same single administrator prompt that trusts the certificate. An update, from the installer or the in-app update card, stays on the drive Chief is on.
+- `-Drive <letter>` answers the question ahead; `-Plan` says what the installer would do and changes nothing.
+- `release.local.json` can name an `afterRelease` command, run on this PC after each published release (for kits kept outside the repository).

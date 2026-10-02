@@ -17,7 +17,14 @@ export function installScript(file: string, logFile: string): string {
     `function Note($t) { Add-Content -Path '${log}' -Value ("$(Get-Date -Format s) " + $t) }`,
     `Note 'installing ${path.basename(file).replace(/'/g, "''")}'`,
     "try {",
-    `  Add-AppxPackage -Path '${file.replace(/'/g, "''")}' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop`,
+    // An update stays on the drive Chief was installed on (the installer can put it on another one): Windows
+    // otherwise stages it on its default app drive.
+    "  $loc = [string](Get-AppxPackage -Name ChiefCommandCenter).InstallLocation",
+    "  $vol = $null",
+    "  if ($loc) { $vol = Get-AppxVolume | Where-Object { $loc.ToUpperInvariant().StartsWith(([string]$_.PackageStorePath).ToUpperInvariant() + '\\') } | Select-Object -First 1 }",
+    "  $extra = @{}",
+    "  if ($vol) { $extra.Volume = $vol }",
+    `  Add-AppxPackage -Path '${file.replace(/'/g, "''")}' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop @extra`,
     "  Note ('installed ' + (Get-AppxPackage -Name ChiefCommandCenter).Version)",
     "} catch {",
     "  Note ('install failed: ' + $_.Exception.Message)",

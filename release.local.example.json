@@ -9,5 +9,11 @@
   "releaseKeyId": "closed-2026",
   "releaseKey": "D:\\ChiefBuild\\signing\\release-ed25519.pem",
   "releasesRepo": "<owner>/chief-command-center-releases",
-  "testerCert": "D:\\ChiefBuild\\signing\\chief-test-signing.cer"
+  "testerCert": "D:\\ChiefBuild\\signing\\chief-test-signing.cer",
+  "afterRelease": [
+    "node",
+    "D:/ChiefBuild/after-release.mjs",
+    "--version",
+    "{version}"
+  ]
 }

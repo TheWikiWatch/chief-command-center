@@ -262,4 +262,12 @@ run("node", ["packaging/release/release-tool.mjs", "undraft", "--version", versi
   what: `Making the draft live (the version is pushed; finish with: node packaging/release/release-tool.mjs undraft --version ${version} --repo ${local.releasesRepo})`,
 });
 testerKit({ upload: true });
+// Optional, this PC only: a command to run after each published release (afterRelease in release.local.json, e.g.
+// refreshing an installer kit kept outside the repository). "{version}" is replaced; a failure never undoes the release.
+if (Array.isArray(local.afterRelease) && local.afterRelease.length) {
+  step("Running afterRelease…");
+  const [cmd, ...rest] = local.afterRelease.map((a) => String(a).replaceAll("{version}", version));
+  const after = run(cmd, rest, { allowFail: true });
+  if (after.status !== 0) console.log(`⚠ afterRelease failed (exit ${after.status}); the release itself is done.`);
+}
 console.log(`\n✓ Released ${version}. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);

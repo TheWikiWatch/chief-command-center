@@ -6,6 +6,8 @@ Chief Command Center - setup
    - It shows the certificate's fingerprint and asks for the first 8 characters of the fingerprint you
      were sent separately (by message, not in this folder). If they don't match, stop and ask the person
      who sent the folder.
+   - If the PC has more than one drive with room, it asks which drive to install on (press Enter for the
+     suggested one). Only the program goes there; your chats, notes and settings stay in your user folder.
    - If Windows SmartScreen says it protected your PC: click "More info", then "Run anyway".
    - The first time, Windows asks for administrator permission once. That lets it install apps signed
      with the certificate in this folder (chief-test-signing.cer). Nothing else on your PC is changed.
