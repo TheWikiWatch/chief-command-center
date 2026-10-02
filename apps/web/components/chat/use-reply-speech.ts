@@ -8,7 +8,7 @@ import { assistantName } from "@/lib/identity";
 import { planSpeech, sameText, type SpeechCandidate } from "@/lib/replay-guard";
 import { splitSpeech } from "@/lib/speech-chunks";
 import type { ChatMessage, ExecApproval, PendingQuestion, Transcript } from "@/lib/types";
-import { currentSpeakEpoch, enqueueSpeechParts, enqueueSpeechTask, loadSpeakHighWater, persistSpeakHighWater, speakableText } from "@/lib/voice-client";
+import { currentSpeakEpoch, enqueueSpeechParts, enqueueSpeechTask, loadSpeakHighWater, persistSpeakHighWater, speakableText, stopSpeech } from "@/lib/voice-client";
 
 export type SpeechFailure = { id: number; script: string; reason: string; missed?: boolean; held?: boolean };
 
@@ -180,6 +180,13 @@ function speechClips(res: { ok: boolean; data_url?: string; data_urls?: string[]
 function speakScript(script: string, jobEpoch: number) {
   const parts = splitSpeech(script).map(text => async () => speechClips(await speakText(text, 45_000)));
   return enqueueSpeechParts(parts, jobEpoch, script.slice(0, 80));
+}
+
+/** "Read aloud" on one reply: stops whatever is playing and reads this one. */
+export function readAloud(content: string) {
+  const script = speakableText(content).trim();
+  stopSpeech();
+  if (script) void speakScript(script, currentSpeakEpoch());
 }
 
 export function speechFailureReason(items: SpeechFailure[]) {

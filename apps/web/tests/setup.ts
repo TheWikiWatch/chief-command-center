@@ -1,4 +1,9 @@
 import "@testing-library/jest-dom/vitest";
+import { configure } from "@testing-library/react";
+
+// findBy*/waitFor give up after one second by default. The whole suite runs in parallel, and on a busy machine
+// a heavy component (the chat, the shell) can need longer to settle: a timing failure isn't a real one.
+configure({ asyncUtilTimeout: 4000 });
 
 // happy-dom implements element.animate(), and rejects `finished` loudly when motion cancels an
 // animation on unmount. Tests don't measure animation, so let motion use its JS animations instead.

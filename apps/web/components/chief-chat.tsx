@@ -852,6 +852,7 @@ export function ChiefChat({
         messages={threadMessages}
         loading={!loadedOnce && connected && !authFailed}
         onCancelQueued={cancelQueued}
+        onRetryQueued={outbox.retryNow}
         earlier={messages.length ? earlier : undefined}
         onLoadEarlier={loadEarlier}
         chief={chief}

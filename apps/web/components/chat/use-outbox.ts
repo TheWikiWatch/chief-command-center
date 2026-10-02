@@ -202,5 +202,12 @@ export function useOutbox({
     [queued, previews],
   );
 
-  return { queued, bubbles, enqueue, cancel };
+  /** Try every waiting message now instead of after the retry pause ("Retry now" under a failed send). */
+  const retryNow = useCallback(() => {
+    commit(queueRef.current.map((q) => ({ ...q, nextAt: undefined })));
+    clearTimeout(retryTimer.current);
+    setRetryTick((n) => n + 1);
+  }, [commit]);
+
+  return { queued, bubbles, enqueue, cancel, retryNow };
 }

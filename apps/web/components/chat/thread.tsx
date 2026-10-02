@@ -10,6 +10,7 @@ import { EmojiText } from "@/components/emoji-text";
 import {
   ArrowDownIcon,
   BotIcon,
+  Volume2Icon,
   CheckIcon,
   CopyIcon,
   ChevronRightIcon,
@@ -27,6 +28,9 @@ import { chatTone, isMachineNote, notePreview, type ChatTone } from "@/lib/chat-
 import { plainCustomEmoji } from "@/lib/emoji";
 import { EASE, SPRING } from "@/lib/motion";
 import { messageTimeMs, uniqueToolNames } from "@/lib/thinking-chrome";
+import { looksFailed, stepDuration, toolLabel } from "@/lib/tool-labels";
+import { Tip } from "@/components/ui/popovers";
+import { readAloud } from "@/components/chat/use-reply-speech";
 import type { ChatMessage, ChatNotice, PendingQuestion, Person, TurnActivity } from "@/lib/types";
 import { AskedRow, NoticeBody, QuestionCard } from "@/components/chat/question";
 import { useAssistantName } from "@/lib/identity";
@@ -188,10 +192,8 @@ export function buildRows(messages: ChatMessage[]): Row[] {
     if (isToolOnly(m)) {
       const run = [m];
       while (i + 1 < messages.length && isToolOnly(messages[i + 1])) run.push(messages[++i]);
-      if (run.length > 1) {
-        rows.push(toolsRow(run));
-        continue;
-      }
+      rows.push(toolsRow(run));
+      continue;
     }
     if (m.notice || m.asked) {
       rows.push(msgRow(m, m.notice ? `n-${m.notice.id}` : `m-${m.id}`, false, true, true));
@@ -216,6 +218,7 @@ export function Thread({
   authFailed,
   onSuggestion,
   onCancelQueued,
+  onRetryQueued,
   earlier,
   onLoadEarlier,
   footer,
@@ -238,6 +241,8 @@ export function Thread({
   onSuggestion: (text: string) => void;
   /** Takes a message waiting in the outbox back out (lib/outbox.ts). */
   onCancelQueued?: (queueId: string) => void;
+  /** Tries the outbox again now (a failed send's "Retry now"). */
+  onRetryQueued?: () => void;
   /** Load earlier at the top of the thread: whether older messages remain, and its progress. */
   earlier?: { more: boolean; loading: boolean; error: string };
   onLoadEarlier?: () => void;
@@ -397,6 +402,7 @@ export function Thread({
                   chief={chief}
                   animate={animated.current.has(row.m.id)}
                   onCancelQueued={onCancelQueued}
+                  onRetryQueued={onRetryQueued}
                   onQuickReply={row.m.notice && row === lastMsgRow ? onQuickReply : undefined}
                 />
               );
@@ -483,10 +489,11 @@ type RowProps = {
   chief: Person | undefined;
   animate: boolean;
   onCancelQueued?: (queueId: string) => void;
+  onRetryQueued?: () => void;
   onQuickReply?: (text: string) => Promise<void>;
 };
 
-const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueued, onQuickReply }: RowProps) {
+const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueued, onRetryQueued, onQuickReply }: RowProps) {
   const { m, first, last, mine } = row;
   const tone = chatTone(m);
   const text = stripMediaTags(m.content || "");
@@ -524,7 +531,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
         </div>
         {m.steered ? <span className="mt-1 pr-1 text-caption text-fg-3">Added while working</span> : null}
         {m.delivery === "queued" ? (
-          <QueuedFooter m={m} onCancel={onCancelQueued} />
+          <QueuedFooter m={m} onCancel={onCancelQueued} onRetry={onRetryQueued} />
         ) : last && time ? (
           <span className="mt-1 pr-1 text-caption text-fg-3">{m.id >= OPTIMISTIC ? (m.delivery === "sent" ? "Sent" : "Sending…") : time}</span>
         ) : null}
@@ -546,7 +553,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
         {(last && time) || text ? (
           <div className="mt-1 flex min-h-7 items-center gap-1">
             {last && time ? <span className="text-caption text-fg-3">{time}</span> : null}
-            {text ? <CopyReply text={text} /> : null}
+            {text ? <ReplyActions text={text} /> : null}
           </div>
         ) : null}
       </div>
@@ -561,6 +568,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
 function sameRow(a: RowProps, b: RowProps) {
   return (
     a.onCancelQueued === b.onCancelQueued &&
+    a.onRetryQueued === b.onRetryQueued &&
     a.onQuickReply === b.onQuickReply &&
     a.row.m === b.row.m &&
     a.row.first === b.row.first &&
@@ -572,7 +580,7 @@ function sameRow(a: RowProps, b: RowProps) {
 }
 
 /** Under a message waiting in the outbox: why it hasn't gone, and a way to take it back. */
-function QueuedFooter({ m, onCancel }: { m: ChatMessage; onCancel?: (queueId: string) => void }) {
+function QueuedFooter({ m, onCancel, onRetry }: { m: ChatMessage; onCancel?: (queueId: string) => void; onRetry?: () => void }) {
   const assistant = useAssistantName();
   const files = m.queueFiles?.length ? ` · with ${m.queueFiles.join(", ")}` : "";
   return (
@@ -581,6 +589,11 @@ function QueuedFooter({ m, onCancel }: { m: ChatMessage; onCancel?: (queueId: st
         {m.queueNote ? `Couldn't reach ${assistant} · retrying` : `Queued · sends when ${assistant} is back`}
         {files}
       </span>
+      {onRetry && m.queueNote ? (
+        <button type="button" className="press min-h-8 font-medium text-fg-2 underline hover:text-fg" onClick={onRetry}>
+          Retry now
+        </button>
+      ) : null}
       {onCancel && m.queueId ? (
         <button type="button" className="press min-h-8 font-medium text-fg-2 underline hover:text-fg" onClick={() => onCancel(m.queueId!)}>
           Cancel
@@ -590,8 +603,14 @@ function QueuedFooter({ m, onCancel }: { m: ChatMessage; onCancel?: (queueId: st
   );
 }
 
-/** Copy a reply's text (as written, markdown included). Shows on hover, and always on touch screens. */
-function CopyReply({ text }: { text: string }) {
+const ACTION =
+  "press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-fill-2 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70";
+
+/**
+ * A reply's actions: copy its text (as written, markdown included) and read it aloud. They show on hover and
+ * keyboard focus, and always (dimmed) on touch screens, so the phone needs no long-press to find them.
+ */
+function ReplyActions({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -599,17 +618,25 @@ function CopyReply({ text }: { text: string }) {
     return () => window.clearTimeout(t);
   }, [copied]);
   return (
-    <button
-      type="button"
-      aria-label={copied ? "Copied" : "Copy reply"}
-      title={copied ? "Copied" : "Copy reply"}
-      className={`press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-fill-2 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70 ${copied ? "opacity-100" : "opacity-0"}`}
-      onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined);
-      }}
-    >
-      {copied ? <CheckIcon size={14} className="text-ok" /> : <CopyIcon size={14} />}
-    </button>
+    <>
+      <Tip label={copied ? "Copied" : "Copy"} side="top">
+        <button
+          type="button"
+          aria-label={copied ? "Copied" : "Copy reply"}
+          className={`${ACTION} ${copied ? "opacity-100" : "opacity-0"}`}
+          onClick={() => {
+            void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined);
+          }}
+        >
+          {copied ? <CheckIcon size={14} className="text-ok" /> : <CopyIcon size={14} />}
+        </button>
+      </Tip>
+      <Tip label="Read aloud" side="top">
+        <button type="button" aria-label="Read aloud" className={`${ACTION} opacity-0`} onClick={() => readAloud(text)}>
+          <Volume2Icon size={14} />
+        </button>
+      </Tip>
+    </>
   );
 }
 
@@ -657,40 +684,87 @@ function NoteChip({ tone, text, tools, attachments }: { tone: ChatTone; text: st
   );
 }
 
+type Step = { m: ChatMessage; label: string; names: string[]; failed: boolean; took: string };
+
+function toolSteps(items: ChatMessage[]): Step[] {
+  return items.map((m, i) => {
+    const names = uniqueToolNames(m.tools);
+    const next = items[i + 1];
+    const took = next ? stepDuration(messageTimeMs(next.timestamp) - messageTimeMs(m.timestamp)) : "";
+    const labels = Array.from(new Set((names.length ? names : ["tool"]).map(toolLabel)));
+    return { m, label: labels.join(", "), names, failed: looksFailed(stripMediaTags(m.content || "")), took };
+  });
+}
+
+/**
+ * The chief's tool steps as one collapsible timeline: what it did, in plain words, how long each step took, and
+ * a failed step tinted (and its output a tap away).
+ */
 function ToolRun({ items, animate }: { items: ChatMessage[]; animate: boolean }) {
   const [open, setOpen] = useState(false);
-  const names = uniqueToolNames(items.flatMap((m) => m.tools || []));
+  const steps = useMemo(() => toolSteps(items), [items]);
+  const failures = steps.filter((s) => s.failed).length;
+  const total = items.length > 1 ? stepDuration(messageTimeMs(items[items.length - 1].timestamp) - messageTimeMs(items[0].timestamp)) : "";
+  const summary = Array.from(new Set(steps.map((s) => s.label))).join(" · ");
   return (
     <motion.div {...(animate ? enterChief : {})} className="mt-1.5 pl-9">
-      <div className="inline-flex max-w-full flex-col rounded-card border border-line bg-card">
+      <div className={`inline-flex max-w-full flex-col rounded-card border ${failures ? "border-danger/30" : "border-line"} bg-card`}>
         <button type="button" className="press flex min-h-9 max-w-full items-center gap-2 px-3 text-left text-callout" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
           <WrenchIcon size={14} className="shrink-0 text-fg-3" />
-          <span className="shrink-0 font-medium text-fg-3">
-            {items.length} tools
-          </span>
-          <span className="min-w-0 truncate text-fg-3">{names.join(", ")}</span>
+          <span className="shrink-0 font-medium text-fg-2">{steps.length === 1 ? "1 step" : `${steps.length} steps`}</span>
+          <span className="min-w-0 truncate text-fg-3">{summary}</span>
+          {failures ? <span className="shrink-0 text-caption font-medium text-danger">{failures} failed</span> : null}
+          {total ? <span className="shrink-0 font-mono text-micro tabular text-fg-3">{total}</span> : null}
           <motion.span animate={{ rotate: open ? 90 : 0 }} transition={SPRING.snappy} className="shrink-0 text-fg-4">
             <ChevronRightIcon size={14} />
           </motion.span>
         </button>
         <AnimatePresence initial={false}>
           {open ? (
-            <motion.ul
-              className="overflow-hidden"
+            <motion.ol
+              aria-label="Tool steps"
+              className="overflow-hidden border-t border-line"
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: "auto", opacity: 1, transition: SPRING.gentle }}
               exit={{ height: 0, opacity: 0, transition: { duration: 0.16 } }}
             >
-              {items.map((m) => (
-                <li key={m.id} className="border-t border-line px-3 py-2 font-mono text-code text-fg-3">
-                  {uniqueToolNames(m.tools).join(", ") || "tool"}
-                </li>
+              {steps.map((step, i) => (
+                <ToolStep key={step.m.id} step={step} last={i === steps.length - 1} />
               ))}
-            </motion.ul>
+            </motion.ol>
           ) : null}
         </AnimatePresence>
       </div>
     </motion.div>
+  );
+}
+
+function ToolStep({ step, last }: { step: Step; last: boolean }) {
+  const [open, setOpen] = useState(step.failed);
+  const output = stripMediaTags(step.m.content || "").trim();
+  return (
+    <li className="relative pl-8 pr-3">
+      {!last ? <span aria-hidden className="absolute bottom-0 left-[1.05rem] top-5 w-px bg-line" /> : null}
+      <span aria-hidden className={`absolute left-3 top-3.5 grid size-3 place-items-center rounded-full ${step.failed ? "bg-danger/25" : "bg-fill-3"}`}>
+        <span className={`size-1.5 rounded-full ${step.failed ? "bg-danger" : "bg-fg-3"}`} />
+      </span>
+      <button
+        type="button"
+        className="press flex min-h-10 w-full items-center gap-2 text-left text-callout disabled:cursor-default"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={output ? open : undefined}
+        disabled={!output}
+      >
+        <span className={`min-w-0 flex-1 truncate ${step.failed ? "text-danger" : "text-fg-2"}`}>{step.label}</span>
+        {step.names.length ? <span className="hidden max-w-[40%] truncate font-mono text-micro text-fg-3 sm:inline">{step.names.join(", ")}</span> : null}
+        {step.took ? <span className="shrink-0 font-mono text-micro tabular text-fg-3">{step.took}</span> : null}
+      </button>
+      {open && output ? (
+        <pre className={`mb-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-ctl px-2.5 py-2 font-mono text-micro ${step.failed ? "bg-danger/[0.07] text-fg-2" : "bg-well text-fg-3"}`}>
+          {output.slice(0, 1200)}
+        </pre>
+      ) : null}
+    </li>
   );
 }
 
