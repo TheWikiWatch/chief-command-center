@@ -637,3 +637,29 @@
   - The bridge answers a broken request with a 500 instead of dropping it, times out idle connections, and supports `Range: bytes=-N`.
 - **Changed from the plan:** TanStack Query was not adopted. The existing poller already allows one request per resource, refreshes on return and keeps unchanged data identical. With the live channel waking it, a query cache would add a dependency and touch every data hook without a visible gain.
 - Tests: Python 109 (new: the change signal, its watcher, the incremental outbox, byte ranges), web 363 (new: the live channel, backoff, waking a poll); the chat controls contract passes on the real payload.
+
+**Architecture review, Phase 4: front-end foundation.**
+
+- **One set of building blocks** (`components/ui/`):
+  - Button and IconButton, and text fields with a label, hint and error.
+  - Card, Banner, EmptyState and Skeleton.
+  - A ViewSwitch for switching between views, and a tooltip and an action menu (Base UI).
+  - 24 primary buttons, 35 text fields and four local button components now use them.
+- **Text fields show a visible focus ring.** It used to be a border going from 10 % to 16 % white.
+- **Tokens:** four purpose-named fills replace ten white-alpha steps, plus a "micro" type step and a named layer scale for floating sheets and cards.
+- **Dialogs behave the same everywhere:** focus goes in, Tab stays inside, focus returns on close, and the page behind is inert. This covers sheets over the app, voice mode, the image viewer and onboarding (toasts stay announced).
+  - A test found that focus returned while the page was still inert and landed on the page body. That is fixed.
+- **View switches are real radio groups** with arrow keys (Today's Ranked/Attention, Fleet's Crew/Health). They were tabs with no tab panels and no keyboard support.
+- **Faster:**
+  - The first load drops from 615 to 470 KB of gzipped JavaScript.
+    - Settings, the Vault, Fleet Health, the look drawer, the Second Brain sheet, onboarding, voice mode and the WebGL orbit now load when first needed, and are fetched in idle time after the first screen.
+    - KaTeX is left out. Math in replies stays readable as text, instead of being typeset by 75 KB of code the chat rarely uses.
+  - Typing no longer re-renders the thread (measured: 4 keystrokes rendered it 4 times, now 0).
+  - Scheduled-job and notice rows no longer redo their Markdown on every update.
+  - Memory in the phone scenes is down slightly (21–24 MB).
+- **Smaller files:**
+  - Settings (1,465 lines), Today (895), the Vault (869) and Fleet Health (822) are split into folders of focused modules, and the shell's helpers into `components/shell/`.
+  - Reading replies aloud is its own hook (`useReplySpeech`).
+  - Behaviour is unchanged: same tests, same screens.
+- **Not done in this phase:** the React Compiler stays off. Its lint rules still flag 122 places where components read or write refs during render, mostly in the chat's speech, scroll and outbox code. Rewriting those is risky for little gain now that the measured hot paths (thread rows, the draft, live updates) are already memoized. The warnings are capped so the number can only go down.
+- Tests: web 370 (new: the modal hook, the view switch, fields, notice rows not re-rendering, typing not re-rendering the thread, readable math); every capture scene checked against the previous build.
