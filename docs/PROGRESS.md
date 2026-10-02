@@ -592,3 +592,26 @@
   - `adopt.py` quotes scheduled-task names as PowerShell literals.
 - **Not changed:** the signtool password still goes on signtool's command line (signtool has no other way to take it). It is never logged, and the release script checks the build log for it.
 - Tests: web 359 (new: loopback session and tickets, the desktop's tickets accepted by the dashboard, phone limits on backup routes, day separators), desktop 61 (new: permissions, the boot scheme, an unreadable token).
+
+**Architecture review, Phase 2: platform.**
+
+- **Next.js 16.3** (from 15.5):
+  - Turbopack builds (39 s → 31 s), and `middleware.ts` becomes `proxy.ts` (Node runtime).
+  - The production standalone server answers health checks and proxies the bridge as before.
+- **Tailwind CSS 4.3** (from 3.4):
+  - The theme lives in `@theme` at the top of `globals.css`. Colors still read the RGB-triplet tokens, so opacity modifiers keep working.
+  - Shadows, easings and durations are defined once there; the generated mapping had pointed them at themselves.
+  - `next/font` variables are renamed (`--font-inter`, `--font-geist-mono`) so `--font-sans` no longer refers to itself.
+  - The scan source is set relative to the stylesheet, and the Discord-era colour aliases are gone.
+- **Motion 13.** LazyMotion with on-demand features was tried and dropped: Next preloads the "lazy" chunk with the page, so it came out 9 KB larger (624 vs 615 KB gzip).
+- **ESLint** (React Compiler-aware hooks rules, jsx-a11y, Next's rules) is now part of `npm run check`.
+  - Fixed:
+    - effects that used a health reporter without listing it (the reporter is now one stable object);
+    - a complex dependency expression;
+    - unused imports.
+  - Three accessibility exceptions are justified in the code.
+  - 123 compiler-readiness warnings (refs and state touched during render) are capped so none are added. Phase 4's split removes them, and then the React Compiler can be turned on.
+- **Visual check.** The capture gallery (20 phone and desktop scenes) was compared pixel by pixel at each step. Next 16 is identical. Tailwind 4 differs by one pixel inside reply cards. Motion 13 is identical. Frame rate is unchanged (60 fps, no long tasks).
+- **Measured for later:** the dashboard's first load is 615 KB of gzipped JavaScript. Phase 4's code splitting targets it.
+- **Not changed:** Streamdown stays on 1.x, because 2.x fetches its highlighting assets from a CDN, which the new content security policy blocks.
+- Tests: web 359, desktop 61, Python 103 + 21; lint has no errors.
