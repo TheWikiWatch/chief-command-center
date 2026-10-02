@@ -57,7 +57,15 @@ _DENIED_NAMES = {".env", "auth.json", "state.db", "credentials.json", ".netrc", 
 _DENIED_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".kdbx")
 # Never served back: Hermes SQLite databases and side files (state.db-wal holds recent chat).
 _SERVE_DENIED_SUFFIXES = (".db", ".db-wal", ".db-shm", ".db-journal", ".sqlite", ".sqlite3", ".sqlite-wal", ".sqlite-shm")
-_recent_media_paths: set[str] = set()
+# Under Hermes's own folders: logs, session records, memory, pairing and config are never files to show.
+_HERMES_DENIED_DIRS = {"logs", "sessions", "memories", "pairing", "locks", "secrets"}
+_HERMES_DENIED_SUFFIXES = (".yaml", ".yml", ".log", ".jsonl", ".lock", ".json")
+# Hermes's own profile id rule (hermes_constants.PROFILE_ID_RE): no path separators, no "..".
+PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+# Paths seen in transcript MEDIA tags (shown as chips). Bounded: a long-running gateway sees many.
+_RECENT_MEDIA_MAX = 2000
+_recent_media_paths: dict[str, None] = {}
+_recent_media_lock = threading.Lock()
 # Match Hermes reclaim: a live PID with no heartbeat for >1h is wedged, not working.
 _HEARTBEAT_MAX_STALE_SECONDS = 60 * 60
 
@@ -694,7 +702,8 @@ def discard_staged(staged: list[dict[str, Any]]) -> None:
         raw = str(item.get("path") or "")
         if not raw:
             continue
-        _recent_media_paths.discard(raw)
+        with _recent_media_lock:
+            _recent_media_paths.pop(raw, None)
         try:
             Path(raw).unlink(missing_ok=True)
         except OSError:
@@ -801,14 +810,41 @@ def _under_allowlist(resolved: Path) -> bool:
 
 
 def remember_media_path(raw: str) -> None:
+    """A path a transcript shows as a file chip may be served even outside the allow-list roots, but only a
+    media file (the chip's own extensions); the deny rules in ``file_is_allowed`` still apply."""
     if not raw or raw.startswith(("http://", "https://", "data:")):
+        return
+    if Path(raw).suffix.lower().lstrip(".") not in _MEDIA_EXTS:
         return
     try:
         resolved = str(Path(raw).expanduser().resolve())
     except OSError:
         resolved = raw
-    _recent_media_paths.add(resolved)
-    _recent_media_paths.add(raw)
+    with _recent_media_lock:
+        for key in (resolved, raw):
+            _recent_media_paths.pop(key, None)
+            _recent_media_paths[key] = None
+        while len(_recent_media_paths) > _RECENT_MEDIA_MAX:
+            _recent_media_paths.pop(next(iter(_recent_media_paths)))
+
+
+def _hermes_private(resolved: Path) -> bool:
+    """Logs, sessions, memory and config files inside Hermes's own folders (any profile)."""
+    roots = [install_root()]
+    cache = os.environ.get("LOCALAPPDATA", "")
+    if cache:
+        roots.append(Path(cache) / "hermes")
+    for root in roots:
+        try:
+            rel = resolved.relative_to(root.resolve())
+        except (ValueError, OSError):
+            continue
+        parts = [p.lower() for p in rel.parts]
+        if any(p in _HERMES_DENIED_DIRS for p in parts[:-1]):
+            return True
+        if parts and parts[-1].endswith(_HERMES_DENIED_SUFFIXES):
+            return True
+    return False
 
 
 def warm_media_cache(session_key: str) -> None:
@@ -838,10 +874,13 @@ def file_is_allowed(raw: str) -> tuple[Path, str] | None:
         return None
     if any(p.name.lower().endswith(_SERVE_DENIED_SUFFIXES) for p in (path, resolved)):
         return None
+    if _hermes_private(resolved):
+        return None
     if not resolved.is_file():
         return None
     key = str(resolved)
-    known = key in _recent_media_paths or raw in _recent_media_paths
+    with _recent_media_lock:
+        known = key in _recent_media_paths or raw in _recent_media_paths
     if not known and not _under_allowlist(resolved):
         return None
     ext = resolved.suffix.lower().lstrip(".")
@@ -1053,6 +1092,8 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
 
 
 def profile_peek(name: str) -> dict[str, Any]:
+    if not PROFILE_ID_RE.match(name or ""):
+        return {"ok": False, "error": "unknown profile"}
     root = install_root()
     home = profiles_dir(root) / name
     if not home.is_dir() or named_profile_is_deleted(home):
@@ -1150,6 +1191,8 @@ def resolve_approval(session_key: str, request_id: str, choice: str) -> dict[str
 
 
 def avatar_bytes(name: str) -> tuple[bytes, str] | None:
+    if not PROFILE_ID_RE.match(name or ""):
+        return None
     home = profiles_dir() / name
     assets = home / "assets"
     types = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp", "gif": "image/gif"}

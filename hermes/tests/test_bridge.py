@@ -168,6 +168,37 @@ class BridgeTests(unittest.TestCase):
             self.assertIsNone(data.file_is_allowed(str(image) + "::$DATA"))
             self.assertIsNotNone(data.file_is_allowed(str(image)))
 
+    def test_hermes_logs_sessions_and_config_are_never_served(self):
+        root = self.home / "hermes-root"
+        for rel in ("logs/gateway.log", "sessions/sessions.json", "memories/MEMORY.md", "profiles/chief/config.yaml",
+                    "profiles/chief/logs/agent.png", "image_cache/shot.png"):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True)
+            (root / rel).write_bytes(b"synthetic")
+        with patch.object(data, "install_root", return_value=root), patch.object(data, "_allow_roots", return_value=[root]):
+            for rel in ("logs/gateway.log", "sessions/sessions.json", "memories/MEMORY.md", "profiles/chief/config.yaml", "profiles/chief/logs/agent.png"):
+                data.remember_media_path(str(root / rel))
+                self.assertIsNone(data.file_is_allowed(str(root / rel)), rel)
+            self.assertEqual(data.file_is_allowed(str(root / "image_cache/shot.png"))[1], "image/png")
+
+    def test_only_media_paths_are_remembered_and_the_memory_is_bounded(self):
+        outside = self.home / "outside"
+        outside.mkdir()
+        (outside / "notes.ini").write_text("synthetic", encoding="utf-8")
+        (outside / "chart.png").write_bytes(b"synthetic")
+        with patch.object(data, "_allow_roots", return_value=[]):
+            data.remember_media_path(str(outside / "notes.ini"))
+            self.assertIsNone(data.file_is_allowed(str(outside / "notes.ini")))
+            data.remember_media_path(str(outside / "chart.png"))
+            self.assertIsNotNone(data.file_is_allowed(str(outside / "chart.png")))
+        for i in range(data._RECENT_MEDIA_MAX + 50):
+            data.remember_media_path(f"D:/synthetic/{i}.png")
+        self.assertLessEqual(len(data._recent_media_paths), data._RECENT_MEDIA_MAX)
+
+    def test_profile_names_cannot_leave_the_profiles_folder(self):
+        for name in ("..", "../..", "chief/../..", "Chief", "a" * 70, ""):
+            self.assertEqual(data.profile_peek(name), {"ok": False, "error": "unknown profile"}, name)
+            self.assertIsNone(data.avatar_bytes(name), name)
+
     def handler(self, bridge, path, body: bytes, length=None):
         handler_class = server._make_handler(bridge)
         h = object.__new__(handler_class)
