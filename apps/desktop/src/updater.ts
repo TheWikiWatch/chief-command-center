@@ -54,6 +54,8 @@ export type UpdaterDeps = {
   activeWork: () => Promise<ActiveWork>;
   backup: (release: Release) => Promise<{ ok: boolean; error?: string }>;
   stopChief: () => Promise<void>;
+  /** Brings Chief back after `stopChief` when the install fails, so a failed update never leaves it stopped. */
+  startChief?: () => Promise<void>;
   install: (file: string) => Promise<{ ok: boolean; error?: string }>;
   onState?: (state: UpdateState) => void;
   /** Each release description that verified (newer or not): the update history keeps it. */
@@ -225,8 +227,17 @@ export class Updater {
     this.set({ status: "installing", release, step: "Stopping Chief…" });
     await this.deps.stopChief();
     this.set({ status: "installing", release, step: "Installing…" });
-    const result = await this.deps.install(file);
-    if (!result.ok) return this.set({ status: "error", release, error: result.error || "Windows couldn't install the update. The current version is still installed." });
+    let result: { ok: boolean; error?: string };
+    try {
+      result = await this.deps.install(file);
+    } catch (e) {
+      result = { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+    if (!result.ok) {
+      this.set({ status: "installing", release, step: "Starting Chief again…" });
+      await this.deps.startChief?.().catch(() => undefined);
+      return this.set({ status: "error", release, error: result.error || "Windows couldn't install the update. The current version is still installed." });
+    }
     return this.state;
   }
 }

@@ -167,6 +167,7 @@ export function UpdatesPanel() {
   const [saved, setSaved] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [key, setKey] = useState("");
+  const [feedError, setFeedError] = useState("");
   useEffect(() => {
     void api?.feed().then((f) => {
       setFeed(f);
@@ -193,14 +194,22 @@ export function UpdatesPanel() {
           {feed.trim() !== saved ? (
             <Button
               onClick={async () => {
-                await api.setFeed(feed.trim());
-                setSaved(feed.trim());
+                setFeedError("");
+                try {
+                  await api.setFeed(feed.trim());
+                  setSaved(feed.trim());
+                } catch (e) {
+                  // The shell refuses network shares and anything that isn't a repository or a local folder.
+                  const text = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "";
+                  setFeedError(text || "That update source isn't allowed.");
+                }
               }}
             >
               Save
             </Button>
           ) : null}
         </div>
+        {feedError ? <p role="alert" className="mt-1 text-caption text-danger">{feedError}</p> : null}
         <p className="mt-1 text-caption text-fg-3">Only releases signed by this app&apos;s publisher are offered, and nothing installs without your click.</p>
       </div>
       {github && api.setKey ? (

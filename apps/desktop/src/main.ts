@@ -20,6 +20,7 @@ import { compareVersions, Updater, type Release } from "./updater";
 import { builtInFeed, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
 import { cacheRelease, recordInstall, syncGithubHistory } from "./release-history";
 import { choosePort, disableServe, enableServe, findTailscale, phoneUrl, readState } from "./tailscale";
+import { bootUrl, dialogOptions, fileFilters, navigateDecision, originOf, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision } from "./guards";
 
 /** The data layout this version writes. A later version that changes it raises this, and an older app
  * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
@@ -67,6 +68,10 @@ function hiddenLaunch() {
 
 function uiUrl() {
   return `http://127.0.0.1:${store.value.ports.ui}`;
+}
+
+function uiOrigin() {
+  return originOf(uiUrl());
 }
 
 function toolDirs(payload: string): string[] {
@@ -339,9 +344,14 @@ function installPackage(file: string): Promise<{ ok: boolean; error?: string }> 
   // The installer must not be the app's own child: Windows shuts the app's processes down to replace the package
   // (-ForceApplicationShutdown), and a child would be stopped with them halfway through. WMI starts it as a
   // process of its own, outside the app.
-  const outer = `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ${encoded}'} | Out-Null`;
+  // Win32_Process.Create reports failure in ReturnValue, not as an error: exit non-zero unless it is 0, or the
+  // app would quit with no installer running and nothing to bring it back.
+  const outer = `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ${encoded}'}; if ($r.ReturnValue -ne 0) { exit 3 }`;
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", outer], { windowsHide: true, timeout: 30_000 });
-  if (result.status !== 0) return Promise.resolve({ ok: false, error: "Windows didn't start the installer. Try again." });
+  if (result.status !== 0) {
+    logLine("update-install.log", `the installer didn't start (exit ${result.status ?? "none"})`);
+    return Promise.resolve({ ok: false, error: "Windows didn't start the installer. Chief is running again; try the update later." });
+  }
   quitting = true;
   setTimeout(() => app.exit(0), 1500);
   return Promise.resolve({ ok: true });
@@ -411,16 +421,17 @@ function createWindow() {
     autoHideMenuBar: true,
     webPreferences: { preload: path.join(__dirname, "preload.js"), contextIsolation: true, sandbox: true, nodeIntegration: false },
   });
-  const origin = () => new URL(uiUrl()).origin;
+  // Exact origins (guards.ts): a window the dashboard opens inherits the preload, so only its own pages may.
   window.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url) && !url.startsWith(origin())) void shell.openExternal(url);
-    else if (url.startsWith(origin())) return { action: "allow" };
-    return { action: "deny" };
+    const decision = windowOpenDecision(url, uiOrigin());
+    if (decision === "external") void shell.openExternal(url);
+    return { action: decision === "allow" ? "allow" : "deny" };
   });
   window.webContents.on("will-navigate", (event, url) => {
-    if (url.startsWith("file:") || url.startsWith(origin())) return;
+    const decision = navigateDecision(url, uiOrigin(), bootUrl(paths.staticDir));
+    if (decision === "allow") return;
     event.preventDefault();
-    if (/^https?:/i.test(url)) void shell.openExternal(url);
+    if (decision === "external") void shell.openExternal(url);
   });
   window.webContents.on("render-process-gone", () => window?.webContents.reload());
   window.on("focus", () => window?.flashFrame(false));
@@ -579,42 +590,63 @@ const OPENABLE = /^https:\/\/((login\.|www\.)?tailscale\.com|apps\.apple\.com|pl
 
 /* ------------------------------------------------------------------ IPC for the dashboard */
 
+/**
+ * Every IPC channel goes through here: the call must come from this app's window, from a frame showing the
+ * dashboard (or the boot page, for boot channels), and the handler validates its own arguments.
+ */
+function handle(channel: string, fn: (...args: unknown[]) => unknown, opts: { boot?: boolean } = {}) {
+  ipcMain.handle(channel, (event, ...args: unknown[]) => {
+    const fromWindow = !!window && event.sender === window.webContents;
+    if (!fromWindow || !senderAllowed(event.senderFrame?.url, uiOrigin(), bootUrl(paths.staticDir), opts)) {
+      logLine("desktop.log", `refused IPC ${channel} from ${originOf(event.senderFrame?.url || "") || "an unknown frame"}`);
+      throw new Error("Not allowed.");
+    }
+    return fn(...args);
+  });
+}
+
 function registerIpc() {
-  ipcMain.handle("updates:state", () => updater.state);
-  ipcMain.handle("updates:check", () => updater.check());
-  ipcMain.handle("updates:download", () => updater.download());
-  ipcMain.handle("updates:install", (_e, force: boolean) => updater.install(!!force));
-  ipcMain.handle("updates:skip", (_e, version: string) => {
-    store.save({ skippedVersions: [...new Set([...store.value.skippedVersions, String(version)])] });
+  handle("updates:state", () => updater.state);
+  handle("updates:check", () => updater.check());
+  handle("updates:download", () => updater.download());
+  handle("updates:install", (force) => updater.install(force === true));
+  handle("updates:skip", (version) => {
+    const v = String(version ?? "").trim();
+    if (/^\d+\.\d+\.\d+$/.test(v)) store.save({ skippedVersions: [...new Set([...store.value.skippedVersions, v])] });
     return updater.check();
   });
-  ipcMain.handle("updates:feed", () => effectiveFeed(store.value.updateFeed, shippedFeed));
-  ipcMain.handle("updates:hasKey", () => readUpdateKey(paths.secrets, safeStorage) !== "");
-  ipcMain.handle("updates:setKey", (_e, key: string) => {
-    saveUpdateKey(paths.secrets, safeStorage, String(key || ""));
+  handle("updates:feed", () => effectiveFeed(store.value.updateFeed, shippedFeed));
+  handle("updates:hasKey", () => readUpdateKey(paths.secrets, safeStorage) !== "");
+  handle("updates:setKey", (key) => {
+    saveUpdateKey(paths.secrets, safeStorage, String(key ?? "").trim().slice(0, 400));
     return updater.check();
   });
-  ipcMain.handle("updates:setFeed", (_e, folder: string) => {
-    store.save({ updateFeed: String(folder || "").trim() });
+  handle("updates:setFeed", (folder) => {
+    const feed = validFeed(folder);
+    if (feed === null) throw new Error("Use a GitHub repository (github:owner/repo) or a folder on this PC. Network shares aren't allowed.");
+    store.save({ updateFeed: feed });
     return updater.check();
   });
-  ipcMain.handle("updates:history", () => syncHistory());
-  ipcMain.handle("phone:state", () => phoneState());
-  ipcMain.handle("phone:enable", (_e, port?: number) => enablePhone(typeof port === "number" ? port : undefined));
-  ipcMain.handle("phone:disable", () => disablePhone());
-  ipcMain.handle("phone:setAccess", (_e, mode: string) => setPhoneAccess(mode === "owner" ? "owner" : "tailnet"));
-  ipcMain.handle("phone:open", (_e, url: string) => (OPENABLE.test(String(url)) ? shell.openExternal(String(url)).then(() => true) : false));
-  ipcMain.handle("boot:retry", () => boot());
-  ipcMain.handle("boot:logs", () => shell.openPath(paths.logs));
-  ipcMain.handle("desktop:pickFolder", async (_e, opts: { title?: string; defaultPath?: string } = {}) => {
-    const res = await dialog.showOpenDialog(window!, { title: opts.title, defaultPath: opts.defaultPath, properties: ["openDirectory", "createDirectory"] });
+  handle("updates:history", () => syncHistory());
+  handle("phone:state", () => phoneState());
+  handle("phone:enable", (port) => enablePhone(validServePort(port)));
+  handle("phone:disable", () => disablePhone());
+  handle("phone:setAccess", (mode) => setPhoneAccess(mode === "owner" ? "owner" : "tailnet"));
+  handle("phone:open", (url) => (OPENABLE.test(String(url)) ? shell.openExternal(String(url)).then(() => true) : false));
+  handle("boot:retry", () => boot(), { boot: true });
+  handle("boot:logs", () => shell.openPath(paths.logs), { boot: true });
+  handle("desktop:pickFolder", async (opts) => {
+    const o = dialogOptions(opts);
+    const res = await dialog.showOpenDialog(window!, { title: o.title, defaultPath: o.defaultPath, properties: ["openDirectory", "createDirectory"] });
     return res.canceled ? null : res.filePaths[0] || null;
   });
-  ipcMain.handle("desktop:pickFile", async (_e, opts: { title?: string; filters?: { name: string; extensions: string[] }[] } = {}) => {
-    const res = await dialog.showOpenDialog(window!, { title: opts.title, filters: opts.filters, properties: ["openFile"] });
+  handle("desktop:pickFile", async (opts) => {
+    const o = dialogOptions(opts);
+    const filters = fileFilters((opts as { filters?: unknown } | undefined)?.filters);
+    const res = await dialog.showOpenDialog(window!, { title: o.title, filters, properties: ["openFile"] });
     return res.canceled ? null : res.filePaths[0] || null;
   });
-  ipcMain.handle("desktop:applyRestore", async () => {
+  handle("desktop:applyRestore", async () => {
     const work = await currentWork();
     if (work.busy) {
       const choice = await dialog.showMessageBox(window!, {
@@ -715,6 +747,11 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         await web.stop(true).catch(() => undefined);
         if (!externalGateway) await gateway.stop(true).catch(() => undefined);
       },
+      startChief: async () => {
+        if (!externalGateway) await gateway.start();
+        await web.start();
+        notifier?.start();
+      },
       install: (file) => installPackage(file),
       onState: (state) => window?.webContents.send("updates:state", state),
       // Every verified release is kept for the update history (a folder feed's included).
@@ -728,7 +765,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     });
     setInterval(() => void updater.check().then(() => syncHistory()), 24 * 3600 * 1000).unref();
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback) => {
-      const ours = wc.getURL().startsWith(uiUrl());
+      const ours = sameOrigin(wc.getURL(), uiOrigin());
       callback(ours && ["media", "notifications", "clipboard-sanitized-write", "fullscreen"].includes(permission));
     });
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: store.value.startAtLogin, args: ["--hidden"] });

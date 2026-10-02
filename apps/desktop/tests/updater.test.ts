@@ -167,10 +167,18 @@ describe("Updater", () => {
     await failing.updater.download();
     expect(await failing.updater.install()).toEqual(expect.objectContaining({ status: "error", error: expect.stringMatching(/backup before it failed: disk full/) }));
     expect(failing.log).toEqual([]);
-    const refused = make({ install: async () => ({ ok: false, error: "Windows reports files in use." }) });
+    const restarted: string[] = [];
+    const refused = make({ install: async () => ({ ok: false, error: "Windows reports files in use." }), startChief: async () => void restarted.push("start") });
     await refused.updater.check();
     await refused.updater.download();
     expect(await refused.updater.install()).toEqual(expect.objectContaining({ status: "error", error: "Windows reports files in use." }));
+    // Chief was stopped for the install, so it is started again.
+    expect(refused.log).toEqual(["backup", "stop"]);
+    expect(restarted).toEqual(["start"]);
+    const thrown = make({ install: async () => { throw new Error("powershell missing"); }, startChief: async () => undefined });
+    await thrown.updater.check();
+    await thrown.updater.download();
+    expect(await thrown.updater.install()).toEqual(expect.objectContaining({ status: "error", error: "powershell missing" }));
   });
 
   it("compares versions numerically", () => {
