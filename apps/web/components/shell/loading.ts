@@ -18,6 +18,7 @@ export function usePrefetchLater() {
       void import("@/components/look-drawer");
       void import("@/components/chat/voice-mode");
       void import("@/components/second-brain/sheet");
+      void import("@/components/command-palette");
     };
     const idle = (window as Window & { requestIdleCallback?: (fn: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
     const timer = window.setTimeout(() => (idle ? idle(load, { timeout: 4000 }) : load()), 2500);

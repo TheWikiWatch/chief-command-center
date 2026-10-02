@@ -684,5 +684,6 @@
   - Today's list and the phone's Settings list are rows on the pane instead of boxed cards.
   - No all-caps labels, and backdrop blur only where it was budgeted; a test keeps both rules.
   - Settings has a search field ("microphone" finds Voice), and desktop surfaces swap with a short slide (a fade with reduced motion).
+- **Measured on a production build:** first load 480 KB of gzipped JavaScript (470 after Phase 4; the new features first came to 532 until the palette was loaded on first use, the phone menu with the phone header, and the tooltip hand-rolled instead of pulling in a positioning library). Heap 13–24 MB in the phone scenes, 60 fps, no long tasks.
 - **Also:** focus rings sit in the base style layer, so components can style their own; async test waits allow 4 s, so a busy machine's timing isn't a failure.
 - Tests: web 389 (new: palette, recents and Vault search, shortcuts, settings search, Today's side lists, Fleet panel and invitation, colour contrast, tool timeline, reply actions, phone overflow, design rules), desktop 62 (jump-list arguments), Python 112 + 21. Checked in the unpackaged desktop app on throwaway data: the caption buttons, and a jump-list launch reaching the running window.

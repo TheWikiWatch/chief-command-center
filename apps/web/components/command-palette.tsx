@@ -7,7 +7,8 @@ import { MessageCircleIcon, SearchIcon } from "@/components/icons";
 import { LAYER } from "@/lib/layers";
 import { EASE } from "@/lib/motion";
 import { useLayer } from "@/lib/overlay-stack";
-import { keyLabel, SHORTCUTS, shortcutText, type ShortcutId } from "@/lib/shortcuts";
+import { matches } from "@/lib/palette-match";
+import { shortcutText, type ShortcutId } from "@/lib/shortcuts";
 import { useModal } from "@/lib/use-modal";
 
 export type PaletteCommand = {
@@ -51,15 +52,7 @@ export function withRecent(commands: PaletteCommand[], recent: string[]): Palett
   return [...top.map((c) => ({ ...c, group: "Recent" as const })), ...commands.filter((c) => !ids.has(c.id))];
 }
 
-/** Every word of the query appears in the label or the keywords. */
-export function matches(command: Pick<PaletteCommand, "label" | "keywords" | "group">, query: string): boolean {
-  const hay = `${command.label} ${command.keywords || ""} ${command.group}`.toLowerCase();
-  return query
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean)
-    .every((word) => hay.includes(word));
-}
+export { matches };
 
 /**
  * The command palette (Ctrl+K): go anywhere, open any setting, start a thread, and, for anything else typed,
@@ -214,22 +207,3 @@ function Palette({ onClose, commands, assistant, onAsk, search }: PaletteProps) 
   );
 }
 
-/** The "?" sheet: every keyboard shortcut. */
-export function ShortcutList({ phone }: { phone: boolean }) {
-  return (
-    <ul className="divide-y divide-(--line-1)">
-      {SHORTCUTS.filter((s) => !(phone && s.desktopOnly)).map((s) => (
-        <li key={s.id} className="flex items-center justify-between gap-4 px-1 py-2.5 text-body">
-          <span className="text-fg-2">{s.label}</span>
-          <span className="flex gap-1">
-            {s.keys.map((k) => (
-              <kbd key={k} className="min-w-7 rounded-chip border border-line-2 bg-fill-1 px-1.5 py-0.5 text-center font-mono text-caption text-fg">
-                {keyLabel(k)}
-              </kbd>
-            ))}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
-}

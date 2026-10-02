@@ -1,19 +1,24 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import dynamic from "next/dynamic";
 import { useEffect, useState, type ReactNode } from "react";
 
 import { BotFace, FaceRing } from "@/components/bot-face";
 import { HeaderStatus, useLinkLabel } from "@/components/connection-status";
 import { DeepseekChip } from "@/components/deepseek-chip";
 import { AudioLinesIcon, EllipsisIcon, PauseIcon, PlayIcon, SettingsIcon, SquareIcon, WifiIcon } from "@/components/icons";
-import { ActionMenu, Tip, type MenuEntry } from "@/components/ui/popovers";
+import type { MenuEntry } from "@/components/ui/action-menu";
+import { Tip } from "@/components/ui/popovers";
 import { chiefColor } from "@/lib/bot-identity";
 import { splitTitle } from "@/lib/names";
 import { EASE } from "@/lib/motion";
 import { shortcutText } from "@/lib/shortcuts";
 import type { Person } from "@/lib/types";
 import { useAssistantName } from "@/lib/identity";
+
+// The phone header's menu (Base UI) loads with the phone header, not with the first screen.
+const ActionMenu = dynamic(() => import("@/components/ui/action-menu").then((m) => m.ActionMenu), { ssr: false });
 
 export type ChiefMood = "online" | "thinking" | "preparing" | "speaking" | "paused" | "listening" | "approval" | "offline";
 

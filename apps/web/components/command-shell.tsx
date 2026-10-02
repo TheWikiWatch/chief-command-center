@@ -50,7 +50,8 @@ import type { ExecApproval, Person, Snapshot } from "@/lib/types";
 import { FleetViewSwitch } from "@/components/shell/fleet-view-switch";
 import { useOpenedOnce, usePrefetchLater } from "@/components/shell/loading";
 import { FLEET_VIEW_KEY, FleetView, PHONE_TAB_KEY, STORAGE_KEY, SURFACE_KEY, loadChief, loadPhoneTab, loadSplit, loadSurface, rememberChief } from "@/components/shell/persisted";
-import { CommandPalette, ShortcutList, type PaletteCommand } from "@/components/command-palette";
+import type { PaletteCommand } from "@/components/command-palette";
+import { ShortcutList } from "@/components/shortcut-list";
 import { Sheet } from "@/components/ui/sheet";
 import { AudioLinesIcon, BookOpenIcon, BotIcon, FileTextIcon, HashIcon, ListChecksIcon, MessageCircleIcon, OrbitIcon, PlusIcon, RefreshCwIcon, SettingsIcon, UsersIcon, WifiIcon, ZapIcon } from "@/components/icons";
 import { focusComposer, isTyping, openVoiceMode, setDraft } from "@/lib/app-events";
@@ -67,6 +68,8 @@ const SettingsPanel = dynamic(() => import("@/components/settings-panel").then((
 const VaultPane = dynamic(() => import("@/components/vault-pane").then((m) => m.VaultPane), { ssr: false });
 const FleetHealth = dynamic(() => import("@/components/fleet-health").then((m) => m.FleetHealth), { ssr: false });
 const LookDrawer = dynamic(() => import("@/components/look-drawer").then((m) => m.LookDrawer), { ssr: false });
+// Loaded on the first Ctrl+K (and fetched in idle time after the first screen).
+const CommandPalette = dynamic(() => import("@/components/command-palette").then((m) => m.CommandPalette), { ssr: false });
 const SecondBrainSheet = dynamic(() => import("@/components/second-brain/sheet").then((m) => m.SecondBrainSheet), { ssr: false });
 const Onboarding = dynamic(() => import("@/components/onboarding/onboarding").then((m) => m.Onboarding), { ssr: false });
 
@@ -404,6 +407,7 @@ export function CommandShell() {
 
   // The command palette (Ctrl+K) and the keyboard map (lib/shortcuts.ts).
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const paletteMounted = useOpenedOnce(paletteOpen);
   // The threads, fresh each time the palette opens.
   const [paletteThreads, setPaletteThreads] = useState<ChatThread[]>([]);
   useEffect(() => {
@@ -638,7 +642,7 @@ export function CommandShell() {
         </div>
       )}
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={askChief} search={searchVaultNotes} />
+      {paletteMounted ? <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={askChief} search={searchVaultNotes} /> : null}
       <AnimatePresence>
         {helpOpen ? (
           <Sheet open={helpOpen} onClose={() => setHelpOpen(false)} side={phone ? "bottom" : "right"} title="Keyboard shortcuts" subtitle="Single keys work when you're not typing in a box.">

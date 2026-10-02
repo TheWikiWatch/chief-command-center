@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState, type UIEvent } from "react";
-import { matches } from "@/components/command-palette";
+import { matches } from "@/lib/palette-match";
 import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, XIcon } from "@/components/icons";
 import { PhoneSettings } from "@/components/phone/phone-settings";
 import { Sheet } from "@/components/ui/sheet";
