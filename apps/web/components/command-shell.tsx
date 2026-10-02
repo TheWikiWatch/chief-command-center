@@ -567,10 +567,10 @@ export function CommandShell() {
         <>
           {/* No header over the orbit: this strip is where the window is dragged from. */}
           <div className="app-drag absolute inset-x-0 top-0 z-10 h-15" aria-hidden />
-          <div className="absolute left-3 top-3 z-20">
+          <div className="app-no-drag absolute left-3 top-3 z-20">
             <SurfaceTabs surface={surface} onChange={changeSurface} />
           </div>
-          <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+          <div className="app-no-drag absolute right-3 top-3 z-20 flex items-center gap-2">
             {viewSwitch}
             {fleetView === "health" ? null : usageToggle}
             <TeamButton phone={false} people={people} onAskChief={sendFromToday} />
@@ -578,7 +578,7 @@ export function CommandShell() {
         </>
       )}
       {fleetView === "health" ? (
-        <div className={`relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-pane ${phone ? "" : "pt-14"}`}>
+        <div className={`app-clickable relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-pane ${phone ? "" : "pt-14"}`}>
           <FleetHealth people={people} phone={phone} onSendToChief={sendFromToday} />
         </div>
       ) : (

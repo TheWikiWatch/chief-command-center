@@ -86,7 +86,7 @@ export function Onboarding({
     <div ref={dialog} tabIndex={-1} onKeyDown={trapTab} className="fixed inset-0 z-60 overflow-y-auto bg-canvas outline-hidden" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
       {/* The desktop app's title bar is the page's own: this strip moves the window during first run. */}
       <div aria-hidden className="app-drag sticky top-0 z-10 -mb-10 h-10" />
-      <div className="mx-auto flex min-h-full max-w-xl flex-col px-4 py-8 sm:py-14">
+      <div className="app-clickable mx-auto flex min-h-full max-w-xl flex-col px-4 py-8 sm:py-14">
         <header className="mb-8">
           <p className="text-caption font-medium text-fg-3">Welcome</p>
           <h1 id="onboarding-title" className="mt-1 text-display text-fg">

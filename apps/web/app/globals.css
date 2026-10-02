@@ -551,7 +551,18 @@ body {
   app-region: drag;
 }
 
-.app-drag :where(button, a, input, select, textarea, label, summary, [role="button"], [role="radio"], [role="tab"], [role="menuitem"], [role="combobox"], [contenteditable="true"]) {
+.app-drag :where(button, a, input, select, textarea, label, summary, [role="button"], [role="radio"], [role="tab"], [role="menuitem"], [role="combobox"], [contenteditable="true"]),
+.app-clickable :where(button, a, input, select, textarea, label, summary, [role="button"], [role="radio"], [role="tab"], [role="menuitem"], [role="combobox"], [contenteditable="true"]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/*
+ * A drag region claims every pixel it covers, whatever is painted on top: Electron adds drag regions and
+ * subtracts no-drag ones in page order. Controls laid over a separate drag strip (not inside it) must say so:
+ * `app-no-drag` on their container, or `app-clickable` on content that scrolls under a strip.
+ */
+.app-no-drag {
   -webkit-app-region: no-drag;
   app-region: no-drag;
 }

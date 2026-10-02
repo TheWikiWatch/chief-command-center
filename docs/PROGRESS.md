@@ -752,3 +752,7 @@
 - Everything goes through Hermes's own rows, readiness checks and config writes (the ones `hermes tools` and Hermes's web dashboard use), so new services Hermes adds appear by themselves. A failed test says what happened in one plain line ("The service turned down the key. …").
 - The chief now knows to point you to Settings → Tools when it can't make an image or search because nothing is set up.
 - Tests: a new contract (`run_tools_contract.py`, 27 checks, part of the upgrade compatibility suite) against the real Hermes; web tests for the page and the proxy rules.
+
+**Fixed: the Fleet screen's top buttons didn't respond in the desktop app.**
+
+- Fleet / Today / Vault, Crew / Health, the usage button and Team & Routines sit over the strip the window is dragged by. In the desktop app a drag strip takes every click inside it, even under buttons drawn on top, unless those buttons are marked as clickable. These weren't (they float over the strip instead of sitting inside a header), so clicks there moved the window instead. Browsers ignore drag strips, which is why the phone and browser checks never showed it. Fleet Health's content and the first-run screen, which scroll under such a strip, are marked too; a test now fails if a free-standing strip comes without that.
