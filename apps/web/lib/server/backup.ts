@@ -16,7 +16,10 @@ import { childEnv } from "@/lib/server/child-env";
  *   CHIEF_APP_VERSION     this app's version (default: apps/web/package.json)
  *   CHIEF_HERMES_VERSION  the pinned Hermes version, recorded in each backup
  *
- * One backup runs at a time. A passphrase goes to the engine on stdin and is never stored or logged.
+ * One backup runs at a time, across restarts of this server too: the engine's pid is recorded in
+ * `<app data>/backup-running.json` while it runs, so a server that restarted mid-backup (a crash, a change to phone
+ * access) reports it as running and won't start a second one beside it.
+ * A passphrase goes to the engine on stdin and is never stored or logged.
  * Restoring is staged and verified here; the swap needs Chief stopped, so the desktop app applies it.
  */
 export type BackupJob = {
@@ -27,7 +30,44 @@ export type BackupJob = {
   total: number;
   result?: { path: string; bytes: number; encrypted: boolean; dropped_secrets: string[] };
   error?: string;
+  /** Started by an earlier run of this server: still running, but its progress isn't known here. */
+  inherited?: boolean;
 };
+
+type BackupLock = { pid: number; kind: BackupJob["kind"]; startedAt: number };
+const LOCK_MAX_AGE_MS = 6 * 3600 * 1000;
+
+function lockFile(): string {
+  return path.join(engineConfig().appData, "backup-running.json");
+}
+
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** The running backup's record, or null; a record whose process is gone (or too old to be one) is cleared. */
+export async function runningBackup(alive: (pid: number) => boolean = processAlive, now = Date.now()): Promise<BackupLock | null> {
+  if (!engineConfig().appData) return null;
+  try {
+    const lock = JSON.parse(await fs.readFile(lockFile(), "utf8")) as BackupLock;
+    if (Number.isInteger(lock.pid) && lock.pid > 0 && alive(lock.pid) && now - lock.startedAt < LOCK_MAX_AGE_MS) return lock;
+    await fs.rm(lockFile(), { force: true });
+  } catch {
+    /* no backup running */
+  }
+  return null;
+}
+
+async function writeLock(lock: BackupLock) {
+  if (!engineConfig().appData) return;
+  await fs.mkdir(path.dirname(lockFile()), { recursive: true }).catch(() => undefined);
+  await fs.writeFile(lockFile(), JSON.stringify(lock)).catch(() => undefined);
+}
 
 const WEEK_MS = 7 * 24 * 3600 * 1000;
 let job: BackupJob | null = null;
@@ -55,7 +95,7 @@ export function safetyDir(): string {
 type EngineResult = { ok: boolean; error?: string; code?: string; [key: string]: unknown };
 
 /** Run one engine command; resolves with its JSON answer (errors included), never with a traceback. */
-export function runEngine(args: string[], opts: { passphrase?: string; onProgress?: (done: number, total: number) => void; timeoutMs?: number } = {}): Promise<EngineResult> {
+export function runEngine(args: string[], opts: { passphrase?: string; onProgress?: (done: number, total: number) => void; onSpawn?: (pid: number) => void; timeoutMs?: number } = {}): Promise<EngineResult> {
   const cfg = engineConfig();
   return new Promise((resolve) => {
     let stdout = "";
@@ -65,6 +105,7 @@ export function runEngine(args: string[], opts: { passphrase?: string; onProgres
       windowsHide: true,
       env: childEnv({ PYTHONPATH: [cfg.engine, ...(process.env.CHIEF_PYTHONPATH || "").split(";").filter(Boolean)].join(";"), PYTHONIOENCODING: "utf-8" }),
     });
+    if (child.pid) opts.onSpawn?.(child.pid);
     const timer = setTimeout(() => child.kill(), opts.timeoutMs ?? 6 * 3600 * 1000);
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
     child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
@@ -104,9 +145,17 @@ export function currentJob(): BackupJob | null {
   return job;
 }
 
+/** This server's job, or a backup an earlier run of the server started that is still going. */
+export async function backupStatus(): Promise<BackupJob | null> {
+  if (job?.state === "running") return job;
+  const lock = await runningBackup();
+  if (lock) return { kind: lock.kind, state: "running", startedAt: lock.startedAt, done: 0, total: 0, inherited: true };
+  return job;
+}
+
 /** Start a backup; the caller polls `currentJob()`. */
 export async function startBackup({ kind, parts, passphrase }: { kind: "manual" | "auto"; parts?: BackupParts; passphrase?: string }): Promise<BackupJob> {
-  if (job?.state === "running") throw new Error("A backup is already running.");
+  if (job?.state === "running" || (await runningBackup())) throw new Error("A backup is already running.");
   const cfg = engineConfig();
   const settings = await readAppSettings();
   const folder = settings.backup.folder;
@@ -126,11 +175,13 @@ export async function startBackup({ kind, parts, passphrase }: { kind: "manual" 
   job = current;
   void runEngine(args, {
     passphrase: passphrase ? passphrase : undefined,
+    onSpawn: (pid) => void writeLock({ pid, kind, startedAt: current.startedAt }),
     onProgress: (done, total) => {
       current.done = done;
       current.total = total;
     },
   }).then(async (res) => {
+    await fs.rm(lockFile(), { force: true }).catch(() => undefined);
     // The record is saved before the job reports done, so "done" always comes with "Last backup".
     if (res.ok) {
       current.result = { path: String(res.path), bytes: Number(res.bytes), encrypted: !!res.encrypted, dropped_secrets: (res.dropped_secrets as string[]) || [] };
@@ -175,7 +226,7 @@ export async function scheduledTick(now = Date.now()): Promise<"ran" | "not-due"
   }
   if (settings.backup.schedule !== "weekly") return "off";
   if (!settings.backup.folder) return "no-folder";
-  if (job?.state === "running") return "busy";
+  if (job?.state === "running" || (await runningBackup())) return "busy";
   const last = Math.max(settings.lastBackup?.at || 0, settings.lastBackupError?.kind === "auto" ? settings.lastBackupError.at - WEEK_MS + 6 * 3600 * 1000 : 0);
   if (now - last < WEEK_MS) return "not-due";
   try {

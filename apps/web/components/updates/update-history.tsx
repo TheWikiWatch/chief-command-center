@@ -7,13 +7,9 @@ import { Sheet } from "@/components/ui/sheet";
 import { usePhoneShell } from "@/lib/use-phone-shell";
 import { loadUpdateHistory, markWhatsNewSeen, shortDate, whatsNewFor, type UpdateHistory } from "@/lib/update-history-client";
 import { LAYER } from "@/lib/layers";
+import { compareVersions } from "@/lib/versions";
 
-const newerThan = (a: string, b: string) => {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let k = 0; k < 3; k++) if ((pa[k] || 0) !== (pb[k] || 0)) return (pa[k] || 0) > (pb[k] || 0);
-  return false;
-};
+const newerThan = (a: string, b: string) => compareVersions(a, b) > 0;
 
 type Entry = { version: string; published: string; notes: string; hermes: string; installedAt: string; hermesChanged: boolean; known: boolean };
 
@@ -22,12 +18,7 @@ export function historyEntries(history: UpdateHistory): Entry[] {
   const installedAt = new Map<string, string>();
   for (const i of history.installs) if (!installedAt.has(i.version)) installedAt.set(i.version, i.at);
   const byVersion = new Map(history.releases.map((r) => [r.version, r]));
-  const versions = [...new Set([...history.releases.map((r) => r.version), ...history.installs.map((i) => i.version)])].sort((a, b) => {
-    const pa = a.split(".").map(Number);
-    const pb = b.split(".").map(Number);
-    for (let k = 0; k < 3; k++) if (pa[k] !== pb[k]) return pb[k] - pa[k];
-    return 0;
-  });
+  const versions = [...new Set([...history.releases.map((r) => r.version), ...history.installs.map((i) => i.version)])].sort((a, b) => compareVersions(b, a));
   return versions.map((version, i) => {
     const r = byVersion.get(version);
     const older = versions.slice(i + 1).map((v) => byVersion.get(v)).find(Boolean);

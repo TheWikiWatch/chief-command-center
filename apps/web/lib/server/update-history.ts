@@ -1,5 +1,6 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { compareVersions } from "@/lib/versions";
 
 /**
  * The update history the desktop app keeps (apps/desktop/src/release-history.ts): each release it has seen,
@@ -14,12 +15,7 @@ export type UpdateHistory = { available: boolean; current: string; releases: His
 const VERSION = /^\d+\.\d+\.\d+$/;
 const stripBom = (text: string) => text.replace(/^\uFEFF/, "");
 
-function compare(a: string, b: string): number {
-  const pa = a.split(".").map(Number);
-  const pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if (pa[i] !== pb[i]) return (pa[i] || 0) - (pb[i] || 0);
-  return 0;
-}
+const compare = compareVersions;
 
 export async function readUpdateHistory(appDir = process.env.CHIEF_APP_DATA || "", current = process.env.CHIEF_APP_VERSION || ""): Promise<UpdateHistory> {
   if (!appDir) return { available: false, current, releases: [], installs: [] };

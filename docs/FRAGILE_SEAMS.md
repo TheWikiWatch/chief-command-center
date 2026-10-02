@@ -188,3 +188,14 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Jump-list tasks relaunch the app** with `--action=<id>`; only ids in `DESKTOP_ACTIONS` are accepted. A launch that starts the app keeps its action until the dashboard asks (`desktop:takeAction` when the shell mounts). Not yet tried in the MSIX package: Windows may not let a task start the packaged exe by path; if it doesn't, the tray menu still has the same items.
 - **Single-key shortcuts** ("/", "?") fire only when focus isn't in a text field (`isTyping`). A new shortcut goes in `SHORTCUTS` so the "?" sheet and the palette show it.
 - **Surface switches run in a transition** (`startTransition` + `<ViewTransition>`). A transition waits for a lazily loaded surface; if that takes over 4 s (the dev server compiling it), the browser aborts the animation and React logs a recoverable TimeoutError, though the switch still happens. The built app prefetches surfaces at idle. The browser draws no frames while the window is hidden, so a switch made then lands when it is shown.
+
+## Supervision, start-up and logs
+
+`apps/desktop/src/supervisor.ts`, `boot.ts`, `runtime.ts` (`provisionKey`, `pycacheDir`), `logger.ts`, `diagnostics.ts`; `apps/web/lib/server/backup.ts` (the backup lock). Test map: `apps/desktop/tests/shell.test.ts` (Supervisor), `boot.test.ts`, `logger.test.ts`, `diagnostics.test.ts`; `apps/web/tests/backup-routes.test.ts`.
+
+- **A child the supervisor ends itself** (not ready in time, or failing health checks) is recorded by pid, so its exit isn't a second crash. A new way of ending a child must go through `end()`, or its exit restarts it again.
+- **Health checks** call `/health` (gateway) and `/api/healthz` (dashboard) every 30 s with a 5 s timeout; three failures in a row restart the child. A slow machine that can't answer `/health` in 5 s while busy would be restarted: raise the timeout before lowering the interval.
+- **Provisioning is skipped** while `provisionKey()` is unchanged: app version, Hermes build, bridge port, adoption, Hermes root, and the plugin files' names, sizes and times. Something new that provisioning depends on must go into the key, or it won't run when that changes.
+- **`PYTHONPYCACHEPREFIX`** points at `<data>\pycache` for every bundled Python. Deleting that folder is safe (the next start compiles again, about 6 s longer).
+- **The log redacts** the token and session secret by value (`log.addSecret`), plus `Bearer …`, `token=`, `key=`, `open=` and similar. A new secret must be added with `addSecret` as soon as it exists.
+- **The backup lock** (`<app data>ackup-running.json`) holds the engine's pid; a pid that is gone, or a record older than 6 hours, is cleared. Windows can reuse a pid, so a stale record within 6 hours can at worst make the dashboard say a backup is running until the record expires.

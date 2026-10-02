@@ -5,7 +5,7 @@ import { NextRequest } from "next/server";
 
 import { validMutationOrigin } from "@/lib/proxy-policy";
 import { AppDataNotConfigured, readAppSettings, suggestedBackupFolder, updateAppSettings, type BackupParts } from "@/lib/server/app-settings";
-import { currentJob, engineConfig, restoreStateDir, runEngine, startBackup } from "@/lib/server/backup";
+import { backupStatus, engineConfig, restoreStateDir, runEngine, startBackup } from "@/lib/server/backup";
 import { secondBrain } from "@/lib/server/second-brain";
 import { isDirectLoopback } from "@/lib/tailnet-guard";
 
@@ -65,7 +65,7 @@ async function status() {
     lastBackup: last,
     lastError: settings.lastBackupError,
     remind: !!settings.backup.folder ? !last || Date.now() - last.at > REMIND_MS : false,
-    job: currentJob(),
+    job: await backupStatus(),
     available: { setup: !!cfg.hermesRoot, secondBrain: !!brain.path },
     secondBrain: brain.path,
     appVersion: cfg.appVersion,

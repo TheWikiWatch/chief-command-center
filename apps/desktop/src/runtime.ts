@@ -1,10 +1,10 @@
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
-import { spawn } from "node:child_process";
 
 import { app } from "electron";
 
 import { curatedEnv, payloadLayout } from "./env";
+import { runJsonTool, type ToolResult } from "./python";
 import { engineRunner } from "./restore";
 import { sessionCookieName } from "./session";
 import { ctx, uiUrl } from "./state";
@@ -117,21 +117,8 @@ export function toolEnv(kind: "gateway" | "web"): Record<string, string> {
   return rest;
 }
 
-export function runPython(script: string, args: string[], env: Record<string, string>): Promise<{ ok: boolean; error?: string; [k: string]: unknown }> {
-  const python = payloadLayout(ctx.paths.payload).python;
-  return new Promise((resolve) => {
-    let out = "";
-    const child = spawn(python, ["-B", script, ...args], { env, windowsHide: true });
-    child.stdout.setEncoding("utf8").on("data", (c: string) => (out += c));
-    child.on("error", () => resolve({ ok: false, error: "The runtime's Python couldn't start." }));
-    child.on("close", () => {
-      try {
-        resolve(JSON.parse(out.trim().split(/\r?\n/).pop() || ""));
-      } catch {
-        resolve({ ok: false, error: "Preparing Hermes failed." });
-      }
-    });
-  });
+export function runPython(script: string, args: string[], env: Record<string, string>): Promise<ToolResult> {
+  return runJsonTool(payloadLayout(ctx.paths.payload).python, [script, ...args], { env, startError: "The runtime's Python couldn't start.", badAnswer: "Preparing Hermes failed." });
 }
 
 /** The backup and restore engine (backup/chief_backup) under the bundled Python. */

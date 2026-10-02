@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { runJsonTool } from "./python";
 
 /**
  * Applying a staged restore (PLAN §16 steps 4–7), which only the shell can do because Chief must be stopped:
@@ -10,24 +10,12 @@ export type EngineRunner = (args: string[]) => Promise<{ ok: boolean; error?: st
 
 export function engineRunner(python: string, engineDir: string, env: Record<string, string>, pythonPath: string[] = []): EngineRunner {
   return (args) =>
-    new Promise((resolve) => {
-      let out = "";
-      const child = spawn(python, ["-B", "-m", "chief_backup", ...args], {
-        cwd: engineDir,
-        env: { ...env, PYTHONPATH: [engineDir, ...pythonPath].join(";"), PYTHONIOENCODING: "utf-8" },
-        windowsHide: true,
-      });
-      child.stdout.setEncoding("utf8").on("data", (c: string) => (out += c));
-      child.on("error", () => resolve({ ok: false, error: "The backup tool couldn't start." }));
-      child.on("close", () => {
-        try {
-          resolve(JSON.parse(out.trim().split(/\r?\n/).pop() || ""));
-        } catch {
-          resolve({ ok: false, error: "The backup tool stopped unexpectedly." });
-        }
-      });
-      child.stdin.end();
-    });
+    runJsonTool(python, ["-m", "chief_backup", ...args], {
+      cwd: engineDir,
+      env: { ...env, PYTHONPATH: [engineDir, ...pythonPath].join(";"), PYTHONIOENCODING: "utf-8" },
+      startError: "The backup tool couldn't start.",
+      badAnswer: "The backup tool stopped unexpectedly.",
+    }) as ReturnType<EngineRunner>;
 }
 
 export type RestoreDeps = {

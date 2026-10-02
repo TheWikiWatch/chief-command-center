@@ -129,3 +129,18 @@ it("a phone can see backups and change the schedule, but not choose folders or f
     expect((await call("POST", op, { file: "C:/anything.chiefbackup" }, "http://127.0.0.1:3100", phone)).status, op).toBe(403);
   }
 });
+
+it("a backup started by an earlier run of the server still counts as running; a dead one's record is cleared", async () => {
+  const { runningBackup, backupStatus, startBackup } = await import("@/lib/server/backup");
+  const lock = path.join(appData, "backup-running.json");
+  mkdirSync(appData, { recursive: true });
+  // This test process stands in for an engine that outlived the server that started it.
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, kind: "auto", startedAt: Date.now() - 60_000 }));
+  expect(await backupStatus()).toMatchObject({ state: "running", kind: "auto", inherited: true });
+  await expect(startBackup({ kind: "manual" })).rejects.toThrow("already running");
+  // Gone (or reused long after): the record goes and backups may start again.
+  expect(await runningBackup(() => false)).toBeNull();
+  expect(existsSync(lock)).toBe(false);
+  writeFileSync(lock, JSON.stringify({ pid: process.pid, kind: "auto", startedAt: Date.now() - 7 * 3600 * 1000 }));
+  expect(await runningBackup()).toBeNull();
+});
