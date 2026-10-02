@@ -51,7 +51,7 @@ export function ModelsKeys() {
       {error ? <Line tone="error">{error}</Line> : null}
       {rows && !rows.length ? <p className="px-3.5 py-3 text-callout text-fg-3">No provider is connected yet.</p> : null}
       {rows?.map((p) => (
-        <div key={p.slug} className="border-b border-[color:var(--line-1)] px-3.5 py-3 last:border-b-0">
+        <div key={p.slug} className="border-b border-(--line-1) px-3.5 py-3 last:border-b-0">
           <div className="flex items-center gap-3">
             <div className="min-w-0 flex-1">
               <p className="truncate text-body text-fg">{p.name}</p>
@@ -73,7 +73,7 @@ export function ModelsKeys() {
             ) : null}
           </div>
           {confirm === p.slug ? (
-            <div className="mt-2 space-y-2 rounded-card border border-danger/30 bg-danger/[0.06] px-3 py-2">
+            <div className="mt-2 space-y-2 rounded-card border border-danger/30 bg-danger/6 px-3 py-2">
               <p className="text-callout text-fg">Remove the {p.name} key from this PC? Bots set to a {p.name} model stop working until you pick another model or add a key again.</p>
               <div className="flex gap-2">
                 <button type="button" disabled={!!busy} onClick={() => void remove(p)} className="press min-h-10 rounded-full bg-danger px-3.5 text-callout font-medium text-white disabled:opacity-50">
@@ -88,7 +88,7 @@ export function ModelsKeys() {
         </div>
       ))}
       {note ? <Line tone={note.tone}>{note.text}</Line> : null}
-      <div className="border-t border-[color:var(--line-1)] px-3.5 py-3">
+      <div className="border-t border-(--line-1) px-3.5 py-3">
         {adding ? (
           <div className="space-y-3">
             <ConnectModel addOnly onAdded={() => load(true)} />

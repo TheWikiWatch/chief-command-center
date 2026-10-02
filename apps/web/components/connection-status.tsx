@@ -153,7 +153,7 @@ function VoiceLog() {
             .join(" · ");
           return (
             <li key={`${entry.at}-${entry.preview}`} className="flex items-baseline gap-3 px-4 py-2.5">
-              <span className="tabular w-[4.75rem] shrink-0 whitespace-nowrap font-mono text-caption text-fg-3">
+              <span className="tabular w-19 shrink-0 whitespace-nowrap font-mono text-caption text-fg-3">
                 {new Date(entry.at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}
               </span>
               <div className="min-w-0 flex-1">
@@ -192,7 +192,7 @@ export function HeaderStatus({
           type="button"
           onClick={onOpenSettings}
           aria-label="Settings"
-          className="press flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg"
+          className="press flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
         >
           <SettingsIcon size={20} />
         </button>

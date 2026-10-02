@@ -422,7 +422,7 @@ export function CommandShell() {
       aria-label={usageStrip ? "Hide usage" : "Show usage"}
       title={usageStrip ? "Hide usage" : "Show usage"}
       className={`press grid size-11 shrink-0 place-items-center rounded-full ${
-        phone ? "" : "border border-line-2 bg-pane/90 shadow-e3 backdrop-blur hover:border-line-3"
+        phone ? "" : "border border-line-2 bg-pane/90 shadow-e3 backdrop-blur-sm hover:border-line-3"
       } ${usageStrip ? "text-fg" : "text-fg-3 hover:text-fg"}`}
     >
       <ChartColumnIcon size={phone ? 19 : 17} />
@@ -499,7 +499,7 @@ export function CommandShell() {
   );
 
   const offline = !connected && !authFailed;
-  const dim = `transition-[filter] duration-[600ms] ease-enter ${offline ? "[filter:saturate(.55)_brightness(.85)]" : ""}`;
+  const dim = `transition-[filter] duration-600 ease-enter ${offline ? "filter-[saturate(.55)_brightness(.85)]" : ""}`;
   const sheets = (
     <>
       {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} onAskChief={sendFromToday} /> : null}

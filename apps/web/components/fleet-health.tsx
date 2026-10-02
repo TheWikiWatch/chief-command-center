@@ -131,7 +131,7 @@ export function FleetHealth({
               ))}
             </div>
             {[0, 1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-14 rounded-card bg-white/[0.03]" style={{ opacity: 1 - i * 0.15 }} />
+              <div key={i} className="h-14 rounded-card bg-white/3" style={{ opacity: 1 - i * 0.15 }} />
             ))}
           </div>
         )}
@@ -264,7 +264,7 @@ function RefreshButton({ busy, onClick, label, small = false }: { busy: boolean;
 function EmptyCard({ icon, title, body, action }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
   return (
     <div className="flex flex-col items-center rounded-card border border-dashed border-line-2 px-5 py-6 text-center">
-      <span className="grid size-10 place-items-center rounded-full bg-white/[0.05] text-fg-3">{icon}</span>
+      <span className="grid size-10 place-items-center rounded-full bg-white/5 text-fg-3">{icon}</span>
       <p className="mt-2.5 text-body font-medium text-fg">{title}</p>
       <p className="mt-1 max-w-sm text-callout text-fg-3">{body}</p>
       {action ? <div className="mt-4">{action}</div> : null}
@@ -273,8 +273,8 @@ function EmptyCard({ icon, title, body, action }: { icon: ReactNode; title: stri
 }
 
 const SEVERITY: Record<string, string> = {
-  danger: "border-danger/40 bg-danger/[0.06]",
-  warn: "border-warn/30 bg-warn/[0.05]",
+  danger: "border-danger/40 bg-danger/6",
+  warn: "border-warn/30 bg-warn/5",
   info: "border-line bg-card",
 };
 const SEVERITY_DOT: Record<string, string> = { danger: "bg-danger", warn: "bg-warn", info: "bg-fg-3" };
@@ -366,7 +366,7 @@ function DeskRow({ card, person }: { card: DeskCard; person?: Person }) {
   return (
     <li className="border-b border-line px-3 py-3 last:border-b-0">
       <div className="flex items-center gap-3">
-        {person ? <BotFace {...faceProps(person)} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-white/[0.06] text-fg-3"><WrenchIcon size={16} /></span>}
+        {person ? <BotFace {...faceProps(person)} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-white/6 text-fg-3"><WrenchIcon size={16} /></span>}
         <div className="min-w-0 flex-1">
           <div className="flex items-baseline gap-2">
             <span className="truncate text-body font-semibold text-fg">{name}</span>
@@ -443,7 +443,7 @@ function SkillRow({ skill: s, open, onToggle, onReverted }: { skill: SkillSummar
   const growth = s.size14d ? Math.round((s.size / s.size14d - 1) * 100) : null;
   return (
     <li id={skillAnchor(s.key)} className="scroll-mt-16 overflow-hidden rounded-card border border-line bg-card">
-      <button type="button" className="press flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.02]" onClick={onToggle} aria-expanded={open}>
+      <button type="button" className="press flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/2" onClick={onToggle} aria-expanded={open}>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
             <span className="truncate text-body font-medium text-fg">{s.name}</span>
@@ -554,7 +554,7 @@ function ChangeRow({ change: c, title, compact = false, onReverted }: { change: 
 
   return (
     <li className={`overflow-hidden border border-line ${compact ? "rounded-ctl bg-card" : "rounded-card bg-card"}`}>
-      <button type="button" className={`press flex w-full items-center gap-3 text-left hover:bg-white/[0.02] ${compact ? "px-2.5 py-2" : "px-3 py-2.5"}`} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+      <button type="button" className={`press flex w-full items-center gap-3 text-left hover:bg-white/2 ${compact ? "px-2.5 py-2" : "px-3 py-2.5"}`} onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         <span className="min-w-0 flex-1">
           <span className={`block truncate ${compact ? "text-callout text-fg-2" : "text-body font-medium text-fg"}`}>{title}</span>
           <span className="block truncate text-caption text-fg-3">
@@ -626,7 +626,7 @@ function DiffView({ text }: { text: string }) {
       {lines.map((l, i) => (
         <div
           key={i}
-          className={`whitespace-pre-wrap break-words px-3 ${l.startsWith("+") ? "bg-ok/[0.07] text-ok" : l.startsWith("-") ? "bg-danger/[0.07] text-danger" : l.startsWith("@@") ? "text-fg-4" : "text-fg-3"}`}
+          className={`whitespace-pre-wrap wrap-break-word px-3 ${l.startsWith("+") ? "bg-ok/[0.07] text-ok" : l.startsWith("-") ? "bg-danger/[0.07] text-danger" : l.startsWith("@@") ? "text-fg-4" : "text-fg-3"}`}
         >
           {l || " "}
         </div>

@@ -1,6 +1,104 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import 'tailwindcss' source('..');
+
+/*
+ * Tailwind's theme, in this app's tokens (docs/design/VISUAL-OVERHAUL.md §2–§3). Colors read the RGB triplets
+ * in :root below, so `bg-accent/20` still works (v4 mixes the alpha in). Shadows, easings and durations live
+ * here once: @theme emits them as :root variables too, which the hand-written rules below use.
+ */
+@theme {
+  --color-canvas: rgb(var(--c-canvas));
+  --color-pane: rgb(var(--c-pane));
+  --color-card: rgb(var(--c-card));
+  --color-raised: rgb(var(--c-raised));
+  --color-well: rgb(var(--c-well));
+
+  --color-fg-2: rgb(var(--c-fg-2));
+  --color-fg-3: rgb(var(--c-fg-3));
+  --color-fg-4: rgb(var(--c-fg-4));
+  --color-fg: rgb(var(--c-fg));
+
+  --color-line-2: var(--line-2);
+  --color-line-3: var(--line-3);
+  --color-line: var(--line-1);
+
+  --color-accent: rgb(var(--c-accent));
+  --color-accent-solid: rgb(var(--c-accent-solid));
+  --color-accent-text: rgb(var(--c-accent-text));
+
+  --color-data: rgb(var(--c-data));
+  --color-ok: rgb(var(--c-ok));
+  --color-warn: rgb(var(--c-warn));
+  --color-danger: rgb(var(--c-danger));
+
+  /* --font-inter and --font-geist-mono come from next/font (lib/fonts.ts) on <html>. */
+  --font-sans:
+    var(--font-inter), Inter, system-ui, Segoe UI, Roboto, Segoe UI Emoji,
+    Apple Color Emoji, Noto Color Emoji, sans-serif;
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, SFMono-Regular, Roboto Mono, Menlo,
+    monospace;
+
+  --text-display: 1.75rem;
+  --text-display--line-height: 2rem;
+  --text-display--letter-spacing: -0.022em;
+  --text-display--font-weight: 600;
+  --text-title: 1.25rem;
+  --text-title--line-height: 1.625rem;
+  --text-title--letter-spacing: -0.017em;
+  --text-title--font-weight: 600;
+  --text-headline: 1rem;
+  --text-headline--line-height: 1.375rem;
+  --text-headline--letter-spacing: -0.011em;
+  --text-headline--font-weight: 600;
+  --text-body: 0.9375rem;
+  --text-body--line-height: 1.375rem;
+  --text-body--letter-spacing: -0.006em;
+  --text-callout: 0.8125rem;
+  --text-callout--line-height: 1.125rem;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1rem;
+  --text-caption--letter-spacing: 0.01em;
+  --text-code: 0.78125rem;
+  --text-code--line-height: 1.125rem;
+
+  --radius-chip: 6px;
+  --radius-ctl: 10px;
+  --radius-card: 14px;
+  --radius-sheet: 20px;
+  --radius-dock: 28px;
+
+  --shadow-e3: 0 8px 32px rgb(0 0 0 / 0.45), 0 1px 0 rgb(255 255 255 / 0.04) inset;
+  --shadow-e4: 0 -12px 48px rgb(0 0 0 / 0.6);
+
+  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
+
+  --transition-duration-press: 80ms;
+  --transition-duration-fast: 140ms;
+  --transition-duration-base: 220ms;
+  --transition-duration-medium: 320ms;
+  --transition-duration-sheet: 480ms;
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
 
 /*
  * Design tokens: docs/design/VISUAL-OVERHAUL.md §2 and §3. Dark only.
@@ -36,18 +134,12 @@
   --glass-blur: blur(20px) saturate(140%);
   --scrim: rgb(0 0 0 / 0.55);
 
-  --shadow-e3: 0 8px 32px rgb(0 0 0 / 0.45), 0 1px 0 rgb(255 255 255 / 0.04) inset;
-  --shadow-e4: 0 -12px 48px rgb(0 0 0 / 0.6);
 
   --dur-press: 80ms;
   --dur-fast: 140ms;
   --dur-base: 220ms;
   --dur-medium: 320ms;
   --dur-sheet: 480ms;
-  --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
-  --ease-move: cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
 
   --ui-scale: 1;
   font-size: calc(16px * var(--ui-scale));
@@ -486,7 +578,7 @@ body {
 }
 
 .chat-md [data-streamdown="inline-code"] {
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
   font-size: 0.86em;
   padding: 0.1em 0.38em;
   border-radius: 6px;
@@ -529,7 +621,7 @@ body {
 .chat-md [data-streamdown="code-block-body"],
 .chat-md [data-streamdown="code-block"] pre {
   overflow-x: auto;
-  font-family: var(--font-mono), ui-monospace, monospace;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
   font-size: 12.5px;
   line-height: 1.55;
   background: transparent !important;

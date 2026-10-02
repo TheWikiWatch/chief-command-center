@@ -110,9 +110,9 @@ export function ChatHeader({
             </div>
           ) : null)}
       </div>
-      <div className="min-w-[3.25rem] flex-1 sm:basis-auto">
+      <div className="min-w-13 flex-1 sm:basis-auto">
         <div className="flex items-center gap-2">
-          <h1 className="min-w-[2.75rem] truncate text-headline text-fg">{name}</h1>
+          <h1 className="min-w-11 truncate text-headline text-fg">{name}</h1>
           {/* DeepSeek's peak/off-peak pricing only matters when the chief runs on DeepSeek. */}
           {chief?.provider === "deepseek" ? <DeepseekChip peakOnly /> : null}
         </div>
@@ -130,7 +130,7 @@ export function ChatHeader({
           </motion.p>
         </AnimatePresence>
       </div>
-      {switcher ? <div className="flex min-w-[4.75rem] shrink items-center">{switcher}</div> : null}
+      {switcher ? <div className="flex min-w-19 shrink items-center">{switcher}</div> : null}
       <AnimatePresence initial={false}>
         {speakingish || mood === "preparing" ? (
           <motion.div
@@ -143,7 +143,7 @@ export function ChatHeader({
             {mood !== "preparing" ? (
             <button
               type="button"
-              className="speak-pause-btn press flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-full border border-line-2 bg-white/[0.04] px-2.5 text-callout text-fg-2 hover:text-fg"
+              className="speak-pause-btn press flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-full border border-line-2 bg-white/4 px-2.5 text-callout text-fg-2 hover:text-fg"
               aria-label={mood === "paused" ? "Resume speaking" : "Pause speaking"}
               aria-pressed={mood === "paused"}
               onClick={onPauseToggle}
@@ -169,7 +169,7 @@ export function ChatHeader({
           type="button"
           aria-label="Voice mode"
           title="Voice mode"
-          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg"
+          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
           onClick={onVoiceMode}
         >
           <AudioLinesIcon size={19} />

@@ -97,7 +97,7 @@ function VideoCard({ a }: { a: ChatAttachment }) {
               key="play"
               type="button"
               aria-label={`Play ${a.name}`}
-              className="absolute inset-0 flex items-center justify-center bg-gradient-to-t from-black/50 via-transparent to-transparent"
+              className="absolute inset-0 flex items-center justify-center bg-linear-to-t from-black/50 via-transparent to-transparent"
               exit={{ opacity: 0, transition: { duration: 0.18 } }}
               onClick={() => {
                 setPlaying(true);
@@ -109,7 +109,7 @@ function VideoCard({ a }: { a: ChatAttachment }) {
                 whileHover={{ scale: 1.06 }}
                 whileTap={{ scale: 0.94 }}
               >
-                <PlayIcon size={24} className="translate-x-[1px] fill-current" />
+                <PlayIcon size={24} className="translate-x-px fill-current" />
               </motion.span>
               {length ? (
                 <span className="absolute bottom-2 right-2 rounded-chip bg-black/60 px-1.5 py-0.5 font-mono text-[11px] tabular text-white">
@@ -122,7 +122,7 @@ function VideoCard({ a }: { a: ChatAttachment }) {
       </div>
       <div className="flex items-center justify-between gap-2 px-3 py-2 text-caption text-fg-3">
         <span className="truncate">{a.name}</span>
-        <a href={src} className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-fg-2 hover:bg-white/[0.06] hover:text-fg">
+        <a href={src} className="flex shrink-0 items-center gap-1 rounded-chip px-1.5 py-1 text-fg-2 hover:bg-white/6 hover:text-fg">
           <HardDriveDownloadIcon size={14} />
           Full quality
         </a>
@@ -172,7 +172,7 @@ function AudioCard({ a }: { a: ChatAttachment }) {
           else el.pause();
         }}
       >
-        {playing ? <PauseIcon size={17} className="fill-current" /> : <PlayIcon size={17} className="translate-x-[1px] fill-current" />}
+        {playing ? <PauseIcon size={17} className="fill-current" /> : <PlayIcon size={17} className="translate-x-px fill-current" />}
       </button>
       <div className="min-w-0 flex-1">
         <div className="flex h-7 items-center gap-[2px]" aria-hidden="true">
@@ -203,7 +203,7 @@ function FileChip({ a }: { a: ChatAttachment }) {
       download={a.name}
       className="press mt-2 flex items-center gap-3 rounded-card border border-line-2 bg-card px-3 py-2.5 hover:border-line-3"
     >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl bg-white/[0.06] text-fg-2">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl bg-white/6 text-fg-2">
         <Icon size={18} />
       </span>
       <span className="min-w-0 flex-1">
@@ -255,7 +255,7 @@ function Lightbox({
       {item ? (
         <motion.div
           key="lightbox"
-          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          className="fixed inset-0 z-80 flex items-center justify-center p-4"
           role="dialog"
           aria-modal="true"
           aria-label={item.name}

@@ -204,7 +204,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
                   value={brainTarget}
                   onChange={(e) => setBrainTarget(e.target.value)}
                   spellCheck={false}
-                  className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-none focus:border-line-3"
+                  className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden focus:border-line-3"
                 />
                 <span className="mt-1 block text-caption text-fg-3">An empty or new folder, or your current Second Brain (it is backed up first). Nothing is merged.</span>
               </label>
@@ -232,7 +232,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
             onKeyDown={(e) => {
               if (e.key === "Enter" && passphrase) void open(stage.file, passphrase);
             }}
-            className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-none focus:border-line-3"
+            className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden focus:border-line-3"
           />
         </label>
         {error ? <Line tone="error">{error}</Line> : null}
@@ -255,7 +255,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
             onChange={(e) => setFile(e.target.value)}
             spellCheck={false}
             placeholder="D:\Backups\Chief backup 2026-09-30 101500.chiefbackup"
-            className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+            className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
           />
           {d?.pickFile ? (
             <button
@@ -284,7 +284,7 @@ function Section({ title, onBack, onClose, children }: { title: string; onBack?:
     <section className="space-y-3">
       <div className="flex items-center gap-2">
         {onBack ? (
-          <button type="button" aria-label="Back" onClick={onBack} className="press -ml-1 grid size-9 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg">
+          <button type="button" aria-label="Back" onClick={onBack} className="press -ml-1 grid size-9 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg">
             <ArrowLeftIcon className="size-4" />
           </button>
         ) : null}

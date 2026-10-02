@@ -307,7 +307,7 @@ function Browser({
             onChange={(e) => onQuery(e.target.value)}
             placeholder="Search the vault"
             aria-label="Search the vault"
-            className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-3"
+            className="min-w-0 flex-1 bg-transparent text-fg outline-hidden placeholder:text-fg-3"
           />
           {query ? (
             <button type="button" aria-label="Clear search" className="press -mr-2 grid size-9 place-items-center rounded-full text-fg-3 hover:text-fg" onClick={() => onQuery("")}>
@@ -390,7 +390,7 @@ function Crumb({ label, icon, active, onClick }: { label: string; icon?: ReactNo
       className={`press flex min-h-9 shrink-0 items-center gap-1.5 rounded-full px-2 ${active ? "font-medium text-fg" : "text-fg-3 hover:text-fg-2"}`}
     >
       {icon}
-      <span className="max-w-[12rem] truncate">{label}</span>
+      <span className="max-w-48 truncate">{label}</span>
     </button>
   );
 }
@@ -418,7 +418,7 @@ function Row({
         active ? "bg-white/[0.07]" : "hover:bg-white/[0.035]"
       }`}
     >
-      <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/[0.045]">{icon}</span>
+      <span className="grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/4.5">{icon}</span>
       <span className="min-w-0 flex-1">
         <span className={`block truncate text-body ${active ? "font-medium text-fg" : "text-fg"}`}>{title}</span>
         {meta ? <span className="block truncate text-caption text-fg-3">{meta}</span> : null}
@@ -457,7 +457,7 @@ function SearchResults({
             onClick={() => onOpen({ name: h.name, path: h.path, dir: false, kind: h.kind, mtime: 0 })}
             className={`press flex w-full items-start gap-3 rounded-ctl px-2.5 py-2 text-left ${h.path === openPath ? "bg-white/[0.07]" : "hover:bg-white/[0.035]"}`}
           >
-            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/[0.045]">
+            <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-[9px] bg-white/4.5">
               <KindIcon kind={h.kind} />
             </span>
             <span className="min-w-0 flex-1">
@@ -523,7 +523,7 @@ function EmptyReader({ home, recents, onOpen }: { home: string; recents: Recent[
   return (
     <div className="grid h-full place-items-center p-8">
       <div className="max-w-sm text-center">
-        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-white/[0.05] text-fg-2">
+        <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-white/5 text-fg-2">
           <BookOpenIcon size={26} />
         </span>
         <h2 className="mt-4 text-title text-fg">Your Second Brain</h2>
@@ -567,7 +567,7 @@ function Reader({
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-1 border-b border-line px-2 py-1.5">
         {canBack ? (
-          <button type="button" aria-label="Back" className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg" onClick={onBack}>
+          <button type="button" aria-label="Back" className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg" onClick={onBack}>
             <ChevronLeftIcon size={20} />
           </button>
         ) : (
@@ -583,7 +583,7 @@ function Reader({
           type="button"
           aria-label={copied ? "Path copied" : "Copy path"}
           title="Copy the full path"
-          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg"
+          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
           onClick={() => {
             void navigator.clipboard?.writeText(absoluteVaultPath(open.path)).then(() => {
               setCopied(true);
@@ -599,7 +599,7 @@ function Reader({
           rel="noreferrer"
           aria-label="Open in a new tab"
           title="Open in a new tab"
-          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg"
+          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
         >
           <ExternalLinkIcon size={17} />
         </a>
@@ -675,9 +675,9 @@ function NoteView({ path, heading, fontPx, onFollow }: { path: string; heading?:
   if (!parsed) {
     return (
       <div className="space-y-3 p-5" role="status" aria-label="Loading note">
-        <div className="h-7 w-2/3 rounded-ctl bg-white/[0.05]" />
+        <div className="h-7 w-2/3 rounded-ctl bg-white/5" />
         {[92, 100, 84, 96, 70].map((w, i) => (
-          <div key={i} className="h-4 rounded bg-white/[0.035]" style={{ width: `${w}%` }} />
+          <div key={i} className="h-4 rounded-sm bg-white/[0.035]" style={{ width: `${w}%` }} />
         ))}
       </div>
     );
@@ -686,7 +686,7 @@ function NoteView({ path, heading, fontPx, onFollow }: { path: string; heading?:
     <motion.article
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0, transition: SPRING.gentle }}
-      className="mx-auto max-w-[46rem] px-5 pb-28 pt-4 md:pb-12"
+      className="mx-auto max-w-184 px-5 pb-28 pt-4 md:pb-12"
       style={{ ["--chat-fs" as string]: `${fontPx}px`, fontSize: fontPx }}
       onClickCapture={(e) => {
         const a = (e.target as Element | null)?.closest?.("a");
@@ -770,13 +770,13 @@ function Properties({ props, onFollow }: { props: [string, string | string[]][];
               {Array.isArray(value) ? (
                 <span className="flex flex-wrap gap-1">
                   {value.map((v) => (
-                    <span key={v} className="rounded-chip bg-white/[0.06] px-1.5 py-0.5 text-caption text-fg-2">
+                    <span key={v} className="rounded-chip bg-white/6 px-1.5 py-0.5 text-caption text-fg-2">
                       <PropText text={v} onFollow={onFollow} />
                     </span>
                   ))}
                 </span>
               ) : (
-                <span className="break-words">
+                <span className="wrap-break-word">
                   <PropText text={value} onFollow={onFollow} />
                 </span>
               )}
@@ -833,10 +833,10 @@ function FileCard({ name, url, note, primary }: { name: string; url: string; not
   return (
     <div className="grid min-h-full place-items-center p-6">
       <div className="w-full max-w-sm rounded-card border border-line bg-card p-5 text-center">
-        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white/[0.05] text-fg-2">
+        <span className="mx-auto grid size-12 place-items-center rounded-2xl bg-white/5 text-fg-2">
           <FileIcon size={22} />
         </span>
-        <p className="mt-3 break-words text-body font-medium text-fg">{name}</p>
+        <p className="mt-3 wrap-break-word text-body font-medium text-fg">{name}</p>
         <p className="mt-1 text-callout text-fg-3">{note}</p>
         <div className="mt-4 flex justify-center gap-2">
           {primary ? (

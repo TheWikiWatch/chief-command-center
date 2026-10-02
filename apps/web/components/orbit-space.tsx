@@ -11,14 +11,14 @@ export function OrbitSpace({ reduced }: { reduced: boolean }) {
 
   if (reduced) {
     return (
-      <div className="pointer-events-none absolute inset-0 [&_*]:pointer-events-none" aria-hidden>
+      <div className="pointer-events-none absolute inset-0 **:pointer-events-none" aria-hidden>
         <div className="orbit-stars-static absolute inset-0 opacity-70" />
       </div>
     );
   }
 
   return (
-    <div className="pointer-events-none absolute inset-0 [&_*]:pointer-events-none" aria-hidden>
+    <div className="pointer-events-none absolute inset-0 **:pointer-events-none" aria-hidden>
       <div className="absolute inset-0 opacity-90">
         <GodRays
           colorBack="#09090b"

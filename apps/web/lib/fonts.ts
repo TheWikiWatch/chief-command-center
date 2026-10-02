@@ -9,7 +9,7 @@ import localFont from "next/font/local";
 /** Inter Variable with optical sizing: large sizes get the Display cut automatically. Latin only (73KB), preloaded. */
 export const sans = localFont({
   src: "../app/fonts/InterVariable-latin-opsz.woff2",
-  variable: "--font-sans",
+  variable: "--font-inter",
   weight: "100 900",
   display: "swap",
   preload: true,
@@ -25,7 +25,7 @@ export const sans = localFont({
 /** Geist Mono for code, commands and counters. Not preloaded: fetched only when monospace text is on screen. */
 export const mono = localFont({
   src: "../app/fonts/GeistMono-Variable.woff2",
-  variable: "--font-mono",
+  variable: "--font-geist-mono",
   weight: "100 900",
   display: "swap",
   preload: false,

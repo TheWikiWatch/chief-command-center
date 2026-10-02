@@ -51,14 +51,14 @@ export function TeamButton({ phone, people = [], onAskChief }: { phone: boolean;
   return (
     <>
       {phone ? (
-        <button type="button" aria-label="Team & Routines" title="Team & Routines" onClick={() => setOpen(true)} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg">
+        <button type="button" aria-label="Team & Routines" title="Team & Routines" onClick={() => setOpen(true)} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
           <UsersIcon size={19} />
         </button>
       ) : (
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="press flex min-h-11 items-center gap-2 rounded-full border border-line-2 bg-pane/90 px-4 text-callout font-medium text-fg shadow-e3 backdrop-blur hover:border-line-3"
+          className="press flex min-h-11 items-center gap-2 rounded-full border border-line-2 bg-pane/90 px-4 text-callout font-medium text-fg shadow-e3 backdrop-blur-sm hover:border-line-3"
         >
           <UsersIcon size={17} />
           Team &amp; Routines
@@ -157,7 +157,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
           value={need}
           onChange={(e) => setNeed(e.target.value)}
           placeholder="e.g. Keep an eye on my supplier invoices and flag anything odd"
-          className="w-full resize-none rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+          className="w-full resize-none rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
         />
         <button
           type="button"
@@ -200,7 +200,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
                   </Small>
                 </div>
                 {confirmRemove === a.id ? (
-                  <div className="space-y-2 rounded-card border border-danger/30 bg-danger/[0.06] px-3 py-2">
+                  <div className="space-y-2 rounded-card border border-danger/30 bg-danger/6 px-3 py-2">
                     <p className="text-callout text-fg">Remove {a.title}&apos;s archive for good? Its identity, memory and history can&apos;t be brought back after this.</p>
                     <div className="flex gap-2">
                       <Small danger disabled={!!busyId} onClick={() => void act(a.id, () => fleetApi.removeArchive(a.id), `${a.title}'s archive was removed.`)}>

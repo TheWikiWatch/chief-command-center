@@ -180,7 +180,7 @@ export function SecondBrainSetup({
                 role="radio"
                 aria-checked={on}
                 onClick={() => setFormat(f)}
-                className={`press flex flex-col rounded-card border px-4 py-3.5 text-left transition-colors ${on ? "border-fg/60 bg-white/[0.06]" : "border-line hover:border-line-2"}`}
+                className={`press flex flex-col rounded-card border px-4 py-3.5 text-left transition-colors ${on ? "border-fg/60 bg-white/6" : "border-line hover:border-line-2"}`}
               >
                 <span className="flex items-center gap-2.5">
                   <span className={`grid size-8 shrink-0 place-items-center rounded-full ${on ? "bg-fg text-canvas" : "bg-well text-fg-2"}`}>
@@ -259,7 +259,7 @@ export function SecondBrainSetup({
             }}
             spellCheck={false}
             placeholder={source === "new" ? "C:\\Users\\you\\Documents\\Second Brain" : "D:\\Notes"}
-            className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+            className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
           />
           {pick ? (
             <button
@@ -292,7 +292,7 @@ export function SecondBrainSetup({
 
 function Choice({ icon, title, body, onClick }: { icon: ReactNode; title: string; body: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="press flex w-full items-start gap-3 rounded-card border border-line px-4 py-3.5 text-left hover:border-line-2 hover:bg-white/[0.03]">
+    <button type="button" onClick={onClick} className="press flex w-full items-start gap-3 rounded-card border border-line px-4 py-3.5 text-left hover:border-line-2 hover:bg-white/3">
       <span className="mt-0.5 grid size-8 shrink-0 place-items-center rounded-full bg-well text-fg-2">{icon}</span>
       <span className="min-w-0">
         <span className="block text-body font-medium text-fg">{title}</span>
@@ -357,7 +357,7 @@ function Review({
     <Panel heading={heading} title={title} subtitle={summary} onBack={onBack}>
       <p className="break-all rounded-ctl border border-line bg-canvas px-3 py-2 font-mono text-code text-fg-2">{found.path}</p>
       {mismatch ? (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line-2 bg-white/[0.04] px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-card border border-line-2 bg-white/4 px-4 py-3">
           <p className="min-w-0 flex-1 text-callout text-fg-2">
             This folder already looks like an <span className="font-medium text-fg">{FORMAT_INFO[detected].label}</span> Second Brain.
           </p>
@@ -390,7 +390,7 @@ function Review({
                 role="radio"
                 aria-checked={mode === choice}
                 onClick={() => setMode(choice)}
-                className={`press block w-full rounded-card border px-4 py-3 text-left ${mode === choice ? "border-line-3 bg-white/[0.05]" : "border-line hover:border-line-2"}`}
+                className={`press block w-full rounded-card border px-4 py-3 text-left ${mode === choice ? "border-line-3 bg-white/5" : "border-line hover:border-line-2"}`}
               >
                 <span className="flex items-center gap-2">
                   <span className={`grid size-4 shrink-0 place-items-center rounded-full border ${mode === choice ? "border-fg" : "border-line-3"}`}>
@@ -584,15 +584,15 @@ function Panel({
     <section className="space-y-4">
       <div className="flex items-start gap-2">
         {onBack ? (
-          <button type="button" onClick={onBack} aria-label="Back" className="press -ml-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg">
+          <button type="button" onClick={onBack} aria-label="Back" className="press -ml-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg">
             <ArrowLeftIcon className="size-4" />
           </button>
         ) : null}
         <div className="min-w-0">
-          <h2 ref={heading} tabIndex={-1} className="text-title text-fg outline-none">
+          <h2 ref={heading} tabIndex={-1} className="text-title text-fg outline-hidden">
             {title}
           </h2>
-          {subtitle ? <p className="mt-1 break-words text-callout text-fg-3">{subtitle}</p> : null}
+          {subtitle ? <p className="mt-1 wrap-break-word text-callout text-fg-3">{subtitle}</p> : null}
         </div>
       </div>
       {children}

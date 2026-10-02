@@ -176,7 +176,7 @@ function RoutineList({
   onToggle: (r: TeamRoutine, on: boolean) => void;
 }) {
   return (
-    <ul className="divide-y divide-[color:var(--line-1)] overflow-hidden rounded-card border border-line bg-card">
+    <ul className="divide-y divide-(--line-1) overflow-hidden rounded-card border border-line bg-card">
       {items.map((r) => {
         const person = personFor(r.profile);
         const result = lastResult(r);
@@ -184,7 +184,7 @@ function RoutineList({
         const label = routineLabel(r);
         return (
           <li key={`${r.profile}/${r.id}`} className={`flex items-center gap-3 pr-3 ${busy === r.id ? "opacity-60" : ""}`}>
-            <button type="button" onClick={() => onOpen(r)} className="press flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left hover:bg-white/[0.03]">
+            <button type="button" onClick={() => onOpen(r)} className="press flex min-w-0 flex-1 items-center gap-3 py-3 pl-3 text-left hover:bg-white/3">
               <span className="shrink-0" title={`Runs as ${r.bot}`}>
                 {person ? <BotFace {...faceProps(person)} size={30} still /> : <span aria-hidden className="grid size-[30px] place-items-center rounded-full bg-well text-caption text-fg-3">{r.bot.slice(0, 1)}</span>}
               </span>
@@ -323,7 +323,7 @@ function RoutineEditor({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-2">
-        <button type="button" onClick={onBack} aria-label="Back to routines" className="press -ml-2 grid size-10 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg">
+        <button type="button" onClick={onBack} aria-label="Back to routines" className="press -ml-2 grid size-10 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
           <ChevronLeftIcon size={18} />
         </button>
         <div className="min-w-0 flex-1">
@@ -343,7 +343,7 @@ function RoutineEditor({
         </dl>
       ) : null}
       {routine?.lastError && result?.bad ? (
-        <p role="alert" className="rounded-card border border-danger/30 bg-danger/[0.06] px-3 py-2 text-caption text-fg-2">
+        <p role="alert" className="rounded-card border border-danger/30 bg-danger/6 px-3 py-2 text-caption text-fg-2">
           {routine.lastError.replace(/^\[[a-z_]+\]\s*/, "")}
         </p>
       ) : null}
@@ -353,7 +353,7 @@ function RoutineEditor({
             <ChevronRightIcon size={14} className="transition-transform group-open:rotate-90" />
             Latest report
           </summary>
-          <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words border-t border-line px-3 py-2 font-sans text-callout text-fg-2">{routine.lastOutput}</pre>
+          <pre className="max-h-64 overflow-auto whitespace-pre-wrap wrap-break-word border-t border-line px-3 py-2 font-sans text-callout text-fg-2">{routine.lastOutput}</pre>
         </details>
       ) : null}
 
@@ -365,7 +365,7 @@ function RoutineEditor({
           maxLength={60}
           onChange={(e) => setName(e.target.value)}
           placeholder="Morning brief"
-          className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none placeholder:text-fg-3 focus:border-line-3 disabled:opacity-70"
+          className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3 disabled:opacity-70"
         />
       </Labeled>
 
@@ -378,7 +378,7 @@ function RoutineEditor({
           maxLength={4000}
           onChange={(e) => setPrompt(e.target.value)}
           placeholder="Summarize what's due today from my tasks and calendar, and flag anything overdue."
-          className="w-full resize-y rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-none placeholder:text-fg-3 focus:border-line-3 disabled:opacity-70"
+          className="w-full resize-y rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3 disabled:opacity-70"
         />
       </Labeled>
 
@@ -414,7 +414,7 @@ function RoutineEditor({
                 type="time"
                 value={schedule.time || ""}
                 onChange={(e) => setSchedule((s) => ({ ...s, time: e.target.value }))}
-                className="min-h-11 w-[8.5rem] rounded-ctl border border-line-2 bg-canvas px-2 text-body text-fg outline-none focus:border-line-3"
+                className="min-h-11 w-34 rounded-ctl border border-line-2 bg-canvas px-2 text-body text-fg outline-hidden focus:border-line-3"
               />
             </>
           ) : null}
@@ -430,7 +430,7 @@ function RoutineEditor({
                 max={24}
                 value={schedule.every ?? ""}
                 onChange={(e) => setSchedule((s) => ({ ...s, every: Math.max(1, Math.min(24, Number(e.target.value) || 1)) }))}
-                className="min-h-11 w-20 rounded-ctl border border-line-2 bg-canvas px-2 text-body tabular text-fg outline-none focus:border-line-3"
+                className="min-h-11 w-20 rounded-ctl border border-line-2 bg-canvas px-2 text-body tabular text-fg outline-hidden focus:border-line-3"
               />
               <span className="text-callout text-fg-2">{schedule.every === 1 ? "hour" : "hours"}</span>
             </>
@@ -446,7 +446,7 @@ function RoutineEditor({
                 onChange={(e) => setSchedule((s) => ({ ...s, cron: e.target.value }))}
                 placeholder="30 7 * * 1-5"
                 spellCheck={false}
-                className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+                className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
               />
               <p className="mt-1 px-1 text-caption text-fg-3">A cron line (minute hour day month weekday), or an interval like &quot;every 2h&quot;.</p>
             </div>
@@ -472,7 +472,7 @@ function RoutineEditor({
                   aria-checked={on}
                   onClick={() => setProfile(b.id)}
                   className={`press flex min-h-11 items-center gap-2 rounded-full border py-1 pl-1.5 pr-3.5 text-callout transition-colors ${
-                    on ? "border-accent/70 bg-accent/[0.12] text-fg" : "border-line-2 text-fg-2 hover:text-fg"
+                    on ? "border-accent/70 bg-accent/12 text-fg" : "border-line-2 text-fg-2 hover:text-fg"
                   }`}
                 >
                   {p ? <BotFace {...faceProps(p)} size={26} still /> : <span aria-hidden className="grid size-[26px] place-items-center rounded-full bg-well text-caption">{b.name.slice(0, 1)}</span>}
@@ -497,7 +497,7 @@ function RoutineEditor({
             id={`${ids}-thread`}
             value={thread}
             onChange={(e) => setThread(e.target.value)}
-            className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none focus:border-line-3"
+            className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3"
           >
             {routine?.silent ? <option value="">Nowhere</option> : null}
             {threadOptions.map((t) => (
@@ -544,14 +544,14 @@ function RoutineEditor({
             type="button"
             disabled={!!saving}
             onClick={() => setConfirmDelete((v) => !v)}
-            className="press ml-auto min-h-11 rounded-full px-3 text-callout font-medium text-danger hover:bg-danger/[0.08] disabled:opacity-50"
+            className="press ml-auto min-h-11 rounded-full px-3 text-callout font-medium text-danger hover:bg-danger/8 disabled:opacity-50"
           >
             Delete…
           </button>
         ) : null}
       </div>
       {routine && confirmDelete ? (
-        <div className="space-y-2 rounded-card border border-danger/30 bg-danger/[0.06] px-3 py-3">
+        <div className="space-y-2 rounded-card border border-danger/30 bg-danger/6 px-3 py-3">
           <p className="text-callout text-fg">Delete {routine.name}? It stops running; earlier reports stay in the chat.</p>
           <div className="flex gap-2">
             <button

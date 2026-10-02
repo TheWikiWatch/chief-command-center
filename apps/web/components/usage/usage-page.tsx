@@ -156,7 +156,7 @@ function DailyChart({ days }: { days: UsageDay[] }) {
         </div>
         <div className="relative min-w-0 flex-1" style={{ height: H }} onMouseLeave={() => setHover(null)}>
           {ticks.map((v, i) => (
-            <span key={v} className="absolute inset-x-0 border-t border-[color:var(--line-1)]" style={{ top: (i * H) / 2 }} />
+            <span key={v} className="absolute inset-x-0 border-t border-(--line-1)" style={{ top: (i * H) / 2 }} />
           ))}
           <div className="absolute inset-0 flex items-end gap-[2px]">
             {days.map((d, i) => (
@@ -224,7 +224,7 @@ function Breakdown({
   const used = rows.filter((r) => r.tokens > 0 || r.cost > 0);
   if (!used.length) return <p className="text-callout text-fg-3">{empty}</p>;
   return (
-    <ul className="divide-y divide-[color:var(--line-1)] overflow-hidden rounded-card border border-line bg-card">
+    <ul className="divide-y divide-(--line-1) overflow-hidden rounded-card border border-line bg-card">
       {used.map((r) => {
         const share = total > 0 ? r.cost / total : 0;
         return (
@@ -237,7 +237,7 @@ function Breakdown({
               <span className="text-callout tabular text-fg">{money(r.cost)}</span>
             </div>
             <div className="mt-1.5 flex items-center gap-3">
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]" aria-hidden="true">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/6" aria-hidden="true">
                 <div className="h-full rounded-full bg-data" style={{ width: `${Math.max(share > 0 ? 2 : 0, share * 100)}%` }} />
               </div>
               <span className="w-40 shrink-0 text-right text-caption tabular text-fg-3">
@@ -289,7 +289,7 @@ function Budget({ summary, onSaved }: { summary: UsageSummary; onSaved: () => vo
                 {b.state === "over" ? "Over budget" : b.state === "warn" ? "Near the budget" : `${Math.round(ratio * 100)}%`}
               </span>
             </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(ratio, 1) * 100)} aria-label="Budget used">
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-white/6" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(Math.min(ratio, 1) * 100)} aria-label="Budget used">
               <div className={`h-full rounded-full ${tone}`} style={{ width: `${Math.min(ratio, 1) * 100}%` }} />
             </div>
           </div>
@@ -315,7 +315,7 @@ function Budget({ summary, onSaved }: { summary: UsageSummary; onSaved: () => vo
               value={draft}
               onChange={(e) => setDraft(e.target.value.replace(/[^\d.]/g, ""))}
               placeholder="20"
-              className="w-24 bg-transparent px-1.5 text-callout tabular text-fg outline-none"
+              className="w-24 bg-transparent px-1.5 text-callout tabular text-fg outline-hidden"
             />
             <span className="pr-3 text-caption text-fg-3">a month</span>
           </div>

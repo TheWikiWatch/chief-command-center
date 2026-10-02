@@ -247,7 +247,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
   const vaultButton = (
     <button
       type="button"
-      className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg"
+      className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
       aria-label={builtin ? "Second Brain folder" : "Vault settings"}
       onClick={openFolderSettings}
     >
@@ -295,7 +295,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Find a task"
-                className="min-w-0 flex-1 bg-transparent text-fg outline-none placeholder:text-fg-3"
+                className="min-w-0 flex-1 bg-transparent text-fg outline-hidden placeholder:text-fg-3"
               />
               {query ? (
                 <button type="button" aria-label="Clear search" className="press -mr-2 flex h-9 w-9 items-center justify-center rounded-full text-fg-3 hover:text-fg" onClick={() => setQuery("")}>
@@ -498,7 +498,7 @@ function StatTiles({ open, overdue, waiting, animate: run }: { open?: number; ov
 }
 
 function Banner({ tone, children }: { tone: "danger" | "warn" | "neutral"; children: React.ReactNode }) {
-  const cls = tone === "danger" ? "border-danger/30 bg-danger/[0.08] text-fg" : tone === "warn" ? "border-warn/30 bg-warn/[0.08] text-fg" : "border-line bg-card text-fg-2";
+  const cls = tone === "danger" ? "border-danger/30 bg-danger/8 text-fg" : tone === "warn" ? "border-warn/30 bg-warn/8 text-fg" : "border-line bg-card text-fg-2";
   const Icon = tone === "neutral" ? ClockIcon : TriangleAlertIcon;
   return (
     <p className={`mb-3 flex items-start gap-2.5 rounded-card border px-3.5 py-2.5 text-callout ${cls}`}>
@@ -550,7 +550,7 @@ function TaskRow({ item, rank, selected, onClick }: { item: TodayItem; rank: num
   return (
     <button
       type="button"
-      className={`press grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2 px-3.5 py-3 text-left hover:bg-white/[0.03] ${selected ? "bg-white/[0.05]" : ""}`}
+      className={`press grid w-full grid-cols-[1.75rem_minmax(0,1fr)] items-start gap-2 px-3.5 py-3 text-left hover:bg-white/3 ${selected ? "bg-white/5" : ""}`}
       onClick={onClick}
     >
       <span className="pt-px font-mono text-callout tabular text-fg-3">{String(rank).padStart(2, "0")}</span>
@@ -642,7 +642,7 @@ function AreaDrill({
                     <li key={card.id} className="border-b border-line last:border-b-0">
                       <button
                         type="button"
-                        className={`press block w-full px-3.5 py-3 text-left hover:bg-white/[0.03] ${selectedId === card.id ? "bg-white/[0.05]" : ""}`}
+                        className={`press block w-full px-3.5 py-3 text-left hover:bg-white/3 ${selectedId === card.id ? "bg-white/5" : ""}`}
                         onClick={() => onTask(card)}
                       >
                         <span className="block text-body font-medium text-fg">{card.text}</span>
@@ -741,7 +741,7 @@ function IntentBody({
     }
   }
 
-  const field = "mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-none placeholder:text-fg-3 focus:border-line-3";
+  const field = "mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3";
   return (
     <div className="px-4 pb-5">
       <div className="mb-4 flex items-start gap-3">
@@ -754,7 +754,7 @@ function IntentBody({
         </div>
         <button
           type="button"
-          className="press -mr-1 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-white/[0.06] hover:text-fg disabled:opacity-40"
+          className="press -mr-1 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-white/6 hover:text-fg disabled:opacity-40"
           disabled={busy}
           onClick={onClose}
         >
@@ -787,7 +787,7 @@ function IntentBody({
               value={due}
               min={new Date().toLocaleDateString("en-CA")}
               onChange={(e) => setDue(e.target.value)}
-              className={`${field} [color-scheme:dark]`}
+              className={`${field} scheme-dark`}
             />
           </motion.label>
         ) : null}
@@ -874,7 +874,7 @@ function VaultBody({ onSaved }: { onSaved: () => void }) {
           value={vaultPath}
           onChange={(e) => setVaultPath(e.target.value)}
           placeholder="D:\Notes\Second Brain"
-          className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+          className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
         />
       </label>
       <button

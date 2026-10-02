@@ -70,7 +70,7 @@ export function QuestionCard({
       exit={{ opacity: 0, transition: { duration: 0.14 } }}
     >
       <div className="w-7 shrink-0 pt-0.5">{chief ? <BotFace {...faceProps(chief)} mood="waiting" size={28} /> : null}</div>
-      <div className="min-w-0 flex-1 rounded-card border border-accent/30 bg-accent/[0.06] px-3.5 py-3">
+      <div className="min-w-0 flex-1 rounded-card border border-accent/30 bg-accent/6 px-3.5 py-3">
         <p className="text-caption font-medium uppercase tracking-wide text-accent-text">{assistant} is asking</p>
         <h3 id={headingId} className="mt-1 text-body font-medium text-fg">
           {question.question}
@@ -94,7 +94,7 @@ export function QuestionCard({
                   }`}
                 >
                   {question.multi ? (
-                    <span className={`grid size-5 shrink-0 place-items-center rounded-[6px] border ${on ? "border-accent bg-accent text-canvas" : "border-line-3"}`}>
+                    <span className={`grid size-5 shrink-0 place-items-center rounded-chip border ${on ? "border-accent bg-accent text-canvas" : "border-line-3"}`}>
                       {on ? <CheckIcon size={14} /> : null}
                     </span>
                   ) : null}
@@ -130,7 +130,7 @@ export function QuestionCard({
                 }
               }}
               placeholder="Your answer"
-              className="w-full resize-none rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+              className="w-full resize-none rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
             />
             <button type="submit" disabled={!text.trim() || !!busy} className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50">
               {busy === "own" ? "Sending…" : "Send answer"}

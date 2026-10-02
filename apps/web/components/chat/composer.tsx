@@ -180,11 +180,11 @@ export function Composer({
       </AnimatePresence>
 
       <div className="relative flex items-end gap-2">
-        <div className="glass relative flex transition-[border-color] duration-fast focus-within:!border-[rgb(255_255_255/0.26)] min-h-12 min-w-0 flex-1 items-end rounded-[24px] pl-1 pr-1">
+        <div className="glass relative flex transition-[border-color] duration-fast focus-within:border-[rgb(255_255_255/0.26)]! min-h-12 min-w-0 flex-1 items-end rounded-[24px] pl-1 pr-1">
           <div ref={menuBox} className="relative shrink-0 self-end pb-1">
             <button
               type="button"
-              className={`press flex h-10 w-10 items-center justify-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg disabled:opacity-40 ${menu ? "bg-white/[0.08] text-fg" : ""}`}
+              className={`press flex h-10 w-10 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg disabled:opacity-40 ${menu ? "bg-white/8 text-fg" : ""}`}
               aria-label="Add attachment or emoji"
               aria-expanded={menu}
               disabled={!writable || busy}
@@ -217,7 +217,7 @@ export function Composer({
                       type="button"
                       role="menuitem"
                       aria-label={label}
-                      className="flex min-h-11 w-full items-center gap-3 rounded-ctl px-3 text-body text-fg hover:bg-white/[0.06]"
+                      className="flex min-h-11 w-full items-center gap-3 rounded-ctl px-3 text-body text-fg hover:bg-white/6"
                       initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0, transition: { delay: i * 0.03, duration: 0.18 } }}
                       onClick={() => {
@@ -268,7 +268,7 @@ export function Composer({
             title={text ? undefined : hint}
             disabled={!writable || busy}
             rows={1}
-            className="block max-h-[168px] w-full resize-none bg-transparent px-1.5 py-3 leading-6 text-fg outline-none focus-visible:outline-none disabled:opacity-60"
+            className="block max-h-[168px] w-full resize-none bg-transparent px-1.5 py-3 leading-6 text-fg outline-hidden focus-visible:outline-hidden disabled:opacity-60"
           />
           {/* The hint, on the box's own padding, size and line height: one line, shortened with "…" when narrow. */}
           {text ? null : (

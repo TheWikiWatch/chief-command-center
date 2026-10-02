@@ -111,7 +111,7 @@ function SheetBody({
   return (
     <div className={`${position} inset-0`} style={{ zIndex }}>
       <motion.div
-        className="absolute inset-0 bg-[var(--scrim)]"
+        className="absolute inset-0 bg-(--scrim)"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1, transition: { duration: DUR.base, ease: EASE.enter } }}
         exit={{ opacity: 0, transition: { duration: DUR.fast, ease: EASE.exit } }}
@@ -129,10 +129,10 @@ function SheetBody({
         onKeyDown={trapTab}
         className={
           bottom
-            ? `absolute inset-x-0 bottom-0 flex flex-col rounded-t-sheet border-t border-line-2 bg-raised pb-[env(safe-area-inset-bottom)] shadow-e4 outline-none ${tall ? "h-[92%]" : "max-h-[92%]"} ${className}`
+            ? `absolute inset-x-0 bottom-0 flex flex-col rounded-t-sheet border-t border-line-2 bg-raised pb-[env(safe-area-inset-bottom)] shadow-e4 outline-hidden ${tall ? "h-[92%]" : "max-h-[92%]"} ${className}`
             : center
-              ? `absolute inset-0 m-auto flex h-[min(88vh,860px)] w-[min(1000px,calc(100%-48px))] flex-col overflow-hidden rounded-[22px] border border-line-2 bg-raised shadow-e4 outline-none ${className}`
-              : `absolute inset-y-0 right-0 flex ${wide ? "w-[min(540px,100%)]" : "w-[min(440px,100%)]"} flex-col border-l border-line-2 bg-raised shadow-e4 outline-none ${className}`
+              ? `absolute inset-0 m-auto flex h-[min(88vh,860px)] w-[min(1000px,calc(100%-48px))] flex-col overflow-hidden rounded-[22px] border border-line-2 bg-raised shadow-e4 outline-hidden ${className}`
+              : `absolute inset-y-0 right-0 flex ${wide ? "w-[min(540px,100%)]" : "w-[min(440px,100%)]"} flex-col border-l border-line-2 bg-raised shadow-e4 outline-hidden ${className}`
         }
         initial={bottom ? { y: "100%" } : center ? { opacity: 0, scale: 0.97, y: 8 } : { x: 32, opacity: 0 }}
         animate={
@@ -190,7 +190,7 @@ function SheetBody({
               onClick={onClose}
               disabled={closeDisabled}
               aria-label={closeLabel}
-              className="press -mr-1 flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg disabled:opacity-40"
+              className="press -mr-1 flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg disabled:opacity-40"
             >
               <XIcon size={20} />
             </button>

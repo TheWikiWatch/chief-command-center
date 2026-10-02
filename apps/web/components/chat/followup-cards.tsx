@@ -143,7 +143,7 @@ export function FollowupCards({
               role="status"
             >
               <div className="mt-0.5 shrink-0">
-                {bot ? <BotFace {...faceProps(bot)} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-white/[0.06] text-fg-2"><ClockIcon size={17} /></span>}
+                {bot ? <BotFace {...faceProps(bot)} size={34} still /> : <span className="grid size-[34px] place-items-center rounded-full bg-white/6 text-fg-2"><ClockIcon size={17} /></span>}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-callout text-fg">
@@ -183,7 +183,7 @@ export function FollowupCards({
                 type="button"
                 aria-label="Dismiss reminder"
                 onClick={() => removeFollowup(item.id)}
-                className="press -mr-1 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg"
+                className="press -mr-1 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
               >
                 <XIcon size={16} />
               </button>

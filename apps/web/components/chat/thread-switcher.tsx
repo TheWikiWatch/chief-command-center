@@ -138,7 +138,7 @@ export function ThreadSwitcher({
   );
 
   return (
-    <div ref={root} className="relative flex min-w-[4.75rem]">
+    <div ref={root} className="relative flex min-w-19">
       <button
         type="button"
         aria-haspopup="menu"
@@ -148,7 +148,7 @@ export function ThreadSwitcher({
           setOpen((v) => !v);
           load();
         }}
-        className="press flex min-h-8 min-w-[4.75rem] max-w-[11rem] items-center gap-1.5 rounded-full border border-line-2 bg-white/[0.04] py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-[12rem]"
+        className="press flex min-h-8 min-w-19 max-w-44 items-center gap-1.5 rounded-full border border-line-2 bg-white/4 py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-48"
       >
         <span className="truncate">{title}</span>
         {elsewhere ? <Dot kind={elsewhere} /> : null}
@@ -252,14 +252,14 @@ function ThreadMenu({
       </ul>
       {archived.length ? (
         <div className="border-t border-line pt-1">
-          <button type="button" onClick={() => setShowArchived((v) => !v)} className="press flex min-h-9 w-full items-center gap-2 rounded-[10px] px-2 text-caption text-fg-3 hover:text-fg-2">
+          <button type="button" onClick={() => setShowArchived((v) => !v)} className="press flex min-h-9 w-full items-center gap-2 rounded-ctl px-2 text-caption text-fg-3 hover:text-fg-2">
             <ChevronDownIcon size={13} className={showArchived ? "rotate-180" : ""} />
             Archived ({archived.length})
           </button>
           {showArchived ? (
             <ul className="space-y-0.5">
               {archived.map((t) => (
-                <li key={t.id} className="flex items-center gap-2 rounded-[10px] px-2 py-1.5">
+                <li key={t.id} className="flex items-center gap-2 rounded-ctl px-2 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-callout text-fg-3">{t.title}</span>
                   <button type="button" disabled={busy} onClick={() => void run(() => threadsApi.archive(t.id, false))} className="press min-h-8 rounded-full border border-line-2 px-3 text-caption text-fg-2 hover:text-fg">
                     Restore
@@ -322,7 +322,7 @@ function ThreadRow({
           value={title}
           maxLength={60}
           onChange={(e) => setTitle(e.target.value)}
-          className="min-h-9 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-2.5 text-callout text-fg outline-none focus:border-line-3"
+          className="min-h-9 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-2.5 text-callout text-fg outline-hidden focus:border-line-3"
         />
         <button type="submit" disabled={busy} className="press min-h-9 rounded-full bg-fg px-3 text-caption font-semibold text-canvas disabled:opacity-50">
           Save
@@ -331,7 +331,7 @@ function ThreadRow({
     );
   } else if (mode === "fresh") {
     panel = (
-      <div className="mx-2 mb-2 space-y-2 rounded-[10px] border border-line-2 bg-card px-2.5 py-2">
+      <div className="mx-2 mb-2 space-y-2 rounded-ctl border border-line-2 bg-card px-2.5 py-2">
         <p className="text-caption text-fg-2">
           Start fresh? {assistant} begins a new conversation in this thread. This one stays below as history, and memory and the Second Brain carry over.
         </p>
@@ -364,9 +364,9 @@ function ThreadRow({
   }
 
   return (
-    <li className={`rounded-[10px] ${current ? "bg-white/[0.06]" : ""}`}>
+    <li className={`rounded-ctl ${current ? "bg-white/6" : ""}`}>
       <div className="flex items-center gap-1">
-        <button type="button" role="menuitemradio" aria-checked={current} onClick={onPick} className="press flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-[10px] px-2 text-left hover:bg-white/[0.04]">
+        <button type="button" role="menuitemradio" aria-checked={current} onClick={onPick} className="press flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-ctl px-2 text-left hover:bg-white/4">
           <Dot kind={attention} />
           <span className={`min-w-0 flex-1 truncate text-callout ${current ? "font-medium text-fg" : "text-fg-2"}`}>{t.title}</span>
           <span className="shrink-0 text-caption tabular text-fg-3">{attention === "question" ? "needs you" : ago(t.lastActivity)}</span>
@@ -377,7 +377,7 @@ function ThreadRow({
           aria-label={`More for ${t.title}`}
           aria-expanded={mode !== ""}
           onClick={() => setMode((m) => (m ? "" : "actions"))}
-          className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg"
+          className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
         >
           <EllipsisIcon size={16} />
         </button>

@@ -117,7 +117,7 @@ function SoulEditor({ profile, soul, onSaved }: { profile: string; soul: Soul; o
           onChange={(e) => setText(e.target.value)}
           rows={14}
           spellCheck
-          className="mt-1.5 w-full resize-y rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code leading-5 text-fg outline-none focus:border-line-3"
+          className="mt-1.5 w-full resize-y rounded-ctl border border-line-2 bg-canvas px-3 py-2 font-mono text-code leading-5 text-fg outline-hidden focus:border-line-3"
         />
       </label>
       <p className={`text-caption tabular ${over ? "text-warn" : "text-fg-3"}`}>
@@ -293,13 +293,13 @@ function MemoryEditor({
               aria-label={`Entry ${i + 1}`}
               onChange={(e) => update(row.key, { text: e.target.value })}
               rows={Math.min(6, Math.max(1, Math.ceil(row.text.length / 60)))}
-              className={`min-h-11 min-w-0 flex-1 resize-y rounded-ctl border bg-canvas px-3 py-2 text-callout text-fg outline-none focus:border-line-3 ${row.deleted ? "border-line line-through" : "border-line-2"}`}
+              className={`min-h-11 min-w-0 flex-1 resize-y rounded-ctl border bg-canvas px-3 py-2 text-callout text-fg outline-hidden focus:border-line-3 ${row.deleted ? "border-line line-through" : "border-line-2"}`}
             />
             <button
               type="button"
               aria-label={row.deleted ? `Keep entry ${i + 1}` : `Delete entry ${i + 1}`}
               onClick={() => (row.from === undefined ? setRows((rs) => rs.filter((r) => r.key !== row.key)) : update(row.key, { deleted: !row.deleted }))}
-              className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg"
+              className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg"
             >
               {row.deleted ? <span className="text-caption">Undo</span> : <XIcon className="size-4" />}
             </button>
@@ -337,7 +337,7 @@ function Meter({ used, limit }: { used: number; limit: number }) {
   const tone = used > limit ? "bg-danger" : pct >= 90 ? "bg-warn" : "bg-ok";
   return (
     <div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]" role="meter" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used} aria-label="Memory used">
+      <div className="h-1.5 overflow-hidden rounded-full bg-white/6" role="meter" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used} aria-label="Memory used">
         <div className={`h-full ${tone}`} style={{ width: `${pct}%` }} />
       </div>
       <p className={`mt-1 text-caption tabular ${used > limit ? "text-danger" : "text-fg-3"}`}>

@@ -27,7 +27,7 @@ export function Group({
         {action}
       </div>
       {hint ? <p className="-mt-1 mb-2.5 px-1 text-caption text-fg-3">{hint}</p> : null}
-      <div className="divide-y divide-[color:var(--line-1)] overflow-hidden rounded-card border border-line bg-card">{children}</div>
+      <div className="divide-y divide-(--line-1) overflow-hidden rounded-card border border-line bg-card">{children}</div>
     </section>
   );
 }

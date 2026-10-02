@@ -430,7 +430,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
     return (
       <motion.div {...motionProps} style={{ originX: 1, originY: 1 }} className={`flex flex-col items-end ${first ? "mt-4" : "mt-1"}`}>
         <div
-          className={`max-w-[82%] rounded-[20px] bg-well px-3.5 py-2 text-fg shadow-[inset_0_0_0_1px_rgb(255_255_255/0.04)] ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
+          className={`max-w-[82%] rounded-sheet bg-well px-3.5 py-2 text-fg shadow-[inset_0_0_0_1px_rgb(255_255_255/0.04)] ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
         >
           {text ? <EmojiText text={text} /> : null}
           <MessageMedia attachments={m.attachments} />
@@ -516,7 +516,7 @@ function CopyReply({ text }: { text: string }) {
       type="button"
       aria-label={copied ? "Copied" : "Copy reply"}
       title={copied ? "Copied" : "Copy reply"}
-      className={`press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-white/[0.06] hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70 ${copied ? "opacity-100" : "opacity-0"}`}
+      className={`press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-white/6 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70 ${copied ? "opacity-100" : "opacity-0"}`}
       onClick={() => {
         void navigator.clipboard?.writeText(text).then(() => setCopied(true), () => undefined);
       }}

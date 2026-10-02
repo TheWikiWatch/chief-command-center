@@ -63,7 +63,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
           const [p, m] = e.target.value.split("\u0001");
           void choose({ provider: p, model: m });
         }}
-        className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none focus:border-line-3 disabled:opacity-60"
+        className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3 disabled:opacity-60"
       >
         {!known ? <option value={value}>{current.model ? `${current.model} (${current.provider || "unknown"})` : "Not set"}</option> : null}
         {(options?.groups || []).map((g) => (
@@ -79,7 +79,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
       {loadError ? <Line tone="error">{loadError}</Line> : null}
       {options && !options.groups.length ? <Line tone="error">No provider is connected. Add one in Settings, then Models &amp; keys.</Line> : null}
       {note?.tone === "confirm" && note.pending ? (
-        <div className="space-y-2 rounded-card border border-warn/30 bg-warn/[0.06] px-3 py-2">
+        <div className="space-y-2 rounded-card border border-warn/30 bg-warn/6 px-3 py-2">
           <Line tone="warn">{note.text}</Line>
           <div className="flex gap-2">
             <button type="button" disabled={saving} onClick={() => void choose(note.pending!, true)} className="press min-h-10 rounded-full bg-fg px-4 text-callout font-semibold text-canvas disabled:opacity-50">

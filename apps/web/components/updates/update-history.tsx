@@ -85,12 +85,12 @@ export function UpdateHistorySheet({ open, onClose }: { open: boolean; onClose: 
                 <li key={e.version} className="relative">
                   <span
                     aria-hidden="true"
-                    className={`absolute -left-[26.5px] top-[7px] size-[11px] rounded-full border-2 ${current ? "border-accent bg-accent" : "border-line-3 bg-raised"}`}
+                    className={`absolute left-[-26.5px] top-[7px] size-[11px] rounded-full border-2 ${current ? "border-accent bg-accent" : "border-line-3 bg-raised"}`}
                   />
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                     <h4 className="font-mono text-body font-medium tabular text-fg">{e.version}</h4>
                     {current ? <span className="rounded-full bg-accent/15 px-2 py-0.5 text-caption font-medium text-accent-text">Current</span> : null}
-                    {e.hermesChanged ? <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-caption text-fg-2">Hermes {e.hermes}</span> : null}
+                    {e.hermesChanged ? <span className="rounded-full bg-white/6 px-2 py-0.5 text-caption text-fg-2">Hermes {e.hermes}</span> : null}
                   </div>
                   <p className="mt-0.5 text-caption text-fg-3">
                     {[e.published ? `Released ${shortDate(e.published)}` : "", e.installedAt ? `installed here ${shortDate(e.installedAt)}` : ""].filter(Boolean).join(" · ") || " "}
@@ -164,7 +164,7 @@ export function WhatsNewCard({ newer = "" }: { newer?: string }) {
   return (
     <>
       {release ? (
-        <section aria-label="What's new" className="rounded-card border border-line-2 bg-raised/95 p-3.5 shadow-e4 backdrop-blur">
+        <section aria-label="What's new" className="rounded-card border border-line-2 bg-raised/95 p-3.5 shadow-e4 backdrop-blur-sm">
           <div className="flex items-start gap-2">
             <SparklesIcon className="mt-0.5 size-4 shrink-0 text-accent-text" />
             <div className="min-w-0 flex-1">
@@ -181,7 +181,7 @@ export function WhatsNewCard({ newer = "" }: { newer?: string }) {
                 All updates
               </button>
             </div>
-            <button type="button" onClick={close} aria-label="Close what's new" className="press -mr-1 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg">
+            <button type="button" onClick={close} aria-label="Close what's new" className="press -mr-1 -mt-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg">
               <XIcon size={16} />
             </button>
           </div>

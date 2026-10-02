@@ -26,7 +26,7 @@ export function QrCode({ value, size = 168, label }: { value: string; size?: num
     return { path: d, n: qr.size };
   }, [value]);
   return (
-    <svg role="img" aria-label={label} viewBox={`0 0 ${n} ${n}`} width={size} height={size} shapeRendering="crispEdges" className="block rounded-[10px] bg-white">
+    <svg role="img" aria-label={label} viewBox={`0 0 ${n} ${n}`} width={size} height={size} shapeRendering="crispEdges" className="block rounded-ctl bg-white">
       <path d={path} fill="#09090b" />
     </svg>
   );

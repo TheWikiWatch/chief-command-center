@@ -912,7 +912,7 @@ export function ChiefChat({
       }}
     >
       {dropping ? (
-        <div className="pointer-events-none absolute inset-2 z-50 grid place-items-center rounded-card border-2 border-dashed border-accent/60 bg-canvas/80 backdrop-blur-sm">
+        <div className="pointer-events-none absolute inset-2 z-50 grid place-items-center rounded-card border-2 border-dashed border-accent/60 bg-canvas/80 backdrop-blur-xs">
           <p className="flex items-center gap-2 text-headline text-fg">
             <PaperclipIcon size={20} className="text-accent-text" />
             {canAttach ? `Drop files for ${assistant}` : `${assistant} can't take files right now`}

@@ -66,7 +66,7 @@ export function NameEditor({
           value={draftName}
           maxLength={40}
           onChange={(e) => setDraftName(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none focus:border-line-3"
+          className="mt-1 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3"
         />
       </label>
       <label htmlFor={`${id}-role`} className="block text-caption text-fg-3">
@@ -77,11 +77,11 @@ export function NameEditor({
           maxLength={60}
           placeholder="e.g. Chief of Staff"
           onChange={(e) => setDraftRole(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+          className="mt-1 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
         />
       </label>
       <label className="flex items-start gap-2.5 py-1 text-callout text-fg-2">
-        <input type="checkbox" checked={soul} onChange={(e) => setSoul(e.target.checked)} className="mt-0.5 size-4 accent-[color:var(--accent)]" />
+        <input type="checkbox" checked={soul} onChange={(e) => setSoul(e.target.checked)} className="mt-0.5 size-4 accent-(--accent)" />
         <span>Also update the SOUL&apos;s &ldquo;You are {name}&rdquo; to the new name</span>
       </label>
       {error ? (

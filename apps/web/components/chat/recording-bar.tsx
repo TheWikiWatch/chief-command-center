@@ -71,7 +71,7 @@ export function RecordingBar({ cancelling, dragX }: { cancelling: boolean; dragX
 
   return (
     <motion.div
-      className={`pointer-events-none absolute inset-y-0 left-0 right-[3.25rem] z-10 flex items-center gap-3 rounded-full border px-4 ${
+      className={`pointer-events-none absolute inset-y-0 left-0 right-13 z-10 flex items-center gap-3 rounded-full border px-4 ${
         cancelling ? "border-danger/40 bg-danger/10" : "border-accent/30 bg-raised"
       }`}
       initial={{ opacity: 0, scaleX: 0.92 }}

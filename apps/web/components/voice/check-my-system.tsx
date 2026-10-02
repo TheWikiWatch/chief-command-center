@@ -242,7 +242,7 @@ export function CheckMySystem({
             <select
               value={device}
               onChange={(e) => chooseDevice(e.target.value)}
-              className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none focus:border-line-3"
+              className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3"
             >
               <option value="">System default</option>
               {devices
@@ -257,7 +257,7 @@ export function CheckMySystem({
         ) : null}
         {mic === "testing" || mic === "ok" || mic === "silent" ? (
           <div className="flex items-center gap-3">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.06]" role="meter" aria-label="Input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)}>
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/6" role="meter" aria-label="Input level" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(level * 100)}>
               <div className="h-full rounded-full bg-accent transition-[width] duration-75" style={{ width: `${Math.round(level * 100)}%` }} />
             </div>
             <button type="button" onClick={stopMic} className="press min-h-9 rounded-full px-3 text-callout text-fg-3 hover:text-fg-2">
@@ -299,7 +299,7 @@ export function CheckMySystem({
           downloading && job ? (
             <div className="space-y-2">
               <p className="text-callout text-fg-2">{job.state === "verifying" ? "Checking the download…" : "Downloading the speech model…"}</p>
-              <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]" role="progressbar" aria-label="Download progress" aria-valuemin={0} aria-valuemax={job.total} aria-valuenow={job.received}>
+              <div className="h-2 overflow-hidden rounded-full bg-white/6" role="progressbar" aria-label="Download progress" aria-valuemin={0} aria-valuemax={job.total} aria-valuenow={job.received}>
                 <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${job.total ? Math.round((job.received / job.total) * 100) : 0}%` }} />
               </div>
               <p className="font-mono text-caption tabular text-fg-3">

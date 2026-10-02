@@ -183,7 +183,7 @@ function ChooseStep({
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search providers"
-              className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas pl-9 pr-3 text-body text-fg outline-none placeholder:text-fg-3 focus:border-line-3"
+              className="min-h-11 w-full rounded-ctl border border-line-2 bg-canvas pl-9 pr-3 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3"
             />
           </label>
           <ul className="grid gap-2 sm:grid-cols-2" aria-label="Popular providers">
@@ -293,7 +293,7 @@ function KeyStep({
               spellCheck={false}
               onChange={(e) => setKey(e.target.value)}
               placeholder={provider.connected ? "A key is saved. Paste a new one to replace it." : "Paste your key"}
-              className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-none placeholder:font-sans placeholder:text-fg-3 focus:border-line-3"
+              className="min-h-11 min-w-0 flex-1 rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden placeholder:font-sans placeholder:text-fg-3 focus:border-line-3"
             />
             <GhostButton onClick={() => setReveal((v) => !v)}>{reveal ? "Hide" : "Show"}</GhostButton>
           </span>
@@ -359,7 +359,7 @@ function ModelStep({
               value={model}
               onChange={(e) => setModel(e.target.value)}
               placeholder="for example gpt-4o-mini"
-              className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-none focus:border-line-3"
+              className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden focus:border-line-3"
             />
           </label>
         ) : (
@@ -368,7 +368,7 @@ function ModelStep({
             <select
               value={model}
               onChange={(e) => setModel(e.target.value)}
-              className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none focus:border-line-3"
+              className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3"
             >
               {models.map((m) => (
                 <option key={m} value={m}>
@@ -481,7 +481,7 @@ function EndpointStep({
             inputMode="url"
             spellCheck={false}
             placeholder="http://127.0.0.1:11434/v1"
-            className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-none focus:border-line-3"
+            className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden focus:border-line-3"
           />
         </label>
         <label className="block text-callout text-fg-2">
@@ -491,7 +491,7 @@ function EndpointStep({
             value={key}
             autoComplete="off"
             onChange={(e) => setKey(e.target.value)}
-            className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-none focus:border-line-3"
+            className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden focus:border-line-3"
           />
         </label>
         {models ? (
@@ -499,7 +499,7 @@ function EndpointStep({
             <label className="block text-callout text-fg-2">
               Model
               {models.length ? (
-                <select value={model} onChange={(e) => setModel(e.target.value)} className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none focus:border-line-3">
+                <select value={model} onChange={(e) => setModel(e.target.value)} className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3">
                   {models.map((m) => (
                     <option key={m} value={m}>
                       {m}
@@ -507,12 +507,12 @@ function EndpointStep({
                   ))}
                 </select>
               ) : (
-                <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="The server listed no models; type one" className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-none focus:border-line-3" />
+                <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="The server listed no models; type one" className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 font-mono text-code text-fg outline-hidden focus:border-line-3" />
               )}
             </label>
             <label className="block text-callout text-fg-2">
               Name
-              <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-none focus:border-line-3" />
+              <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 text-body text-fg outline-hidden focus:border-line-3" />
             </label>
           </>
         ) : null}
@@ -553,12 +553,12 @@ function Panel({
     <section className="space-y-4">
       <div className="flex items-start gap-2">
         {onBack ? (
-          <button type="button" onClick={onBack} aria-label="Back" className="press -ml-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/[0.06] hover:text-fg">
+          <button type="button" onClick={onBack} aria-label="Back" className="press -ml-1 grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-white/6 hover:text-fg">
             <ArrowLeftIcon className="size-4" />
           </button>
         ) : null}
         <div className="min-w-0">
-          <h2 ref={heading} tabIndex={-1} className="text-title text-fg outline-none">
+          <h2 ref={heading} tabIndex={-1} className="text-title text-fg outline-hidden">
             {title}
           </h2>
           {subtitle ? <p className="mt-1 text-callout text-fg-3">{subtitle}</p> : null}

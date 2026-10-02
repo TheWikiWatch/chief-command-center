@@ -209,7 +209,7 @@ function YourPhone({ url, login, onOpen }: { url: string; login: string; onOpen:
     <Group icon={<LinkIcon className="size-4" />} title="On your phone" hint="Five steps, once per phone.">
       <div className="flex flex-col gap-5 px-3.5 py-4 sm:flex-row sm:items-start">
         <div className="flex shrink-0 flex-col items-center gap-2 self-center sm:self-start">
-          <div className="rounded-[14px] border border-line-2 bg-white p-2">
+          <div className="rounded-card border border-line-2 bg-white p-2">
             <QrCode value={url} label={`QR code for ${url}`} />
           </div>
           <span className="text-caption text-fg-3">Scan with the phone&apos;s camera</span>
@@ -219,7 +219,7 @@ function YourPhone({ url, login, onOpen }: { url: string; login: string; onOpen:
             <span className="min-w-0 flex-1 truncate font-mono text-code text-fg" title={url}>
               {url}
             </span>
-            <button type="button" onClick={copy} aria-label="Copy the address" className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg">
+            <button type="button" onClick={copy} aria-label="Copy the address" className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg">
               {copied ? <CheckIcon className="size-4 text-ok" /> : <CopyIcon className="size-4" />}
             </button>
           </div>
@@ -264,14 +264,14 @@ function WhoCanOpen({ state, busy, onChange }: { state: PhoneState; busy: boolea
               aria-checked={on}
               disabled={busy}
               onClick={() => onChange(o.mode)}
-              className={`press flex items-start gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${on ? "border-accent/60 bg-accent/[0.08]" : "border-line-2 hover:bg-white/[0.03]"}`}
+              className={`press flex items-start gap-2.5 rounded-[12px] border px-3 py-2.5 text-left transition-colors disabled:opacity-60 ${on ? "border-accent/60 bg-accent/8" : "border-line-2 hover:bg-white/3"}`}
             >
               <span className={`mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border ${on ? "border-accent" : "border-line-3"}`}>
                 {on ? <span className="size-2 rounded-full bg-accent" /> : null}
               </span>
               <span className="min-w-0">
                 <span className="block text-callout font-medium text-fg">{o.title}</span>
-                <span className="block break-words text-caption text-fg-3">{o.hint}</span>
+                <span className="block wrap-break-word text-caption text-fg-3">{o.hint}</span>
               </span>
             </button>
           );
@@ -432,7 +432,7 @@ function Step({ n, status, title, hint, children }: { n: number; status: StepSta
       <span
         aria-hidden="true"
         className={`mt-0.5 grid size-6 shrink-0 place-items-center rounded-full text-caption font-semibold tabular ${
-          status === "done" ? "bg-ok/15 text-ok" : status === "warn" ? "bg-warn/15 text-warn" : status === "todo" ? "bg-accent/15 text-accent-text" : "bg-white/[0.06] text-fg-3"
+          status === "done" ? "bg-ok/15 text-ok" : status === "warn" ? "bg-warn/15 text-warn" : status === "todo" ? "bg-accent/15 text-accent-text" : "bg-white/6 text-fg-3"
         }`}
       >
         {status === "done" ? <CheckIcon className="size-3.5" /> : status === "warn" ? "!" : n}
@@ -442,7 +442,7 @@ function Step({ n, status, title, hint, children }: { n: number; status: StepSta
           <span className="sr-only">{status === "done" ? "Done: " : status === "warn" ? "Needs attention: " : `Step ${n}: `}</span>
           {title}
         </p>
-        <p className={`mt-0.5 break-words text-caption ${status === "done" && n === 3 ? "font-mono text-fg-2" : "text-fg-3"}`}>{hint}</p>
+        <p className={`mt-0.5 wrap-break-word text-caption ${status === "done" && n === 3 ? "font-mono text-fg-2" : "text-fg-3"}`}>{hint}</p>
       </div>
       {children ? <div className="shrink-0 self-center">{children}</div> : null}
     </div>
@@ -452,7 +452,7 @@ function Step({ n, status, title, hint, children }: { n: number; status: StepSta
 function Numbered({ n, title, children }: { n: number; title: string; children?: ReactNode }) {
   return (
     <li className="flex gap-2.5">
-      <span aria-hidden="true" className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-white/[0.06] text-caption font-semibold tabular text-fg-2">
+      <span aria-hidden="true" className="mt-px grid size-5 shrink-0 place-items-center rounded-full bg-white/6 text-caption font-semibold tabular text-fg-2">
         {n}
       </span>
       <div className="min-w-0 flex-1 text-callout text-fg">

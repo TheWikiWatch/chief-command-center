@@ -36,7 +36,7 @@ Gap summary (full list was given in chat on 2026-09-22):
 
 ## 2. Design tokens
 
-All tokens live as CSS custom properties in `app/globals.css` and are mapped into `tailwind.config.ts` (`colors`, `fontSize`, `borderRadius`, `boxShadow`, `transitionTimingFunction`, `transitionDuration`) so components use names, never hex.
+All tokens live as CSS custom properties in `app/globals.css` and are mapped into Tailwind v4's `@theme` block at the top of the same file (colors, type, radii, shadows, easings, durations) so components use names, never hex.
 
 ### 2.1 Color (dark only)
 

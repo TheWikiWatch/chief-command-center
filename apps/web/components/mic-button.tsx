@@ -223,7 +223,7 @@ export function MicButton({
             : "mic-rec scale-110 bg-accent text-white shadow-[0_0_0_5px_rgb(var(--c-accent)/0.22),0_0_24px_rgb(var(--c-accent)/0.45)]"
           : state === "starting"
             ? "scale-105 bg-accent/60 text-white"
-            : "bg-white/[0.07] text-fg-2 hover:bg-white/[0.1] hover:text-fg active:scale-95"
+            : "bg-white/[0.07] text-fg-2 hover:bg-white/10 hover:text-fg active:scale-95"
       }`}
       aria-label={label}
       title={state === "idle" ? "Hold to talk (or hold Space)" : undefined}

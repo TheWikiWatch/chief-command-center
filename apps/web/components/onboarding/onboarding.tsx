@@ -112,7 +112,7 @@ export function Onboarding({
     else setIndex((i) => i + 1);
   };
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-canvas" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
+    <div className="fixed inset-0 z-60 overflow-y-auto bg-canvas" role="dialog" aria-modal="true" aria-labelledby="onboarding-title">
       <div className="mx-auto flex min-h-full max-w-xl flex-col px-4 py-8 sm:py-14">
         <header className="mb-8">
           <p className="text-caption uppercase tracking-wide text-fg-3">Welcome</p>
@@ -122,7 +122,7 @@ export function Onboarding({
           <ol className="mt-4 flex flex-wrap gap-x-3 gap-y-2" aria-label="Steps">
             {steps.map((s, i) => (
               <li key={s.id} className="flex items-center gap-2 text-caption" aria-current={i === index ? "step" : undefined}>
-                <span className={`grid size-5 place-items-center rounded-full font-mono text-[11px] ${i < index ? "bg-ok/20 text-ok" : i === index ? "bg-fg text-canvas" : "bg-white/[0.06] text-fg-3"}`}>{i + 1}</span>
+                <span className={`grid size-5 place-items-center rounded-full font-mono text-[11px] ${i < index ? "bg-ok/20 text-ok" : i === index ? "bg-fg text-canvas" : "bg-white/6 text-fg-3"}`}>{i + 1}</span>
                 <span className={i === index ? "text-fg-2" : "text-fg-3"}>{s.label}</span>
               </li>
             ))}

@@ -225,7 +225,7 @@ function DesktopOrbit({
       ) : null}
 
       {chief ? (
-        <div className="absolute left-1/2 top-[49%] z-[45] -translate-x-1/2 -translate-y-1/2">
+        <div className="absolute left-1/2 top-[49%] z-45 -translate-x-1/2 -translate-y-1/2">
           <button
             ref={chiefNode}
             type="button"
@@ -322,9 +322,9 @@ function OrbitSeat({
       </span>
       <span className="orbit-bot-name">{name || person.name}</span>
       {working && person.jobTitle ? (
-        <span className="max-w-[10rem] truncate rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent-text">{person.jobTitle}</span>
+        <span className="max-w-40 truncate rounded-full bg-accent/15 px-2 py-0.5 text-[11px] font-medium text-accent-text">{person.jobTitle}</span>
       ) : role ? (
-        <span className="max-w-[10rem] truncate text-[11px] text-fg-3 opacity-0 transition-opacity duration-fast group-hover:opacity-100">{role}</span>
+        <span className="max-w-40 truncate text-[11px] text-fg-3 opacity-0 transition-opacity duration-fast group-hover:opacity-100">{role}</span>
       ) : null}
       <BotTip person={person} open={tip.open} id={tip.tipId} anchor={anchor} paneRef={paneRef} placement="orbit" />
     </button>
@@ -398,7 +398,7 @@ function MiniOrbit({
       <Starfield count={70} />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgb(var(--c-accent)/0.12),transparent_60%)]" />
       {chief ? (
-        <div ref={chiefNode} className="absolute left-1/2 top-1/2 z-[45] -translate-x-1/2 -translate-y-1/2">
+        <div ref={chiefNode} className="absolute left-1/2 top-1/2 z-45 -translate-x-1/2 -translate-y-1/2">
           <button type="button" className="press" onClick={() => onOpen(chief)} aria-label={`${splitTitle(chief.name).name || chief.name}, chief of staff`}>
             <ChiefPresence chief={chief} size={72} mood={chiefMood} />
           </button>
@@ -435,7 +435,7 @@ function MiniOrbit({
       {extra > 0 ? (
         <button
           type="button"
-          className="press glass absolute bottom-3 right-3 z-[70] flex min-h-9 items-center rounded-full px-3 text-caption font-medium text-fg-2"
+          className="press glass absolute bottom-3 right-3 z-70 flex min-h-9 items-center rounded-full px-3 text-caption font-medium text-fg-2"
           aria-label={`${extra} more ${extra === 1 ? "specialist" : "specialists"}. Show the list`}
           onClick={() => document.getElementById("fleet-list")?.scrollIntoView({ behavior: "smooth", block: "start" })}
         >
@@ -540,7 +540,7 @@ export function StatusPill({ person }: { person: Person }) {
 function FleetRow({ person, onOpen, mood, minted }: { person: Person; onOpen: (p: Person) => void; mood?: FaceMood; minted: boolean }) {
   const { name, role } = splitTitle(person.name);
   return (
-    <button type="button" onClick={() => onOpen(person)} className={`press flex min-h-16 w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/[0.03] ${minted ? "mint-row" : ""}`}>
+    <button type="button" onClick={() => onOpen(person)} className={`press flex min-h-16 w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-white/3 ${minted ? "mint-row" : ""}`}>
       <BotFace {...faceProps(person)} mood={mood} size={42} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-body font-semibold text-fg">{name || person.name}</span>

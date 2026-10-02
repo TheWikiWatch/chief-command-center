@@ -99,7 +99,7 @@ export function VoiceMode({
           role="dialog"
           aria-modal="true"
           aria-label="Voice mode"
-          className="voice-mode fixed inset-0 z-[75] flex flex-col overflow-hidden bg-canvas pb-[max(env(safe-area-inset-bottom),16px)] pt-[max(env(safe-area-inset-top),8px)]"
+          className="voice-mode fixed inset-0 z-75 flex flex-col overflow-hidden bg-canvas pb-[max(env(safe-area-inset-bottom),16px)] pt-[max(env(safe-area-inset-top),8px)]"
           style={color ? ({ ["--chief" as string]: color } as CSSProperties) : undefined}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1, transition: { duration: 0.32, ease: EASE.enter } }}
@@ -115,7 +115,7 @@ export function VoiceMode({
               ref={closeRef}
               type="button"
               aria-label="Close voice mode"
-              className="press grid size-11 place-items-center rounded-full text-fg-2 hover:bg-white/[0.06] hover:text-fg"
+              className="press grid size-11 place-items-center rounded-full text-fg-2 hover:bg-white/6 hover:text-fg"
               onClick={onClose}
             >
               <ChevronDownIcon size={22} />
@@ -132,7 +132,7 @@ export function VoiceMode({
             >
               {chief ? <ChiefPresence chief={chief} size={168} mood={recording ? "listening" : mood} /> : <div className="size-[168px]" />}
             </motion.div>
-            <div className="min-h-[1.75rem] text-center" aria-live="polite">
+            <div className="min-h-7 text-center" aria-live="polite">
               <AnimatePresence mode="wait" initial={false}>
                 <motion.p
                   key={state}
