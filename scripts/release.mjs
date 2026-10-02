@@ -7,8 +7,10 @@
 // Steps: checks that the tree is committed and the dev server is stopped → the full test suite → bumps the
 // version (patch by default) → builds the dashboard → a smoke test of the app on a throwaway data folder (boot, a chat
 // round trip, an approval, quit; --skip-smoke to leave it out) → builds the signed package → verifies the signature and that no
-// password reached the logs → writes the signed release manifest → commits and pushes the version → publishes the
-// release to the private releases repository. Installed apps offer it within a day (or at once with "Check now").
+// password reached the logs → writes the signed release manifest → uploads it as a DRAFT release (invisible to installed
+// apps) → commits, tags v<version> and pushes → makes the draft the latest release. Installed apps offer it within a
+// day (or at once with "Check now"). Any failure before the push puts the version files back and deletes the draft.
+// --no-publish builds everything and leaves the committed version alone; --skip-checks works only with it.
 //
 // This PC's locations (build folder, signing files, releases repository) are in release.local.json at the repo
 // root, which is git-ignored; see release.local.example.json.
@@ -81,17 +83,27 @@ function hermesMismatch() {
     : `The payload holds Hermes ${short(stamp.upstreamCommit)} but hermes/pin.json says ${short(pin.commit)}. Rebuild the payload (CLAUDE.md, "Hermes updates") or point payloadDir at the right one.`;
 }
 
+// The payload is the one this repository describes: its patches, its package selection, and no file changed since
+// the build (packaging/payload/provenance.py; about a minute for the whole payload). Returns the tree digest.
+function payloadProvenance() {
+  const r = spawnSync("python", ["packaging/payload/provenance.py", "--payload", local.payloadDir, "--check", "--json"], { cwd: repo, encoding: "utf8" });
+  if (r.status !== 0) return { error: (r.stderr || r.stdout || "the provenance check failed").trim() };
+  return { tree: JSON.parse(r.stdout).tree };
+}
+
 if (flag("plan")) {
   console.log(`Current version ${current} → next ${version}`);
   const mismatch = hermesMismatch();
   if (mismatch) console.log(`   ← ${mismatch}`);
+  const prov = payloadProvenance();
+  console.log(prov.error ? `Payload provenance: ${prov.error}` : `Payload provenance: matches (tree ${prov.tree.slice(0, 12)})`);
   console.log(`Branch: ${branch}${dirty ? " (uncommitted changes: commit them before releasing)" : " (clean)"}`);
   console.log(`Dev server: ${(await devServer()) ? "RUNNING (stop it first: it shares the build folder)" : "stopped"}`);
   for (const k of need) console.log(`  ${k}: ${local[k]}${notFound.includes(k) ? "   ← NOT FOUND" : ""}`);
   console.log(`  testerCert: ${local.testerCert ? local.testerCert + (existsSync(local.testerCert) ? "" : "   ← NOT FOUND") : "(none: no tester setup zip)"}`);
   const gh = run("gh", ["repo", "view", local.releasesRepo, "--json", "visibility"], { capture: true, allowFail: true });
   console.log(`Releases repository: ${gh.status === 0 ? JSON.parse(gh.stdout).visibility.toLowerCase() + ", reachable with your gh login" : "NOT reachable (gh auth login?)"}`);
-  process.exit(notFound.length || mismatch || gh.status !== 0 ? 1 : 0);
+  process.exit(notFound.length || mismatch || prov.error || gh.status !== 0 ? 1 : 0);
 }
 
 const notes = opt("notes") || (opt("notes-file") ? readFileSync(opt("notes-file"), "utf8").trim() : "");
@@ -102,13 +114,34 @@ if (dirty) fail("Commit (or discard) your changes first: a release is built from
 if (await devServer()) fail("The dashboard dev server (3100 or 3102) is running; stop it first. It shares apps/web/.next with the build.");
 const mismatch = hermesMismatch();
 if (mismatch) fail(mismatch);
+step("Checking the payload's provenance (about a minute)…");
+const provenance = payloadProvenance();
+if (provenance.error) fail(provenance.error);
 run("git", ["fetch", "-q", "origin"]);
 if (git("rev-parse", "HEAD") !== git("rev-parse", "origin/main")) fail("main differs from origin/main: pull or push first.");
 
 // ---------------------------------------------------------------- build
 
+if (flag("skip-checks") && !flag("no-publish")) fail("--skip-checks is only for a local build (--no-publish): a published release has passed every check.");
 step("Running every check (web, desktop, Python, privacy)…");
-if (!flag("skip-checks")) run("npm", ["run", "check"], { shell: true, what: "npm run check" });
+if (flag("skip-checks")) console.log("⚠ CHECKS SKIPPED (--skip-checks): this build must not be published.");
+else run("npm", ["run", "check"], { shell: true, what: "npm run check" });
+
+// From here on, a failure leaves nothing half-done: the version files go back to what's committed, and a draft
+// this run uploaded is deleted. Once the version is pushed and the release is live, there is nothing to undo.
+const versionFiles = ["apps/desktop/package.json", "apps/desktop/package-lock.json", "hermes/plugins/chief-dashboard-bridge/plugin.yaml"];
+const undo = { files: true, draft: false };
+process.on("exit", (code) => {
+  if (code === 0) return;
+  if (undo.draft) {
+    console.error(`\n↩ Deleting the draft release v${version}…`);
+    spawnSync("node", ["packaging/release/release-tool.mjs", "drop-draft", "--version", version, "--repo", local.releasesRepo], { cwd: repo, stdio: "inherit" });
+  }
+  if (undo.files) {
+    console.error("↩ Putting the version files back as committed.");
+    spawnSync("git", ["checkout", "--", ...versionFiles], { cwd: repo, stdio: "inherit" });
+  }
+});
 
 step(`Version ${current} → ${version}`);
 const pkg = JSON.parse(readFileSync(desktopPkg, "utf8"));
@@ -171,15 +204,10 @@ step("Writing and checking the signed release description…");
 const pinnedKeys = [...readFileSync(path.join(repo, "apps", "desktop", "src", "release-key.ts"), "utf8").matchAll(/\{\s*id:\s*"([^"]+)",\s*publicKey:\s*"([^"]+)"/g)].map((m) => ({ id: m[1], publicKey: m[2] }));
 const signer = pinnedKeys.find((k) => k.id === (local.releaseKeyId || pinnedKeys[0]?.id));
 if (!signer) fail(`No pinned release key with id "${local.releaseKeyId}" in apps/desktop/src/release-key.ts.`);
-run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--out", out, "--notes", notesFile]);
+run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--payload-tree", provenance.tree, "--out", out, "--notes", notesFile]);
 // The app checks it against the pinned key it names: so does this (a private key that isn't the pinned one fails here).
 run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pub", signer.publicKey]);
 rmSync(feedPkg, { force: true });
-
-step("Committing the version…");
-run("git", ["add", "apps/desktop/package.json", "apps/desktop/package-lock.json", "hermes/plugins/chief-dashboard-bridge/plugin.yaml"]);
-run("git", ["commit", "-q", "-m", `Release ${version}\n\n${notes}`]);
-run("git", ["push", "-q", "origin", "main"]);
 
 // The zip for a new tester (scripts/tester-kit.mjs); the release stands even if this step fails.
 function testerKit() {
@@ -190,10 +218,36 @@ function testerKit() {
 
 if (flag("no-publish")) {
   testerKit();
-  console.log(`\n✓ Built ${version} (not published): ${out}`);
+  // A local build doesn't move the committed version.
+  run("git", ["checkout", "--", ...versionFiles]);
+  console.log(`\n✓ Built ${version} (not published; the committed version stays ${current}): ${out}`);
   process.exit(0);
 }
-step(`Publishing ${version} to ${local.releasesRepo}…`);
-run("node", ["packaging/release/release-tool.mjs", "publish", "--dir", out, "--repo", local.releasesRepo]);
+
+// 1. Upload everything as a draft: installed apps can't see it yet, and a failed upload changes nothing.
+step(`Uploading ${version} to ${local.releasesRepo} as a draft…`);
+undo.draft = true;
+run("node", ["packaging/release/release-tool.mjs", "publish", "--dir", out, "--repo", local.releasesRepo, "--draft"]);
+
+// 2. Record the version in the repository: a commit and a tag, pushed.
+step("Committing and tagging the version…");
+run("git", ["add", ...versionFiles]);
+run("git", ["commit", "-q", "-m", `Release ${version}\n\n${notes}`]);
+undo.files = false; // committed: from here a failure undoes the commit instead
+run("git", ["tag", "-a", `v${version}`, "-m", `Chief Command Center ${version}`]);
+const pushed = run("git", ["push", "-q", "--atomic", "origin", "main", `v${version}`], { allowFail: true });
+if (pushed.status !== 0) {
+  run("git", ["tag", "-d", `v${version}`], { allowFail: true });
+  run("git", ["reset", "-q", "--soft", "HEAD~1"], { allowFail: true });
+  undo.files = true;
+  fail("Pushing the version failed, so the release commit and tag were undone locally and the draft is deleted. Pull, then release again.");
+}
+
+// 3. Make it live. The version is pushed now, so a failure here keeps the draft for finishing by hand.
+undo.draft = false;
+step(`Publishing ${version}…`);
+run("node", ["packaging/release/release-tool.mjs", "undraft", "--version", version, "--repo", local.releasesRepo], {
+  what: `Making the draft live (the version is pushed; finish with: node packaging/release/release-tool.mjs undraft --version ${version} --repo ${local.releasesRepo})`,
+});
 testerKit();
 console.log(`\n✓ Released ${version}. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);

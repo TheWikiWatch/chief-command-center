@@ -124,6 +124,11 @@ def write_install_stamp(out: Path, source: Path) -> None:
     }
     (out / "hermes-agent" / "install-stamp.json").write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
     print(f"OK install stamp (steward: chief-command-center, {head[:10]})")
+    # Where it came from: patch and selection digests, this repository's commit, and a digest of every file.
+    import provenance
+
+    recorded = provenance.record(out)
+    print(f"OK provenance (tree {recorded['tree'][:12]}, builder {recorded['builder']['commit'][:10]})")
 
 
 if __name__ == "__main__":
