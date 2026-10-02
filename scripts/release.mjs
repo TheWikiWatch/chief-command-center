@@ -5,7 +5,8 @@
 //   node scripts/release.mjs --plan                                          (check the setup; changes nothing)
 //
 // Steps: checks that the tree is committed and the dev server is stopped → the full test suite → bumps the
-// version (patch by default) → builds the dashboard and the signed package → verifies the signature and that no
+// version (patch by default) → builds the dashboard → a smoke test of the app on a throwaway data folder (boot, a chat
+// round trip, an approval, quit; --skip-smoke to leave it out) → builds the signed package → verifies the signature and that no
 // password reached the logs → writes the signed release manifest → commits and pushes the version → publishes the
 // release to the private releases repository. Installed apps offer it within a day (or at once with "Check now").
 //
@@ -123,6 +124,12 @@ writeFileSync(pluginYaml, readFileSync(pluginYaml, "utf8").replace(/^version:.*$
 
 step("Building the dashboard…");
 run("npm", ["--prefix", "apps/web", "run", "build:standalone"], { shell: true, what: "the dashboard build" });
+
+if (!flag("skip-smoke")) {
+  step("Smoke test: the app on a throwaway data folder (boot, a chat, an approval, quit)…");
+  run("npm", ["--prefix", "apps/desktop", "run", "build"], { shell: true, what: "the desktop build" });
+  run("node", ["scripts/smoke-electron.mjs", "--payload", local.payloadDir], { what: "the Electron smoke test" });
+}
 
 step("Building and signing the package (about 5 minutes)…");
 const password = readFileSync(local.pfxPasswordFile, "utf8").trim();

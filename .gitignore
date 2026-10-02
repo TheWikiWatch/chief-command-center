@@ -42,3 +42,6 @@ CLAUDE.local.md
 
 # Agent worktrees (Claude Code)
 .claude/worktrees/
+
+# Capture galleries (scripts/gallery.mjs): local only
+.gallery/

@@ -13,6 +13,8 @@ Behaviour, from the latest user message of a turn:
   choices), then answers "You picked: <the owner's answer>." from the tool's result.
 - contains "ENVCHECK": runs one harmless `terminal` command that reports whether the bridge token is in the
   agent's own environment, then answers "Env check: <the command's output>." (the token must never be seen).
+- contains "APPROVEME": runs `rm -r ./chief-smoke-absent` (a folder that doesn't exist), which Hermes asks the
+  owner to approve as a recursive delete; once approved and run, answers "Approved and ran." (the Electron smoke test).
 - anything else: "Hello from the local test model. You said: …".
 Streaming and non-streaming are both supported.
 """
@@ -137,6 +139,15 @@ class Handler(BaseHTTPRequestHandler):
             out = _text(answered[-1].get("content"))
             seen = "TOKEN-SEEN" if "TOKEN-SEEN" in out else "TOKEN-ABSENT" if "TOKEN-ABSENT" in out else f"unclear: {out[:200]}"
             self._reply({"role": "assistant", "content": f"Env check: {seen}."}, "stop", stream)
+            return
+        if "APPROVEME" in opener:
+            answered = [m for m in turn if m.get("role") == "tool"]
+            if not answered:
+                args = {"command": "rm -r ./chief-smoke-absent"}
+                call = {"id": "call_approve", "type": "function", "function": {"name": "terminal", "arguments": json.dumps(args)}}
+                self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
+                return
+            self._reply({"role": "assistant", "content": "Approved and ran."}, "stop", stream)
             return
         if "WORK" not in opener:
             self._reply({"role": "assistant", "content": f"Hello from the local test model. You said: {opener[-80:]}"}, "stop", stream)

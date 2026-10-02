@@ -8,6 +8,7 @@
 //
 //   node scripts/privacy-scan.mjs            scan the files git would publish (tracked + untracked, not ignored)
 //   node scripts/privacy-scan.mjs --history  also scan every commit's contents
+//   node scripts/privacy-scan.mjs --history --range A..B   only the commits in that range (CI: a push or a PR)
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
@@ -68,10 +69,21 @@ for (const file of files) {
   scanText(file, readFileSync(full, "utf8"), findings);
 }
 
+const rangeAt = process.argv.indexOf("--range");
+const range = rangeAt >= 0 ? process.argv[rangeAt + 1] || "" : "";
 if (process.argv.includes("--history")) {
   let revs = [];
   try {
-    revs = git("rev-list", "--all").split(/\s+/).filter(Boolean);
+    // A range whose start isn't known here (a force-push, a first push) falls back to the whole history.
+    let known = true;
+    if (range) {
+      try {
+        git("rev-parse", "--verify", "--quiet", `${range.split("..")[0]}^{commit}`);
+      } catch {
+        known = false;
+      }
+    }
+    revs = git("rev-list", ...(range && known ? [range] : ["--all"])).split(/\s+/).filter(Boolean);
   } catch {
     /* no commits yet */
   }
@@ -94,4 +106,4 @@ if (findings.length) {
   console.error(`privacy-scan: ${findings.length} finding(s)\n` + findings.join("\n"));
   process.exit(1);
 }
-console.log(`privacy-scan: clean (${files.length} files${process.argv.includes("--history") ? " + history" : ""}).`);
+console.log(`privacy-scan: clean (${files.length} files${process.argv.includes("--history") ? (range ? ` + commits ${range}` : " + history") : ""}).`);

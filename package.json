@@ -16,7 +16,10 @@
     "hermes:payload": "python packaging/payload/stage.py",
     "test:desktop": "npm --prefix apps/desktop test",
     "desktop": "npm --prefix apps/desktop start",
-    "lint:python": "python -m ruff check . && python -m ruff format --check . && pyright"
+    "lint:python": "python -m ruff check . && python -m ruff format --check . && pyright",
+    "gallery:baseline": "node scripts/gallery.mjs baseline",
+    "gallery:check": "node scripts/gallery.mjs check",
+    "smoke": "node scripts/smoke-electron.mjs"
   },
   "devDependencies": {
     "pyright": "1.1.414"

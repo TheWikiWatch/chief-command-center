@@ -14,6 +14,10 @@ package's signature. A key only lets someone download the releases.
 2. **The signing material** stays outside the repo:
    - the package certificate (`.pfx` and password), for the MSIX;
    - the Ed25519 release key, whose public half is pinned in `apps/desktop/src/release-key.ts`.
+3. **Optional, so Hermes upgrade PRs run CI:** a GitHub App (repository permissions: Contents and Pull requests,
+   read and write) installed on this repository. Save its app ID as the Actions variable `UPSTREAM_APP_ID` and a private
+   key as the secret `UPSTREAM_APP_KEY`. Without it, `.github/workflows/upstream.yml` still opens the PR, but GitHub
+   doesn't run CI on PRs opened with the workflow's own token: run the checks locally before merging.
 
 ## Maintainer: each release
 

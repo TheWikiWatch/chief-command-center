@@ -1,0 +1,56 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Dependency updates as reviewed PRs: grouped, after a waiting period, never merged automatically. Hermes itself is updated by .github/workflows/upstream.yml, not here.",
+  "extends": ["config:recommended", ":dependencyDashboard", "helpers:pinGitHubActionDigests"],
+  "timezone": "UTC",
+  "schedule": ["before 6am on monday"],
+  "automerge": false,
+  "minimumReleaseAge": "7 days",
+  "internalChecksFilter": "strict",
+  "prConcurrentLimit": 6,
+  "packageRules": [
+    {
+      "description": "Dashboard dependencies: one weekly PR.",
+      "matchFileNames": ["apps/web/**"],
+      "groupName": "Dashboard dependencies"
+    },
+    {
+      "description": "Desktop dependencies: one weekly PR.",
+      "matchFileNames": ["apps/desktop/**", "package.json"],
+      "groupName": "Desktop and tooling dependencies"
+    },
+    {
+      "description": "Electron and its packaging move together (the shell, fuses, MSIX).",
+      "matchPackageNames": ["electron", "electron-builder", "playwright-core"],
+      "groupName": "Electron"
+    },
+    {
+      "description": "Next.js and React move together.",
+      "matchPackageNames": ["next", "react", "react-dom", "eslint-config-next", "@next/eslint-plugin-next", "@types/react", "@types/react-dom"],
+      "groupName": "Next.js and React"
+    },
+    {
+      "description": "Python tools.",
+      "matchManagers": ["pip_requirements"],
+      "groupName": "Python tools"
+    },
+    {
+      "description": "The test dependencies are pinned to what the Hermes payload ships: they change with the payload, not here.",
+      "matchManagers": ["pip_requirements"],
+      "matchPackageNames": ["pyyaml", "cryptography", "requests"],
+      "enabled": false
+    },
+    {
+      "description": "GitHub Actions, pinned by digest.",
+      "matchManagers": ["github-actions"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Majors (last, so this wins over the groups): each on its own, after 14 days.",
+      "matchUpdateTypes": ["major"],
+      "minimumReleaseAge": "14 days",
+      "groupName": "{{{depName}}} major",
+      "groupSlug": "{{{depNameSanitized}}}-major"
+    }
+  ]
+}

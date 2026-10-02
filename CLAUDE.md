@@ -41,7 +41,8 @@ When the owner says "ship it" / "release this" / "push this out":
    PowerShell npm's wrapper drops the flags, so run `node scripts/release.mjs --notes "…"` there)
 
 `scripts/release.mjs` then runs every check, bumps the patch version (`--version X.Y.Z` to choose), builds the
-dashboard and the signed package (about 5 minutes), verifies the signature, checks that the password didn't reach
+dashboard, runs the Electron smoke test on a throwaway data folder (`npm run smoke`: boot, a chat, an approval, quit),
+builds the signed package (about 5 minutes), verifies the signature, checks that the password didn't reach
 the log, writes the signed release manifest, commits and pushes the version bump, and publishes the release.
 `--no-publish` stops before publishing. It reads this PC's paths from `release.local.json` (git-ignored; see
 `release.local.example.json`).

@@ -1,6 +1,9 @@
-# Python tools for `npm run check` (the bridge, the backup engine and the packaging scripts).
+# Python tools for `npm run check` and CI (the bridge, the backup engine and the packaging scripts).
 # Install with: python -m pip install -r requirements-dev.txt
-pyyaml
-cryptography
-requests
+# The first three match what the Hermes payload ships (venv/Lib/site-packages), so the tests run against the same.
+pyyaml==6.0.3
+cryptography==50.0.1
+requests==2.33.0
 ruff==0.14.14
+# The capture gallery comparison (scripts/gallery_compare.py).
+pillow==12.2.0
