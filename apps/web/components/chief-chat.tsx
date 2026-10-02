@@ -19,43 +19,29 @@ import { CheckIcon, PaperclipIcon, XIcon } from "@/components/icons";
 import { type MicStatus } from "@/components/mic-button";
 import { meterStream } from "@/lib/audio-level";
 import { fx } from "@/lib/fx";
-import { answerQuestion, fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, speakText, stopTurn, type OutboundAttachment } from "@/lib/bridge";
+import { answerQuestion, fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, stopTurn, type OutboundAttachment } from "@/lib/bridge";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { SHOW_APPROVAL_EVENT } from "@/lib/open-target";
 import { chatTone, isMachineNote } from "@/lib/chat-tone";
 import { computeThinkingChrome, shouldClearPendingReply } from "@/lib/thinking-chrome";
 import { visibleMessages } from "@/lib/compact-filter";
 import { fullPhotosOn, useDashboardPrefs, VOICE_EVENT } from "@/lib/dashboard-prefs";
-import {
-  currentSpeakEpoch,
-  enqueueSpeechParts,
-  enqueueSpeechTask,
-  getSpeechPhase,
-  loadSpeakHighWater,
-  persistSpeakHighWater,
-  blobToDataUrl,
-  speakableText,
-  stopSpeech,
-  subscribeSpeaking,
-  toggleSpeechPause,
-} from "@/lib/voice-client";
+import { getSpeechPhase, blobToDataUrl, stopSpeech, subscribeSpeaking, toggleSpeechPause } from "@/lib/voice-client";
 import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, PreviousConversation, Transcript, TurnActivity } from "@/lib/types";
 import { admitFiles } from "@/lib/upload-limits";
 import { shrinkImage } from "@/lib/image-shrink";
 import { retryable, type QueuedSend } from "@/lib/outbox";
 import { useOutbox } from "@/components/chat/use-outbox";
-import { splitSpeech } from "@/lib/speech-chunks";
 import { logSpeech } from "@/lib/speech-log";
-import { dropReplays, planSpeech, sameText, type SpeechCandidate } from "@/lib/replay-guard";
+import { dropReplays, sameText } from "@/lib/replay-guard";
 import { useAssistantName, assistantName } from "@/lib/identity";
 import { createDraftStore, useDraft, type DraftStore } from "@/lib/draft-store";
+import { speechFailureReason, useReplySpeech } from "@/components/chat/use-reply-speech";
 
 // Voice mode loads the first time it is opened.
 const VoiceMode = dynamic(() => import("@/components/chat/voice-mode").then((m) => m.VoiceMode), { ssr: false });
 
 /** A reply that was not read aloud: it failed, arrived while you were away, or was held behind a newer one. */
-type SpeechFailure = { id: number; script: string; reason: string; missed?: boolean; held?: boolean };
-
 /** The unsent message survives a reload (Android can drop the app from memory mid-thought). */
 const DRAFT_KEY = "chief-chat-draft";
 
@@ -192,15 +178,7 @@ export function ChiefChat({
   const [voiceLabel, setVoiceLabel] = useState("");
   const [micStatus, setMicStatus] = useState<MicStatus>({ state: "idle", cancelling: false });
   const micPrev = useRef<MicStatus>({ state: "idle", cancelling: false });
-  const speakFloor = useRef<number | null>(null);
-  const spokenIds = useRef(new Set<number>());
-  /** Text of replies already read aloud this session: a copy of one is never read again. */
-  const spokenTexts = useRef(new Set<string>());
-  const [speechFailures, setSpeechFailures] = useState<SpeechFailure[]>([]);
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
-  const historyPrimed = useRef(false);
-  const sessionKeyRef = useRef("");
-  const approvalCue = useRef("");
   const approvalChime = useRef("");
   useEffect(() => {
     if (!approval?.requestId || approvalChime.current === approval.requestId) return;
@@ -268,6 +246,15 @@ export function ChiefChat({
     () => visibleMessages(messages, prefs.compactChat),
     [messages, prefs.compactChat],
   );
+  // Reading replies aloud: the speak floor, what was spoken, failures and retry (components/chat/use-reply-speech.ts).
+  const { speechFailures, setSpeechFailures, retrySpeech, primeFromSnapshot, historyPrimed, sessionKeyRef } = useReplySpeech({
+    visible,
+    messages,
+    speakOn,
+    connected,
+    approval,
+    question,
+  });
   // Messages waiting in the outbox show after the thread, with Cancel.
   const threadMessages = useMemo(() => {
     const tagged = steeredTexts.current.size
@@ -355,26 +342,6 @@ export function ChiefChat({
     return () => onThinkingChange?.(false);
   }, [onThinkingChange]);
 
-  const raiseSpeakFloor = useCallback((id: number) => {
-    if (id <= 0 || id >= 1e12) return;
-    const next = Math.max(speakFloor.current || 0, id);
-    speakFloor.current = next;
-    persistSpeakHighWater(sessionKeyRef.current, next);
-  }, []);
-
-  const primeFromSnapshot = useCallback((data: Transcript) => {
-    const key = data.sessionKey || "";
-    if (key !== sessionKeyRef.current) {
-      sessionKeyRef.current = key;
-      spokenIds.current = new Set();
-      setSpeechFailures([]);
-    }
-    const snapshotMax = (data.messages || []).reduce((n, m) => Math.max(n, m.id || 0), data.lastId || 0);
-    const floor = Math.max(loadSpeakHighWater(key), snapshotMax);
-    speakFloor.current = floor;
-    persistSpeakHighWater(key, floor);
-    historyPrimed.current = true;
-  }, []);
 
   const applyTranscript = useCallback(
     (data: Transcript, after: number) => {
@@ -428,7 +395,7 @@ export function ChiefChat({
         if (data.messages.some((m) => !m.replay && m.role === "assistant" && chatTone(m) === "reply" && (m.content || "").trim())) fx("reply");
       }
     },
-    [primeFromSnapshot],
+    [primeFromSnapshot, historyPrimed, sessionKeyRef],
   );
 
   useEffect(() => poll(async signal => {
@@ -473,7 +440,7 @@ export function ChiefChat({
     } catch (error) {
       if (!signal.aborted) transcriptHealth.failure(error);
     }
-  }, () => (longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript, transcriptHealth]);
+  }, () => (longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript, transcriptHealth, historyPrimed]);
 
   // Load earlier: pages of older rows before the oldest one shown.
   // Where the next page starts: the bridge's cursor, so rows skipped here are never asked for again.
@@ -511,104 +478,7 @@ export function ChiefChat({
     return () => window.clearTimeout(timer);
   }, [pendingReply, generating, busy]);
 
-  useEffect(() => {
-    if (!historyPrimed.current) return;
-    const floor = speakFloor.current;
-    if (floor == null) return;
-    if (!speakOn) {
-      const max = visible.reduce((n, m) => {
-        const id = m.id || 0;
-        return id > 0 && id < 1e12 ? Math.max(n, id) : n;
-      }, floor);
-      if (max > floor) raiseSpeakFloor(max);
-      return;
-    }
-    // While disconnected, wait: replies are spoken when the connection is back (they used to be skipped).
-    if (!connected) return;
-    const jobEpoch = currentSpeakEpoch();
-    const candidates: SpeechCandidate[] = [];
-    for (const message of visible) {
-      const id = message.id || 0;
-      if (id <= floor || id >= 1e12) continue;
-      if (spokenIds.current.has(message.id)) continue;
-      spokenIds.current.add(message.id);
-      if (message.role !== "assistant") continue;
-      if (isMachineNote(chatTone(message))) continue;
-      const script = speakableText(message.content || "");
-      if (script) candidates.push({ message, script });
-    }
-    const plan = planSpeech(candidates, messages, spokenTexts.current);
-    // Copies and repeats are history: move the floor past them so a reload never reads them either.
-    for (const { message } of plan.repeats) raiseSpeakFloor(message.id);
-    if (plan.held.length) {
-      setSpeechFailures(items => [
-        ...items.filter(item => !plan.held.some(h => h.message.id === item.id)),
-        ...plan.held.map(h => ({ id: h.message.id, script: h.script, reason: "Read the newest reply first", held: true })),
-      ]);
-    }
-    for (const { message, script } of plan.speak) {
-      spokenTexts.current.add(sameText(message.content || ""));
-      void speakScript(script, jobEpoch).then(result => {
-        if (jobEpoch !== currentSpeakEpoch()) return;
-        if (result.status === "played") {
-          raiseSpeakFloor(message.id);
-          setSpeechFailures(items => items.filter(item => item.id !== message.id));
-        }
-        if (result.status === "failed" || result.status === "missed") {
-          setSpeechFailures(items => [
-            ...items.filter(item => item.id !== message.id),
-            { id: message.id, script, reason: result.reason || "Playback never started", missed: result.status === "missed" },
-          ]);
-        }
-      });
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, speakOn, connected, raiseSpeakFloor]);
 
-  useEffect(() => {
-    if (!speakOn || !approval?.requestId) return;
-    if (approvalCue.current === approval.requestId) return;
-    approvalCue.current = approval.requestId;
-    const jobEpoch = currentSpeakEpoch();
-    void enqueueSpeechTask(async () => {
-      const res = await speakText(`${assistantName()} needs your approval`);
-      return speechClips(res);
-    }, jobEpoch).then(result => {
-      if (jobEpoch !== currentSpeakEpoch()) return;
-      if (result.status === "played") setSpeechFailures(items => items.filter(item => item.id !== 0));
-      if (result.status === "failed") {
-        setSpeechFailures(items => [
-          ...items.filter(item => item.id !== 0),
-          { id: 0, script: `${assistantName()} needs your approval`, reason: result.reason || "Playback never started" },
-        ]);
-      }
-    });
-  }, [approval, speakOn]);
-
-  // Voice: the question is read out, so it can be answered without looking.
-  const questionCue = useRef("");
-  useEffect(() => {
-    if (!speakOn || !question?.id || questionCue.current === question.id) return;
-    questionCue.current = question.id;
-    const script = `${assistantName()} asks: ${question.question}`;
-    const jobEpoch = currentSpeakEpoch();
-    void enqueueSpeechTask(async () => speechClips(await speakText(script)), jobEpoch);
-  }, [question, speakOn]);
-
-  function retrySpeech() {
-    const jobs = speechFailures;
-    setSpeechFailures([]);
-    const jobEpoch = currentSpeakEpoch();
-    for (const job of jobs) {
-      void speakScript(job.script, jobEpoch).then(result => {
-        if (jobEpoch !== currentSpeakEpoch()) return;
-        if (result.status === "played" && job.id) raiseSpeakFloor(job.id);
-        if (result.status === "failed" || result.status === "missed") {
-          setSpeechFailures(items => [...items, { ...job, reason: result.reason || job.reason, missed: result.status === "missed" }]);
-        }
-      });
-    }
-  }
 
   function addFiles(list: FileList | null) {
     const picked = Array.from(list || []);
@@ -1129,22 +999,6 @@ function newSendId() {
     /* insecure context */
   }
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
-}
-
-function speechClips(res: { ok: boolean; data_url?: string; data_urls?: string[]; error?: string }) {
-  const urls = (res.data_urls?.length ? res.data_urls : res.data_url ? [res.data_url] : []).filter(Boolean);
-  if (!res.ok || !urls.length) throw new Error(res.error || "Speech unavailable");
-  return urls;
-}
-
-/** A reply as speech parts: a short first part so sound starts quickly, the rest prepared while it plays. */
-function speakScript(script: string, jobEpoch: number) {
-  const parts = splitSpeech(script).map(text => async () => speechClips(await speakText(text, 45_000)));
-  return enqueueSpeechParts(parts, jobEpoch, script.slice(0, 80));
-}
-
-function speechFailureReason(items: SpeechFailure[]) {
-  return Array.from(new Set(items.map(item => item.reason).filter(Boolean))).join(" ");
 }
 
 /** An all-day session keeps growing; the oldest rows go once the chat holds this many. */
