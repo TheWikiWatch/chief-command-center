@@ -18,6 +18,7 @@ import { IntentSheet } from "@/components/today/intent-sheet";
 import { Banner, OpsDown, StatTiles, TaskRow, useMorning } from "@/components/today/parts";
 import { SettingsSheet } from "@/components/today/vault-settings";
 import { ViewSwitch } from "@/components/ui/controls";
+import { TodaySide } from "@/components/today/side-column";
 
 export const TASK_INTENTS: { id: Intent; label: string }[] = [
   { id: "task.discuss", label: "Discuss" },
@@ -231,6 +232,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
   // The board an Ops service's live count belongs to, when it names one.
   const pulseBoard = pulse?.board_name ? boards.find((b) => b.board_name === pulse.board_name) : undefined;
 
+  const rankedIds = useMemo(() => new Set(ranked.map((item) => item.card?.id ?? item.id)), [ranked]);
   const waitingTotal = boards.reduce((n, b) => n + (b.waiting_count || 0), 0);
   const morning = useMorning(!!meta);
   const lastLaunch = useRef<LaunchTarget | null>(null);
@@ -248,7 +250,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
   );
 
   return (
-    <div className="relative flex h-full min-h-0 flex-col bg-pane">
+    <div className="@container relative flex h-full min-h-0 flex-col bg-pane">
       <header className="app-drag titlebar-clear-phone flex items-center gap-2 border-b border-line px-4 py-2">
         {hideTabs ? (
           <>
@@ -273,117 +275,126 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
         )}
       </header>
 
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-10 pt-4">
-        {!meta && !online ? (
-          <OpsDown builtin={builtin} error={error} onRetry={() => setTick((n) => n + 1)} />
-        ) : (
-          <>
-            <StatTiles open={meta?.open_total} overdue={meta?.overdue_total} waiting={meta ? waitingTotal : undefined} animate={morning} />
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-10 pt-4 @4xl:px-6">
+        <div className="mx-auto max-w-6xl">
+          {!meta && !online ? (
+            <OpsDown builtin={builtin} error={error} onRetry={() => setTick((n) => n + 1)} />
+          ) : (
+            <>
+              <StatTiles open={meta?.open_total} overdue={meta?.overdue_total} waiting={meta ? waitingTotal : undefined} animate={morning} />
 
-            <label className="mb-4 mt-4 flex min-h-11 items-center gap-2.5 rounded-full border border-line-2 bg-card px-4 text-body text-fg-3 focus-within:border-[rgb(255_255_255/0.26)]">
-              <SearchIcon size={17} />
-              <input
-                id="ops-search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Find a task"
-                className="min-w-0 flex-1 bg-transparent text-fg outline-hidden placeholder:text-fg-3"
-              />
-              {query ? (
-                <button type="button" aria-label="Clear search" className="press -mr-2 flex h-9 w-9 items-center justify-center rounded-full text-fg-3 hover:text-fg" onClick={() => setQuery("")}>
-                  <XIcon size={16} />
+              <label className="mb-4 mt-4 flex min-h-11 items-center gap-2.5 rounded-full border border-line-2 bg-card px-4 text-body text-fg-3 focus-within:border-[rgb(255_255_255/0.26)]">
+                <SearchIcon size={17} />
+                <input
+                  id="ops-search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Find a task"
+                  className="min-w-0 flex-1 bg-transparent text-fg outline-hidden placeholder:text-fg-3"
+                />
+                {query ? (
+                  <button type="button" aria-label="Clear search" className="press -mr-2 flex h-9 w-9 items-center justify-center rounded-full text-fg-3 hover:text-fg" onClick={() => setQuery("")}>
+                    <XIcon size={16} />
+                  </button>
+                ) : null}
+              </label>
+
+              {error ? <Banner tone="danger">{error}</Banner> : null}
+              {meta && !meta.vault_exists ? (
+                <button type="button" className="press mb-3 block w-full text-left" onClick={openFolderSettings}>
+                  <Banner tone="danger">
+                    {builtin ? "Your Second Brain folder is missing. Choose it again." : "Vault path not found. Open settings and point it at the second brain folder."}
+                  </Banner>
                 </button>
               ) : null}
-            </label>
+              {meta?.lock_present ? <Banner tone="warn">Vault write lock is on. Wait before asking {assistant} to update boards.</Banner> : null}
+              {stale ? <Banner tone="neutral">The focus summary looks stale. Trust the board dates.</Banner> : null}
 
-            {error ? <Banner tone="danger">{error}</Banner> : null}
-            {meta && !meta.vault_exists ? (
-              <button type="button" className="press mb-3 block w-full text-left" onClick={openFolderSettings}>
-                <Banner tone="danger">
-                  {builtin ? "Your Second Brain folder is missing. Choose it again." : "Vault path not found. Open settings and point it at the second brain folder."}
-                </Banner>
-              </button>
-            ) : null}
-            {meta?.lock_present ? <Banner tone="warn">Vault write lock is on. Wait before asking {assistant} to update boards.</Banner> : null}
-            {stale ? <Banner tone="neutral">The focus summary looks stale. Trust the board dates.</Banner> : null}
+              {area && activeBoard ? (
+                <AreaDrill
+                  board={activeBoard}
+                  focus={activeFocus ?? undefined}
+                  pulse={pulseBoard && activeBoard.board_name === pulseBoard.board_name ? pulse : null}
+                  query={q}
+                  selectedId={launch?.card?.id}
+                  onBack={() => setArea(null)}
+                  onTask={(card) => openTask(activeBoard, card)}
+                />
+              ) : (
+                <div className="@4xl:grid @4xl:grid-cols-[minmax(0,1fr)_18rem] @4xl:gap-8 @6xl:grid-cols-[minmax(0,1fr)_21rem]">
+                  <div className="min-w-0">
+                    <div className="mb-2 mt-1 flex items-center justify-between gap-3">
+                      <h2 className="text-headline text-fg">{q ? "Matches" : attention ? "Needs attention" : "Do first"}</h2>
+                      {q ? null : (
+                        <ViewSwitch
+                          label="Order"
+                          value={attention ? "attention" : "ranked"}
+                          onChange={(next) => setAttention(next === "attention")}
+                          options={[["ranked", "Ranked"], ["attention", "Attention"]]}
+                        />
+                      )}
+                    </div>
+                    {matches.length === 0 ? (
+                      <p className="rounded-card border border-line bg-card px-4 py-6 text-center text-body text-fg-3">
+                        {q ? "No tasks match that search." : meta ? "Nothing ranked for today. Enjoy it." : "Reading vault…"}
+                      </p>
+                    ) : (
+                      <ol className="overflow-hidden rounded-card border border-line bg-card">
+                        {matches.map((item, i) => (
+                          <motion.li
+                            key={item.id}
+                            className="border-b border-line last:border-b-0"
+                            initial={morning ? { opacity: 0, y: 10 } : false}
+                            animate={{ opacity: 1, y: 0, transition: { delay: morning ? 0.25 + Math.min(i, 8) * 0.04 : 0, duration: 0.32, ease: EASE.enter } }}
+                          >
+                            <TaskRow item={item} rank={i + 1} selected={launch?.title === item.text} onClick={() => openToday(item)} />
+                          </motion.li>
+                        ))}
+                      </ol>
+                    )}
 
-            {area && activeBoard ? (
-              <AreaDrill
-                board={activeBoard}
-                focus={activeFocus ?? undefined}
-                pulse={pulseBoard && activeBoard.board_name === pulseBoard.board_name ? pulse : null}
-                query={q}
-                selectedId={launch?.card?.id}
-                onBack={() => setArea(null)}
-                onTask={(card) => openTask(activeBoard, card)}
-              />
-            ) : (
-              <>
-                <div className="mb-2 mt-1 flex items-center justify-between gap-3">
-                  <h2 className="text-headline text-fg">{q ? "Matches" : attention ? "Needs attention" : "Do first"}</h2>
+                    {boards.length ? (
+                      <div className="@4xl:hidden">
+                        <h2 className="mb-2 mt-7 text-headline text-fg">Areas</h2>
+                        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
+                          {boards.map((board, i) => (
+                            <motion.button
+                              key={board.board_name}
+                              type="button"
+                              data-area={board.board_name}
+                              className="press flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-line-2 bg-card px-3.5 text-callout text-fg hover:border-line-3"
+                              onClick={() => setArea(board.board_name)}
+                              initial={morning ? { opacity: 0, x: 12 } : false}
+                              animate={{ opacity: 1, x: 0, transition: { delay: morning ? 0.4 + i * 0.04 : 0, duration: 0.3, ease: EASE.enter } }}
+                            >
+                              <span className="h-2 w-2 rounded-full" style={{ background: board.color }} />
+                              {board.ui_label}
+                              <span className="font-mono text-code tabular text-fg-3">{board.open_count}</span>
+                            </motion.button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {pulse?.grand != null ? (
+                      <div className="mt-5 flex items-center gap-3 rounded-card border border-line bg-card px-4 py-3">
+                        <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" style={pulseBoard?.color ? { background: pulseBoard.color } : undefined} />
+                        <span className="min-w-0 flex-1 text-callout text-fg-2">
+                          <span className="font-medium text-fg">{pulseLine(pulse).label}</span> · <span className="tabular">{pulseLine(pulse).detail}</span>
+                        </span>
+                      </div>
+                    ) : null}
+                  </div>
                   {q ? null : (
-                    <ViewSwitch
-                      label="Order"
-                      value={attention ? "attention" : "ranked"}
-                      onChange={(next) => setAttention(next === "attention")}
-                      options={[["ranked", "Ranked"], ["attention", "Attention"]]}
-                    />
+                    <div className="hidden pt-1 @4xl:block">
+                      <TodaySide boards={boards} skip={rankedIds} animate={morning} onTask={openTask} onArea={setArea} />
+                    </div>
                   )}
                 </div>
-                {matches.length === 0 ? (
-                  <p className="rounded-card border border-line bg-card px-4 py-6 text-center text-body text-fg-3">
-                    {q ? "No tasks match that search." : meta ? "Nothing ranked for today. Enjoy it." : "Reading vault…"}
-                  </p>
-                ) : (
-                  <ol className="overflow-hidden rounded-card border border-line bg-card">
-                    {matches.map((item, i) => (
-                      <motion.li
-                        key={item.id}
-                        className="border-b border-line last:border-b-0"
-                        initial={morning ? { opacity: 0, y: 10 } : false}
-                        animate={{ opacity: 1, y: 0, transition: { delay: morning ? 0.25 + Math.min(i, 8) * 0.04 : 0, duration: 0.32, ease: EASE.enter } }}
-                      >
-                        <TaskRow item={item} rank={i + 1} selected={launch?.title === item.text} onClick={() => openToday(item)} />
-                      </motion.li>
-                    ))}
-                  </ol>
-                )}
-
-                {boards.length ? (
-                  <>
-                    <h2 className="mb-2 mt-7 text-headline text-fg">Areas</h2>
-                    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1">
-                      {boards.map((board, i) => (
-                        <motion.button
-                          key={board.board_name}
-                          type="button"
-                          data-area={board.board_name}
-                          className="press flex min-h-11 shrink-0 items-center gap-2 rounded-full border border-line-2 bg-card px-3.5 text-callout text-fg hover:border-line-3"
-                          onClick={() => setArea(board.board_name)}
-                          initial={morning ? { opacity: 0, x: 12 } : false}
-                          animate={{ opacity: 1, x: 0, transition: { delay: morning ? 0.4 + i * 0.04 : 0, duration: 0.3, ease: EASE.enter } }}
-                        >
-                          <span className="h-2 w-2 rounded-full" style={{ background: board.color }} />
-                          {board.ui_label}
-                          <span className="font-mono text-code tabular text-fg-3">{board.open_count}</span>
-                        </motion.button>
-                      ))}
-                    </div>
-                  </>
-                ) : null}
-
-                {pulse?.grand != null ? (
-                  <div className="mt-5 flex items-center gap-3 rounded-card border border-line bg-card px-4 py-3">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-accent" style={pulseBoard?.color ? { background: pulseBoard.color } : undefined} />
-                    <span className="min-w-0 flex-1 text-callout text-fg-2">
-                      <span className="font-medium text-fg">{pulseLine(pulse).label}</span> · <span className="tabular">{pulseLine(pulse).detail}</span>
-                    </span>
-                  </div>
-                ) : null}
-              </>
-            )}
-          </>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       <SettingsSheet
