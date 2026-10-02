@@ -4,7 +4,6 @@ import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelGroupHandle } from "react-resizable-panels";
-
 import { FxRoot } from "@/components/fx-root";
 import { HeaderStatus, StatusSheet } from "@/components/connection-status";
 import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
@@ -32,7 +31,7 @@ import { fx } from "@/lib/fx";
 import { useFleetMoments } from "@/lib/roster-moments";
 import { noteFinishedJob } from "@/components/chat/followup-cards";
 import { splitTitle } from "@/lib/names";
-import { assistantName, LAST_CHIEF_KEY, readLastChief, setAssistantTitle, useAssistantName } from "@/lib/identity";
+import { assistantName, setAssistantTitle, useAssistantName } from "@/lib/identity";
 import { showToast } from "@/lib/toast-store";
 import { LayerScope, useLayer } from "@/lib/overlay-stack";
 import { useFullscreenShortcut } from "@/lib/use-fullscreen";
@@ -48,7 +47,9 @@ import { WhatsNewCard } from "@/components/updates/update-history";
 import "@/lib/install-prompt";
 import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunchTarget, type OpenTarget } from "@/lib/open-target";
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
-import { ViewSwitch } from "@/components/ui/controls";
+import { FleetViewSwitch } from "@/components/shell/fleet-view-switch";
+import { useOpenedOnce, usePrefetchLater } from "@/components/shell/loading";
+import { FLEET_VIEW_KEY, FleetView, PHONE_TAB_KEY, STORAGE_KEY, SURFACE_KEY, loadChief, loadPhoneTab, loadSplit, loadSurface, rememberChief } from "@/components/shell/persisted";
 
 // Loaded the first time they are needed, not with the first screen (each is its own chunk).
 const SettingsPanel = dynamic(() => import("@/components/settings-panel").then((m) => m.SettingsPanel), { ssr: false });
@@ -58,40 +59,7 @@ const LookDrawer = dynamic(() => import("@/components/look-drawer").then((m) => 
 const SecondBrainSheet = dynamic(() => import("@/components/second-brain/sheet").then((m) => m.SecondBrainSheet), { ssr: false });
 const Onboarding = dynamic(() => import("@/components/onboarding/onboarding").then((m) => m.Onboarding), { ssr: false });
 
-/**
- * After the first screen is up and the browser is idle, fetch the lazily loaded screens, so opening Settings or
- * the Vault for the first time doesn't wait on the network (they still stay out of the first load).
- */
-function usePrefetchLater() {
-  useEffect(() => {
-    // Not in tests: the fetch would land after the test file has finished.
-    if (process.env.NODE_ENV === "test") return;
-    const load = () => {
-      void import("@/components/settings-panel");
-      void import("@/components/vault-pane");
-      void import("@/components/look-drawer");
-      void import("@/components/chat/voice-mode");
-      void import("@/components/second-brain/sheet");
-    };
-    const idle = (window as Window & { requestIdleCallback?: (fn: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
-    const timer = window.setTimeout(() => (idle ? idle(load, { timeout: 4000 }) : load()), 2500);
-    return () => window.clearTimeout(timer);
-  }, []);
-}
-
-/** True from the first time `open` is true: a sheet mounts when first opened and stays (for its exit animation). */
-function useOpenedOnce(open: boolean): boolean {
-  const [opened, setOpened] = useState(open);
-  if (open && !opened) setOpened(true);
-  return opened || open;
-}
-
 const EMPTY_ROSTER: Person[] = [];
-const STORAGE_KEY = "chief-split";
-const SURFACE_KEY = "chief-surface";
-const PHONE_TAB_KEY = "chief-phone-tab";
-const FLEET_VIEW_KEY = "chief-fleet-view";
-type FleetView = "crew" | "health";
 const HEALTH_FAILS = 3;
 const SNAP_FRESH_MS = 8000;
 
@@ -662,65 +630,4 @@ export function CommandShell() {
       {sheets}
     </FxRoot>
   );
-}
-
-/** Fleet surface: the crew (orbit / list) or its health (scorecards, learning, runtime, proposals). */
-function FleetViewSwitch({ view, onChange, flags = 0 }: { view: FleetView; onChange: (next: FleetView) => void; flags?: number }) {
-  const health = (
-    <>
-      Health
-      {flags ? (
-        <span className="ml-1.5 inline-grid min-w-[18px] place-items-center rounded-full bg-warn/20 px-1 font-mono text-micro leading-[18px] text-warn tabular" aria-label={`${flags} new ${flags === 1 ? "flag" : "flags"}`}>
-          {flags}
-        </span>
-      ) : null}
-    </>
-  );
-  return <ViewSwitch label="Fleet view" value={view} onChange={onChange} glass options={[["crew", "Crew"], ["health", health]]} />;
-}
-
-function rememberChief(p: Person) {
-  try {
-    localStorage.setItem(LAST_CHIEF_KEY, JSON.stringify({ ...p, ring: "idle", jobTitle: "" }));
-  } catch {
-    /* ignore */
-  }
-}
-
-/** The last-known chief (shown asleep while the gateway is down); older devices' records lack `isChief`. */
-function loadChief(): Person | null {
-  const p = readLastChief() as Person | null;
-  return p ? { ...p, isChief: true } : null;
-}
-
-function loadSurface(): Surface {
-  try {
-    const raw = localStorage.getItem(SURFACE_KEY);
-    if (raw === "fleet" || raw === "today" || raw === "vault") return raw;
-  } catch {
-    /* ignore */
-  }
-  return "today";
-}
-
-function loadPhoneTab(): PhoneTab {
-  try {
-    const raw = localStorage.getItem(PHONE_TAB_KEY);
-    if (raw === "chat" || raw === "today" || raw === "fleet" || raw === "vault") return raw;
-  } catch {
-    /* ignore */
-  }
-  return "chat";
-}
-
-function loadSplit() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    const n = raw ? Number(raw) : 60;
-    if (n >= 52) return 60;
-    if (n > 0) return 40;
-  } catch {
-    /* ignore */
-  }
-  return 60;
 }
