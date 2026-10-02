@@ -9,7 +9,7 @@ import { CheckMySystem } from "@/components/voice/check-my-system";
 import { RestoreFlow } from "@/components/backup/restore-flow";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
-import { secondBrain, setup, type SetupStatus } from "@/lib/setup-client";
+import { secondBrain, type SetupStatus } from "@/lib/setup-client";
 import { useModal } from "@/lib/use-modal";
 import { btn } from "@/components/ui/button";
 
@@ -17,45 +17,9 @@ import { btn } from "@/components/ui/button";
  * First-run steps, in order: connect a model, the Second Brain, then Check my system.
  * An optional step can be skipped; `complete` marks it done so the footer says Continue instead of Skip.
  */
+export { useNeedsOnboarding } from "@/lib/use-needs-onboarding";
+
 export type OnboardingStep = { id: string; label: string; optional?: boolean; render: (complete: () => void) => ReactNode };
-
-const LATER_KEY = "chief-onboarding-later";
-
-/**
- * Shown when the chief has no working model yet (a fresh install). An install that already works never
- * sees it. "Set up later" hides it for this browser session; the Connection row in Settings stays.
- */
-export function useNeedsOnboarding(connected: boolean): { needed: boolean; later: () => void; finish: (s: SetupStatus) => void } {
-  const [status, setStatus] = useState<SetupStatus | null>(null);
-  const [deferred, setDeferred] = useState(() => {
-    try {
-      return sessionStorage.getItem(LATER_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    if (!connected || status) return;
-    const controller = new AbortController();
-    setup
-      .status(controller.signal)
-      .then((s) => setStatus(s))
-      .catch(() => undefined); // an older bridge without /setup: never block the app on it
-    return () => controller.abort();
-  }, [connected, status]);
-  return {
-    needed: !!status && !status.ready && !deferred,
-    later: () => {
-      try {
-        sessionStorage.setItem(LATER_KEY, "1");
-      } catch {
-        /* private mode */
-      }
-      setDeferred(true);
-    },
-    finish: (s) => setStatus(s),
-  };
-}
 
 export function Onboarding({
   extraSteps = [],

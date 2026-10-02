@@ -27,3 +27,15 @@ it("renders only the new reply's markdown when a message arrives", () => {
   view.rerender(<Thread messages={[...next]} chief={undefined} awaiting={true} waitingApproval={false} connected onSuggestion={() => undefined} />);
   expect(markdown.renders).toBe(5);
 });
+
+it("keeps notice rows (scheduled-job results) from re-rendering when a reply arrives", () => {
+  markdown.renders = 0;
+  const notices = [{ id: "n1", at: Date.parse("2026-09-23T19:00:00Z") / 1000, text: "Morning brief: three things today.", source: "scheduled" as const }];
+  const first = [reply(1, "one")];
+  const view = render(<Thread messages={first} notices={notices} chief={undefined} awaiting={false} waitingApproval={false} connected onSuggestion={() => undefined} />);
+  const afterFirst = markdown.renders;
+  // The same notice objects on the next update (what the chat keeps), plus a new reply.
+  view.rerender(<Thread messages={[...first, reply(2, "two")]} notices={notices} chief={undefined} awaiting={false} waitingApproval={false} connected onSuggestion={() => undefined} />);
+  // Only the new reply and the row it follows: the notice doesn't run its markdown again.
+  expect(markdown.renders - afterFirst).toBe(2);
+});

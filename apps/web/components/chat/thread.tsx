@@ -68,15 +68,26 @@ const isToolOnly = (m: ChatMessage) => chatTone(m) === "tool" && !m.attachments?
  * Notices (scheduled-job results, gateway notices) in time order among the messages. They get ids below
  * zero so they never count as transcript rows; messages without a time (just sent) stay last.
  */
+// The message a notice is shown as, kept per notice so it stays the same object from one update to the next
+// (rows built from it can then skip re-rendering).
+const noticeMessages = new WeakMap<ChatNotice, ChatMessage>();
+
+function noticeId(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
+  return -(Math.abs(h) % 1_000_000_000) - 1;
+}
+
 export function withNotices(messages: ChatMessage[], notices: ChatNotice[] | undefined): ChatMessage[] {
   if (!notices?.length) return messages;
-  const items: ChatMessage[] = notices.map((n, i) => ({
-    id: -(i + 1),
-    role: "assistant",
-    content: "",
-    timestamp: String(n.at),
-    notice: n,
-  }));
+  const items: ChatMessage[] = notices.map((n) => {
+    let item = noticeMessages.get(n);
+    if (!item) {
+      item = { id: noticeId(n.id), role: "assistant", content: "", timestamp: String(n.at), notice: n };
+      noticeMessages.set(n, item);
+    }
+    return item;
+  });
   const out: ChatMessage[] = [];
   let next = 0;
   for (const m of messages) {
@@ -86,6 +97,44 @@ export function withNotices(messages: ChatMessage[], notices: ChatNotice[] | und
   }
   while (next < items.length) out.push(items[next++]);
   return out;
+}
+
+type MsgRow = Extract<Row, { kind: "msg" }>;
+type ToolsRow = Extract<Row, { kind: "tools" }>;
+type DayRow = Extract<Row, { kind: "day" }>;
+
+/*
+ * Rows are rebuilt on every update, but a row whose message and neighbours didn't change is handed back as the
+ * same object, so `memo(MessageRow)` skips it: a new reply re-renders one row, not the whole thread (each row
+ * runs the Markdown pipeline). Caches are keyed by the message objects, which the chat keeps across updates.
+ */
+const msgRows = new WeakMap<ChatMessage, MsgRow>();
+const toolRows = new WeakMap<ChatMessage, ToolsRow>();
+const dayRows = new Map<string, DayRow>();
+
+function msgRow(m: ChatMessage, key: string, mine: boolean, first: boolean, last: boolean): MsgRow {
+  const hit = msgRows.get(m);
+  if (hit && hit.key === key && hit.mine === mine && hit.first === first && hit.last === last) return hit;
+  const row: MsgRow = { kind: "msg", key, m, mine, first, last };
+  msgRows.set(m, row);
+  return row;
+}
+
+function toolsRow(items: ChatMessage[]): ToolsRow {
+  const hit = toolRows.get(items[0]);
+  if (hit && hit.items.length === items.length && hit.items.every((m, i) => m === items[i])) return hit;
+  const row: ToolsRow = { kind: "tools", key: `tools-${items[0].id}`, items };
+  toolRows.set(items[0], row);
+  return row;
+}
+
+function dayRow(key: string, label: string): DayRow {
+  const hit = dayRows.get(key);
+  if (hit && hit.label === label) return hit;
+  const row: DayRow = { kind: "day", key, label };
+  if (dayRows.size > 400) dayRows.clear();
+  dayRows.set(key, row);
+  return row;
 }
 
 /** Groups, day separators and collapsed tool runs. */
@@ -100,7 +149,7 @@ export function buildRows(messages: ChatMessage[]): Row[] {
     if (Number.isFinite(ms)) {
       const day = new Date(ms).toDateString();
       if (!shownDays.has(day)) {
-        rows.push({ kind: "day", key: `day-${day}`, label: dayLabel(ms) });
+        rows.push(dayRow(`day-${day}`, dayLabel(ms)));
         shownDays.add(day);
       }
     }
@@ -110,12 +159,12 @@ export function buildRows(messages: ChatMessage[]): Row[] {
       const run = [m];
       while (i + 1 < messages.length && isToolOnly(messages[i + 1])) run.push(messages[++i]);
       if (run.length > 1) {
-        rows.push({ kind: "tools", key: `tools-${run[0].id}`, items: run });
+        rows.push(toolsRow(run));
         continue;
       }
     }
     if (m.notice || m.asked) {
-      rows.push({ kind: "msg", key: m.notice ? `n-${m.notice.id}` : `m-${m.id}`, m, mine: false, first: true, last: true });
+      rows.push(msgRow(m, m.notice ? `n-${m.notice.id}` : `m-${m.id}`, false, true, true));
       continue;
     }
     const mine = m.role === "user" && !isMachineNote(chatTone(m));
@@ -123,7 +172,7 @@ export function buildRows(messages: ChatMessage[]): Row[] {
     const next = messages[i + 1];
     // A notice or a past question is its own block: the message after it starts a new group (with the face).
     const sameSide = (o?: ChatMessage) => !!o && !o.notice && !o.asked && (o.role === "user" && !isMachineNote(chatTone(o))) === mine;
-    rows.push({ kind: "msg", key: `m-${m.id}`, m, mine, first: !sameSide(prev), last: !sameSide(next) });
+    rows.push(msgRow(m, `m-${m.id}`, mine, !sameSide(prev), !sameSide(next)));
   }
   return rows;
 }

@@ -1,7 +1,8 @@
 "use client";
 
 import { useAttentiveGaze } from "@/lib/use-attentive-gaze";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import dynamic from "next/dynamic";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentProps, type CSSProperties, type ReactNode } from "react";
 import "blobatar/gaze.css";
 
 import { poll } from "@/lib/poll";
@@ -10,7 +11,6 @@ import { ChiefPresence } from "@/components/presence";
 import { ApprovalSheet } from "@/components/chat/approval-sheet";
 import { botIdentity } from "@/lib/bot-identity";
 import { ChatHeader, type ChiefMood } from "@/components/chat/chat-header";
-import { VoiceMode } from "@/components/chat/voice-mode";
 import { FollowupCards, followupAsk, useFollowupWatch } from "@/components/chat/followup-cards";
 import { Composer, type PendingFile } from "@/components/chat/composer";
 import { Thread } from "@/components/chat/thread";
@@ -48,6 +48,10 @@ import { splitSpeech } from "@/lib/speech-chunks";
 import { logSpeech } from "@/lib/speech-log";
 import { dropReplays, planSpeech, sameText, type SpeechCandidate } from "@/lib/replay-guard";
 import { useAssistantName, assistantName } from "@/lib/identity";
+import { createDraftStore, useDraft, type DraftStore } from "@/lib/draft-store";
+
+// Voice mode loads the first time it is opened.
+const VoiceMode = dynamic(() => import("@/components/chat/voice-mode").then((m) => m.VoiceMode), { ssr: false });
 
 /** A reply that was not read aloud: it failed, arrived while you were away, or was held behind a newer one. */
 type SpeechFailure = { id: number; script: string; reason: string; missed?: boolean; held?: boolean };
@@ -97,7 +101,10 @@ export function ChiefChat({
   const { ref } = useAttentiveGaze(() => lookAtRef.current);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const lastIdRef = useRef(0);
-  const [text, setText] = useState("");
+  // The draft lives in a store only the message box subscribes to (lib/draft-store.ts): typing doesn't
+  // re-render the chat. Sends read it with draft.get().
+  const [draft] = useState(() => createDraftStore(""));
+  const setText = draft.set;
   useEffect(() => {
     try {
       const saved = localStorage.getItem(DRAFT_KEY);
@@ -105,18 +112,26 @@ export function ChiefChat({
     } catch {
       /* private mode */
     }
-  }, []);
+  }, [setText]);
   useEffect(() => {
-    const t = window.setTimeout(() => {
-      try {
-        if (text) localStorage.setItem(DRAFT_KEY, text);
-        else localStorage.removeItem(DRAFT_KEY);
-      } catch {
-        /* private mode */
-      }
-    }, 300);
-    return () => window.clearTimeout(t);
-  }, [text]);
+    let timer: number | undefined;
+    const unsubscribe = draft.subscribe(() => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        try {
+          const text = draft.get();
+          if (text) localStorage.setItem(DRAFT_KEY, text);
+          else localStorage.removeItem(DRAFT_KEY);
+        } catch {
+          /* private mode */
+        }
+      }, 300);
+    });
+    return () => {
+      unsubscribe();
+      window.clearTimeout(timer);
+    };
+  }, [draft]);
   // Files dragged over the chat (desktop): a drop target over the whole pane.
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);
@@ -171,6 +186,9 @@ export function ChiefChat({
   const speakOn = prefs.speakOn;
   const [voiceHint, setVoiceHint] = useState("");
   const [voiceOpen, setVoiceOpen] = useState(false);
+  // Mounted from the first open on (it keeps its exit animation); before that, not even loaded.
+  const [voiceMounted, setVoiceMounted] = useState(false);
+  if (voiceOpen && !voiceMounted) setVoiceMounted(true);
   const [voiceLabel, setVoiceLabel] = useState("");
   const [micStatus, setMicStatus] = useState<MicStatus>({ state: "idle", cancelling: false });
   const micPrev = useRef<MicStatus>({ state: "idle", cancelling: false });
@@ -216,7 +234,7 @@ export function ChiefChat({
     setSendError(`A queued message wasn't sent: ${reason}${item.text ? " Its text is back in your draft." : ""}`);
     if (item.text) setText(current => (current.trim() ? current : item.text));
     fx("error");
-  }, []);
+  }, [setText]);
   const outbox = useOutbox({ ready: connected && !authFailed, onDelivered: onQueuedDelivered, onDropped: onQueuedDropped });
   const cancelQueued = useCallback(
     (queueId: string) => {
@@ -769,9 +787,9 @@ export function ChiefChat({
 
   /** "Send after": the draft waits as a chip and goes, in order, once the chief finishes. */
   function sendAfter() {
-    const draft = text.trim();
-    if (!draft) return;
-    setAfterQueue((q) => [...q, { id: newSendId(), text: draft }]);
+    const body = draft.get().trim();
+    if (!body) return;
+    setAfterQueue((q) => [...q, { id: newSendId(), text: body }]);
     setText("");
     showNotice(`Will send when ${assistantName()} finishes.`);
   }
@@ -803,7 +821,7 @@ export function ChiefChat({
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    const body = text.trim();
+    const body = draft.get().trim();
     if (!body && !pendingFiles.length) return;
     try { await sendBody(body, pendingFiles); setText(""); } catch (error) { setSendError(error instanceof Error ? error.message : "Send failed. Your draft has been kept."); }
   }
@@ -1041,9 +1059,8 @@ export function ChiefChat({
             ))}
           </ul>
         ) : null}
-        <Composer
-          text={text}
-          onText={setText}
+        <DraftComposer
+          draft={draft}
           pendingFiles={pendingFiles}
           onAddFiles={addFiles}
           onRemoveFile={removeFile}
@@ -1062,7 +1079,7 @@ export function ChiefChat({
           onSendAfter={sendAfter}
         />
       </form>
-      <VoiceMode
+      {voiceMounted ? <VoiceMode
         open={voiceOpen}
         onClose={() => setVoiceOpen(false)}
         chief={chief}
@@ -1084,7 +1101,7 @@ export function ChiefChat({
         onTranscript={onTranscript}
         onMicError={setVoiceHint}
         onMicStream={onMicStream}
-      />
+      /> : null}
     </div>
   );
 }
@@ -1156,6 +1173,12 @@ export function mergeMsgs(prev: ChatMessage[], incoming: ChatMessage[]) {
   }
   const kept = merged.length > MAX_KEPT_MESSAGES ? merged.slice(merged.length - MAX_KEPT_MESSAGES) : merged;
   return [...kept, ...optimistic];
+}
+
+/** The message box, subscribed to the draft (the rest of the chat isn't). */
+function DraftComposer({ draft, ...rest }: Omit<ComponentProps<typeof Composer>, "text" | "onText"> & { draft: DraftStore }) {
+  const text = useDraft(draft);
+  return <Composer text={text} onText={draft.set} {...rest} />;
 }
 
 /** Ambient aurora behind the top of the thread (§4.4): CSS only, brighter while the chief thinks or speaks. */

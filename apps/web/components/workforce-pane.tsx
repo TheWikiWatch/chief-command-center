@@ -3,12 +3,12 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import "blobatar/gaze.css";
+import dynamic from "next/dynamic";
 
 import { AnimatedBeam } from "@/components/beams";
 import { BotFace, faceProps, type FaceMood } from "@/components/bot-face";
 import { BotTip, useBotTip } from "@/components/bot-tip";
 import { Starfield } from "@/components/fleet/starfield";
-import { OrbitSpace } from "@/components/orbit-space";
 import { ChiefPresence, type PresenceMood } from "@/components/presence";
 import { workingPeople } from "@/lib/bridge";
 import { useFaceClock } from "@/lib/face-clock";
@@ -20,6 +20,12 @@ import type { FleetMoments } from "@/lib/roster-moments";
 import type { Person } from "@/lib/types";
 import { useAttentiveGaze } from "@/lib/use-attentive-gaze";
 import { useAssistantName } from "@/lib/identity";
+
+// The WebGL light rays load on their own, after the faces are on screen (the static starfield shows meanwhile).
+const OrbitSpace = dynamic(() => import("@/components/orbit-space").then((m) => m.OrbitSpace), {
+  ssr: false,
+  loading: () => <div className="orbit-stars-static absolute inset-0 opacity-60" />,
+});
 
 type Mode = "orbit" | "rail";
 

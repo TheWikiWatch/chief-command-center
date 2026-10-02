@@ -1,5 +1,6 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelGroupHandle } from "react-resizable-panels";
@@ -10,10 +11,8 @@ import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components
 import { useResourceHealth } from "@/components/resource-status";
 import { share } from "@/lib/share";
 import { ToastViewport } from "@/components/ui/toasts";
-import { LookDrawer } from "@/components/look-drawer";
 import { ChiefChat, type ChatSend } from "@/components/chief-chat";
 import { PHONE_TABS, PhoneNav, type PhoneTab } from "@/components/phone-nav";
-import { SettingsPanel } from "@/components/settings-panel";
 import { OPEN_SETTINGS_EVENT, type SettingsCategory } from "@/lib/settings-nav";
 import { UsageStrip } from "@/components/usage/usage-strip";
 import { readStripPref, writeStripPref } from "@/lib/usage-client";
@@ -21,11 +20,9 @@ import { ThreadSwitcher } from "@/components/chat/thread-switcher";
 import { setChatThread } from "@/lib/chat-thread";
 import { markSeen, readCurrentThread, writeCurrentThread } from "@/lib/threads-client";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
-import { VaultPane } from "@/components/vault-pane";
 import { useVaultOpenSignal } from "@/lib/vault-client";
 import { TodayPane } from "@/components/today-pane";
 import { WorkforcePane } from "@/components/workforce-pane";
-import { FleetHealth } from "@/components/fleet-health";
 import { TeamButton } from "@/components/fleet/team-sheet";
 import { fetchApprovals, fetchHealth, fetchSnapshot, subscribeBridge } from "@/lib/bridge";
 import { liveConnected, liveInterval, liveWake, useLiveConnected } from "@/lib/live";
@@ -44,14 +41,47 @@ import { holdWakeLock, releaseWakeLock } from "@/lib/voice-client";
 import { refreshServiceWorker } from "@/lib/web-push";
 import { useUnseenFleetFlags } from "@/lib/use-fleet-flags";
 import { useAppConfig } from "@/lib/app-config";
-import { Onboarding, useNeedsOnboarding } from "@/components/onboarding/onboarding";
-import { SecondBrainSheet } from "@/components/second-brain/sheet";
+import { useNeedsOnboarding } from "@/lib/use-needs-onboarding";
 import { UpdateCard, useUpdates } from "@/components/updates/update-card";
 import { WhatsNewCard } from "@/components/updates/update-history";
 // Listens for Android's install offer from the first moment (Settings → Phone shows it).
 import "@/lib/install-prompt";
 import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunchTarget, type OpenTarget } from "@/lib/open-target";
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
+
+// Loaded the first time they are needed, not with the first screen (each is its own chunk).
+const SettingsPanel = dynamic(() => import("@/components/settings-panel").then((m) => m.SettingsPanel), { ssr: false });
+const VaultPane = dynamic(() => import("@/components/vault-pane").then((m) => m.VaultPane), { ssr: false });
+const FleetHealth = dynamic(() => import("@/components/fleet-health").then((m) => m.FleetHealth), { ssr: false });
+const LookDrawer = dynamic(() => import("@/components/look-drawer").then((m) => m.LookDrawer), { ssr: false });
+const SecondBrainSheet = dynamic(() => import("@/components/second-brain/sheet").then((m) => m.SecondBrainSheet), { ssr: false });
+const Onboarding = dynamic(() => import("@/components/onboarding/onboarding").then((m) => m.Onboarding), { ssr: false });
+
+/**
+ * After the first screen is up and the browser is idle, fetch the lazily loaded screens, so opening Settings or
+ * the Vault for the first time doesn't wait on the network (they still stay out of the first load).
+ */
+function usePrefetchLater() {
+  useEffect(() => {
+    const load = () => {
+      void import("@/components/settings-panel");
+      void import("@/components/vault-pane");
+      void import("@/components/look-drawer");
+      void import("@/components/chat/voice-mode");
+      void import("@/components/second-brain/sheet");
+    };
+    const idle = (window as Window & { requestIdleCallback?: (fn: () => void, opts?: { timeout: number }) => number }).requestIdleCallback;
+    const timer = window.setTimeout(() => (idle ? idle(load, { timeout: 4000 }) : load()), 2500);
+    return () => window.clearTimeout(timer);
+  }, []);
+}
+
+/** True from the first time `open` is true: a sheet mounts when first opened and stays (for its exit animation). */
+function useOpenedOnce(open: boolean): boolean {
+  const [opened, setOpened] = useState(open);
+  if (open && !opened) setOpened(true);
+  return opened || open;
+}
 
 const EMPTY_ROSTER: Person[] = [];
 const STORAGE_KEY = "chief-split";
@@ -65,6 +95,7 @@ const SNAP_FRESH_MS = 8000;
 export function CommandShell() {
   const assistant = useAssistantName();
   const phone = usePhoneShell();
+  usePrefetchLater();
   const prefs = useDashboardPrefs(phone);
   useFullscreenShortcut(!phone);
   // With the live channel up, the snapshot refreshes on changes and every 30 s: "stale" means something else then.
@@ -132,6 +163,7 @@ export function CommandShell() {
   }, []);
   useEffect(() => changeThread(readCurrentThread()), [changeThread]);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsMounted = useOpenedOnce(settingsOpen);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | null>(null);
   useEffect(() => {
     const open = (e: Event) => {
@@ -150,6 +182,7 @@ export function CommandShell() {
       return !on;
     });
   const [secondBrainOpen, setSecondBrainOpen] = useState(false);
+  const secondBrainMounted = useOpenedOnce(secondBrainOpen);
   const [updateLater, setUpdateLater] = useState(false);
   // A newer version on offer (even after Later) outranks "What's new" for the running one: one card at a time.
   const { state: updateState } = useUpdates();
@@ -508,15 +541,15 @@ export function CommandShell() {
   const sheets = (
     <>
       {onboarding.needed ? <Onboarding onLater={onboarding.later} onFinished={onboarding.finish} onAskChief={sendFromToday} /> : null}
-      <SettingsPanel
+      {settingsMounted ? <SettingsPanel
         open={settingsOpen}
         phone={phone}
         onClose={() => setSettingsOpen(false)}
         onAskChief={sendFromToday}
         chief={chief}
         category={settingsCategory}
-      />
-      <SecondBrainSheet open={secondBrainOpen} phone={phone} onClose={() => setSecondBrainOpen(false)} onAskChief={sendFromToday} />
+      /> : null}
+      {secondBrainMounted ? <SecondBrainSheet open={secondBrainOpen} phone={phone} onClose={() => setSecondBrainOpen(false)} onAskChief={sendFromToday} /> : null}
       {onboarding.needed ? null : (
         // Top right, under the headers: clear of the message box and the tab bar.
         <div className="fixed right-4 top-16 z-50 w-[min(24rem,calc(100vw-2rem))] space-y-2">
