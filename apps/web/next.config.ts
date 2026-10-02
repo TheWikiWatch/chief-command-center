@@ -28,6 +28,51 @@ function serveHosts(): string[] {
   return [...new Set(extra)];
 }
 
+/**
+ * Response headers for every page and route. They live here, not in lib/: Next's config loader doesn't resolve
+ * local imports (tests import them from this file).
+ *
+ * - Nothing may frame the dashboard (`frame-ancestors 'none'`, `X-Frame-Options`): over Tailscale, any site open
+ *   on the phone could otherwise load it in a frame and trick a tap on "Allow" (identity comes from the network,
+ *   and requests made inside the frame pass the Origin check).
+ * - The page talks only to its own server (`connect-src 'self'`), and loads scripts, styles, fonts, pictures and
+ *   media only from itself (plus `data:`/`blob:` for previews and spoken replies). Even injected markup in a reply
+ *   can't send anything to another host or pull in a tracking image.
+ * - Inline scripts stay allowed: Next's bootstrap is inline. A per-request nonce would need dynamic rendering of
+ *   every page and is a later step; the connect/img/frame limits above are what stop data leaving.
+ */
+export function contentSecurityPolicy(dev: boolean): string {
+  const script = ["'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", ...(dev ? ["'unsafe-eval'"] : [])];
+  const connect = ["'self'", "data:", "blob:", ...(dev ? ["ws:"] : [])];
+  return [
+    "default-src 'self'",
+    `script-src ${script.join(" ")}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
+    "font-src 'self' data:",
+    `connect-src ${connect.join(" ")}`,
+    "worker-src 'self' blob:",
+    "frame-src 'self' blob:",
+    "manifest-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+export function securityHeaders(dev: boolean): { key: string; value: string }[] {
+  return [
+    { key: "Content-Security-Policy", value: contentSecurityPolicy(dev) },
+    { key: "X-Frame-Options", value: "DENY" },
+    { key: "X-Content-Type-Options", value: "nosniff" },
+    // External links never carry the dashboard's address (a tailnet host name) to the site they open.
+    { key: "Referrer-Policy", value: "no-referrer" },
+    { key: "Permissions-Policy", value: "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" },
+  ];
+}
+
 const config = (phase: string): NextConfig => ({
   // The desktop app runs the production server from `.next/standalone` (server.js plus only the
   // node_modules it needs); packaging copies `.next/static` and `public` next to it.
@@ -45,7 +90,7 @@ const config = (phase: string): NextConfig => ({
     return [
       {
         source: "/:path*",
-        headers: [{ key: "Permissions-Policy", value: "microphone=(self)" }],
+        headers: securityHeaders(phase === PHASE_DEVELOPMENT_SERVER),
       },
     ];
   },
