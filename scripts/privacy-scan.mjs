@@ -91,8 +91,9 @@ if (process.argv.includes("--history")) {
   for (const rev of revs) {
     for (const row of git("ls-tree", "-r", rev).split("\n").filter(Boolean)) {
       const [meta, file] = row.split("\t");
-      const blob = meta.split(" ")[2];
-      if (seen.has(blob) || SKIP.test(file) || file === ".privacy-denylist") continue;
+      const [, type, blob] = meta.split(" ");
+      // Only files: a submodule entry names a commit of another repository, which isn't here to read.
+      if (type !== "blob" || seen.has(blob) || SKIP.test(file) || file === ".privacy-denylist") continue;
       seen.add(blob);
       scanText(`${rev.slice(0, 7)}:${file}`, git("cat-file", "-p", blob), findings);
     }
