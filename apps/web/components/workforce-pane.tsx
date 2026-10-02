@@ -1,15 +1,17 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type RefObject } from "react";
 import "blobatar/gaze.css";
 import dynamic from "next/dynamic";
 
 import { AnimatedBeam } from "@/components/beams";
 import { BotFace, faceProps, type FaceMood } from "@/components/bot-face";
 import { BotTip, useBotTip } from "@/components/bot-tip";
+import { FleetInvite, FleetSide } from "@/components/fleet/fleet-side";
 import { Starfield } from "@/components/fleet/starfield";
 import { ChiefPresence, type PresenceMood } from "@/components/presence";
+import { chiefColor } from "@/lib/bot-identity";
 import { workingPeople } from "@/lib/bridge";
 import { useFaceClock } from "@/lib/face-clock";
 import { useFxPrefs } from "@/lib/fx-prefs";
@@ -45,6 +47,7 @@ export function WorkforcePane({
   moments = NO_MOMENTS,
   connected = true,
   phone = false,
+  onAsk,
 }: {
   people: Person[];
   mode: Mode;
@@ -54,23 +57,39 @@ export function WorkforcePane({
   moments?: FleetMoments;
   connected?: boolean;
   phone?: boolean;
+  /** Puts text in the chat's message box (the one-bot invitation's suggestions). */
+  onAsk?: (text: string) => void;
 }) {
   const chief = people.find((p) => p.isChief);
   const specialists = useMemo(() => people.filter((p) => !p.isChief), [people]);
+  // Fewer than two specialists: invite the owner to have the chief bring one on.
+  const invite = onAsk && chief && connected && specialists.length < 2 ? onAsk : undefined;
   const working = workingPeople(people);
   const chiefMood: PresenceMood = !connected ? "offline" : chiefThinking ? "thinking" : working.length ? "working" : "online";
 
   if (mode === "orbit") {
     return (
-      <DesktopOrbit
-        chief={chief}
-        specialists={specialists}
-        working={working}
-        chiefMood={chiefMood}
-        onOpen={onOpen}
-        onLookTarget={onLookTarget}
-        moments={moments}
-      />
+      <div className="@container flex h-full">
+        <div className="relative min-w-0 flex-1">
+          <DesktopOrbit
+            chief={chief}
+            specialists={specialists}
+            working={working}
+            chiefMood={chiefMood}
+            onOpen={onOpen}
+            onLookTarget={onLookTarget}
+            moments={moments}
+          />
+          {invite ? (
+            <div className="absolute inset-x-0 bottom-6 z-50 flex justify-center">
+              <FleetInvite onAsk={invite} floating />
+            </div>
+          ) : null}
+        </div>
+        <div className="hidden @5xl:block">
+          <FleetSide chief={chief} specialists={specialists} onOpen={onOpen} />
+        </div>
+      </div>
     );
   }
   return (
@@ -78,7 +97,12 @@ export function WorkforcePane({
       {phone ? (
         <MiniOrbit chief={chief} specialists={specialists} working={working} chiefMood={chiefMood} onOpen={onOpen} moments={moments} />
       ) : null}
-      <FleetList chief={phone ? undefined : chief} chiefMood={chiefMood} specialists={specialists} onOpen={onOpen} moments={moments} topInset={!phone} />
+      {invite ? (
+        <div className={`relative z-10 px-3 ${phone ? "pt-3" : "pt-16"}`}>
+          <FleetInvite onAsk={invite} />
+        </div>
+      ) : null}
+      <FleetList chief={phone ? undefined : chief} chiefMood={chiefMood} specialists={specialists} onOpen={onOpen} moments={moments} topInset={!phone && !invite} />
     </div>
   );
 }
@@ -222,7 +246,7 @@ function DesktopOrbit({
         spin.current.hover = false;
       }}
     >
-      {ambient === "full" && !reduced ? <OrbitSpace reduced={false} /> : <div className="orbit-stars-static absolute inset-0 opacity-60" />}
+      {ambient === "full" && !reduced ? <OrbitSpace reduced={false} color={chief ? chiefColor(chief) : undefined} /> : <div className="orbit-stars-static absolute inset-0 opacity-60" />}
       <Starfield count={ambient === "off" ? 60 : 150} />
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_50%_48%,transparent_30%,rgb(var(--c-canvas))_92%)]" />
 
@@ -402,7 +426,10 @@ function MiniOrbit({
   return (
     <section ref={box} className="relative h-64 overflow-hidden border-b border-line bg-canvas" aria-label="Fleet orbit">
       <Starfield count={70} />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgb(var(--c-accent)/0.12),transparent_60%)]" />
+      <div
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,color-mix(in_srgb,var(--chief)_12%,transparent),transparent_60%)]"
+        style={{ "--chief": chief ? chiefColor(chief) : "rgb(var(--c-accent))" } as CSSProperties}
+      />
       {chief ? (
         <div ref={chiefNode} className="absolute left-1/2 top-1/2 z-45 -translate-x-1/2 -translate-y-1/2">
           <button type="button" className="press" onClick={() => onOpen(chief)} aria-label={`${splitTitle(chief.name).name || chief.name}, chief of staff`}>

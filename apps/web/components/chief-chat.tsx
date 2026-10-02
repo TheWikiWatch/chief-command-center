@@ -9,7 +9,7 @@ import { poll } from "@/lib/poll";
 import { useResourceHealth } from "@/components/resource-status";
 import { ChiefPresence } from "@/components/presence";
 import { ApprovalSheet } from "@/components/chat/approval-sheet";
-import { botIdentity } from "@/lib/bot-identity";
+import { chiefColor } from "@/lib/bot-identity";
 import { ChatHeader, type ChiefMood } from "@/components/chat/chat-header";
 import { FollowupCards, followupAsk, useFollowupWatch } from "@/components/chat/followup-cards";
 import { Composer, type PendingFile } from "@/components/chat/composer";
@@ -847,7 +847,7 @@ export function ChiefChat({
         onVoiceMode={() => setVoiceOpen(true)}
         face={chiefFace}
       />
-      <ChatAurora mood={mood} color={chief ? botIdentity({ id: chief.id, name: chief.name, color: chief.color, shape: chief.shape, custom: chief.custom, isChief: true }).color : undefined} />
+      <ChatAurora mood={mood} color={chief ? chiefColor(chief) : undefined} />
       <Thread
         messages={threadMessages}
         loading={!loadedOnce && connected && !authFailed}

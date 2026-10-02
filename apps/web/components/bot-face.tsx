@@ -543,13 +543,15 @@ function shapePath(shape: string): string {
   }
 }
 
-export function FaceRing({ ring, children, className }: { ring: Ring; children: React.ReactNode; className?: string }) {
+/** The ring around a face; a working ring spins in `color` (the chief's own), or the accent. */
+export function FaceRing({ ring, children, className, color }: { ring: Ring; children: React.ReactNode; className?: string; color?: string }) {
   return (
     <div className={cn("relative rounded-full p-[3px]", className)}>
       {ring === "working" ? (
         <span
           aria-hidden
-          className="pointer-events-none absolute inset-0 animate-spin rounded-full bg-[conic-gradient(from_180deg,rgb(var(--c-accent)),transparent_55%)] motion-reduce:animate-none"
+          className="pointer-events-none absolute inset-0 animate-spin rounded-full bg-[conic-gradient(from_180deg,var(--ring-color),transparent_55%)] motion-reduce:animate-none"
+          style={{ "--ring-color": color || "rgb(var(--c-accent))" } as React.CSSProperties}
         />
       ) : ring === "failed" ? (
         <span aria-hidden className="pointer-events-none absolute inset-0 rounded-full bg-danger/40" />

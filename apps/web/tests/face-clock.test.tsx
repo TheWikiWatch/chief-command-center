@@ -65,7 +65,9 @@ it("gives any new bot a stable identity with zero setup", () => {
   expect(a).toEqual(b);
   expect(BOT_PALETTE).toContain(a.color);
   expect(botIdentity({ id: "x", shape: "not-a-shape" }).shape).not.toBe("not-a-shape");
-  expect(botIdentity({ id: "x", color: "#123456", custom: true }).color).toBe("#123456");
+  expect(botIdentity({ id: "x", color: "#d4a950", custom: true }).color).toBe("#d4a950");
+  // A custom color too dark to see on the canvas is lifted (lib/color.ts).
+  expect(botIdentity({ id: "x", color: "#123456", custom: true }).color).not.toBe("#123456");
   expect(botIdentity({ id: "chief", color: "#7adbd4", isChief: true }).color).toBe("#7adbd4");
 });
 

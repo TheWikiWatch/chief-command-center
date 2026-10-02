@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { recordRosterEvent } from "@/lib/fleet-activity";
 import { readFx } from "@/lib/fx-prefs";
 import { splitTitle } from "@/lib/names";
 import { showToast } from "@/lib/toast-store";
@@ -117,6 +118,7 @@ export function useFleetMoments(people: Person[], connected: boolean, onEvent?: 
     const mintedNow = new Set(events.filter((e) => e.kind === "minted").map((e) => e.person.id));
     for (const e of events) {
       onEventRef.current?.(e);
+      recordRosterEvent(e);
       // A bot minted straight into work plays the mint first, then the dispatch.
       toastFor(e, e.kind === "dispatched" && mintedNow.has(e.person.id) ? 1400 : 0);
       if (e.kind === "minted") {

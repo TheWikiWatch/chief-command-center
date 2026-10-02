@@ -1,3 +1,4 @@
+import { glowColor } from "@/lib/color";
 import { appearanceSeed, defaultShapeFor } from "@/lib/faces";
 
 /**
@@ -31,7 +32,8 @@ export function botIdentity(p: { id?: string; name?: string; color?: string; sha
   const seed = appearanceSeed(p.id, p.name) || "bot";
   const h = hashId(seed);
   const keepColor = (p.custom || p.isChief) && !!p.color;
-  const color = keepColor ? String(p.color) : BOT_PALETTE[h % BOT_PALETTE.length];
+  // A chosen color too dark to see on the canvas is lifted just enough (lib/color.ts).
+  const color = keepColor ? glowColor(String(p.color)) : BOT_PALETTE[h % BOT_PALETTE.length];
   const raw = String(p.shape || "");
   const shape = raw.startsWith("blobatar") || KNOWN_SHAPES.has(raw) ? raw : defaultShapeFor(seed);
   return {
@@ -43,4 +45,9 @@ export function botIdentity(p: { id?: string; name?: string; color?: string; sha
     glance: 0.14 + ((h >>> 11) % 1000) / 1000 * 0.16,
     phase: ((h >>> 13) % 6283) / 1000,
   };
+}
+
+/** The chief's color: its face, the ring around it, the chat aurora and the Fleet orbit's rays (lib/color.ts). */
+export function chiefColor(chief: { id?: string; name?: string; color?: string; shape?: string; custom?: boolean }): string {
+  return botIdentity({ ...chief, isChief: true }).color;
 }

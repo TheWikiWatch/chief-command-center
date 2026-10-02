@@ -401,6 +401,11 @@ export function CommandShell() {
     else if (target !== "chat") changeSurface(target);
     if (target === "chat") window.setTimeout(focusComposer, 0);
   };
+  // Text for the message box, never sent on its own (the palette's "Ask …", the Fleet's suggestions).
+  const askChief = (text: string) => {
+    goToPlace("chat");
+    window.setTimeout(() => setDraft(text), 50);
+  };
   const newThread = async () => {
     const res = await threadsApi.create().catch(() => null);
     if (res?.ok && res.thread) {
@@ -542,6 +547,7 @@ export function CommandShell() {
           moments={moments}
           connected={connected}
           phone={phone}
+          onAsk={askChief}
         />
         <AnimatePresence>
           {usageStrip ? (
@@ -592,7 +598,7 @@ export function CommandShell() {
         </div>
       )}
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={(text) => { goToPlace("chat"); window.setTimeout(() => setDraft(text), 50); }} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={askChief} />
       <AnimatePresence>
         {helpOpen ? (
           <Sheet open={helpOpen} onClose={() => setHelpOpen(false)} side={phone ? "bottom" : "right"} title="Keyboard shortcuts" subtitle="Single keys work when you're not typing in a box.">

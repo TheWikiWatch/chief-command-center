@@ -2,11 +2,14 @@
 
 import { GodRays } from "@paper-design/shaders-react";
 
+import { CANVAS, raysPalette } from "@/lib/color";
+
 /**
  * Desktop orbit backdrop: a single GodRays shader (VISUAL-OVERHAUL §4.4, §7 budget of one WebGL
  * context). The canvas starfield layers on top; reduced motion gets a static starry gradient.
+ * The rays are in the chief's own color.
  */
-export function OrbitSpace({ reduced }: { reduced: boolean }) {
+export function OrbitSpace({ reduced, color }: { reduced: boolean; color?: string }) {
   const layer = { width: "100%", height: "100%", pointerEvents: "none" } as const;
 
   if (reduced) {
@@ -17,13 +20,14 @@ export function OrbitSpace({ reduced }: { reduced: boolean }) {
     );
   }
 
+  const rays = raysPalette(color || "");
   return (
     <div className="pointer-events-none absolute inset-0 **:pointer-events-none" aria-hidden>
       <div className="absolute inset-0 opacity-90">
         <GodRays
-          colorBack="#09090b"
-          colorBloom="#3a1018"
-          colors={["#8a3030", "#5a2030", "#241018", "#09090b"]}
+          colorBack={CANVAS}
+          colorBloom={rays.bloom}
+          colors={rays.colors}
           speed={0.1}
           intensity={0.38}
           density={0.55}

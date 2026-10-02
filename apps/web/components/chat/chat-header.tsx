@@ -8,6 +8,7 @@ import { HeaderStatus, useLinkLabel } from "@/components/connection-status";
 import { DeepseekChip } from "@/components/deepseek-chip";
 import { AudioLinesIcon, EllipsisIcon, PauseIcon, PlayIcon, SettingsIcon, SquareIcon, WifiIcon } from "@/components/icons";
 import { ActionMenu, Tip, type MenuEntry } from "@/components/ui/popovers";
+import { chiefColor } from "@/lib/bot-identity";
 import { splitTitle } from "@/lib/names";
 import { EASE } from "@/lib/motion";
 import { shortcutText } from "@/lib/shortcuts";
@@ -98,7 +99,7 @@ export function ChatHeader({
         {face ??
           (chief ? (
             <div className={mood === "thinking" || speakingish ? "await-pulse" : undefined}>
-              <FaceRing ring={mood === "thinking" || speakingish ? "working" : chief.ring}>
+              <FaceRing ring={mood === "thinking" || speakingish ? "working" : chief.ring} color={chiefColor(chief)}>
                 <BotFace
                   name={chief.name}
                   profileId={chief.id}

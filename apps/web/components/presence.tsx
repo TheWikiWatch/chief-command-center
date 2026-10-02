@@ -4,7 +4,7 @@ import { useRef, useSyncExternalStore, type CSSProperties } from "react";
 
 import { BotFace, faceProps, type FaceMood } from "@/components/bot-face";
 import { isMetering, readLevel } from "@/lib/audio-level";
-import { botIdentity } from "@/lib/bot-identity";
+import { chiefColor } from "@/lib/bot-identity";
 import { useFaceClock } from "@/lib/face-clock";
 import type { Person } from "@/lib/types";
 import { getSpeechPhase, subscribeSpeaking } from "@/lib/voice-client";
@@ -78,7 +78,7 @@ export function ChiefPresence({
     effective === "speaking" || effective === "listening",
   );
 
-  const color = botIdentity({ id: chief.id, name: chief.name, color: chief.color, shape: chief.shape, custom: chief.custom, isChief: true }).color;
+  const color = chiefColor(chief);
   const style = { width: size, height: size, "--s": `${size}px`, "--chief": color } as CSSProperties;
 
   return (
