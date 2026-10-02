@@ -10,6 +10,7 @@ import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components
 import { useResourceHealth } from "@/components/resource-status";
 import { share } from "@/lib/share";
 import { ToastViewport } from "@/components/ui/toasts";
+import { EngineBanner } from "@/components/engine-banner";
 import { ChiefChat, type ChatSend } from "@/components/chief-chat";
 import { PHONE_TABS, PhoneNav, type PhoneTab } from "@/components/phone-nav";
 import { OPEN_SETTINGS_EVENT, type SettingsCategory } from "@/lib/settings-nav";
@@ -653,6 +654,7 @@ export function CommandShell() {
         ) : null}
       </AnimatePresence>
       <ToastViewport />
+      <EngineBanner />
     </>
   );
 

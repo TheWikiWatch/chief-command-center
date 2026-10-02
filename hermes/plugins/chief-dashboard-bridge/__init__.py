@@ -44,6 +44,38 @@ def _running_in_gateway() -> bool:
     return is_chief_home()
 
 
+LOG_BYTES = 2 * 1024 * 1024
+LOG_KEEP = 3
+
+
+def attach_log_file(home) -> "logging.Handler | None":
+    """The bridge's own rotating log in the chief's profile (`logs/chief-bridge.log`, 2 MB x 3), once per process.
+
+    Hermes's console output already reaches the app's gateway log; this file keeps the bridge's warnings findable
+    when that log has rolled over, and it is what the diagnostics bundle collects.
+    """
+    from logging.handlers import RotatingFileHandler
+    from pathlib import Path
+
+    for handler in logger.handlers:
+        if getattr(handler, "_chief_bridge_file", False):
+            return None
+    try:
+        folder = Path(home) / "logs"
+        folder.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(folder / "chief-bridge.log", maxBytes=LOG_BYTES, backupCount=LOG_KEEP, encoding="utf-8")
+    except OSError as exc:
+        logger.warning("chief-dashboard-bridge: no log file (%s)", exc)
+        return None
+    handler._chief_bridge_file = True  # type: ignore[attr-defined]
+    handler.setLevel(logging.INFO)
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(handler)
+    if logger.level == logging.NOTSET or logger.level > logging.INFO:
+        logger.setLevel(logging.INFO)
+    return handler
+
+
 def register(ctx):
     global _server
     if not _running_in_gateway():
@@ -67,6 +99,13 @@ def _register(ctx):
     if not token:
         logger.error("chief-dashboard-bridge: no token; refusing to bind")
         return
+
+    try:
+        from .data import chief_home
+
+        attach_log_file(chief_home())
+    except Exception:  # logging never stops the bridge
+        logger.debug("chief-dashboard-bridge: log file setup failed", exc_info=True)
 
     port = int(port_cfg or os.environ.get("CHIEF_DASHBOARD_PORT") or 7790)
     session_key = str(session_cfg or os.environ.get("CHIEF_DASHBOARD_SESSION_KEY") or "").strip()

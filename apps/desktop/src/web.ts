@@ -1,6 +1,7 @@
 import { createWriteStream, mkdirSync } from "node:fs";
 import path from "node:path";
 
+import { rotate } from "./logger";
 import type { ChildHandle } from "./supervisor";
 
 /**
@@ -26,6 +27,7 @@ type Utility = {
 
 export function launchWeb(utility: Utility, cfg: WebConfig, onExit: (code: number | null, pid?: number) => void): ChildHandle {
   mkdirSync(path.dirname(cfg.logFile), { recursive: true });
+  rotate(cfg.logFile, 10 * 1024 * 1024);
   const log = createWriteStream(cfg.logFile, { flags: "a" });
   log.write(`\n--- ${new Date().toISOString()} starting dashboard server on ${cfg.port}\n`);
   const child = utility.fork(cfg.serverJs, [], {

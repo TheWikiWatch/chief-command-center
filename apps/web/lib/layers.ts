@@ -7,7 +7,7 @@
  *   45     voice mode's backdrop; 50 the phone shell's floating controls
  *   60     sheets over the whole app (settings, status)
  *   70     a sheet opened from one of those (update history)
- *   75     voice mode; 80 the image viewer and hover cards
+ *   75     voice mode; 80 the image viewer and hover cards; 85 the engine banner (Chief restarting or stopped)
  *   90     the look drawer, which opens from anywhere, sheets included
  */
 export const LAYER = {
@@ -15,5 +15,6 @@ export const LAYER = {
   sheet: 60,
   sheetOverSheet: 70,
   hoverCard: 80,
+  notice: 85,
   drawer: 90,
 } as const;

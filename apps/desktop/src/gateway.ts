@@ -1,7 +1,8 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
+import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { rotate } from "./logger";
 import type { ChildHandle } from "./supervisor";
 
 /**
@@ -31,11 +32,7 @@ export function profileHome(hermesRoot: string, profile = "chief"): string {
 
 function logStream(file: string) {
   mkdirSync(path.dirname(file), { recursive: true });
-  try {
-    if (statSync(file).size > 10 * 1024 * 1024) renameSync(file, `${file}.1`);
-  } catch {
-    /* no log yet */
-  }
+  rotate(file, 10 * 1024 * 1024);
   return createWriteStream(file, { flags: "a" });
 }
 

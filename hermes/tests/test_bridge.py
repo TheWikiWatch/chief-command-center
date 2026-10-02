@@ -834,5 +834,23 @@ class LivePathTests(unittest.TestCase):
         self.assertGreaterEqual(server._SEND_ID_TTL, 24 * 60 * 60)
 
 
+
+class BridgeLogFileTests(unittest.TestCase):
+    def test_attaches_one_rotating_file_in_the_profile(self):
+        plugin = importlib.import_module("test_bridge_plugin.__init__")
+        with tempfile.TemporaryDirectory() as home:
+            first = plugin.attach_log_file(home)
+            try:
+                self.assertIsNotNone(first)
+                self.assertIsNone(plugin.attach_log_file(home))  # once per process
+                plugin.logger.warning("bridge log check")
+                first.flush()
+                text = (Path(home) / "logs" / "chief-bridge.log").read_text(encoding="utf-8")
+                self.assertIn("bridge log check", text)
+                self.assertEqual(first.maxBytes, plugin.LOG_BYTES)
+            finally:
+                plugin.logger.removeHandler(first)
+                first.close()
+
 if __name__ == "__main__":
     unittest.main()

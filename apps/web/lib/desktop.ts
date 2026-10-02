@@ -73,6 +73,10 @@ export type DesktopPhone = {
   open: (url: string) => Promise<boolean>;
 };
 
+/** Chief's engine (the gateway) and the dashboard server, as the desktop app supervises them (apps/desktop/src/ipc.ts). */
+export type EnginePart = { state: "stopped" | "starting" | "running" | "backoff" | "failed" | "stopping"; detail: string; retryInMs: number };
+export type EngineState = { gateway: EnginePart; web: EnginePart; external: boolean };
+
 export type ChiefDesktop = {
   updates?: DesktopUpdates;
   /** Older shells lack it. */
@@ -85,6 +89,12 @@ export type ChiefDesktop = {
    * Apply the staged restore: stop Chief (asking about work in progress first), swap in the restored data,
    * start Chief and check its health, then finish or roll back. Only the desktop app can stop Chief.
    */
+  /** Logs, crash dumps and versions in a zip the owner saves (a save dialog); older shells lack it. */
+  diagnostics?: () => Promise<{ ok: boolean; path?: string; error?: string }>;
+  engine?: () => Promise<EngineState>;
+  onEngine?: (fn: (state: EngineState) => void) => () => void;
+  /** Start Chief again now (the banner's "Try now"). */
+  retryChief?: () => Promise<EngineState>;
   /** Opens the app's logs folder in Explorer; older shells lack it. */
   openLogs?: () => Promise<string>;
   /** Taskbar jump-list and tray shortcuts ("new-thread", "voice", "today"); returns an unsubscribe. */

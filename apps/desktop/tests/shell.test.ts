@@ -13,14 +13,14 @@ import { isFree, pickPort } from "../src/ports";
 import { applyRestore } from "../src/restore";
 import { bridgeToken } from "../src/secrets";
 import { Store } from "../src/store";
-import { BACKOFF_MS, MAX_RESTARTS, Supervisor, type SupervisorEvent } from "../src/supervisor";
+import { BACKOFF_MS, FAILED_RETRY_MS, HEALTH_EVERY_MS, HEALTH_FAILURES, MAX_RESTARTS, Supervisor, type SupervisorEvent } from "../src/supervisor";
 
 const tmp = mkdtempSync(path.join(tmpdir(), "chief-desktop-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
 /* ------------------------------------------------------------------ supervisor */
 
-function harness(opts: { failLaunch?: boolean; failReady?: boolean } = {}) {
+function harness(opts: { failLaunch?: boolean; failReady?: boolean; healthy?: () => boolean; launches?: { n: number } } = {}) {
   let now = 0;
   const timers: { at: number; fn: () => void }[] = [];
   const events: SupervisorEvent[] = [];
@@ -28,6 +28,7 @@ function harness(opts: { failLaunch?: boolean; failReady?: boolean } = {}) {
   const stops: boolean[] = [];
   const sup = new Supervisor({
     launch: async () => {
+      if (opts.launches) opts.launches.n += 1;
       if (opts.failLaunch) throw new Error("no launcher");
       const mine = ++pid;
       return { pid: mine, stop: async (graceful: boolean) => void stops.push(graceful) };
@@ -35,15 +36,25 @@ function harness(opts: { failLaunch?: boolean; failReady?: boolean } = {}) {
     ready: async () => {
       if (opts.failReady) throw new Error("never ready");
     },
+    ...(opts.healthy ? { health: async () => opts.healthy!() } : {}),
     now: () => now,
-    setTimer: (fn, ms) => timers.push({ at: now + ms, fn }),
-    clearTimer: () => timers.splice(0),
+    setTimer: (fn, ms) => {
+      const t = { at: now + ms, fn };
+      timers.push(t);
+      return t;
+    },
+    clearTimer: (t) => {
+      const i = timers.indexOf(t as (typeof timers)[number]);
+      if (i >= 0) timers.splice(i, 1);
+    },
     onEvent: (e) => events.push(e),
   });
   const advance = async (ms: number) => {
     now += ms;
-    for (const t of timers.splice(0).filter((x) => x.at <= now)) t.fn();
-    await new Promise((r) => setTimeout(r, 0));
+    const due = timers.filter((x) => x.at <= now);
+    for (const t of due) timers.splice(timers.indexOf(t), 1);
+    for (const t of due) t.fn();
+    for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
   };
   return { sup, events, stops, advance, timers, setNow: (n: number) => (now = n), getNow: () => now };
 }
@@ -114,6 +125,54 @@ describe("Supervisor", () => {
     await ready.sup.start();
     expect(ready.sup.state).toBe("backoff");
     expect(ready.stops).toEqual([false]); // the half-started child is ended
+    // That child's exit, when it arrives, is expected: not a second crash.
+    const before = ready.events.length;
+    ready.sup.exited(1, 101);
+    expect(ready.events.length).toBe(before);
+  });
+
+  it("start is idempotent: a second call while starting or running launches nothing", async () => {
+    const launches = { n: 0 };
+    const h = harness({ launches });
+    await Promise.all([h.sup.start(), h.sup.start()]);
+    await h.sup.start();
+    expect(h.sup.state).toBe("running");
+    expect(launches.n).toBe(1);
+  });
+
+  it(`restarts a child that stops answering (${HEALTH_FAILURES} failed probes in a row)`, async () => {
+    let healthy = true;
+    const h = harness({ healthy: () => healthy });
+    await h.sup.start();
+    const first = h.sup.child!.pid;
+    await h.advance(HEALTH_EVERY_MS);
+    expect(h.sup.state).toBe("running");
+    healthy = false;
+    for (let i = 0; i < HEALTH_FAILURES - 1; i++) await h.advance(HEALTH_EVERY_MS);
+    expect(h.sup.state).toBe("running");
+    await h.advance(HEALTH_EVERY_MS);
+    expect(h.sup.state).toBe("backoff");
+    expect(h.sup.detail).toBe("It stopped answering.");
+    expect(h.stops).toEqual([false]);
+    h.sup.exited(1, first); // the ended child's exit
+    expect(h.sup.state).toBe("backoff");
+    healthy = true;
+    await h.advance(BACKOFF_MS[0]);
+    expect(h.sup.state).toBe("running");
+  });
+
+  it("after failing, it tries again every 10 minutes", async () => {
+    const launches = { n: 0 };
+    const h = harness({ failLaunch: true, launches });
+    await h.sup.start();
+    for (let i = 0; i < MAX_RESTARTS; i++) await h.advance(30_000);
+    expect(h.sup.state).toBe("failed");
+    expect(h.events.some((e) => e.type === "retry-scheduled")).toBe(true);
+    expect(h.sup.nextAttemptAt).toBe(h.getNow() + FAILED_RETRY_MS);
+    const n = launches.n;
+    await h.advance(FAILED_RETRY_MS);
+    expect(launches.n).toBe(n + 1);
+    expect(h.sup.state).toBe("backoff");
   });
 });
 

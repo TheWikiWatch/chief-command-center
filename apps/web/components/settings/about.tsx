@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { BookOpenIcon, InfoIcon } from "@/components/icons";
 import { UpdateHistoryButton } from "@/components/updates/update-history";
-import { Group, Row } from "@/components/ui/settings-group";
+import { Group, PillButton, Row } from "@/components/ui/settings-group";
+import { desktop } from "@/lib/desktop";
 import { fetchAbout, type AboutInfo } from "@/lib/about-client";
 import { LoadingLine } from "@/components/ui/surface";
 
@@ -27,6 +28,7 @@ export function AboutGroup() {
           hint="Hermes is built into the app and never updates itself. A newer Hermes reaches you as an app update, once it passes the app's compatibility checks; the app backs up your data before Hermes first starts on it."
         />
         <Row label="Licence" hint="MIT. Your data stays on this computer unless you send it somewhere." />
+        <DiagnosticsRow />
       </Group>
       <Group icon={<BookOpenIcon className="size-4" />} title="Bundled with credit">
         <Row
@@ -35,6 +37,32 @@ export function AboutGroup() {
         />
       </Group>
     </>
+  );
+}
+
+/** Desktop app only: a zip of the logs, crash dumps and versions, for the owner to look through and send. */
+function DiagnosticsRow() {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState("");
+  const make = desktop()?.diagnostics;
+  if (!make) return null;
+  return (
+    <Row label="Diagnostics" hint={note || "Logs, crash reports and versions in one zip, to send when something goes wrong. Nothing is sent by the app; look through it first."}>
+      <div className="mt-2">
+        <PillButton
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            setNote("");
+            void make()
+              .then((r) => setNote(r.ok ? "Saved. The folder with the zip is open." : r.error === "cancelled" ? "" : `Couldn't make it: ${r.error}`))
+              .finally(() => setBusy(false));
+          }}
+        >
+          {busy ? "Collecting…" : "Create diagnostics"}
+        </PillButton>
+      </div>
+    </Row>
   );
 }
 
