@@ -122,6 +122,43 @@ class CommandCenterAdapter(BasePlatformAdapter):
                 logger.debug("cc broadcast failed", exc_info=True)
         return SendResult(success=True, message_id=mid)
 
+    # Hermes hands a reply's attachments to the platform one by one after its text. The chat shows a file from
+    # a "MEDIA:<path>" line, so each one is sent as that line (the base class's default is a "Couldn't deliver
+    # the image attachment" warning). One the reply already showed is hidden again by chat_state.notices.
+    async def _send_media(self, chat_id: str, path: str, caption: str | None, metadata: dict[str, Any] | None) -> SendResult:
+        from .data import remember_media_path
+
+        remember_media_path(path)
+        line = f"MEDIA:{path}"
+        return await self.send(chat_id, f"{caption}\n{line}" if caption else line, metadata=metadata)
+
+    async def send_image_file(
+        self, chat_id: str, image_path: str, caption: str | None = None, reply_to: str | None = None, metadata: dict[str, Any] | None = None, **kwargs
+    ) -> SendResult:
+        return await self._send_media(chat_id, image_path, caption, metadata)
+
+    async def send_document(
+        self,
+        chat_id: str,
+        file_path: str,
+        caption: str | None = None,
+        file_name: str | None = None,
+        reply_to: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        **kwargs,
+    ) -> SendResult:
+        return await self._send_media(chat_id, file_path, caption, metadata)
+
+    async def send_video(
+        self, chat_id: str, video_path: str, caption: str | None = None, reply_to: str | None = None, metadata: dict[str, Any] | None = None, **kwargs
+    ) -> SendResult:
+        return await self._send_media(chat_id, video_path, caption, metadata)
+
+    async def send_voice(
+        self, chat_id: str, audio_path: str, caption: str | None = None, reply_to: str | None = None, metadata: dict[str, Any] | None = None, **kwargs
+    ) -> SendResult:
+        return await self._send_media(chat_id, audio_path, caption, metadata)
+
     async def send_clarify(
         self,
         chat_id: str,
@@ -267,7 +304,15 @@ async def _standalone_send(
     media_files: list[str] | None = None,
     force_document: bool = False,
 ) -> dict[str, Any]:
-    mid = append_outbox(chat_id or identity.owner_id(), message or "", source="cron")
+    # Hermes takes a job's MEDIA tags out of its text before delivery; the chat shows a file from that line.
+    paths = [str(m[0] if isinstance(m, (list, tuple)) else m) for m in media_files or []]
+    lines = [message or "", *(f"MEDIA:{p}" for p in paths if p)]
+    if paths:
+        from .data import remember_media_path
+
+        for p in paths:
+            remember_media_path(p)
+    mid = append_outbox(chat_id or identity.owner_id(), "\n".join(line for line in lines if line), source="cron")
     # Best-effort nudge of the live bridge, on its own thread: a blocking request here would stall the event loop.
     threading.Thread(target=_notify_bridge, args=(mid,), name="chief-outbox-notify", daemon=True).start()
     return {"success": True, "message_id": mid}

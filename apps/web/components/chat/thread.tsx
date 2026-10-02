@@ -110,12 +110,12 @@ function foldRepeats(rows: ChatMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (let i = 0; i < rows.length; i++) {
     const first = rows[i].notice;
-    if (!first || first.source !== "notice") {
+    if (!first || first.source !== "notice" || first.attachments?.length) {
       out.push(rows[i]);
       continue;
     }
     let j = i;
-    while (j + 1 < rows.length && rows[j + 1].notice?.source === "notice" && rows[j + 1].notice!.text.trim() === first.text.trim()) j++;
+    while (j + 1 < rows.length && rows[j + 1].notice?.source === "notice" && !rows[j + 1].notice!.attachments?.length && rows[j + 1].notice!.text.trim() === first.text.trim()) j++;
     if (j === i) {
       out.push(rows[i]);
       continue;
@@ -505,7 +505,14 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
       <motion.div {...motionProps} className="mt-5 flex gap-2.5">
         <div className="w-7 shrink-0" />
         <div className="min-w-0 flex-1">
-          {m.notice ? <NoticeBody notice={m.notice} onQuickReply={onQuickReply} /> : <AskedRow items={m.asked!} />}
+          {m.notice ? (
+            <>
+              {m.notice.text.trim() ? <NoticeBody notice={m.notice} onQuickReply={onQuickReply} /> : null}
+              <MessageMedia attachments={m.notice.attachments} />
+            </>
+          ) : (
+            <AskedRow items={m.asked!} />
+          )}
           {time ? <span className="mt-1 block text-caption text-fg-3">{time}</span> : null}
         </div>
       </motion.div>

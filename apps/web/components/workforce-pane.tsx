@@ -424,7 +424,7 @@ function MiniOrbit({
   }, [shown, reduced]);
 
   return (
-    <section ref={box} className="relative h-64 overflow-hidden border-b border-line bg-canvas" aria-label="Fleet orbit">
+    <section ref={box} className="relative isolate h-64 overflow-hidden border-b border-line bg-canvas" aria-label="Fleet orbit">
       <Starfield count={70} />
       <div
         className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,color-mix(in_srgb,var(--chief)_12%,transparent),transparent_60%)]"

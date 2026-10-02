@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import sqlite3
 import threading
@@ -123,11 +124,12 @@ def _norm(text: str) -> str:
     return _SPACE.sub(" ", str(text or "")).strip()
 
 
-def _reply_texts(session_key: str, since: float) -> list[str]:
-    """Assistant texts of this session from `since` on (normalized), to tell replies from notices."""
+def _reply_texts(session_key: str, since: float) -> tuple[list[str], set[str]]:
+    """Assistant texts of this session from `since` on (normalized), and the files they showed, to tell
+    replies from notices."""
     db_path = chief_home() / "state.db"
     if not session_key or not db_path.is_file():
-        return []
+        return [], set()
     try:
         conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
         conn.row_factory = sqlite3.Row
@@ -141,15 +143,23 @@ def _reply_texts(session_key: str, since: float) -> list[str]:
             conn.close()
     except Exception:
         logger.debug("reply texts read failed", exc_info=True)
-        return []
+        return [], set()
     from .data import parse_message_content
 
-    texts = []
+    texts: list[str] = []
+    files: set[str] = set()
     for row in rows:
-        text, _ = parse_message_content(row["content"])
+        text, attachments = parse_message_content(row["content"])
         if _norm(text):
             texts.append(_norm(text))
-    return texts
+        files.update(_file_key(a.get("path")) for a in attachments)
+    return texts, files
+
+
+def _file_key(path: Any) -> str:
+    """The same file however a message spelled its path (slashes, case on Windows, a trailing "./")."""
+    raw = str(path or "").strip()
+    return raw if raw.startswith(("http://", "https://")) else os.path.normcase(os.path.normpath(raw))
 
 
 def busy_line(text: str) -> bool:
@@ -202,15 +212,22 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
     rows = [r for r in rows if not busy_line(str(r.get("message") or "")) and _norm(str(r.get("message") or ""))]
     if not rows:
         return []
-    replies = _reply_texts(session_key, min(float(r.get("at") or 0) for r in rows))
+    replies, shown = _reply_texts(session_key, min(float(r.get("at") or 0) for r in rows))
+    from .data import parse_message_content, remember_media_path
+
     out = []
     for row in rows:
-        text = _norm(str(row.get("message") or ""))
-        # A long reply can reach the adapter in pieces: a piece of a reply is a reply too.
-        if any(text == reply or text in reply for reply in replies):
-            continue
         raw = str(row.get("message") or "")
-        body, routine = unwrap_cron(raw)
+        # The adapter sends a reply's attachments after its text as "MEDIA:<path>" lines (adapter._send_media).
+        stripped, attachments = parse_message_content(raw) if "MEDIA:" in raw else (raw, [])
+        text = _norm(stripped)
+        attachments = [a for a in attachments if _file_key(a.get("path")) not in shown]
+        # A long reply can reach the adapter in pieces: a piece of a reply is a reply too.
+        if not attachments and (not text or any(text == reply or text in reply for reply in replies)):
+            continue
+        for a in attachments:
+            remember_media_path(str(a.get("path") or ""))
+        body, routine = unwrap_cron(stripped)
         item: dict[str, Any] = {
             "id": str(row.get("id") or ""),
             "at": float(row.get("at") or 0),
@@ -220,6 +237,8 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
         }
         if routine:
             item["routine"] = routine
+        if attachments:
+            item["attachments"] = attachments
         out.append(item)
     return out[-limit:]
 

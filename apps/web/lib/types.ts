@@ -96,6 +96,8 @@ export type ChatNotice = {
   source: "scheduled" | "notice";
   /** A scheduled job's answer, unwrapped by the bridge: which routine it came from. */
   routine?: { name: string; jobId: string };
+  /** Files it carried (an image a routine made, or one handed over after a reply's text). */
+  attachments?: ChatAttachment[];
   /** Client-only: the same notice repeated this many times in a row (restarts), and when the last one came. */
   repeat?: number;
   until?: number;

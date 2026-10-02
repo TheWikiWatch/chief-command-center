@@ -181,6 +181,28 @@ class ChatStateTests(unittest.TestCase):
         self.assertEqual([n["text"] for n in chat_state.notices("session", since=165)], ["📬 No home channel is set"])
         self.assertEqual(chat_state.notice_head(), "o4")
 
+    def test_attachments_sent_after_a_reply_show_once(self):
+        shown = self.home / "img" / "shown.png"
+        new = self.home / "img" / "sketch.png"
+        with self.database() as conn:
+            conn.execute("INSERT INTO messages VALUES (1, 'assistant', ?, '100.0', NULL, 's', 1)", (f"Here it is.\nMEDIA:{shown}",))
+        rows = [
+            (f"MEDIA:{shown}", "send", 100.1),  # the reply's own image, handed over after its text
+            (f"Daily sketch\nMEDIA:{new}", "cron", 160.0),  # a routine's image
+            (f"MEDIA:{new}", "send", 170.0),  # an image on its own
+        ]
+        outbox._outbox_path().write_text(
+            "".join(
+                json.dumps({"id": f"o{i}", "at": at, "chat_id": "owner", "message": m, "source": src, "read": False}) + "\n"
+                for i, (m, src, at) in enumerate(rows)
+            ),
+            encoding="utf-8",
+        )
+        found = chat_state.notices("session", since=0)
+        self.assertEqual([(n["text"], n["source"]) for n in found], [("Daily sketch", "scheduled"), ("", "notice")])
+        self.assertEqual([[a["name"] for a in n["attachments"]] for n in found], [["sketch.png"], ["sketch.png"]])
+        self.assertEqual(found[0]["attachments"][0]["kind"], "image")
+
     def test_no_outbox_means_no_notices(self):
         self.assertEqual(chat_state.notices("session"), [])
         self.assertEqual(chat_state.notice_head(), "")

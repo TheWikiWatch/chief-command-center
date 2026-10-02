@@ -80,6 +80,15 @@ export function ChatHeader({
   // On the phone the connection dot stays small; what it would say shows on the status line instead.
   const link = useLinkLabel({ connected, authFailed });
   const linkLine = compact && link.label && (mood === "online" || mood === "offline") ? { text: link.label, tone: link.text } : null;
+  // The phone's status line leads with a small presence dot, the colour of the connection dot elsewhere.
+  const presence =
+    compact && !status && (mood === "online" || mood === "offline")
+      ? mood === "online" && link.state === "ok"
+        ? "bg-ok shadow-[0_0_6px_rgb(var(--c-ok)/0.55)]"
+        : link.state === "degraded"
+          ? "bg-warn"
+          : "bg-danger"
+      : "";
 
   const line: { text: string; tone: string } = status ?? linkLine ??
     (mood === "approval"
@@ -134,6 +143,7 @@ export function ChatHeader({
             aria-live="polite"
           >
             {mood === "speaking" ? <SpeakingBars /> : null}
+            {presence ? <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${presence}`} /> : null}
             <span className="truncate">{line.text}</span>
           </motion.p>
         </AnimatePresence>
