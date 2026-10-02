@@ -5,6 +5,7 @@ Both are best-effort and fail open:
 - `preview_for` returns the ORIGINAL path whenever a light preview is not
   (yet) available, so callers can always serve something playable.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -57,8 +58,7 @@ def thumb_for(src: Path) -> Path | None:
     tmp = out.with_name(out.stem + ".tmp.jpg")
     for ss in ("3", "1", "0"):
         ok = _run(
-            [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-ss", ss, "-i", str(src),
-             "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", str(tmp)],
+            [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-ss", ss, "-i", str(src), "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", str(tmp)],
             THUMB_TIMEOUT,
         )
         if ok and tmp.is_file() and tmp.stat().st_size > 0:
@@ -102,8 +102,7 @@ def _build_preview(src: Path, out: Path, key: str) -> None:
         height = _probe_height(src)
         if height and height > 720:
             cmd += ["-vf", "scale=-2:720"]
-        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "26",
-                "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(tmp)]
+        cmd += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "26", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(tmp)]
         if _run(cmd, PREVIEW_TIMEOUT) and tmp.is_file() and tmp.stat().st_size > 0:
             try:
                 os.replace(tmp, out)
@@ -124,9 +123,10 @@ def _build_preview(src: Path, out: Path, key: str) -> None:
 def _probe_height(src: Path) -> int | None:
     try:
         r = subprocess.run(
-            [FFPROBE, "-v", "error", "-select_streams", "v:0",
-             "-show_entries", "stream=height", "-of", "csv=p=0", str(src)],
-            capture_output=True, text=True, timeout=20,
+            [FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", str(src)],
+            capture_output=True,
+            text=True,
+            timeout=20,
         )
         raw = (r.stdout or "").strip().split("\n")[0]
         return int(float(raw)) if raw else None

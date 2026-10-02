@@ -8,6 +8,7 @@ key pair — and with it every phone that already subscribed — carries over un
 
 A new install gets a key pair the first time a device asks for the public key.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,10 +58,8 @@ def ensure_vapid() -> dict[str, str]:
         if existing:
             return existing
         key = ec.generate_private_key(ec.SECP256R1())
-        pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8,
-                                serialization.NoEncryption()).decode("ascii")
-        public = b64url_encode(key.public_key().public_bytes(serialization.Encoding.X962,
-                                                             serialization.PublicFormat.UncompressedPoint))
+        pem = key.private_bytes(serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()).decode("ascii")
+        public = b64url_encode(key.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint))
         record = {"publicKey": public, "private_pem": pem}
         _atomic_write(vapid_path(), json.dumps(record, indent=2))
         return record

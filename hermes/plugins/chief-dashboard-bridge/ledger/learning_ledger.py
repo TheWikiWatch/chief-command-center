@@ -23,6 +23,7 @@ data folder is CHIEF_LEARNING_DIR, else <root>/learning: ledger.db (SQLite), rep
 proposals.json (the weekly distill) and decisions.json (the owner's Approve / Dismiss, from the dashboard).
 Standard library only. Ported from the owner's original fleet tooling; bundled with the app.
 """
+
 from __future__ import annotations
 
 import calendar
@@ -38,7 +39,6 @@ import sys
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
-
 
 
 def _hermes_root() -> Path:
@@ -238,7 +238,9 @@ def _revert(conn: sqlite3.Connection, version_id: int, discard_newer: int = 0) -
     # Only when the caller saw exactly that many (the dashboard shows the count before the hold).
     if newer and newer != discard_newer:
         edits = "edit" if newer == 1 else "edits"
-        raise SystemExit(f"change #{version_id} has {newer} later {edits} to this file; reverting it would undo them too (pass --discard-newer {newer} to go ahead)")
+        raise SystemExit(
+            f"change #{version_id} has {newer} later {edits} to this file; reverting it would undo them too (pass --discard-newer {newer} to go ahead)"
+        )
     target = Path(row["file"])
     stamp = time.strftime("%Y%m%d-%H%M%S")
     if target.exists():
@@ -250,7 +252,18 @@ def _revert(conn: sqlite3.Connection, version_id: int, discard_newer: int = 0) -
     with conn:
         conn.execute(
             "INSERT INTO versions (scope, skill, file, sha, size, mtime, seen_at, content, change, source) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (row["scope"], row["skill"], row["file"], hashlib.sha256(data).hexdigest(), len(data), target.stat().st_mtime, time.time(), before["content"], "reverted", f"revert of #{version_id}"),
+            (
+                row["scope"],
+                row["skill"],
+                row["file"],
+                hashlib.sha256(data).hexdigest(),
+                len(data),
+                target.stat().st_mtime,
+                time.time(),
+                before["content"],
+                "reverted",
+                f"revert of #{version_id}",
+            ),
         )
     return f"reverted #{version_id}: {row['scope']}/{row['skill']} is back to the version from {time.strftime('%Y-%m-%d %H:%M', time.localtime(before['seen_at']))}"
 
@@ -326,51 +339,53 @@ def scorecards(kconn: sqlite3.Connection | None, now: float) -> list[dict]:
         blocked = 0
         if kconn:
             blocked = kconn.execute("SELECT COUNT(*) FROM tasks WHERE assignee = ? AND status = 'blocked'", (desk,)).fetchone()[0]
-        cards.append({
-            "desk": desk,
-            "weeks": weeks,
-            "last7": last7,
-            "cards30": sum(1 for r in last30 if r["kind"] == "completed"),
-            "blocked": blocked,
-            "memory": memory_fill(desk),
-        })
+        cards.append(
+            {
+                "desk": desk,
+                "weeks": weeks,
+                "last7": last7,
+                "cards30": sum(1 for r in last30 if r["kind"] == "completed"),
+                "blocked": blocked,
+                "memory": memory_fill(desk),
+            }
+        )
     return cards
 
 
 def recent_changes(conn: sqlite3.Connection, now: float, limit: int = 40) -> list[dict]:
     """The latest changes across all skills, without diffs (`diff ID` / the dashboard fetch them)."""
-    rows = conn.execute(
-        "SELECT * FROM versions WHERE change IN ('added','changed','removed','reverted') ORDER BY id DESC LIMIT ?", (limit,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM versions WHERE change IN ('added','changed','removed','reverted') ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
     out = []
     for r in rows:
         added, removed = line_counts(conn, r)
         before = previous_version(conn, r)
-        out.append({
-            "id": r["id"],
-            "scope": r["scope"],
-            "skill": r["skill"],
-            "file": Path(r["file"]).name,
-            "change": r["change"],
-            "at": r["mtime"] or r["seen_at"],
-            "source": r["source"],
-            "added": added,
-            "removed": removed,
-            "canRevert": bool(before and before["content"] is not None and r["change"] != "reverted"),
-            "newer": later_versions(conn, r),
-        })
+        out.append(
+            {
+                "id": r["id"],
+                "scope": r["scope"],
+                "skill": r["skill"],
+                "file": Path(r["file"]).name,
+                "change": r["change"],
+                "at": r["mtime"] or r["seen_at"],
+                "source": r["source"],
+                "added": added,
+                "removed": removed,
+                "canRevert": bool(before and before["content"] is not None and r["change"] != "reverted"),
+                "newer": later_versions(conn, r),
+            }
+        )
     return out
 
 
 # --------------------------------------------------------------------------- oversight (PLAN-2026-09-29)
 
 # Flag thresholds, in one place so they are easy to tune.
-CHURN_48H = 5          # edits to one skill in 48 hours
-CHURN_7D = 10          # ... or in 7 days
-BLOAT_BYTES = 32_000   # a SKILL.md this large costs every prompt that loads it
-GROWTH_RATIO = 1.5     # a skill 50% larger than 14 days ago
+CHURN_48H = 5  # edits to one skill in 48 hours
+CHURN_7D = 10  # ... or in 7 days
+BLOAT_BYTES = 32_000  # a SKILL.md this large costs every prompt that loads it
+GROWTH_RATIO = 1.5  # a skill 50% larger than 14 days ago
 GROWTH_MIN_BYTES = 8_000
-MEMORY_FULL = 0.95     # a desk's MEMORY.md / USER.md this full
+MEMORY_FULL = 0.95  # a desk's MEMORY.md / USER.md this full
 PROPOSAL_STALE_DAYS = 3
 EPISODE_GAP = 2 * DAY  # edits closer than this are one episode
 EDIT_KINDS = ("added", "changed", "removed")
@@ -453,9 +468,7 @@ def _episodes(rows: list) -> list[list]:
 def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, now: float) -> list[dict]:
     """Every skill edited in the last 30 days: churn, size trend, episodes with verdicts, recent changes."""
     since = now - 30 * DAY
-    rows = conn.execute(
-        "SELECT * FROM versions WHERE change IN ('added','changed','removed','reverted') AND seen_at >= ? ORDER BY id ASC", (since,)
-    ).fetchall()
+    rows = conn.execute("SELECT * FROM versions WHERE change IN ('added','changed','removed','reverted') AND seen_at >= ? ORDER BY id ASC", (since,)).fetchall()
     events = kanban_events(kconn, since - 2 * IMPACT_WINDOW) if kconn else []
     all_desks = desks()
     by_skill: dict[tuple[str, str], list] = {}
@@ -479,53 +492,59 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
         episodes = []
         for group in reversed(_episodes(edits)):
             start, end = group[0]["mtime"] or group[0]["seen_at"], group[-1]["mtime"] or group[-1]["seen_at"]
-            episodes.append({
-                "id": f"ep{group[0]['id']}",
-                "start": start,
-                "end": end,
-                "edits": len(group),
-                "firstId": group[0]["id"],
-                "lastId": group[-1]["id"],
-                "verdict": episode_verdict(events, desks_for, start, end, now),
-            })
+            episodes.append(
+                {
+                    "id": f"ep{group[0]['id']}",
+                    "start": start,
+                    "end": end,
+                    "edits": len(group),
+                    "firstId": group[0]["id"],
+                    "lastId": group[-1]["id"],
+                    "verdict": episode_verdict(events, desks_for, start, end, now),
+                }
+            )
         episode_of = {r["id"]: f"ep{g[0]['id']}" for g in _episodes(edits) for r in g}
         changes = []
         for r in reversed(items[-SKILL_CHANGES_SHOWN:]):
             added, removed = line_counts(conn, r)
             before = previous_version(conn, r)
-            changes.append({
-                "id": r["id"],
-                "file": Path(r["file"]).name,
-                "change": r["change"],
-                "at": r["mtime"] or r["seen_at"],
-                "source": r["source"],
-                "added": added,
-                "removed": removed,
-                "canRevert": bool(before and before["content"] is not None and r["change"] != "reverted"),
-                "newer": later_versions(conn, r),
-                "episode": episode_of.get(r["id"]),
-            })
+            changes.append(
+                {
+                    "id": r["id"],
+                    "file": Path(r["file"]).name,
+                    "change": r["change"],
+                    "at": r["mtime"] or r["seen_at"],
+                    "source": r["source"],
+                    "added": added,
+                    "removed": removed,
+                    "canRevert": bool(before and before["content"] is not None and r["change"] != "reverted"),
+                    "newer": later_versions(conn, r),
+                    "episode": episode_of.get(r["id"]),
+                }
+            )
         seen = [r["seen_at"] for r in edits]
-        out.append({
-            "key": f"{scope}/{skill}",
-            "scope": scope,
-            "skill": skill,
-            "name": skill.split("/")[-1],
-            "files": len(files),
-            "edits48h": sum(1 for t in seen if t >= now - 2 * DAY),
-            "edits7d": sum(1 for t in seen if t >= now - 7 * DAY),
-            "edits30d": len(seen),
-            "size": size_now,
-            "size14d": size_then if known_then else None,
-            "skillMdSize": max((int((latest(conn, f) or {"size": 0})["size"] or 0) for f in files if f.endswith("SKILL.md")), default=0),
-            "lastAt": max((r["mtime"] or r["seen_at"]) for r in items),
-            "sources": {
-                "review": sum(1 for r in edits if str(r["source"] or "").startswith("background review")),
-                "outside": sum(1 for r in edits if not str(r["source"] or "").startswith("background review")),
-            },
-            "episodes": episodes[:SKILL_EPISODES_SHOWN],
-            "changes": changes,
-        })
+        out.append(
+            {
+                "key": f"{scope}/{skill}",
+                "scope": scope,
+                "skill": skill,
+                "name": skill.split("/")[-1],
+                "files": len(files),
+                "edits48h": sum(1 for t in seen if t >= now - 2 * DAY),
+                "edits7d": sum(1 for t in seen if t >= now - 7 * DAY),
+                "edits30d": len(seen),
+                "size": size_now,
+                "size14d": size_then if known_then else None,
+                "skillMdSize": max((int((latest(conn, f) or {"size": 0})["size"] or 0) for f in files if f.endswith("SKILL.md")), default=0),
+                "lastAt": max((r["mtime"] or r["seen_at"]) for r in items),
+                "sources": {
+                    "review": sum(1 for r in edits if str(r["source"] or "").startswith("background review")),
+                    "outside": sum(1 for r in edits if not str(r["source"] or "").startswith("background review")),
+                },
+                "episodes": episodes[:SKILL_EPISODES_SHOWN],
+                "changes": changes,
+            }
+        )
     out.sort(key=lambda s: (-s["edits7d"], -s["lastAt"]))
     return out
 
@@ -590,46 +609,76 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
     for s in skills:
         label = f"{s['name']} ({'shared' if s['scope'] == 'shared' else s['scope']})"
         if s["edits48h"] >= CHURN_48H or s["edits7d"] >= CHURN_7D:
-            out.append({
-                "id": f"churn:{s['key']}:{week}", "kind": "churn", "severity": "warn", "skill": s["key"],
-                "title": f"{label} keeps being rewritten",
-                "detail": f"{s['edits7d']} edits in 7 days ({s['edits48h']} in the last 48 hours). Rewrites this often usually mean the skill is fighting itself.",
-            })
+            out.append(
+                {
+                    "id": f"churn:{s['key']}:{week}",
+                    "kind": "churn",
+                    "severity": "warn",
+                    "skill": s["key"],
+                    "title": f"{label} keeps being rewritten",
+                    "detail": f"{s['edits7d']} edits in 7 days ({s['edits48h']} in the last 48 hours). Rewrites this often usually mean the skill is fighting itself.",
+                }
+            )
         if s["skillMdSize"] >= BLOAT_BYTES:
-            out.append({
-                "id": f"bloat:{s['key']}:{s['skillMdSize'] // 16_000}", "kind": "bloat", "severity": "warn", "skill": s["key"],
-                "title": f"{label} SKILL.md is {round(s['skillMdSize'] / 1000)} KB",
-                "detail": "Every prompt that loads it pays for it. Move history and case notes into references/.",
-            })
+            out.append(
+                {
+                    "id": f"bloat:{s['key']}:{s['skillMdSize'] // 16_000}",
+                    "kind": "bloat",
+                    "severity": "warn",
+                    "skill": s["key"],
+                    "title": f"{label} SKILL.md is {round(s['skillMdSize'] / 1000)} KB",
+                    "detail": "Every prompt that loads it pays for it. Move history and case notes into references/.",
+                }
+            )
         elif s["size14d"] and s["size"] >= GROWTH_MIN_BYTES and s["size"] >= s["size14d"] * GROWTH_RATIO:
-            out.append({
-                "id": f"growth:{s['key']}:{week}", "kind": "bloat", "severity": "warn", "skill": s["key"],
-                "title": f"{label} grew {round((s['size'] / s['size14d'] - 1) * 100)}% in 14 days",
-                "detail": f"{round(s['size14d'] / 1000)} KB → {round(s['size'] / 1000)} KB.",
-            })
+            out.append(
+                {
+                    "id": f"growth:{s['key']}:{week}",
+                    "kind": "bloat",
+                    "severity": "warn",
+                    "skill": s["key"],
+                    "title": f"{label} grew {round((s['size'] / s['size14d'] - 1) * 100)}% in 14 days",
+                    "detail": f"{round(s['size14d'] / 1000)} KB → {round(s['size'] / 1000)} KB.",
+                }
+            )
         for ep in s["episodes"]:
             if ep["verdict"]["label"] == "worse":
-                out.append({
-                    "id": f"worse:{s['key']}:{ep['id']}", "kind": "worse", "severity": "danger", "skill": s["key"],
-                    "title": f"{label} got worse after {ep['edits']} {'edit' if ep['edits'] == 1 else 'edits'}",
-                    "detail": ep["verdict"].get("why") or "",
-                })
+                out.append(
+                    {
+                        "id": f"worse:{s['key']}:{ep['id']}",
+                        "kind": "worse",
+                        "severity": "danger",
+                        "skill": s["key"],
+                        "title": f"{label} got worse after {ep['edits']} {'edit' if ep['edits'] == 1 else 'edits'}",
+                        "detail": ep["verdict"].get("why") or "",
+                    }
+                )
     for d in desk_cards:
         m = d["memory"]
         for which, used, limit in (("memory", m["memory"], m["memoryLimit"]), ("user", m["user"], m["userLimit"])):
             if limit and used / limit >= MEMORY_FULL:
-                out.append({
-                    "id": f"memory:{d['desk']}:{which}:{week}", "kind": "memory", "severity": "warn", "desk": d["desk"],
-                    "title": f"{d['desk']}'s {'memory' if which == 'memory' else 'user profile'} is {round(used / limit * 100)}% full",
-                    "detail": f"{used} of {limit} characters. New lessons will push old ones out.",
-                })
+                out.append(
+                    {
+                        "id": f"memory:{d['desk']}:{which}:{week}",
+                        "kind": "memory",
+                        "severity": "warn",
+                        "desk": d["desk"],
+                        "title": f"{d['desk']}'s {'memory' if which == 'memory' else 'user profile'} is {round(used / limit * 100)}% full",
+                        "detail": f"{used} of {limit} characters. New lessons will push old ones out.",
+                    }
+                )
     for p in props:
         if p["status"] == "open" and p.get("date") and now - p["date"] >= PROPOSAL_STALE_DAYS * DAY:
-            out.append({
-                "id": f"proposal:{p['id']}", "kind": "proposal", "severity": "info", "proposal": p["id"],
-                "title": f"Proposal waiting {int((now - p['date']) / DAY)} days: {p.get('target') or p['id']}",
-                "detail": str(p.get("change") or "")[:200],
-            })
+            out.append(
+                {
+                    "id": f"proposal:{p['id']}",
+                    "kind": "proposal",
+                    "severity": "info",
+                    "proposal": p["id"],
+                    "title": f"Proposal waiting {int((now - p['date']) / DAY)} days: {p.get('target') or p['id']}",
+                    "detail": str(p.get("change") or "")[:200],
+                }
+            )
     rank = {"danger": 0, "warn": 1, "info": 2}
     out.sort(key=lambda f: rank.get(f["severity"], 3))
     return out
@@ -647,7 +696,9 @@ def crashes(days: int = 7) -> list[dict]:
     """Application Error events (native crashes) of the app's own processes, from the Windows event log."""
     query = f"*[System[Provider[@Name='Application Error'] and TimeCreated[timediff(@SystemTime) <= {days * 86400000}]]]"
     try:
-        raw = subprocess.run(["wevtutil", "qe", "Application", f"/q:{query}", "/f:xml", "/c:500"], capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace").stdout
+        raw = subprocess.run(
+            ["wevtutil", "qe", "Application", f"/q:{query}", "/f:xml", "/c:500"], capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace"
+        ).stdout
     except (OSError, subprocess.SubprocessError):
         return []
     out = []
@@ -772,8 +823,13 @@ def _collect(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, now: fl
         "proposals": props,
         "flags": flags(skills, desk_cards, props, now),
         "thresholds": {
-            "churn48h": CHURN_48H, "churn7d": CHURN_7D, "bloatBytes": BLOAT_BYTES, "growthRatio": GROWTH_RATIO,
-            "memoryFull": MEMORY_FULL, "proposalStaleDays": PROPOSAL_STALE_DAYS, "episodeGapHours": int(EPISODE_GAP / 3600),
+            "churn48h": CHURN_48H,
+            "churn7d": CHURN_7D,
+            "bloatBytes": BLOAT_BYTES,
+            "growthRatio": GROWTH_RATIO,
+            "memoryFull": MEMORY_FULL,
+            "proposalStaleDays": PROPOSAL_STALE_DAYS,
+            "episodeGapHours": int(EPISODE_GAP / 3600),
         },
     }
 
@@ -788,7 +844,9 @@ def markdown(data: dict) -> str:
         m = d["memory"]
         mem = f"{m['memory']}/{m['memoryLimit']}"
         succ = f"{round(s['success'] * 100)}%" if s["success"] is not None else "–"
-        lines.append(f"| {d['desk']} | {s['done']} | {s['crashed']} | {s['gaveUp']} | {s['medianMinutes'] or '–'} | {succ} | {d['cards30']} | {d['blocked']} | {mem} |")
+        lines.append(
+            f"| {d['desk']} | {s['done']} | {s['crashed']} | {s['gaveUp']} | {s['medianMinutes'] or '–'} | {succ} | {d['cards30']} | {d['blocked']} | {mem} |"
+        )
     lines += ["", f"## Flags ({len(data['flags'])})"]
     for f in data["flags"]:
         lines.append(f"- [{f['severity']}] {f['title']} — {f['detail']}")

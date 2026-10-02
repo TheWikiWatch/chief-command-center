@@ -13,6 +13,7 @@ Fleet Health shows. This module keeps it running:
   A job the owner paused or retimed is left as it is.
 - `run_now()`: one ledger run, so Fleet Health has a report before the first scheduled one.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -42,17 +43,37 @@ def folder() -> Path:
 def _jobs_spec(learning: Path) -> tuple[dict[str, Any], ...]:
     where = str(learning)
     return (
-        {"name": "Fleet: learning ledger", "schedule": "every 30m", "script": SCRIPT_NAME, "no_agent": True, "deliver": "local",
-         "prompt": None, "skills": None},
-        {"name": "Fleet: lessons distill (weekly)", "schedule": "0 17 * * 0", "deliver": "command_center",
-         "skills": ["fleet-lessons-distill", "fleet-ops"],
-         "prompt": (f"Run the weekly lessons distill with the fleet-lessons-distill skill. Fleet Health's folder is {where}: read "
-                    f"report.json, decisions.json and proposals.json there; write proposals.json and append the week to "
-                    f"LEARNINGS.md, nothing else. Never apply a change. "
-                    "Finish with one short screen for the owner.")},
-        {"name": "Fleet: roster review (monthly)", "schedule": "0 17 1 * *", "deliver": "command_center", "skills": ["fleet-ops"],
-         "prompt": (f"Run the monthly roster review from the fleet-ops skill. Fleet Health's report is {where}\\report.json. "
-                    "Change nothing; report one screen to the owner with at most three proposed changes.")},
+        {
+            "name": "Fleet: learning ledger",
+            "schedule": "every 30m",
+            "script": SCRIPT_NAME,
+            "no_agent": True,
+            "deliver": "local",
+            "prompt": None,
+            "skills": None,
+        },
+        {
+            "name": "Fleet: lessons distill (weekly)",
+            "schedule": "0 17 * * 0",
+            "deliver": "command_center",
+            "skills": ["fleet-lessons-distill", "fleet-ops"],
+            "prompt": (
+                f"Run the weekly lessons distill with the fleet-lessons-distill skill. Fleet Health's folder is {where}: read "
+                f"report.json, decisions.json and proposals.json there; write proposals.json and append the week to "
+                f"LEARNINGS.md, nothing else. Never apply a change. "
+                "Finish with one short screen for the owner."
+            ),
+        },
+        {
+            "name": "Fleet: roster review (monthly)",
+            "schedule": "0 17 1 * *",
+            "deliver": "command_center",
+            "skills": ["fleet-ops"],
+            "prompt": (
+                f"Run the monthly roster review from the fleet-ops skill. Fleet Health's report is {where}\\report.json. "
+                "Change nothing; report one screen to the owner with at most three proposed changes."
+            ),
+        },
     )
 
 

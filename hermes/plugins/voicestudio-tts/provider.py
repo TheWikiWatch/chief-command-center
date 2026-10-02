@@ -36,8 +36,10 @@ from collections.abc import Callable
 try:
     from agent.tts_provider import TTSProvider
 except Exception:
+
     class TTSProvider:  # type: ignore[no-redef]
         pass
+
 
 logger = logging.getLogger("voicestudio-tts")
 
@@ -106,12 +108,12 @@ def speech_body(text: str, voice: str, cfg: dict[str, Any], fmt: str, speed: flo
     if isinstance(steps, int) and 1 <= steps <= 128:
         body["num_step"] = steps
     if voice.startswith("design:"):
-        body["instruct"] = voice[len("design:"):].strip()
+        body["instruct"] = voice[len("design:") :].strip()
         seed = cfg.get("seed", 7)
         if isinstance(seed, int):
             body["seed"] = seed
     elif voice.startswith("profile:"):
-        body["voice"] = voice[len("profile:"):].strip() or "default"
+        body["voice"] = voice[len("profile:") :].strip() or "default"
     return body
 
 
@@ -186,8 +188,9 @@ class VoiceStudioTTS(TTSProvider):
         return DEFAULT_VOICE
 
     # -- speech ------------------------------------------------------------
-    def synthesize(self, text: str, output_path: str, *, voice: str | None = None, model: str | None = None,
-                   speed: float | None = None, format: str = "mp3", **extra: Any) -> str:
+    def synthesize(
+        self, text: str, output_path: str, *, voice: str | None = None, model: str | None = None, speed: float | None = None, format: str = "mp3", **extra: Any
+    ) -> str:
         cfg = self._config()
         fmt = format if format in FORMATS else "mp3"
         path = _with_ext(output_path, fmt)

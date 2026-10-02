@@ -8,6 +8,7 @@ loads it from disk and never contacts the Hub.
 
 Models live in `<chief home>/models/faster-whisper-<id>/`; deleting that folder removes one.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -234,8 +235,10 @@ def _run(job: _Job) -> None:
         for name, size, sha in spec["files"]:
             _fetch_file(job, spec, folder, name, size, sha, done)
             done += size
-        (folder / _MARKER).write_text(json.dumps({"id": job.model_id, "repo": spec["repo"], "revision": spec["revision"],
-                                                  "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S")}), encoding="utf-8")
+        (folder / _MARKER).write_text(
+            json.dumps({"id": job.model_id, "repo": spec["repo"], "revision": spec["revision"], "installed_at": time.strftime("%Y-%m-%dT%H:%M:%S")}),
+            encoding="utf-8",
+        )
         err = use(job.model_id)
         if err:
             raise SpeechModelError(err)

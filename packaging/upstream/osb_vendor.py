@@ -15,6 +15,7 @@ Writes `vendor.json` (version, commit, what was left out) and `NOTICE.md`. Provi
 and points its script calls at the app's own Python (no `uv`, so nothing is downloaded); see
 `apps/desktop/python/provision.py`.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -86,10 +87,25 @@ def main() -> int:
         version = args.tag.lstrip("v")
         skills = sorted(p.parent.relative_to(DEST / "skills").as_posix() for p in (DEST / "skills").rglob("SKILL.md"))
         routines = sorted(p.parent.name for p in (DEST / "optional-skills").rglob("SKILL.md"))
-        (DEST / "vendor.json").write_text(json.dumps({
-            "name": "obsidian-second-brain", "version": version, "tag": args.tag, "commit": commit, "source": UPSTREAM,
-            "license": "MIT", "author": "Eugeniu Ghelbur", "skills": skills, "routines": routines, "left_out": LEFT_OUT,
-        }, indent=2) + "\n", encoding="utf-8")
+        (DEST / "vendor.json").write_text(
+            json.dumps(
+                {
+                    "name": "obsidian-second-brain",
+                    "version": version,
+                    "tag": args.tag,
+                    "commit": commit,
+                    "source": UPSTREAM,
+                    "license": "MIT",
+                    "author": "Eugeniu Ghelbur",
+                    "skills": skills,
+                    "routines": routines,
+                    "left_out": LEFT_OUT,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
         (DEST / "NOTICE.md").write_text(
             f"# obsidian-second-brain {version}\n\n"
             f"Vendored from {UPSTREAM} at `{args.tag}` (commit `{commit}`), built with the toolkit's own\n"
@@ -98,7 +114,8 @@ def main() -> int:
             + "".join(f"- `{rel}`: {why}\n" for rel, why in LEFT_OUT.items())
             + "\nRe-vendor a newer release with `python packaging/upstream/osb_vendor.py --tag <tag>`, then run the\n"
             "compatibility suite. Provisioning points the skills' script calls at the app's own Python.\n",
-            encoding="utf-8")
+            encoding="utf-8",
+        )
         print(json.dumps({"ok": True, "version": version, "commit": commit, "skills": len(skills), "routines": routines}))
         return 0
     finally:

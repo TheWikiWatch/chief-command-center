@@ -8,6 +8,7 @@ from this process are serialized; a scheduled job run by a separate Hermes proce
 compaction checks that the file didn't grow while it was being rewritten. Compaction keeps 30 days, and never
 fewer than the last 500 rows, once the file passes 2 MB.
 """
+
 from __future__ import annotations
 
 import bisect
@@ -171,4 +172,4 @@ def read_outbox(*, after_id: str = "", limit: int = 50) -> list[dict]:
                 break
         if start < 0:
             return []
-    return rows[start:start + limit]
+    return rows[start : start + limit]

@@ -23,6 +23,7 @@
 
 After setup the app writes nothing in the folder; the agent does all later writing.
 """
+
 from __future__ import annotations
 
 import json
@@ -138,25 +139,35 @@ manual, `index.md`, `log.md`, `CRITICAL_FACTS.md`, the `drop/` folder, the board
 <!-- Chief: add a row to the Folder Map below for each of the owner's existing folders (what kind of note lives
      there), and ask the owner to review the rows before saving them. -->"""
 
-_KEEP_PROMPT_WIKI = ("I've connected my existing notes folder as my Second Brain in the agent-first wiki format and kept my "
-                     "folders as they are. Please look around it, then draft Folder Map rows in _CLAUDE.md for my existing "
-                     "folders. Show me the draft before you save it.")
-_ADOPT_PROMPT = ("I've connected my existing Second Brain. Please read its rules file ({rules}) and index.md, then tell me in "
-                 "a few lines how it's organized and how you'll work with it. Don't change anything yet.")
+_KEEP_PROMPT_WIKI = (
+    "I've connected my existing notes folder as my Second Brain in the agent-first wiki format and kept my "
+    "folders as they are. Please look around it, then draft Folder Map rows in _CLAUDE.md for my existing "
+    "folders. Show me the draft before you save it."
+)
+_ADOPT_PROMPT = (
+    "I've connected my existing Second Brain. Please read its rules file ({rules}) and index.md, then tell me in "
+    "a few lines how it's organized and how you'll work with it. Don't change anything yet."
+)
 
-_KEEP_PROMPT = ("I've connected my existing notes folder as my Second Brain and kept my folders as they are. Please look "
-                "around it, then draft the \"Where things go\" section of AGENTS.md describing where my projects, areas, "
-                "reference notes and journals live. Show me the draft before you save it.")
-_REORGANIZE_PROMPT = ("I've connected my existing notes folder as my Second Brain and I'd like it reorganized into Projects, "
-                      "Areas, Resources and Archive. Please look around and propose a move plan: every move from -> to, and "
-                      "which links would change. Don't move anything until I approve, keep links working, and log each move.")
+_KEEP_PROMPT = (
+    "I've connected my existing notes folder as my Second Brain and kept my folders as they are. Please look "
+    'around it, then draft the "Where things go" section of AGENTS.md describing where my projects, areas, '
+    "reference notes and journals live. Show me the draft before you save it."
+)
+_REORGANIZE_PROMPT = (
+    "I've connected my existing notes folder as my Second Brain and I'd like it reorganized into Projects, "
+    "Areas, Resources and Archive. Please look around and propose a move plan: every move from -> to, and "
+    "which links would change. Don't move anything until I approve, keep links working, and log each move."
+)
 
 
-_REORGANIZE_PROMPT_WIKI = ("I've connected my existing notes folder as my Second Brain and I'd like it reorganized into the agent-first "
-                           "wiki layout in _CLAUDE.md (raw/ sources, wiki/ pages, boards/ with task notes). Please look around and "
-                           "propose a move plan: every move from -> to, which notes become sources in raw/ and which become wiki "
-                           "pages, and which links would change. Don't move anything until I approve, keep links working, and "
-                           "log each move.")
+_REORGANIZE_PROMPT_WIKI = (
+    "I've connected my existing notes folder as my Second Brain and I'd like it reorganized into the agent-first "
+    "wiki layout in _CLAUDE.md (raw/ sources, wiki/ pages, boards/ with task notes). Please look around and "
+    "propose a move plan: every move from -> to, which notes become sources in raw/ and which become wiki "
+    "pages, and which links would change. Don't move anything until I approve, keep links working, and "
+    "log each move."
+)
 
 
 class SecondBrainError(ValueError):
@@ -525,8 +536,7 @@ def _owner_skill(home: Path, name: str, ours: Path) -> bool:
     return False
 
 
-def install_skill(home: Path, vault: Path, fmt: str | None = None, rules: str | None = None,
-                  extras: bool | None = None) -> Path:
+def install_skill(home: Path, vault: Path, fmt: str | None = None, rules: str | None = None, extras: bool | None = None) -> Path:
     """The `second-brain` skill (the folder, its rules file, its critical facts, which skill does what) and the
     `second-brain-writes` write gate, in the variant for the folder's format, rendered for this folder. The wiki
     format also gets its routines' skills (drop folder, morning brief, Current Analysis), unless the folder has its
@@ -538,8 +548,13 @@ def install_skill(home: Path, vault: Path, fmt: str | None = None, rules: str | 
     toolkit = toolkit_dir(home).as_posix()
 
     def render(source: Path) -> str:
-        return (source.read_text(encoding="utf-8").replace("{{vault}}", str(vault)).replace("{{rules}}", rules)
-                .replace("{{toolkit}}", toolkit).replace("{{critical_facts}}", critical_facts(vault)))
+        return (
+            source.read_text(encoding="utf-8")
+            .replace("{{vault}}", str(vault))
+            .replace("{{rules}}", rules)
+            .replace("{{toolkit}}", toolkit)
+            .replace("{{critical_facts}}", critical_facts(vault))
+        )
 
     def put(target: Path, source: Path) -> None:
         if not _owner_skill(home, target.parent.name, target):
@@ -658,34 +673,74 @@ def sync_critical_facts(profile: str = "chief") -> bool:
 # The toolkit's four scheduled agents (its HOOKS.md), armed for the owner's folder. Each is a cron job in the
 # chief's profile that runs the toolkit's blueprint skill in the Second Brain and reports to the app.
 ROUTINES = (
-    {"id": "morning", "name": "Second Brain: morning", "skill": "obsidian-morning", "schedule": "0 8 * * *",
-     "title": "Morning note", "about": "Today's daily note with what's due and overdue."},
-    {"id": "nightly", "name": "Second Brain: nightly", "skill": "obsidian-nightly", "schedule": "0 22 * * *",
-     "title": "Nightly tidy", "about": "Closes the day: reconciles contradictions, links orphans, notes patterns."},
-    {"id": "weekly", "name": "Second Brain: weekly review", "skill": "obsidian-weekly", "schedule": "0 18 * * 5",
-     "title": "Weekly review", "about": "Friday evening: the week's review, Inbox and projects checked."},
-    {"id": "health", "name": "Second Brain: health check", "skill": "obsidian-health-check", "schedule": "0 21 * * 0",
-     "title": "Health check", "about": "Sunday evening: duplicates, stale facts, broken links, untagged notes."},
+    {
+        "id": "morning",
+        "name": "Second Brain: morning",
+        "skill": "obsidian-morning",
+        "schedule": "0 8 * * *",
+        "title": "Morning note",
+        "about": "Today's daily note with what's due and overdue.",
+    },
+    {
+        "id": "nightly",
+        "name": "Second Brain: nightly",
+        "skill": "obsidian-nightly",
+        "schedule": "0 22 * * *",
+        "title": "Nightly tidy",
+        "about": "Closes the day: reconciles contradictions, links orphans, notes patterns.",
+    },
+    {
+        "id": "weekly",
+        "name": "Second Brain: weekly review",
+        "skill": "obsidian-weekly",
+        "schedule": "0 18 * * 5",
+        "title": "Weekly review",
+        "about": "Friday evening: the week's review, Inbox and projects checked.",
+    },
+    {
+        "id": "health",
+        "name": "Second Brain: health check",
+        "skill": "obsidian-health-check",
+        "schedule": "0 21 * * 0",
+        "title": "Health check",
+        "about": "Sunday evening: duplicates, stale facts, broken links, untagged notes.",
+    },
 )
 # The wiki format adds its own three: the drop folder (gated by a script, so an empty folder never calls the
 # model), the morning brief (mirrored into the chat session, so the owner's answers have their questions), and
 # Current Analysis as the last step of the nightly routine.
 WIKI_ROUTINES = (
-    {"id": "drop", "name": "Second Brain: drop folder", "skill": "second-brain-drop", "schedule": "5,35 * * * *",
-     "title": "Drop folder", "about": "Files one file from drop/ every half hour; silent when it's empty.",
-     "prompt": "Run the second-brain-drop routine: file at most one file from the Second Brain's drop/ folder, following "
-               "the skill and the second-brain-writes gate exactly. Do not ask questions. If there is nothing to file, "
-               "your whole final response is exactly [SILENT]."},
-    {"id": "brief", "name": "Second Brain: morning brief", "skill": "second-brain-brief", "schedule": "30 8 * * 1-5",
-     "title": "Morning brief", "about": "Weekdays: what changed, today's focus, and up to five questions for you.",
-     "prompt": "Write today's morning brief (second-brain-brief, Mode A). Do not ask anything outside the brief. Your final "
-               "response is the whole brief, starting with '# Morning brief'."},
+    {
+        "id": "drop",
+        "name": "Second Brain: drop folder",
+        "skill": "second-brain-drop",
+        "schedule": "5,35 * * * *",
+        "title": "Drop folder",
+        "about": "Files one file from drop/ every half hour; silent when it's empty.",
+        "prompt": "Run the second-brain-drop routine: file at most one file from the Second Brain's drop/ folder, following "
+        "the skill and the second-brain-writes gate exactly. Do not ask questions. If there is nothing to file, "
+        "your whole final response is exactly [SILENT].",
+    },
+    {
+        "id": "brief",
+        "name": "Second Brain: morning brief",
+        "skill": "second-brain-brief",
+        "schedule": "30 8 * * 1-5",
+        "title": "Morning brief",
+        "about": "Weekdays: what changed, today's focus, and up to five questions for you.",
+        "prompt": "Write today's morning brief (second-brain-brief, Mode A). Do not ask anything outside the brief. Your final "
+        "response is the whole brief, starting with '# Morning brief'.",
+    },
 )
-_WIKI_NIGHTLY = ("Run the obsidian-nightly scheduled Second Brain routine, then the second-brain-analysis skill to rewrite "
-                 "wiki/reviews/Current Analysis.md. Follow the skills and the second-brain-writes gate exactly; do not ask "
-                 "questions; log what you changed, then stop with a short summary ending in the write-gate line.")
-_ROUTINE_PROMPT = ("Run the {skill} scheduled Second Brain routine. Follow the skill's procedure and the second-brain-writes "
-                   "rules exactly; do not ask questions; log what you changed, then stop with a short summary.")
+_WIKI_NIGHTLY = (
+    "Run the obsidian-nightly scheduled Second Brain routine, then the second-brain-analysis skill to rewrite "
+    "wiki/reviews/Current Analysis.md. Follow the skills and the second-brain-writes gate exactly; do not ask "
+    "questions; log what you changed, then stop with a short summary ending in the write-gate line."
+)
+_ROUTINE_PROMPT = (
+    "Run the {skill} scheduled Second Brain routine. Follow the skill's procedure and the second-brain-writes "
+    "rules exactly; do not ask questions; log what you changed, then stop with a short summary."
+)
 
 
 def _routines_for(fmt: str) -> tuple[dict[str, Any], ...]:
@@ -725,8 +780,7 @@ def _job_args(routine: dict[str, Any], fmt: str, home: Path) -> tuple[str, dict[
     return prompt, {"skills": skills, **kwargs}
 
 
-def ensure_routines(home: Path, vault: Path, fmt: str | None = None, paused: bool = False,
-                    switch: bool | None = None, only: str | None = None) -> list[str]:
+def ensure_routines(home: Path, vault: Path, fmt: str | None = None, paused: bool = False, switch: bool | None = None, only: str | None = None) -> list[str]:
     """Create each of the format's routines that doesn't exist yet (none while `paused`). An existing one keeps
     its time and on/off state, but follows the folder and the format (prompt, skills, workdir, gate). A wiki-only
     routine left from an earlier format is removed. `switch` (setup only) turns them all on or off. Returns the ids
@@ -762,8 +816,7 @@ def ensure_routines(home: Path, vault: Path, fmt: str | None = None, paused: boo
                 if fmt == "wiki" and routine["skill"] in WIKI_SKILLS:
                     install_skill(home, vault, fmt, None, extras=True)  # its skill, before its job
                 prompt, extra = _job_args(routine, fmt, home)
-                jobs.create_job(prompt, routine["schedule"], name=routine["name"], deliver="command_center",
-                                workdir=str(vault), **extra)
+                jobs.create_job(prompt, routine["schedule"], name=routine["name"], deliver="command_center", workdir=str(vault), **extra)
                 made.append(routine["id"])
             for rid, job in existing.items():
                 if rid not in wanted:
@@ -800,15 +853,20 @@ def routines(profile: str = "chief") -> dict[str, Any]:
         about = routine["about"]
         if routine["id"] == "nightly" and fmt == "wiki":
             about = "Closes the day: reconciles, links orphans, then rewrites Current Analysis."
-        items.append({
-            "id": routine["id"], "title": routine["title"], "about": about,
-            "exists": job is not None,
-            "enabled": bool(job and job.get("enabled") and job.get("state") != "paused"),
-            "time": _time_of(job.get("schedule") if job else {}) or _time_of({"expr": routine["schedule"]}),
-            "days": {"weekly": "Fridays", "health": "Sundays", "brief": "Weekdays", "drop": "Every 30 minutes"}.get(routine["id"], "Every day"),
-            "next_run": (job or {}).get("next_run_at"), "last_run": (job or {}).get("last_run_at"),
-            "last_status": (job or {}).get("last_status"),
-        })
+        items.append(
+            {
+                "id": routine["id"],
+                "title": routine["title"],
+                "about": about,
+                "exists": job is not None,
+                "enabled": bool(job and job.get("enabled") and job.get("state") != "paused"),
+                "time": _time_of(job.get("schedule") if job else {}) or _time_of({"expr": routine["schedule"]}),
+                "days": {"weekly": "Fridays", "health": "Sundays", "brief": "Weekdays", "drop": "Every 30 minutes"}.get(routine["id"], "Every day"),
+                "next_run": (job or {}).get("next_run_at"),
+                "last_run": (job or {}).get("last_run_at"),
+                "last_status": (job or {}).get("last_status"),
+            }
+        )
     return {"ok": True, "contract": CONTRACT, "routines": items}
 
 
@@ -865,9 +923,17 @@ def upgrade(profile: str = "chief") -> dict[str, Any]:
         # Taken over from an existing install: the vault keeps its own rules and its owner's routines.
         rules = manual(vault)
         fmt = detect_format(vault, rules) or "para"
-        state = {"path": str(vault), "mode": "keep", "format": fmt, "rules": rules or RULES_FILE[fmt], "own_rules": bool(rules),
-                 "routines_off": True, "adopted": True, "template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1),
-                 "set_up_at": time.strftime("%Y-%m-%dT%H:%M:%S")}
+        state = {
+            "path": str(vault),
+            "mode": "keep",
+            "format": fmt,
+            "rules": rules or RULES_FILE[fmt],
+            "own_rules": bool(rules),
+            "routines_off": True,
+            "adopted": True,
+            "template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1),
+            "set_up_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
         _state_path(home).write_text(json.dumps(state, indent=2), encoding="utf-8")  # the skills read it
     if not state.get("format"):
         # Set up before formats existed: the app made PARA folders, or the owner's own folder was kept.
@@ -909,16 +975,18 @@ def upgrade(profile: str = "chief") -> dict[str, Any]:
     made = ensure_routines(home, vault, fmt, paused=bool(state.get("routines_off")))
     if not adopted():
         _share_with_team(profile)  # an adopted install's bots keep their own setup; new bots get it when minted
-    state.update({"template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1),
-                  "routines": sorted(set((state.get("routines") or []) + made))})
+    state.update(
+        {"template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1), "routines": sorted(set((state.get("routines") or []) + made))}
+    )
     _state_path(home).write_text(json.dumps(state, indent=2), encoding="utf-8")
     if done or made:
         logger.info("Second Brain upgraded: %s; routines %s", ", ".join(done) or "nothing in the folder", ", ".join(made) or "unchanged")
     return {"ok": True, "upgraded": bool(done or made), "changed": done, "routines": made}
 
 
-def setup(raw_path: str, mode: str, profile: str = "chief", today: date | None = None, fmt: str | None = None,
-          routines_on: bool | None = None) -> dict[str, Any]:
+def setup(
+    raw_path: str, mode: str, profile: str = "chief", today: date | None = None, fmt: str | None = None, routines_on: bool | None = None
+) -> dict[str, Any]:
     """Set up the folder in a format (default: what it already uses, else PARA). A folder with its own rules file
     gets nothing added. `routines_on` defaults to on, except for a folder with its own rules file."""
     mode = str(mode or "").strip().lower()
@@ -961,24 +1029,41 @@ def setup(raw_path: str, mode: str, profile: str = "chief", today: date | None =
 
     rules = own_rules or manual(path) or RULES_FILE[fmt]
     routines_on = (not own_rules) if routines_on is None else bool(routines_on)
-    state = {"path": str(path), "mode": mode, "format": fmt, "rules": rules, "own_rules": bool(own_rules),
-             "template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1),
-             "set_up_at": time.strftime("%Y-%m-%dT%H:%M:%S"), "created": created, "routines_off": not routines_on}
+    state = {
+        "path": str(path),
+        "mode": mode,
+        "format": fmt,
+        "rules": rules,
+        "own_rules": bool(own_rules),
+        "template": TEMPLATE_VERSION if fmt == "para" else _manifest(fmt).get("version", 1),
+        "set_up_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "created": created,
+        "routines_off": not routines_on,
+    }
     _state_path(home).write_text(json.dumps(state, indent=2), encoding="utf-8")
     _configure(home, path, fmt, rules)
     routines_made = ensure_routines(home, path, fmt, paused=not routines_on, switch=routines_on)
     state["routines"] = routines_made
     _state_path(home).write_text(json.dumps(state, indent=2), encoding="utf-8")
-    logger.info("Second Brain set up (%s, %s%s): %d created, %d kept", fmt, mode, ", its own rules" if own_rules else "",
-                len(created), len(kept))
+    logger.info("Second Brain set up (%s, %s%s): %d created, %d kept", fmt, mode, ", its own rules" if own_rules else "", len(created), len(kept))
     if own_rules:
         prompt = _ADOPT_PROMPT.format(rules=rules)
     elif mode == "keep":
         prompt = _KEEP_PROMPT_WIKI if fmt == "wiki" else _KEEP_PROMPT
     else:
         prompt = (_REORGANIZE_PROMPT_WIKI if fmt == "wiki" else _REORGANIZE_PROMPT) if mode == "reorganize" else ""
-    return {"ok": True, "path": str(path), "mode": mode, "format": fmt, "rules": rules, "own_rules": bool(own_rules),
-            "routines_on": routines_on, "created": created, "kept": kept, "next_prompt": prompt}
+    return {
+        "ok": True,
+        "path": str(path),
+        "mode": mode,
+        "format": fmt,
+        "rules": rules,
+        "own_rules": bool(own_rules),
+        "routines_on": routines_on,
+        "created": created,
+        "kept": kept,
+        "next_prompt": prompt,
+    }
 
 
 # ---------------------------------------------------------------- default persona

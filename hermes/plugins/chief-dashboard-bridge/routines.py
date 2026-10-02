@@ -11,6 +11,7 @@ bot's routine reports to, and the last run relayed, live in the chief's profile.
 Built-in routines (`Second Brain: …`, `Fleet: …`) are the app's: they can be retimed, moved to another
 thread and switched off, but not deleted or rewritten, because the app would arm them again.
 """
+
 from __future__ import annotations
 
 import json
@@ -79,8 +80,11 @@ def describe_schedule(schedule: dict[str, Any]) -> dict[str, Any]:
         if minutes and minutes % 60 == 0:
             hours = minutes // 60
             return {"kind": "hourly", "every": hours, "text": "Every hour" if hours == 1 else f"Every {hours} hours"}
-        return {"kind": "custom", "cron": schedule.get("display") or f"every {minutes}m",
-                "text": f"Every {minutes} minutes" if minutes else str(schedule.get("display") or "")}
+        return {
+            "kind": "custom",
+            "cron": schedule.get("display") or f"every {minutes}m",
+            "text": f"Every {minutes} minutes" if minutes else str(schedule.get("display") or ""),
+        }
     expr = str(schedule.get("expr") or "").split()
     text = " ".join(expr) or str(schedule.get("display") or "")
     if len(expr) == 5 and expr[2] == "*" and expr[3] == "*":
@@ -280,8 +284,16 @@ def create(profile: str, name: str, prompt: str, schedule: dict[str, Any], threa
     return {"ok": True, "routine": _describe(profile, home, job, jobs)}
 
 
-def update(profile: str, routine_id: str, *, name: str | None = None, prompt: str | None = None,
-           schedule: dict[str, Any] | None = None, thread: str | None = None, enabled: bool | None = None) -> dict[str, Any]:
+def update(
+    profile: str,
+    routine_id: str,
+    *,
+    name: str | None = None,
+    prompt: str | None = None,
+    schedule: dict[str, Any] | None = None,
+    thread: str | None = None,
+    enabled: bool | None = None,
+) -> dict[str, Any]:
     home, job = _find(profile, routine_id)
     profile = home.name if home != data.chief_home() else "chief"
     built_in = str(job.get("name") or "").startswith(BUILT_IN)

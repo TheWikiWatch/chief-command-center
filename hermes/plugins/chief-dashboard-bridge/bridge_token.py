@@ -5,6 +5,7 @@ environment from ``os.environ`` at spawn time, and its secret scrub doesn't know
 the environment reaches the agent's own terminal and code children: a prompt-injected command could then call
 ``/approve`` on its own pending approval. ``take()`` reads it once and removes it from the environment.
 """
+
 from __future__ import annotations
 
 import os

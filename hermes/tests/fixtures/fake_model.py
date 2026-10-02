@@ -16,6 +16,7 @@ Behaviour, from the latest user message of a turn:
 - anything else: "Hello from the local test model. You said: …".
 Streaming and non-streaming are both supported.
 """
+
 from __future__ import annotations
 
 import json
@@ -61,9 +62,16 @@ class Handler(BaseHTTPRequestHandler):
 
     def _reply(self, message: dict, finish: str, stream: bool) -> None:
         if not stream:
-            self._json({"id": "x", "object": "chat.completion", "created": int(time.time()), "model": MODEL,
-                        "choices": [{"index": 0, "finish_reason": finish, "message": message}],
-                        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+            self._json(
+                {
+                    "id": "x",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": MODEL,
+                    "choices": [{"index": 0, "finish_reason": finish, "message": message}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                }
+            )
             return
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -73,8 +81,13 @@ class Handler(BaseHTTPRequestHandler):
             delta["content"] = message["content"]
         if message.get("tool_calls"):
             delta["tool_calls"] = [{"index": i, **call} for i, call in enumerate(message["tool_calls"])]
-        chunk = {"id": "c", "object": "chat.completion.chunk", "created": int(time.time()), "model": MODEL,
-                 "choices": [{"index": 0, "delta": delta, "finish_reason": None}]}
+        chunk = {
+            "id": "c",
+            "object": "chat.completion.chunk",
+            "created": int(time.time()),
+            "model": MODEL,
+            "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+        }
         self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
         done = {**chunk, "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}
         self.wfile.write(f"data: {json.dumps(done)}\n\ndata: [DONE]\n\n".encode())

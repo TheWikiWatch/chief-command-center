@@ -15,6 +15,7 @@ Every provider fact comes from Hermes itself, never from a list kept here:
 Everything runs in the chief profile's scope. Keys are accepted, never returned or logged. A contract test
 (hermes/tests/contract) exercises these imports against each Hermes pin before it ships.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -109,8 +110,14 @@ def catalog(refresh: bool = False) -> dict[str, Any]:
     for row in rows:
         # Connected with a key the app stored (removable here), or through a sign-in Hermes found on this PC.
         row["keySaved"] = bool(row["keyEnv"]) and row["keyEnv"] in saved
-    return {"ok": True, "contract": CONTRACT, "provider": str(payload.get("provider") or ""),
-            "model": str(payload.get("model") or ""), "providers": rows, "status": status()}
+    return {
+        "ok": True,
+        "contract": CONTRACT,
+        "provider": str(payload.get("provider") or ""),
+        "model": str(payload.get("model") or ""),
+        "providers": rows,
+        "status": status(),
+    }
 
 
 def status() -> dict[str, Any]:
@@ -131,11 +138,15 @@ def status() -> dict[str, Any]:
             runtime = resolve_runtime_provider(requested=provider, target_model=model)
             api_key = runtime.get("api_key")
             key_text = "" if callable(api_key) else str(api_key or "").strip()
-            usable = (callable(api_key) or key_text in {"aws-sdk", "no-key-required"} or has_usable_secret(key_text)
-                      or bool(runtime.get("command")) or _is_local(str(runtime.get("base_url") or "")))
+            usable = (
+                callable(api_key)
+                or key_text in {"aws-sdk", "no-key-required"}
+                or has_usable_secret(key_text)
+                or bool(runtime.get("command"))
+                or _is_local(str(runtime.get("base_url") or ""))
+            )
             if not usable:
-                return {"ready": False, "provider": provider, "model": model,
-                        "error": f"No usable credentials for {provider}."}
+                return {"ready": False, "provider": provider, "model": model, "error": f"No usable credentials for {provider}."}
             return {"ready": True, "provider": provider, "model": model, "error": ""}
         except Exception as exc:
             logger.info("provider status: %s", type(exc).__name__)
@@ -183,8 +194,14 @@ def provider_models(slug: str) -> dict[str, Any]:
     """Models a connected provider offers (fetched fresh), with Hermes's recommended default."""
     for row in catalog(refresh=True)["providers"]:
         if row["slug"] == slug:
-            return {"ok": True, "provider": slug, "models": row["models"], "featured": row["featured"],
-                    "recommended": recommended_model(slug), "connected": row["connected"]}
+            return {
+                "ok": True,
+                "provider": slug,
+                "models": row["models"],
+                "featured": row["featured"],
+                "recommended": recommended_model(slug),
+                "connected": row["connected"],
+            }
     return {"ok": False, "error": "Unknown provider."}
 
 
@@ -328,8 +345,7 @@ def save_endpoint(name: str, base_url: str, model: str, api_key: str = "", make_
         from hermes_cli.web_models import CustomEndpointUpdate
         from hermes_cli.web_routers.config_env import upsert_custom_endpoint
 
-        body = CustomEndpointUpdate(name=name[:60], base_url=base_url, model=model,
-                                    api_key=(api_key or "").strip() or None, make_default=bool(make_default))
+        body = CustomEndpointUpdate(name=name[:60], base_url=base_url, model=model, api_key=(api_key or "").strip() or None, make_default=bool(make_default))
         try:
             result = upsert_custom_endpoint(body)
         except Exception as exc:
@@ -346,9 +362,13 @@ def test_message(timeout: float = 45.0) -> dict[str, Any]:
         try:
             from agent.auxiliary_client import call_llm
 
-            reply = call_llm(provider=current["provider"], model=current["model"],
-                             messages=[{"role": "user", "content": "Reply with the single word: ready"}],
-                             max_tokens=16, timeout=timeout)
+            reply = call_llm(
+                provider=current["provider"],
+                model=current["model"],
+                messages=[{"role": "user", "content": "Reply with the single word: ready"}],
+                max_tokens=16,
+                timeout=timeout,
+            )
         except Exception as exc:
             return {"ok": False, **_explain(exc)}
     text = _reply_text(reply)

@@ -26,6 +26,7 @@ old guard start the old gateway again. The old dashboard is restarted with the c
 
 Personal paths stay out of the repo: everything is found at run time or passed as arguments.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -44,21 +45,41 @@ from compat import Payload
 APP_PACKAGE = "ChiefCommandCenter"
 APP_EXE = "Chief Command Center.exe"
 MIN_APP = (0, 1, 8)  # the first version that runs an adopted install (desktop.json `adopted`, provision --adopted)
-EXCLUDE_DIRS = ["crash-dumps", "hermes-agent", "tools", "cache", "image_cache", "audio_cache", "logs", "models",
-                "node_modules", "__pycache__", "pm-runtime", "uv-cache", ".deleted", "lsp"]
+EXCLUDE_DIRS = [
+    "crash-dumps",
+    "hermes-agent",
+    "tools",
+    "cache",
+    "image_cache",
+    "audio_cache",
+    "logs",
+    "models",
+    "node_modules",
+    "__pycache__",
+    "pm-runtime",
+    "uv-cache",
+    ".deleted",
+    "lsp",
+]
 
 
 # ---------------------------------------------------------------- small helpers
-
 
 
 def _pq(value: object) -> str:
     """A PowerShell single-quoted string literal (task names and paths come from the scheduler)."""
     return "'" + str(value).replace("'", "''") + "'"
 
+
 def ps(script: str, timeout: int = 120) -> str:
-    out = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
-                         text=True, encoding="utf-8", errors="replace", timeout=timeout)
+    out = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+    )
     if out.returncode:
         raise RuntimeError(f"PowerShell failed: {out.stderr.strip()[:500]}")
     return out.stdout.strip()
@@ -118,8 +139,9 @@ class Install:
     def require_adoption_support(self) -> None:
         version = tuple(int(x) for x in str(self.package()["Version"]).split(".")[:3])
         if version < MIN_APP:
-            raise SystemExit(f"The installed app ({self.package()['Version']}) can't adopt an install yet: install "
-                             f"{'.'.join(map(str, MIN_APP))} or later first.")
+            raise SystemExit(
+                f"The installed app ({self.package()['Version']}) can't adopt an install yet: install {'.'.join(map(str, MIN_APP))} or later first."
+            )
 
     def payload(self) -> Payload:
         """Hermes's own helpers (the planned-stop marker, config writes) run on a payload of the same commit. The
@@ -143,8 +165,10 @@ class Install:
 
     def guard_tasks(self) -> list[dict]:
         needle = str(self.profile / "gateway-service").replace("\\", "\\\\")
-        return ps_json("Get-ScheduledTask | Where-Object { ($_.Actions | ForEach-Object { \"$($_.Execute) $($_.Arguments)\" }) -match "
-                       f"'{needle}' }} | Select-Object TaskName, TaskPath, State")
+        return ps_json(
+            'Get-ScheduledTask | Where-Object { ($_.Actions | ForEach-Object { "$($_.Execute) $($_.Arguments)" }) -match '
+            f"'{needle}' }} | Select-Object TaskName, TaskPath, State"
+        )
 
     def startup_items(self) -> list[Path]:
         folder = Path(os.environ["APPDATA"]) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
@@ -160,10 +184,12 @@ class Install:
 
     def old_dashboard(self) -> list[dict]:
         """The process on the UI port when it's the old Next dashboard, and its respawn loop (a `for /l` cmd)."""
-        rows = ps_json(f"$c = Get-NetTCPConnection -LocalPort {self.ui_port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; "
-                       "if ($c) { $p = Get-CimInstance Win32_Process -Filter \"ProcessId=$($c.OwningProcess)\"; "
-                       "$q = Get-CimInstance Win32_Process -Filter \"ProcessId=$($p.ParentProcessId)\"; "
-                       "[pscustomobject]@{pid=$p.ProcessId; cmd=$p.CommandLine; parent=$q.ProcessId; parentCmd=$q.CommandLine; cwd=''} }")
+        rows = ps_json(
+            f"$c = Get-NetTCPConnection -LocalPort {self.ui_port} -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1; "
+            'if ($c) { $p = Get-CimInstance Win32_Process -Filter "ProcessId=$($c.OwningProcess)"; '
+            '$q = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.ParentProcessId)"; '
+            "[pscustomobject]@{pid=$p.ProcessId; cmd=$p.CommandLine; parent=$q.ProcessId; parentCmd=$q.CommandLine; cwd=''} }"
+        )
         if not rows or APP_EXE.lower() in str(rows[0].get("cmd") or "").lower() or "next" not in str(rows[0].get("cmd") or ""):
             return []
         return rows
@@ -223,14 +249,17 @@ def start_app(inst: Install) -> None:
 
 
 def set_plugin_enabled(pay: Payload, profile: Path, name: str, enabled: bool) -> bool:
-    code = ("import sys\nfrom cli import save_config_value\nfrom hermes_cli.config import load_config\n"
-            "name, on = sys.argv[1], sys.argv[2] == '1'\n"
-            "cfg = load_config() or {}\nplugins = cfg.get('plugins') if isinstance(cfg.get('plugins'), dict) else {}\n"
-            "cur = list(plugins.get('enabled') or [])\n"
-            "new = (cur + [name]) if on and name not in cur else [p for p in cur if p != name] if not on else cur\n"
-            "if new != cur: save_config_value('plugins.enabled', new)\nprint('changed' if new != cur else 'same')\n")
-    out = subprocess.run([str(pay.python), "-B", "-c", code, name, "1" if enabled else "0"], env=pay.env(HERMES_HOME=str(profile)),
-                         capture_output=True, text=True, timeout=120)
+    code = (
+        "import sys\nfrom cli import save_config_value\nfrom hermes_cli.config import load_config\n"
+        "name, on = sys.argv[1], sys.argv[2] == '1'\n"
+        "cfg = load_config() or {}\nplugins = cfg.get('plugins') if isinstance(cfg.get('plugins'), dict) else {}\n"
+        "cur = list(plugins.get('enabled') or [])\n"
+        "new = (cur + [name]) if on and name not in cur else [p for p in cur if p != name] if not on else cur\n"
+        "if new != cur: save_config_value('plugins.enabled', new)\nprint('changed' if new != cur else 'same')\n"
+    )
+    out = subprocess.run(
+        [str(pay.python), "-B", "-c", code, name, "1" if enabled else "0"], env=pay.env(HERMES_HOME=str(profile)), capture_output=True, text=True, timeout=120
+    )
     if out.returncode:
         raise RuntimeError(out.stderr[-500:])
     return "changed" in out.stdout
@@ -264,9 +293,19 @@ def adopted_settings(inst: Install, before: dict) -> dict:
     a = inst.args
     web_env = dict(before.get("webEnv") or {})
     web_env.update(dict(kv.split("=", 1) for kv in a.web_env))
-    return {**before, "hermesRoot": str(inst.root), "sharedGatewayLock": True, "inheritUserPath": True, "adopted": True,
-            "ports": {"ui": inst.ui_port, "bridge": inst.bridge_port}, "learningDir": a.learning_dir or "", "learningTool": a.learning_tool or "",
-            "backupDir": str(inst.backup / "app-backups"), "webEnv": web_env, "closeNoticeShown": True}
+    return {
+        **before,
+        "hermesRoot": str(inst.root),
+        "sharedGatewayLock": True,
+        "inheritUserPath": True,
+        "adopted": True,
+        "ports": {"ui": inst.ui_port, "bridge": inst.bridge_port},
+        "learningDir": a.learning_dir or "",
+        "learningTool": a.learning_tool or "",
+        "backupDir": str(inst.backup / "app-backups"),
+        "webEnv": web_env,
+        "closeNoticeShown": True,
+    }
 
 
 # ---------------------------------------------------------------- commands
@@ -291,15 +330,19 @@ def plan(inst: Install) -> None:
     say(f"Bridge token handed over: {'yes' if inst.token() else 'none found (the app makes a new one)'}")
     before = json.loads(inst.desktop_json.read_text(encoding="utf-8")) if inst.desktop_json.is_file() else {}
     after = adopted_settings(inst, before)
-    say("App settings: " + json.dumps({k: after[k] for k in ("hermesRoot", "sharedGatewayLock", "inheritUserPath", "adopted", "ports", "learningDir", "backupDir")}))
+    say(
+        "App settings: "
+        + json.dumps({k: after[k] for k in ("hermesRoot", "sharedGatewayLock", "inheritUserPath", "adopted", "ports", "learningDir", "backupDir")})
+    )
 
 
 def apply(inst: Install) -> None:
     inst.backup.mkdir(parents=True, exist_ok=True)
     journal = Journal(inst.backup)
     if journal.steps and not inst.args.resume:
-        raise SystemExit(f"{journal.file} already has steps: this backup folder was used for an earlier run. Roll it back, use a "
-                         "new folder, or --resume to continue it.")
+        raise SystemExit(
+            f"{journal.file} already has steps: this backup folder was used for an earlier run. Roll it back, use a new folder, or --resume to continue it."
+        )
     done = {s["kind"] for s in journal.steps}
     inst.require_adoption_support()
     pay = inst.payload()
@@ -393,12 +436,15 @@ def verify(inst: Install) -> int:
             pass
         time.sleep(2)
     check("the app's gateway answers on the bridge port with the same token", bool(health.get("ok")))
-    owner = ps(f"(Get-CimInstance Win32_Process -Filter \"ProcessId={inst.gateway_pid() or 0}\").CommandLine") if inst.gateway_pid() else ""
+    owner = ps(f'(Get-CimInstance Win32_Process -Filter "ProcessId={inst.gateway_pid() or 0}").CommandLine') if inst.gateway_pid() else ""
     check("Chief runs on the app's Hermes", "WindowsApps" in owner or APP_PACKAGE in owner, owner[:160])
     try:
         snap = http_json(f"http://127.0.0.1:{inst.bridge_port}/snapshot", token)
-        check("the chat is bound and the team is there", bool((snap.get("bind") or {}).get("sessionKey")) and len(snap.get("roster") or []) > 1,
-              f"{len(snap.get('roster') or [])} on the roster")
+        check(
+            "the chat is bound and the team is there",
+            bool((snap.get("bind") or {}).get("sessionKey")) and len(snap.get("roster") or []) > 1,
+            f"{len(snap.get('roster') or [])} on the roster",
+        )
         tr = http_json(f"http://127.0.0.1:{inst.bridge_port}/transcript?after=0", token)
         check("the conversation history is there", len(tr.get("messages") or []) > 0)
         sb = http_json(f"http://127.0.0.1:{inst.bridge_port}/setup/second-brain", token)
@@ -435,8 +481,7 @@ def rollback(inst: Install) -> None:
         if (backup_root / "plugins" / "chief-dashboard-bridge").is_dir():
             shutil.rmtree(inst.profile / "plugins" / "chief-dashboard-bridge", ignore_errors=True)
             shutil.copytree(backup_root / "plugins" / "chief-dashboard-bridge", inst.profile / "plugins" / "chief-dashboard-bridge")
-        for rel in ("second_brain.json", "skills/.chief-bundled.json", "skills/note-taking/second-brain",
-                    "skills/autonomous-ai-agents/fleet-builder"):
+        for rel in ("second_brain.json", "skills/.chief-bundled.json", "skills/note-taking/second-brain", "skills/autonomous-ai-agents/fleet-builder"):
             target, kept = inst.profile / rel, backup_root / rel
             if target.exists() and not kept.exists():
                 shutil.rmtree(target) if target.is_dir() else target.unlink()
@@ -459,8 +504,13 @@ def rollback(inst: Install) -> None:
             say(f"Scheduled task on again: {step['name']} (it starts the old gateway within a minute)")
         elif kind == "dashboard-stopped" and step.get("command"):
             # The command line exactly as it ran, detached and windowless like before.
-            subprocess.Popen(step["command"], creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS | 0x08000000,
-                             stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.Popen(
+                step["command"],
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS | 0x08000000,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
             say("Old dashboard started again.")
     journal.file.rename(journal.file.with_name(f"journal.rolled-back-{time.strftime('%Y%m%d-%H%M%S')}.json"))
     say("Rolled back. The backup folder is kept.")

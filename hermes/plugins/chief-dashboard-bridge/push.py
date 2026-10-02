@@ -10,6 +10,7 @@ cryptography package Hermes already ships). What this module adds:
   the newest reply, not a stack of them.
 - The payload carries a ``tag`` so the service worker replaces the notification on the device too.
 """
+
 from __future__ import annotations
 
 import json
@@ -64,8 +65,17 @@ def _topic(tag: str) -> str:
     return re.sub(r"[^A-Za-z0-9_-]", "", tag)[:32]
 
 
-def send(title: str, body: str, *, url: str = "/", tag: str = REPLY_TAG, ttl: int = REPLY_TTL,
-         urgency: str = "normal", open_: dict | None = None, session: Any = None) -> dict[str, Any]:
+def send(
+    title: str,
+    body: str,
+    *,
+    url: str = "/",
+    tag: str = REPLY_TAG,
+    ttl: int = REPLY_TTL,
+    urgency: str = "normal",
+    open_: dict | None = None,
+    session: Any = None,
+) -> dict[str, Any]:
     """Send one alert to every subscribed device now (blocking). Use ``enqueue`` from gateway code."""
     subs = vapid.load_subs()
     if not subs:
@@ -78,18 +88,21 @@ def send(title: str, body: str, *, url: str = "/", tag: str = REPLY_TAG, ttl: in
     topic = _topic(tag)
     if topic:
         headers["Topic"] = topic
-    payload = json.dumps({
-        "title": title or identity.assistant_name(),
-        "body": body or "",
-        "url": url,
-        "tag": tag,
-        "open": open_ or {"tab": "chat"},
-        "at": int(time.time() * 1000),
-    }).encode("utf-8")
+    payload = json.dumps(
+        {
+            "title": title or identity.assistant_name(),
+            "body": body or "",
+            "url": url,
+            "tag": tag,
+            "open": open_ or {"tab": "chat"},
+            "at": int(time.time() * 1000),
+        }
+    ).encode("utf-8")
     sent, gone, errors = 0, [], []
     for sub in subs:
-        outcome, detail = webpush.send(sub, payload, private_key=key, subject=identity.push_contact(), ttl=ttl,
-                                       timeout=SEND_TIMEOUT, headers=headers, session=session)
+        outcome, detail = webpush.send(
+            sub, payload, private_key=key, subject=identity.push_contact(), ttl=ttl, timeout=SEND_TIMEOUT, headers=headers, session=session
+        )
         if outcome == "sent":
             sent += 1
         elif outcome == "gone":

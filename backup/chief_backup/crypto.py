@@ -7,6 +7,7 @@ from a damaged file before any chunk is read. Every chunk's nonce is an 8-byte r
 associated data binds the header, the index and a final-chunk flag, so chunks can't be reordered, dropped or
 truncated without the tag check failing. A wrong passphrase fails on the first chunk.
 """
+
 from __future__ import annotations
 
 import base64
@@ -56,8 +57,19 @@ def encrypt_file(src: Path, dst: BinaryIO, passphrase: str) -> None:
     salt = os.urandom(16)
     prefix = os.urandom(8)
     key, check = _keys(passphrase, salt, **_SCRYPT)
-    header = json.dumps({"v": 1, "cipher": "AES-256-GCM", "kdf": "scrypt", **_SCRYPT, "salt": base64.b64encode(salt).decode(),
-                         "nonce": base64.b64encode(prefix).decode(), "chunk": CHUNK, "check": check}, sort_keys=True).encode()
+    header = json.dumps(
+        {
+            "v": 1,
+            "cipher": "AES-256-GCM",
+            "kdf": "scrypt",
+            **_SCRYPT,
+            "salt": base64.b64encode(salt).decode(),
+            "nonce": base64.b64encode(prefix).decode(),
+            "chunk": CHUNK,
+            "check": check,
+        },
+        sort_keys=True,
+    ).encode()
     aes = AESGCM(key)
     dst.write(MAGIC + struct.pack(">I", len(header)) + header)
     size = src.stat().st_size

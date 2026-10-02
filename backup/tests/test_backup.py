@@ -2,6 +2,7 @@
 
 Run: python -B -m unittest discover -s backup/tests -t backup
 """
+
 from __future__ import annotations
 
 import errno
@@ -41,7 +42,10 @@ def make_home(base: Path, vault: Path) -> Path:
     (root / "installs" / "abc").mkdir(parents=True)
     (chief / "SOUL.md").write_text("You are Chief.\n", encoding="utf-8")
     (chief / "memories" / "MEMORY.md").write_text("Owner likes tea.\n", encoding="utf-8")
-    (chief / ".env").write_text(f'{KEY_LINE}OBSIDIAN_VAULT_PATH={vault}\nWIKI_PATH="{str(vault / "40 Knowledge").replace(chr(92), chr(92) * 2)}"\nCHIEF_DASHBOARD_PORT=7790\n', encoding="utf-8")
+    (chief / ".env").write_text(
+        f'{KEY_LINE}OBSIDIAN_VAULT_PATH={vault}\nWIKI_PATH="{str(vault / "40 Knowledge").replace(chr(92), chr(92) * 2)}"\nCHIEF_DASHBOARD_PORT=7790\n',
+        encoding="utf-8",
+    )
     (chief / "auth.json").write_text('{"token": "synthetic"}', encoding="utf-8")
     (chief / "command_center_vapid.json").write_text('{"private": "synthetic"}', encoding="utf-8")
     (chief / "config.yaml").write_text(f"model:\n  default: tiny\nterminal:\n  cwd: {base / 'hermes'}\\work\n", encoding="utf-8")
@@ -91,8 +95,7 @@ class Case(unittest.TestCase):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def backup(self, parts=("setup", "second-brain"), **kw):
-        return archive.create(self.dest, parts=list(parts), hermes_root=self.root, app_dir=self.app, second_brain=self.vault,
-                              app_version="1.0.0", **kw)
+        return archive.create(self.dest, parts=list(parts), hermes_root=self.root, app_dir=self.app, second_brain=self.vault, app_version="1.0.0", **kw)
 
     def names(self, path: str) -> list[str]:
         with zipfile.ZipFile(path) as zf:
@@ -104,12 +107,32 @@ class BackupContents(Case):
         result = self.backup()
         names = self.names(result["path"])
         self.assertTrue(result["path"].endswith(".chiefbackup"))
-        for kept in ("hermes/profiles/chief/SOUL.md", "hermes/profiles/chief/memories/MEMORY.md", "hermes/profiles/chief/state.db",
-                     "hermes/profiles/chief/config.yaml", "hermes/profiles/chief/.env", "app/settings.json",
-                     "second-brain/AGENTS.md", "second-brain/00 Inbox/Idea.md", "second-brain/.obsidian/app.json", "manifest.json"):
+        for kept in (
+            "hermes/profiles/chief/SOUL.md",
+            "hermes/profiles/chief/memories/MEMORY.md",
+            "hermes/profiles/chief/state.db",
+            "hermes/profiles/chief/config.yaml",
+            "hermes/profiles/chief/.env",
+            "app/settings.json",
+            "second-brain/AGENTS.md",
+            "second-brain/00 Inbox/Idea.md",
+            "second-brain/.obsidian/app.json",
+            "manifest.json",
+        ):
             self.assertIn(kept, names)
-        for left_out in ("auth.json", "command_center_vapid.json", "cache/big.bin", "logs/gateway.log", "models/faster-whisper-base/model.bin",
-                         "gateway.lock", "models_dev_cache.json", "hermes/bin/hermes.cmd", "installs", "state.db-wal", "crash-dumps"):
+        for left_out in (
+            "auth.json",
+            "command_center_vapid.json",
+            "cache/big.bin",
+            "logs/gateway.log",
+            "models/faster-whisper-base/model.bin",
+            "gateway.lock",
+            "models_dev_cache.json",
+            "hermes/bin/hermes.cmd",
+            "installs",
+            "state.db-wal",
+            "crash-dumps",
+        ):
             self.assertFalse(any(left_out in n for n in names), left_out)
         with zipfile.ZipFile(result["path"]) as zf:
             env = zf.read("hermes/profiles/chief/.env").decode()
@@ -207,8 +230,9 @@ class BackupContents(Case):
         (self.dest / "Chief backup (auto) 2026-09-01 100000.chiefbackup").write_bytes(b"x")
         (self.dest / "Chief backup 2026-08-01 100000.chiefbackup").write_bytes(b"x")
         removed = archive.prune(self.dest, 2, "pre-update")
-        self.assertEqual(sorted(removed), ["Chief backup (before update) 2026-09-01 100000.chiefbackup",
-                                           "Chief backup (before update) 2026-09-02 100000.chiefbackup"])
+        self.assertEqual(
+            sorted(removed), ["Chief backup (before update) 2026-09-01 100000.chiefbackup", "Chief backup (before update) 2026-09-02 100000.chiefbackup"]
+        )
         self.assertTrue((self.dest / "Chief backup (auto) 2026-09-01 100000.chiefbackup").exists())
         self.assertTrue((self.dest / "Chief backup 2026-08-01 100000.chiefbackup").exists())
 
@@ -229,8 +253,8 @@ class Crypto(Case):
         with self.assertRaises(crypto.CorruptBackup), open(self.tmp / "x", "wb") as out:
             crypto.decrypt_file(self.tmp / "tampered.bin", out, "pass phrase")
         full = enc.read_bytes()
-        header_end = len(crypto.MAGIC) + 4 + int.from_bytes(full[len(crypto.MAGIC):len(crypto.MAGIC) + 4], "big")
-        first = int.from_bytes(full[header_end:header_end + 4], "big")
+        header_end = len(crypto.MAGIC) + 4 + int.from_bytes(full[len(crypto.MAGIC) : len(crypto.MAGIC) + 4], "big")
+        first = int.from_bytes(full[header_end : header_end + 4], "big")
         (self.tmp / "short.bin").write_bytes(full[: header_end + 4 + first])  # only the first chunk
         with self.assertRaisesRegex(crypto.CorruptBackup, "incomplete"), open(self.tmp / "y", "wb") as out:
             crypto.decrypt_file(self.tmp / "short.bin", out, "pass phrase")
@@ -247,8 +271,17 @@ class Restore(Case):
         info = restore.inspect(Path(result["path"]), app_version="1.0.0")
         self.assertTrue(info["compatible"])
         self.assertEqual(sorted(info["parts"]), ["second-brain", "setup"])
-        restore.stage(Path(result["path"]), "", parts=["setup", "second-brain"], hermes_root=root, app_dir=app, second_brain=vault,
-                      current_second_brain=None, state_dir=state, app_version="1.0.0")
+        restore.stage(
+            Path(result["path"]),
+            "",
+            parts=["setup", "second-brain"],
+            hermes_root=root,
+            app_dir=app,
+            second_brain=vault,
+            current_second_brain=None,
+            state_dir=state,
+            app_version="1.0.0",
+        )
         self.assertFalse(root.exists())  # nothing live changes at stage time
         report = restore.apply(state, safety_dir=safety, app_version="1.0.0")
         chief = root / "profiles" / "chief"
@@ -272,8 +305,17 @@ class Restore(Case):
         result = self.backup()
         (self.root / "profiles" / "chief" / "SOUL.md").write_text("Changed since the backup.\n", encoding="utf-8")
         state, safety = self.tmp / "state", self.tmp / "safety"
-        restore.stage(Path(result["path"]), "", parts=["setup"], hermes_root=self.root, app_dir=self.app, second_brain=None,
-                      current_second_brain=self.vault, state_dir=state, app_version="1.0.0")
+        restore.stage(
+            Path(result["path"]),
+            "",
+            parts=["setup"],
+            hermes_root=self.root,
+            app_dir=self.app,
+            second_brain=None,
+            current_second_brain=self.vault,
+            state_dir=state,
+            app_version="1.0.0",
+        )
         report = restore.apply(state, safety_dir=safety, app_version="1.0.0")
         chief = self.root / "profiles" / "chief"
         self.assertEqual((chief / "SOUL.md").read_text(encoding="utf-8"), "You are Chief.\n")
@@ -302,11 +344,29 @@ class Restore(Case):
         busy.mkdir()
         (busy / "keep.md").write_text("mine", encoding="utf-8")
         with self.assertRaisesRegex(restore.RestoreError, "already has files"):
-            restore.stage(Path(result["path"]), "", parts=["second-brain"], hermes_root=self.root, app_dir=None, second_brain=busy,
-                          current_second_brain=self.vault, state_dir=state, app_version="1.0.0")
+            restore.stage(
+                Path(result["path"]),
+                "",
+                parts=["second-brain"],
+                hermes_root=self.root,
+                app_dir=None,
+                second_brain=busy,
+                current_second_brain=self.vault,
+                state_dir=state,
+                app_version="1.0.0",
+            )
         fresh = self.tmp / "Restored Brain"
-        restore.stage(Path(result["path"]), "", parts=["second-brain"], hermes_root=self.root, app_dir=None, second_brain=fresh,
-                      current_second_brain=self.vault, state_dir=state, app_version="1.0.0")
+        restore.stage(
+            Path(result["path"]),
+            "",
+            parts=["second-brain"],
+            hermes_root=self.root,
+            app_dir=None,
+            second_brain=fresh,
+            current_second_brain=self.vault,
+            state_dir=state,
+            app_version="1.0.0",
+        )
         report = restore.apply(state, safety_dir=safety)
         self.assertTrue((fresh / "AGENTS.md").is_file())
         self.assertTrue((self.vault / "AGENTS.md").is_file())  # the current folder is untouched
@@ -319,10 +379,28 @@ class Restore(Case):
         result = self.backup(passphrase="pass phrase here")
         root, app, vault, state, safety = self.new_pc()
         with self.assertRaises(crypto.BadPassphrase):
-            restore.stage(Path(result["path"]), "nope", parts=["setup"], hermes_root=root, app_dir=app, second_brain=None,
-                          current_second_brain=None, state_dir=state, app_version="1.0.0")
-        restore.stage(Path(result["path"]), "pass phrase here", parts=["setup"], hermes_root=root, app_dir=app, second_brain=None,
-                      current_second_brain=None, state_dir=state, app_version="1.0.0")
+            restore.stage(
+                Path(result["path"]),
+                "nope",
+                parts=["setup"],
+                hermes_root=root,
+                app_dir=app,
+                second_brain=None,
+                current_second_brain=None,
+                state_dir=state,
+                app_version="1.0.0",
+            )
+        restore.stage(
+            Path(result["path"]),
+            "pass phrase here",
+            parts=["setup"],
+            hermes_root=root,
+            app_dir=app,
+            second_brain=None,
+            current_second_brain=None,
+            state_dir=state,
+            app_version="1.0.0",
+        )
         report = restore.apply(state, safety_dir=safety)
         self.assertIn("synthetic-openrouter-value", (root / "profiles" / "chief" / ".env").read_text(encoding="utf-8"))
         self.assertTrue((root / "profiles" / "chief" / "auth.json").is_file())
@@ -340,8 +418,17 @@ class Restore(Case):
         path.write_bytes(data)
         state = self.tmp / "state"
         with self.assertRaises(restore.RestoreError):
-            restore.stage(path, "", parts=["setup"], hermes_root=self.root, app_dir=self.app, second_brain=None,
-                          current_second_brain=self.vault, state_dir=state, app_version="1.0.0")
+            restore.stage(
+                path,
+                "",
+                parts=["setup"],
+                hermes_root=self.root,
+                app_dir=self.app,
+                second_brain=None,
+                current_second_brain=self.vault,
+                state_dir=state,
+                app_version="1.0.0",
+            )
         self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "You are Chief.\n")
         self.assertFalse([p for p in self.root.parent.iterdir() if p.name.endswith(".chief-restore")])
         self.assertFalse((state / restore.JOURNAL).exists())
@@ -352,8 +439,17 @@ class Restore(Case):
         self.assertFalse(info["compatible"])
         self.assertIn("Update the app first", info["problem"])
         with self.assertRaisesRegex(restore.RestoreError, "Update the app first"):
-            restore.stage(Path(result["path"]), "", parts=["setup"], hermes_root=self.root, app_dir=None, second_brain=None,
-                          current_second_brain=None, state_dir=self.tmp / "state", app_version="0.9.0")
+            restore.stage(
+                Path(result["path"]),
+                "",
+                parts=["setup"],
+                hermes_root=self.root,
+                app_dir=None,
+                second_brain=None,
+                current_second_brain=None,
+                state_dir=self.tmp / "state",
+                app_version="0.9.0",
+            )
 
     def test_unsafe_paths_in_a_backup_are_refused(self):
         evil = self.tmp / "evil.chiefbackup"
@@ -362,19 +458,40 @@ class Restore(Case):
             import hashlib
 
             zf.writestr("hermes/../../escape.txt", data)
-            zf.writestr("manifest.json", json.dumps({"format": archive.FORMAT, "format_version": 1, "app_version": "1.0.0", "parts": ["setup"],
-                                                      "files": [{"path": "hermes/../../escape.txt", "size": 5, "sha256": hashlib.sha256(data).hexdigest()}]}))
+            zf.writestr(
+                "manifest.json",
+                json.dumps(
+                    {
+                        "format": archive.FORMAT,
+                        "format_version": 1,
+                        "app_version": "1.0.0",
+                        "parts": ["setup"],
+                        "files": [{"path": "hermes/../../escape.txt", "size": 5, "sha256": hashlib.sha256(data).hexdigest()}],
+                    }
+                ),
+            )
         root, app, vault, state, safety = self.new_pc()
         with self.assertRaisesRegex(restore.RestoreError, "unsafe path"):
-            restore.stage(evil, "", parts=["setup"], hermes_root=root, app_dir=None, second_brain=None, current_second_brain=None, state_dir=state, app_version="1.0.0")
+            restore.stage(
+                evil, "", parts=["setup"], hermes_root=root, app_dir=None, second_brain=None, current_second_brain=None, state_dir=state, app_version="1.0.0"
+            )
         self.assertFalse((self.tmp / "escape.txt").exists())
 
     def test_restore_refuses_while_chief_is_running(self):
         result = self.backup(parts=("setup",))
         (self.root / "profiles" / "chief" / "gateway.pid").write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
         state = self.tmp / "state"
-        restore.stage(Path(result["path"]), "", parts=["setup"], hermes_root=self.root, app_dir=None, second_brain=None,
-                      current_second_brain=None, state_dir=state, app_version="1.0.0")
+        restore.stage(
+            Path(result["path"]),
+            "",
+            parts=["setup"],
+            hermes_root=self.root,
+            app_dir=None,
+            second_brain=None,
+            current_second_brain=None,
+            state_dir=state,
+            app_version="1.0.0",
+        )
         with self.assertRaisesRegex(restore.RestoreError, "still running"):
             restore.apply(state, safety_dir=self.tmp / "safety")
         restore.discard_staging(state)
@@ -382,8 +499,17 @@ class Restore(Case):
     def test_a_failure_mid_swap_rolls_back(self):
         result = self.backup(parts=("setup",))
         state = self.tmp / "state"
-        restore.stage(Path(result["path"]), "", parts=["setup"], hermes_root=self.root, app_dir=self.app, second_brain=None,
-                      current_second_brain=None, state_dir=state, app_version="1.0.0")
+        restore.stage(
+            Path(result["path"]),
+            "",
+            parts=["setup"],
+            hermes_root=self.root,
+            app_dir=self.app,
+            second_brain=None,
+            current_second_brain=None,
+            state_dir=state,
+            app_version="1.0.0",
+        )
 
         def boom():
             raise OSError("disk went away")
@@ -397,11 +523,22 @@ class Restore(Case):
     def test_a_process_killed_mid_swap_is_recovered_at_next_start(self):
         result = self.backup(parts=("setup",))
         state = self.tmp / "state"
-        restore.stage(Path(result["path"]), "", parts=["setup"], hermes_root=self.root, app_dir=self.app, second_brain=None,
-                      current_second_brain=None, state_dir=state, app_version="1.0.0")
-        script = (f"import sys, os; sys.path.insert(0, {str(ROOT)!r});\n"
-                  "from pathlib import Path; from chief_backup import restore\n"
-                  f"restore.apply(Path({str(state)!r}), safety_dir=Path({str(self.tmp / 'safety')!r}), hooks={{'after_old:app': lambda: os._exit(9)}})\n")
+        restore.stage(
+            Path(result["path"]),
+            "",
+            parts=["setup"],
+            hermes_root=self.root,
+            app_dir=self.app,
+            second_brain=None,
+            current_second_brain=None,
+            state_dir=state,
+            app_version="1.0.0",
+        )
+        script = (
+            f"import sys, os; sys.path.insert(0, {str(ROOT)!r});\n"
+            "from pathlib import Path; from chief_backup import restore\n"
+            f"restore.apply(Path({str(state)!r}), safety_dir=Path({str(self.tmp / 'safety')!r}), hooks={{'after_old:app': lambda: os._exit(9)}})\n"
+        )
         code = subprocess.run([sys.executable, "-c", script]).returncode
         self.assertEqual(code, 9)
         self.assertFalse(self.app.exists())  # killed with the app folder moved aside
@@ -421,8 +558,23 @@ class CommandLine(Case):
         return code, json.loads(out.getvalue())
 
     def test_backup_list_and_inspect_with_a_passphrase_from_stdin(self):
-        code, made = self.run_cli(["backup", "--dest", str(self.dest), "--parts", "setup,second-brain", "--hermes-root", str(self.root),
-                                   "--second-brain", str(self.vault), "--app-version", "1.0.0", "--passphrase-stdin"], "a long passphrase\n")
+        code, made = self.run_cli(
+            [
+                "backup",
+                "--dest",
+                str(self.dest),
+                "--parts",
+                "setup,second-brain",
+                "--hermes-root",
+                str(self.root),
+                "--second-brain",
+                str(self.vault),
+                "--app-version",
+                "1.0.0",
+                "--passphrase-stdin",
+            ],
+            "a long passphrase\n",
+        )
         self.assertEqual(code, 0, made)
         self.assertTrue(made["encrypted"])
         code, listed = self.run_cli(["list", "--dest", str(self.dest)])

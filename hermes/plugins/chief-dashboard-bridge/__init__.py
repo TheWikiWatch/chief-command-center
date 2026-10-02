@@ -136,10 +136,9 @@ def _register(ctx):
     # Without this callback the bridge deliberately keeps the Discord binding.
     try:
         from .adapter import register_platform
+
         register_platform(ctx)
-        ctx.register_platform_handler(
-            "command_center", lambda native, adapter: bridge.set_command_center_adapter(adapter)
-        )
+        ctx.register_platform_handler("command_center", lambda native, adapter: bridge.set_command_center_adapter(adapter))
     except Exception:
         logger.warning("Command Center adapter unavailable; using Discord", exc_info=True)
 
@@ -147,8 +146,7 @@ def _register(ctx):
         from .fleet import TOOLS
 
         for name, schema, handler, emoji in TOOLS:
-            ctx.register_tool(name=name, toolset="fleet", schema=schema, handler=handler, emoji=emoji,
-                              description=schema.get("description", ""))
+            ctx.register_tool(name=name, toolset="fleet", schema=schema, handler=handler, emoji=emoji, description=schema.get("description", ""))
     except Exception:
         logger.warning("chief-dashboard-bridge: fleet tools unavailable", exc_info=True)
 

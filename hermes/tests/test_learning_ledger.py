@@ -1,4 +1,5 @@
 """Tests for the bundled learning ledger (Fleet Health) against a throwaway Hermes tree (never the real one)."""
+
 import importlib.util
 import json
 import os
@@ -162,16 +163,30 @@ class LedgerTests(unittest.TestCase):
         L = self.ledger
         L.snapshot()
         out = Path(os.environ["CHIEF_LEARNING_DIR"])
-        (out / "proposals.json").write_text(json.dumps({"items": [
-            {"id": "20260901-1", "kind": "skill", "target": "review", "change": "split it"},
-            {"id": "20260901-2", "kind": "skill", "target": "cron jobs", "change": "retire three"},
-            {"id": "20260901-3", "kind": "skill", "target": "other", "change": "later"},
-        ]}), encoding="utf-8")
+        (out / "proposals.json").write_text(
+            json.dumps(
+                {
+                    "items": [
+                        {"id": "20260901-1", "kind": "skill", "target": "review", "change": "split it"},
+                        {"id": "20260901-2", "kind": "skill", "target": "cron jobs", "change": "retire three"},
+                        {"id": "20260901-3", "kind": "skill", "target": "other", "change": "later"},
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
         decided_at = time.time() - 60
-        (out / "decisions.json").write_text(json.dumps({"items": {
-            "20260901-1": {"decision": "approve", "at": decided_at},
-            "20260901-2": {"decision": "dismiss", "at": decided_at},
-        }}), encoding="utf-8")
+        (out / "decisions.json").write_text(
+            json.dumps(
+                {
+                    "items": {
+                        "20260901-1": {"decision": "approve", "at": decided_at},
+                        "20260901-2": {"decision": "dismiss", "at": decided_at},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
         self.skill.write_text("v1\nsplit\n", encoding="utf-8")
         L.snapshot()
         report = L.report()

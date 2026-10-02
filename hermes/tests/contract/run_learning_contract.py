@@ -5,6 +5,7 @@
 
 Throwaway home only. Exit 0 = the contract holds.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -66,11 +67,22 @@ check("the ledger lands in the chief's scripts folder", (home / "scripts" / "lea
 jobs = json.loads((home / "cron" / "jobs.json").read_text(encoding="utf-8"))
 jobs = {j["name"]: j for j in (jobs.get("jobs", jobs) if isinstance(jobs, dict) else jobs)}
 ledger_job = jobs.get("Fleet: learning ledger") or {}
-check("a silent 30-minute ledger job", ledger_job.get("no_agent") is True and ledger_job.get("script") == "learning_ledger.py"
-      and ledger_job.get("deliver") == "local" and (ledger_job.get("schedule") or {}).get("minutes") == 30, ledger_job)
+check(
+    "a silent 30-minute ledger job",
+    ledger_job.get("no_agent") is True
+    and ledger_job.get("script") == "learning_ledger.py"
+    and ledger_job.get("deliver") == "local"
+    and (ledger_job.get("schedule") or {}).get("minutes") == 30,
+    ledger_job,
+)
 distill = jobs.get("Fleet: lessons distill (weekly)") or {}
-check("a weekly distill with the distill skill, reporting to the app", "fleet-lessons-distill" in (distill.get("skills") or [])
-      and distill.get("deliver") == "command_center" and str(root / "learning") in (distill.get("prompt") or ""), distill)
+check(
+    "a weekly distill with the distill skill, reporting to the app",
+    "fleet-lessons-distill" in (distill.get("skills") or [])
+    and distill.get("deliver") == "command_center"
+    and str(root / "learning") in (distill.get("prompt") or ""),
+    distill,
+)
 check("a monthly roster review", "fleet-ops" in ((jobs.get("Fleet: roster review (monthly)") or {}).get("skills") or []))
 check("arming twice adds nothing", learning.ensure(home)["jobs"] == [])
 
@@ -81,8 +93,14 @@ check("a first report is written", first["ok"] and report_path.is_file() and {d[
 skill.write_text("---\nname: deploy\n---\nv1\nnew rule\n", encoding="utf-8")
 second = learning.run_now()
 report = json.loads(report_path.read_text(encoding="utf-8"))
-check("a skill edit is recorded with its scope", second["changes"] == 1 and report["changes"][0]["scope"] == "chief"
-      and report["changes"][0]["skill"] == "devops/deploy" and report["changes"][0]["canRevert"], report["changes"][:1])
+check(
+    "a skill edit is recorded with its scope",
+    second["changes"] == 1
+    and report["changes"][0]["scope"] == "chief"
+    and report["changes"][0]["skill"] == "devops/deploy"
+    and report["changes"][0]["canRevert"],
+    report["changes"][:1],
+)
 
 # The cron job runs the copied script with the profile as HERMES_HOME and no arguments.
 skill.write_text("---\nname: deploy\n---\nv2\n", encoding="utf-8")
@@ -90,8 +108,11 @@ env = {**os.environ, "HERMES_HOME": str(home), "PYTHONIOENCODING": "utf-8"}
 env.pop("CHIEF_HERMES_ROOT", None)
 out = subprocess.run([sys.executable, str(home / "scripts" / "learning_ledger.py")], env=env, capture_output=True, text=True, timeout=120)
 report = json.loads(report_path.read_text(encoding="utf-8"))
-check("the script finds the root from the profile and records the edit", out.returncode == 0 and report["changes"][0]["skill"] == "devops/deploy"
-      and len([c for c in report["changes"] if c["skill"] == "devops/deploy"]) == 2, out.stderr[-300:])
+check(
+    "the script finds the root from the profile and records the edit",
+    out.returncode == 0 and report["changes"][0]["skill"] == "devops/deploy" and len([c for c in report["changes"] if c["skill"] == "devops/deploy"]) == 2,
+    out.stderr[-300:],
+)
 check("the report speaks of the chief, not a name", "(the chief)" in (root / "learning" / "report.md").read_text(encoding="utf-8"))
 
 print(json.dumps({"failures": failures}))

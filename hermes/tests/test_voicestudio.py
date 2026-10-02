@@ -1,4 +1,5 @@
 """VoiceStudio TTS plugin and the bridge's plugin-voice seams. No Hermes, no VoiceStudio, no network."""
+
 import importlib
 import json
 import sys
@@ -156,7 +157,9 @@ class BridgePluginVoiceTests(unittest.TestCase):
         cls.voice = importlib.import_module("test_bridge_plugin.voice")
 
     def plugin(self):
-        p = provider.VoiceStudioTTS(http=FakeHttp(profiles=[{"id": "abc", "name": "Clone", "kind": "clone"}]), config=lambda: {"voice": "profile:abc"}, edge=lambda *a: None)
+        p = provider.VoiceStudioTTS(
+            http=FakeHttp(profiles=[{"id": "abc", "name": "Clone", "kind": "clone"}]), config=lambda: {"voice": "profile:abc"}, edge=lambda *a: None
+        )
         return p
 
     def test_plugin_voices_are_listed_with_groups_and_a_label(self):

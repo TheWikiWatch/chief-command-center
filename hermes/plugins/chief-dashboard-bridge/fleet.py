@@ -14,6 +14,7 @@ Used by the dashboard (Fleet tab, each bot's Look drawer) and by the chief itsel
 - Restore imports the archive and gives the bot its provider key again. Removing an archive is permanent and
   is offered to the owner only (not a tool).
 """
+
 from __future__ import annotations
 
 import json
@@ -335,30 +336,79 @@ _S = {"type": "string"}
 _B = {"type": "boolean"}
 
 TOOLS = (
-    ("fleet_roster", _schema("fleet_roster", "List the chief's workforce: each bot's id, name, role, model, working folder and whether it is "
-                                             "busy, plus retired bots that can be restored.", {}),
-     _tool(lambda a: roster()), "👥"),
-    ("fleet_models", _schema("fleet_models", "List every model of the owner's connected providers (what a bot can be pinned to).", {}),
-     _tool(lambda a: models()), "🧠"),
-    ("fleet_mint", _schema("fleet_mint", "Create a new specialist bot. ONLY after the owner has signed off on the SOUL draft in this chat "
-                                         "(owner_signed=true). It starts on the chief's model, with its own working folder.",
-                           {"id": {**_S, "description": "short lowercase id, e.g. research-desk"},
-                            "display_name": {**_S, "description": "the bot's human first name"},
-                            "role": {**_S, "description": "short role, e.g. Researcher"},
-                            "description": {**_S, "description": "one or two sentences on what it is good at (used for routing)"},
-                            "soul": {**_S, "description": "the signed one-screen SOUL.md text"},
-                            "cwd": {**_S, "description": "optional working folder (absolute path)"},
-                            "owner_signed": {**_B, "description": "true only if the owner approved this exact SOUL"}},
-                           ("id", "display_name", "role", "description", "soul", "owner_signed")),
-     _tool(lambda a: mint(a.get("id", ""), a.get("display_name", ""), a.get("role", ""), a.get("description", ""), a.get("soul", ""),
-                          owner_signed=bool(a.get("owner_signed")), cwd=str(a.get("cwd") or ""))), "🛠️"),
-    ("fleet_set_model", _schema("fleet_set_model", "Pin a bot (or 'chief') to a model from fleet_models. Its provider key goes with it. "
-                                                   "If the result asks for confirmation (expensive model), ask the owner first.",
-                                {"profile": _S, "provider": _S, "model": _S, "confirm_expensive": _B}, ("profile", "provider", "model")),
-     _tool(lambda a: set_model(a.get("profile", ""), a.get("provider", ""), a.get("model", ""), confirm_expensive=bool(a.get("confirm_expensive")))), "🔁"),
-    ("fleet_retire", _schema("fleet_retire", "Retire (unmint) a bot: it is archived (restorable) and removed. ONLY after the owner said yes "
-                                             "in this chat (owner_confirmed=true).", {"profile": _S, "owner_confirmed": _B}, ("profile", "owner_confirmed")),
-     _tool(lambda a: retire(a.get("profile", ""), owner_confirmed=bool(a.get("owner_confirmed")))), "📦"),
-    ("fleet_restore", _schema("fleet_restore", "Bring a retired bot back from its archive (ids from fleet_roster).", {"archive_id": _S}, ("archive_id",)),
-     _tool(lambda a: restore(a.get("archive_id", ""))), "♻️"),
+    (
+        "fleet_roster",
+        _schema(
+            "fleet_roster",
+            "List the chief's workforce: each bot's id, name, role, model, working folder and whether it is busy, plus retired bots that can be restored.",
+            {},
+        ),
+        _tool(lambda a: roster()),
+        "👥",
+    ),
+    (
+        "fleet_models",
+        _schema("fleet_models", "List every model of the owner's connected providers (what a bot can be pinned to).", {}),
+        _tool(lambda a: models()),
+        "🧠",
+    ),
+    (
+        "fleet_mint",
+        _schema(
+            "fleet_mint",
+            "Create a new specialist bot. ONLY after the owner has signed off on the SOUL draft in this chat "
+            "(owner_signed=true). It starts on the chief's model, with its own working folder.",
+            {
+                "id": {**_S, "description": "short lowercase id, e.g. research-desk"},
+                "display_name": {**_S, "description": "the bot's human first name"},
+                "role": {**_S, "description": "short role, e.g. Researcher"},
+                "description": {**_S, "description": "one or two sentences on what it is good at (used for routing)"},
+                "soul": {**_S, "description": "the signed one-screen SOUL.md text"},
+                "cwd": {**_S, "description": "optional working folder (absolute path)"},
+                "owner_signed": {**_B, "description": "true only if the owner approved this exact SOUL"},
+            },
+            ("id", "display_name", "role", "description", "soul", "owner_signed"),
+        ),
+        _tool(
+            lambda a: mint(
+                a.get("id", ""),
+                a.get("display_name", ""),
+                a.get("role", ""),
+                a.get("description", ""),
+                a.get("soul", ""),
+                owner_signed=bool(a.get("owner_signed")),
+                cwd=str(a.get("cwd") or ""),
+            )
+        ),
+        "🛠️",
+    ),
+    (
+        "fleet_set_model",
+        _schema(
+            "fleet_set_model",
+            "Pin a bot (or 'chief') to a model from fleet_models. Its provider key goes with it. "
+            "If the result asks for confirmation (expensive model), ask the owner first.",
+            {"profile": _S, "provider": _S, "model": _S, "confirm_expensive": _B},
+            ("profile", "provider", "model"),
+        ),
+        _tool(lambda a: set_model(a.get("profile", ""), a.get("provider", ""), a.get("model", ""), confirm_expensive=bool(a.get("confirm_expensive")))),
+        "🔁",
+    ),
+    (
+        "fleet_retire",
+        _schema(
+            "fleet_retire",
+            "Retire (unmint) a bot: it is archived (restorable) and removed. ONLY after the owner said yes in this chat (owner_confirmed=true).",
+            {"profile": _S, "owner_confirmed": _B},
+            ("profile", "owner_confirmed"),
+        ),
+        _tool(lambda a: retire(a.get("profile", ""), owner_confirmed=bool(a.get("owner_confirmed")))),
+        "📦",
+    ),
+    (
+        "fleet_restore",
+        _schema("fleet_restore", "Bring a retired bot back from its archive (ids from fleet_roster).", {"archive_id": _S}, ("archive_id",)),
+        _tool(lambda a: restore(a.get("archive_id", ""))),
+        "♻️",
+    ),
 )

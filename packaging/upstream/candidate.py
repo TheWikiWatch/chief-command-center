@@ -6,6 +6,7 @@ Reads the latest stable release of hermes/pin.json's upstream from the GitHub AP
 set, for rate limits), resolves its commit, and prints JSON: current pin, candidate tag and commit, and
 `newer`. Exit code 0 either way; the workflow branches on `newer`.
 """
+
 from __future__ import annotations
 
 import argparse

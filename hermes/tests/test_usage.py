@@ -1,4 +1,5 @@
 """Usage and budget (usage.py) over throwaway session stores."""
+
 import importlib
 import sqlite3
 import tempfile
@@ -50,19 +51,26 @@ class UsageTests(unittest.TestCase):
         p = patch.object(data, "chief_home", return_value=self.chief)
         p.start()
         self.addCleanup(p.stop)
-        store(self.chief, [
-            ("s1", "deepseek-flash", at(0), 1000, 200, 5000, 0, 10, 4, 0.010, None, "estimated"),
-            ("s2", "deepseek-flash", at(3), 2000, 400, 0, 0, 0, 2, 0.020, 0.025, "actual"),
-            ("s3", "deepseek-flash", at(10), 4000, 800, 0, 0, 0, 3, 0.040, None, "estimated"),  # earlier this month
-            ("s4", "deepseek-flash", at(40), 9000, 900, 0, 0, 0, 3, 0.090, None, "estimated"),  # last month
-        ], aux=[
-            ("s1", "deepseek-flash", "title_generation", at(0), 200, 10, 0, 0, 0, 1, 0.001, 0.0, None),
-            ("s1", "deepseek-flash", "", at(0), 1000, 200, 5000, 0, 10, 4, 0.010, 0.0, "estimated"),  # the main row: not added twice
-        ])
+        store(
+            self.chief,
+            [
+                ("s1", "deepseek-flash", at(0), 1000, 200, 5000, 0, 10, 4, 0.010, None, "estimated"),
+                ("s2", "deepseek-flash", at(3), 2000, 400, 0, 0, 0, 2, 0.020, 0.025, "actual"),
+                ("s3", "deepseek-flash", at(10), 4000, 800, 0, 0, 0, 3, 0.040, None, "estimated"),  # earlier this month
+                ("s4", "deepseek-flash", at(40), 9000, 900, 0, 0, 0, 3, 0.090, None, "estimated"),  # last month
+            ],
+            aux=[
+                ("s1", "deepseek-flash", "title_generation", at(0), 200, 10, 0, 0, 0, 1, 0.001, 0.0, None),
+                ("s1", "deepseek-flash", "", at(0), 1000, 200, 5000, 0, 10, 4, 0.010, 0.0, "estimated"),  # the main row: not added twice
+            ],
+        )
         (self.chief / "profile.yaml").write_text("ui_meta:\n  hermes-bots:\n    title: Nova - Chief of Staff\n", encoding="utf-8")
-        store(profiles / "research-desk", [
-            ("r1", "copilot-gpt", at(1), 3000, 300, 0, 0, 0, 2, None, None, None),  # no price known
-        ])
+        store(
+            profiles / "research-desk",
+            [
+                ("r1", "copilot-gpt", at(1), 3000, 300, 0, 0, 0, 2, None, None, None),  # no price known
+            ],
+        )
 
     def test_periods_bots_models_and_days(self):
         month = usage.summary("month", NOW)
@@ -129,17 +137,21 @@ class ModelSwitchTests(unittest.TestCase):
         p = patch.object(data, "chief_home", return_value=chief)
         p.start()
         self.addCleanup(p.stop)
-        ledger_store(chief, [
-            # A long conversation, started last month on one model and switched to another two days ago.
-            ("main", "deepseek-flash", "deepseek", at(25), 5000, 500, 0, 0, 0, 5, 0.050, None, "estimated"),
-            # A session whose totals hold more than its ledger: the remainder stays with its own model.
-            ("p1", "model-a", "prov-a", at(1), 1500, 0, 0, 0, 0, 3, 0.015, None, "estimated"),
-        ], [
-            ("main", "deepseek-flash", "deepseek", "", at(25), at(20), 3000, 300, 0, 0, 0, 3, 0.030, 0.0, "estimated"),
-            ("main", "glm-5.3-flash", "zai", "", at(2), at(1), 2000, 200, 0, 0, 0, 2, 0.020, 0.0, "estimated"),
-            ("main", "glm-5.3-flash", "zai", "title_generation", at(2), at(2), 100, 10, 0, 0, 0, 1, 0.001, 0.0, None),
-            ("p1", "model-a", "prov-a", "", at(1), at(1), 1000, 0, 0, 0, 0, 2, 0.010, 0.0, "estimated"),
-        ])
+        ledger_store(
+            chief,
+            [
+                # A long conversation, started last month on one model and switched to another two days ago.
+                ("main", "deepseek-flash", "deepseek", at(25), 5000, 500, 0, 0, 0, 5, 0.050, None, "estimated"),
+                # A session whose totals hold more than its ledger: the remainder stays with its own model.
+                ("p1", "model-a", "prov-a", at(1), 1500, 0, 0, 0, 0, 3, 0.015, None, "estimated"),
+            ],
+            [
+                ("main", "deepseek-flash", "deepseek", "", at(25), at(20), 3000, 300, 0, 0, 0, 3, 0.030, 0.0, "estimated"),
+                ("main", "glm-5.3-flash", "zai", "", at(2), at(1), 2000, 200, 0, 0, 0, 2, 0.020, 0.0, "estimated"),
+                ("main", "glm-5.3-flash", "zai", "title_generation", at(2), at(2), 100, 10, 0, 0, 0, 1, 0.001, 0.0, None),
+                ("p1", "model-a", "prov-a", "", at(1), at(1), 1000, 0, 0, 0, 0, 2, 0.010, 0.0, "estimated"),
+            ],
+        )
 
     def models(self, period):
         return {(m["model"], m["provider"]): m for m in usage.summary(period, NOW)["models"]}
@@ -182,26 +194,42 @@ class JournalTests(unittest.TestCase):
         self.addCleanup(p.stop)
         # A conversation open for ten days: four calls, 1000 input tokens, 4 cents. The chief replied three
         # times ten days ago and once today.
-        ledger_store(self.chief, [
-            ("long", "deepseek-flash", "deepseek", at(10), 1000, 0, 0, 0, 0, 4, 0.04, None, "estimated"),
-        ], [
-            ("long", "deepseek-flash", "deepseek", "", at(10), at(0), 1000, 0, 0, 0, 0, 4, 0.04, 0.0, "estimated"),
-        ])
+        ledger_store(
+            self.chief,
+            [
+                ("long", "deepseek-flash", "deepseek", at(10), 1000, 0, 0, 0, 0, 4, 0.04, None, "estimated"),
+            ],
+            [
+                ("long", "deepseek-flash", "deepseek", "", at(10), at(0), 1000, 0, 0, 0, 0, 4, 0.04, 0.0, "estimated"),
+            ],
+        )
         conn = sqlite3.connect(self.chief / "state.db")
         conn.execute("CREATE TABLE messages (session_id TEXT, role TEXT, timestamp REAL)")
-        conn.executemany("INSERT INTO messages VALUES (?,?,?)", [
-            ("long", "user", at(10)), ("long", "assistant", at(10)), ("long", "assistant", at(10, 11)),
-            ("long", "assistant", at(10, 12)), ("long", "user", at(0)), ("long", "assistant", at(0)),
-        ])
+        conn.executemany(
+            "INSERT INTO messages VALUES (?,?,?)",
+            [
+                ("long", "user", at(10)),
+                ("long", "assistant", at(10)),
+                ("long", "assistant", at(10, 11)),
+                ("long", "assistant", at(10, 12)),
+                ("long", "user", at(0)),
+                ("long", "assistant", at(0)),
+            ],
+        )
         conn.commit()
         conn.close()
 
     def grow(self, input_tokens, calls, cost, last):
         conn = sqlite3.connect(self.chief / "state.db")
-        conn.execute("UPDATE session_model_usage SET input_tokens = input_tokens + ?, api_call_count = api_call_count + ?, "
-                     "estimated_cost_usd = estimated_cost_usd + ?, last_seen = ?", (input_tokens, calls, cost, last))
-        conn.execute("UPDATE sessions SET input_tokens = input_tokens + ?, api_call_count = api_call_count + ?, "
-                     "estimated_cost_usd = estimated_cost_usd + ?", (input_tokens, calls, cost))
+        conn.execute(
+            "UPDATE session_model_usage SET input_tokens = input_tokens + ?, api_call_count = api_call_count + ?, "
+            "estimated_cost_usd = estimated_cost_usd + ?, last_seen = ?",
+            (input_tokens, calls, cost, last),
+        )
+        conn.execute(
+            "UPDATE sessions SET input_tokens = input_tokens + ?, api_call_count = api_call_count + ?, estimated_cost_usd = estimated_cost_usd + ?",
+            (input_tokens, calls, cost),
+        )
         conn.commit()
         conn.close()
 
@@ -226,6 +254,7 @@ class JournalTests(unittest.TestCase):
 
     def test_history_outlives_hermes_pruning_and_shrinking_totals(self):
         usage.summary("today", NOW)
+
         def change(*statements):
             conn = sqlite3.connect(self.chief / "state.db")
             for sql in statements:

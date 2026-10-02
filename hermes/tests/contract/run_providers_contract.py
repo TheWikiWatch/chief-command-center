@@ -8,6 +8,7 @@ Run with the payload's Python and the payload on the path, against a throwaway h
 It never uses a real key and never calls a model: it checks the imports and shapes Hermes provides
 (catalog, key storage, status, the endpoint probe against a closed port). Exit 0 = the contract holds.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -94,10 +95,16 @@ class FakeOpenAI(BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         self.rfile.read(length)
         if self.path.rstrip("/").endswith("/chat/completions"):
-            self._send({"id": "x", "object": "chat.completion", "created": 0, "model": "tiny-local",
-                        "choices": [{"index": 0, "finish_reason": "stop",
-                                     "message": {"role": "assistant", "content": "ready"}}],
-                        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+            self._send(
+                {
+                    "id": "x",
+                    "object": "chat.completion",
+                    "created": 0,
+                    "model": "tiny-local",
+                    "choices": [{"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "ready"}}],
+                    "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+                }
+            )
         else:
             self.send_error(404)
 

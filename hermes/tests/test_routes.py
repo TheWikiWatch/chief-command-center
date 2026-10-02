@@ -1,4 +1,5 @@
 """The bridge's route table and the dashboard proxy's allow-list (apps/web/lib/proxy-policy.ts) agree."""
+
 import importlib
 import json
 import re

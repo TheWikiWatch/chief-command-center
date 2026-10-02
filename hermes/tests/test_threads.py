@@ -1,4 +1,5 @@
 """Threads with the chief (threads.py) over a throwaway profile."""
+
 import importlib
 import sqlite3
 import tempfile
@@ -26,7 +27,9 @@ class ThreadTests(unittest.TestCase):
 
     def sessions(self, rows):
         conn = sqlite3.connect(self.home / "state.db")
-        conn.execute("CREATE TABLE IF NOT EXISTS sessions (id TEXT, session_key TEXT, title TEXT, started_at REAL, ended_at REAL, last_activity_at REAL, message_count INT)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS sessions (id TEXT, session_key TEXT, title TEXT, started_at REAL, ended_at REAL, last_activity_at REAL, message_count INT)"
+        )
         conn.executemany("INSERT INTO sessions VALUES (?,?,?,?,?,?,?)", rows)
         conn.commit()
         conn.close()
@@ -66,11 +69,13 @@ class ThreadTests(unittest.TestCase):
     def test_titles_and_earlier_conversations_come_from_hermes_sessions(self):
         made = threads.create()["thread"]
         key = threads.session_key(made["id"])
-        self.sessions([
-            ("s-old", key, "Packing list", 100.0, 150.0, 150.0, 12),
-            ("s-new", key, "Flights to Lisbon", 200.0, None, 260.0, 4),
-            ("s-empty", key, "", 50.0, 60.0, 60.0, 0),
-        ])
+        self.sessions(
+            [
+                ("s-old", key, "Packing list", 100.0, 150.0, 150.0, 12),
+                ("s-new", key, "Flights to Lisbon", 200.0, None, 260.0, 4),
+                ("s-empty", key, "", 50.0, 60.0, 60.0, 0),
+            ]
+        )
         listed = {t["id"]: t for t in threads.list_threads()["threads"]}
         self.assertEqual(listed[made["id"]]["title"], "Flights to Lisbon")  # Hermes's title for the latest session
         self.assertEqual(listed[made["id"]]["lastActivity"], 260.0)

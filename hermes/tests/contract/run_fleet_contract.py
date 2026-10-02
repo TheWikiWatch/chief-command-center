@@ -5,6 +5,7 @@
 
 Throwaway home only. Exit 0 = the contract holds.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -70,7 +71,10 @@ check("chief has a key on file", providers.save_key("openrouter", key).get("ok")
 check("roster starts empty", fleet.roster()["workers"] == [])
 
 soul = "You are Sam, a researcher.\n\n## Job\nFind and summarize sources.\n"
-check("mint refuses without the owner's sign-off", "sign-off" in raises(lambda: fleet.mint("research-desk", "Sam", "Researcher", "Finds sources.", soul, owner_signed=False)))
+check(
+    "mint refuses without the owner's sign-off",
+    "sign-off" in raises(lambda: fleet.mint("research-desk", "Sam", "Researcher", "Finds sources.", soul, owner_signed=False)),
+)
 check("mint refuses a bad id", "lowercase id" in raises(lambda: fleet.mint("Research Desk!", "Sam", "Researcher", "x", soul, owner_signed=True)))
 check("mint refuses the chief's id", "lowercase id" in raises(lambda: fleet.mint("chief", "Sam", "Researcher", "x", soul, owner_signed=True)))
 
@@ -124,8 +128,11 @@ check("restore refuses when the id is taken", raises(lambda: fleet.restore(retir
 
 rows = {r["slug"]: r for r in providers.catalog()["providers"]}
 check("a key the app saved is marked as saved", rows["openrouter"].get("keySaved") is True, rows["openrouter"])
-check("a provider without a stored key isn't", not any(r.get("keySaved") for s, r in rows.items() if s != "openrouter"),
-      [s for s, r in rows.items() if r.get("keySaved")])
+check(
+    "a provider without a stored key isn't",
+    not any(r.get("keySaved") for s, r in rows.items() if s != "openrouter"),
+    [s for s, r in rows.items() if r.get("keySaved")],
+)
 check("a key the app didn't store can't be removed", providers.remove_key("deepseek").get("code") == "not_saved")
 providers.choose_model("openrouter", "openai/gpt-4o-mini", confirm_expensive=True)
 check("the provider in use can't lose its key", providers.remove_key("openrouter").get("code") == "in_use")
@@ -137,8 +144,10 @@ check("an archive can be removed for good", fleet.remove_archive(again["archive"
 
 # The chief's tools
 tools = {name: handler for name, _schema, handler, _emoji in fleet.TOOLS}
-check("tools return JSON and refuse a mint without sign-off",
-      json.loads(tools["fleet_mint"]({"id": "x-bot", "display_name": "X", "role": "R", "description": "d", "soul": "s"}))["ok"] is False)
+check(
+    "tools return JSON and refuse a mint without sign-off",
+    json.loads(tools["fleet_mint"]({"id": "x-bot", "display_name": "X", "role": "R", "description": "d", "soul": "s"}))["ok"] is False,
+)
 check("the roster tool works", json.loads(tools["fleet_roster"]({}))["ok"] is True)
 check("the retire tool refuses without confirmation", json.loads(tools["fleet_retire"]({"profile": "x"}))["ok"] is False)
 

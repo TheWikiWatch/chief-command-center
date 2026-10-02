@@ -13,6 +13,7 @@ selections differ from upstream's desktop bundle:
 Usage (host Python 3.14 with PM's runtime deps installed):
     python packaging/payload/stage.py --hermes-src <checkout> --out <dir> [--cache <uv cache>]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -47,8 +48,7 @@ def _inner(args: argparse.Namespace) -> int:
     if args.finish:
         prepared = Path(args.out).with_name(Path(args.out).name + ".prepared.json")
         return native.finish_native(prepared, {})
-    ns = argparse.Namespace(out=args.out, ref=args.ref, source=Path(args.hermes_src), tools=None,
-                            cache=args.cache, frontends={})
+    ns = argparse.Namespace(out=args.out, ref=args.ref, source=Path(args.hermes_src), tools=None, cache=args.cache, frontends={})
     return native._stage_native(ns)
 
 
@@ -70,17 +70,35 @@ def main(argv: list[str] | None = None) -> int:
 
     # Same isolation as upstream's stage_native: this build never touches the machine's Hermes state.
     work = Path(tempfile.mkdtemp(prefix=".build-", dir=args.out))
-    env = {**os.environ, "HOME": str(work), "USERPROFILE": str(work),
-           "HERMES_HOME": str(work / ".hermes"),
-           "HERMES_RUNTIME_DIR": str(Path(args.out) / "tools"),
-           "HERMES_PYTHON_SRC_ROOT": args.hermes_src,
-           "XDG_CACHE_HOME": str(work / "cache"), "XDG_CONFIG_HOME": str(work / "config"),
-           "UV_CACHE_DIR": args.cache,
-           "PYTHONPATH": os.pathsep.join([args.hermes_src, *filter(None, sys.path)])}
+    env = {
+        **os.environ,
+        "HOME": str(work),
+        "USERPROFILE": str(work),
+        "HERMES_HOME": str(work / ".hermes"),
+        "HERMES_RUNTIME_DIR": str(Path(args.out) / "tools"),
+        "HERMES_PYTHON_SRC_ROOT": args.hermes_src,
+        "XDG_CACHE_HOME": str(work / "cache"),
+        "XDG_CONFIG_HOME": str(work / "config"),
+        "UV_CACHE_DIR": args.cache,
+        "PYTHONPATH": os.pathsep.join([args.hermes_src, *filter(None, sys.path)]),
+    }
     for key, directory in (("CARGO_HOME", ".cargo"), ("RUSTUP_HOME", ".rustup")):
         env.setdefault(key, str(Path.home() / directory))
-    command = [sys.executable, "-B", str(Path(__file__).resolve()), "--inner", "--hermes-src", args.hermes_src,
-               "--out", args.out, "--ref", args.ref, "--cache", args.cache, *(["--finish"] if args.finish else [])]
+    command = [
+        sys.executable,
+        "-B",
+        str(Path(__file__).resolve()),
+        "--inner",
+        "--hermes-src",
+        args.hermes_src,
+        "--out",
+        args.out,
+        "--ref",
+        args.ref,
+        "--cache",
+        args.cache,
+        *(["--finish"] if args.finish else []),
+    ]
     code = subprocess.run(command, cwd=args.hermes_src, env=env).returncode
     if code == 0:
         write_install_stamp(Path(args.out), Path(args.hermes_src))
@@ -92,8 +110,7 @@ def write_install_stamp(out: Path, source: Path) -> None:
     touch the tree ("managed by chief-command-center"), and version reports show the pinned commit."""
     pin = json.loads((HERE.parents[1] / "hermes" / "pin.json").read_text(encoding="utf-8"))
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
-    date = subprocess.run(["git", "show", "-s", "--format=%cI", pin["commit"]], cwd=source, check=True,
-                          capture_output=True, text=True).stdout.strip()
+    date = subprocess.run(["git", "show", "-s", "--format=%cI", pin["commit"]], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
     stamp = {
         "commit": head,
         "upstreamCommit": pin["commit"],

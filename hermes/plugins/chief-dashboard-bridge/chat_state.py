@@ -8,6 +8,7 @@
   is a reply, not a notice. Busy "⏳ Working" notices are never shown as notices.
 - **Step** (`activity`): what the running turn is doing, in plain words, from its newest rows.
 """
+
 from __future__ import annotations
 
 import json
@@ -99,11 +100,13 @@ def asked_from_tool_row(content: Any) -> list[dict[str, Any]]:
         if not isinstance(item, dict) or "question" not in item or "user_response" not in item:
             return []
         answer = item.get("user_response")
-        out.append({
-            "question": str(item.get("question") or ""),
-            "choices": [str(c) for c in (item.get("choices_offered") or [])],
-            "answer": [str(a) for a in answer] if isinstance(answer, list) else str(answer or ""),
-        })
+        out.append(
+            {
+                "question": str(item.get("question") or ""),
+                "choices": [str(c) for c in (item.get("choices_offered") or [])],
+                "answer": [str(a) for a in answer] if isinstance(answer, list) else str(answer or ""),
+            }
+        )
     if out and data.get("timed_out"):
         for item in out:
             item.setdefault("unanswered", not item["answer"])
@@ -131,8 +134,7 @@ def _reply_texts(session_key: str, since: float) -> list[str]:
         try:
             sid = _message_session_id(conn, session_key)
             rows = conn.execute(
-                "SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' AND CAST(timestamp AS REAL) >= ? "
-                "ORDER BY id DESC LIMIT 400",
+                "SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' AND CAST(timestamp AS REAL) >= ? ORDER BY id DESC LIMIT 400",
                 (sid, since - 120),
             ).fetchall()
         finally:
@@ -179,9 +181,9 @@ def unwrap_cron(text: str) -> tuple[str, dict[str, str] | None]:
     if divider < 0 or footer <= divider or "\n(job_id: " not in head:
         return text, None
     name_line, _, id_line = head.partition("\n")
-    name = name_line[len("Cronjob Response: "):].strip()
+    name = name_line[len("Cronjob Response: ") :].strip()
     job_id = id_line.strip().removeprefix("(job_id: ").removesuffix(")").strip()
-    body = text[divider + len(_CRON_DIVIDER):footer].strip()
+    body = text[divider + len(_CRON_DIVIDER) : footer].strip()
     if not body:
         return text, None
     return body, {"name": name, "jobId": job_id}
@@ -407,8 +409,7 @@ def activity(session_key: str, generating: bool, vault: str = "", chat_id: str =
         try:
             sid = _message_session_id(conn, session_key)
             rows = conn.execute(
-                "SELECT id, role, tool_calls, CAST(timestamp AS REAL) AS t FROM messages "
-                "WHERE session_id = ? AND active = 1 ORDER BY id DESC LIMIT 60",
+                "SELECT id, role, tool_calls, CAST(timestamp AS REAL) AS t FROM messages WHERE session_id = ? AND active = 1 ORDER BY id DESC LIMIT 60",
                 (sid,),
             ).fetchall()
         finally:

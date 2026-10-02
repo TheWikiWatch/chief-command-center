@@ -13,6 +13,7 @@ the bundled bridge, then through the bridge's HTTP API:
 - the agent's own terminal commands don't inherit the bridge token.
 The gateway is stopped with Hermes's planned-stop marker for its own home only.
 """
+
 from __future__ import annotations
 
 import json
@@ -49,12 +50,23 @@ def main() -> int:
     model_port, bridge_port = compat.free_port(), compat.free_port()
     token = secrets.token_urlsafe(32)
 
-    fake = subprocess.Popen([sys.executable, str(REPO / "hermes" / "tests" / "fixtures" / "fake_model.py"), str(model_port)],
-                            env={**os.environ, "WORK_STEP_S": "3"})
+    fake = subprocess.Popen(
+        [sys.executable, str(REPO / "hermes" / "tests" / "fixtures" / "fake_model.py"), str(model_port)], env={**os.environ, "WORK_STEP_S": "3"}
+    )
     gateway = None
     try:
-        ok, out = compat.run([str(p.python), "-B", str(REPO / "apps" / "desktop" / "python" / "provision.py"), "--plugins-src",
-                              str(REPO / "hermes" / "plugins"), "--bridge-port", str(bridge_port)], p.env(HERMES_HOME=str(profile)))
+        ok, out = compat.run(
+            [
+                str(p.python),
+                "-B",
+                str(REPO / "apps" / "desktop" / "python" / "provision.py"),
+                "--plugins-src",
+                str(REPO / "hermes" / "plugins"),
+                "--bridge-port",
+                str(bridge_port),
+            ],
+            p.env(HERMES_HOME=str(profile)),
+        )
         check("profile provisioned", ok, out)
         connect = (
             "import sys, types, importlib.util, pathlib\n"
@@ -68,20 +80,31 @@ def main() -> int:
             "m = fleet.mint('research-desk', 'Sam', 'Researcher', 'Finds sources.', 'You are Sam, a researcher.', owner_signed=True)\n"
             "print(r, m.get('ok')); sys.exit(0 if r.get('ok') and m.get('ok') else 1)\n"
         )
-        ok, out = compat.run([str(p.python), "-B", "-c", connect, str(REPO / "hermes" / "plugins" / "chief-dashboard-bridge"),
-                              f"http://127.0.0.1:{model_port}/v1"], p.env(HERMES_HOME=str(profile)))
+        ok, out = compat.run(
+            [str(p.python), "-B", "-c", connect, str(REPO / "hermes" / "plugins" / "chief-dashboard-bridge"), f"http://127.0.0.1:{model_port}/v1"],
+            p.env(HERMES_HOME=str(profile)),
+        )
         check("fake model connected", ok, out)
 
-        env = p.env(HERMES_HOME=str(root), HERMES_GATEWAY_LOCK_DIR=str(work / "locks"), CHIEF_DASHBOARD_TOKEN=token,
-                    CHIEF_DASHBOARD_PORT=str(bridge_port), HERMES_BIN=str(p.launcher))
+        env = p.env(
+            HERMES_HOME=str(root),
+            HERMES_GATEWAY_LOCK_DIR=str(work / "locks"),
+            CHIEF_DASHBOARD_TOKEN=token,
+            CHIEF_DASHBOARD_PORT=str(bridge_port),
+            HERMES_BIN=str(p.launcher),
+        )
         log = open(work / "gateway.log", "w", encoding="utf-8")
         gateway = subprocess.Popen([str(p.launcher), "-p", "chief", "gateway", "run"], env=env, cwd=profile, stdout=log, stderr=subprocess.STDOUT)
         base = f"http://127.0.0.1:{bridge_port}"
 
         def call(path: str, body: dict | None = None, timeout: float = 30) -> dict:
             data = None if body is None else json.dumps(body).encode()
-            req = urllib.request.Request(base + path, data=data, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                                         method="POST" if body is not None else "GET")
+            req = urllib.request.Request(
+                base + path,
+                data=data,
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                method="POST" if body is not None else "GET",
+            )
             with urllib.request.urlopen(req, timeout=timeout) as res:
                 return json.loads(res.read())
 
@@ -132,12 +155,14 @@ def main() -> int:
         first = call("/send", {"text": "WORK on the report", "client_id": "c-steer"})
         check("send starts a long turn", first.get("ok") is True, first)
         check("chief is working", wait(generating, 30))
+
         # The fixture's first tool (skills_list) starts about 3 s in and ends at once: the step count goes up
         # while the turn still runs (the rows themselves reach the database only when the turn ends).
         def live_step():
             now = call("/transcript?after=0")
             act = now.get("activity") or {}
             return now.get("generating") and act.get("steps", 0) >= 1 and act.get("label") in ("Looking through its skills", "Thinking it over")
+
         check("the running turn reports its steps live", wait(live_step, 8, every=0.25) is True, call("/transcript?after=0").get("activity"))
         # Steer once the turn is really running (Hermes holds early arrivals until the agent exists): the
         # step check above waited for the fixture's first tool (about 3 s in); the turn lasts about 9 s.
@@ -167,9 +192,11 @@ def main() -> int:
         done = wait(lambda: assistant_after(start, "Work finished"), 90)
         after = wait(lambda: assistant_after(start, "say thanks"), 60)
         rows = messages()
-        check("the queued message is answered after the turn",
-              done is not None and after is not None and rows.index(after) > rows.index(done),
-              [(m.get("id"), m.get("role"), str(m.get("content"))[:70], m.get("tools")) for m in rows[start:]])
+        check(
+            "the queued message is answered after the turn",
+            done is not None and after is not None and rows.index(after) > rows.index(done),
+            [(m.get("id"), m.get("role"), str(m.get("content"))[:70], m.get("tools")) for m in rows[start:]],
+        )
         check("controls refuse junk", call("/steer", {"text": "  "}).get("ok") is False and call("/queue", {"text": ""}).get("ok") is False)
 
         # Questions: the chief asks with `clarify`; the turn waits for the answer.
@@ -177,8 +204,13 @@ def main() -> int:
         start = len(messages())
         call("/send", {"text": "QUIZME now", "client_id": "c-ask"})
         asked = wait(lambda: call("/transcript?after=0").get("clarify"), 45)
-        check("the question comes with the transcript", bool(asked) and asked.get("question") == "Which colour?"
-              and [c.replace(" (Recommended)", "") for c in asked.get("choices") or []] == ["Red", "Blue"], asked)
+        check(
+            "the question comes with the transcript",
+            bool(asked)
+            and asked.get("question") == "Which colour?"
+            and [c.replace(" (Recommended)", "") for c in asked.get("choices") or []] == ["Red", "Blue"],
+            asked,
+        )
         payload = call("/transcript?after=0")
         check("it is not shown as a notice", not any("Which colour" in n.get("text", "") for n in payload.get("notices") or []), payload.get("notices"))
         check("a stale answer is refused", call("/clarify", {"id": "not-the-question", "answer": "Red"}).get("ok") is False)
@@ -187,9 +219,11 @@ def main() -> int:
         check("a choice answers it", answered.get("ok") is True, answered)
         reply = wait(lambda: assistant_after(start, "You picked"), 45)
         check("the turn resumes with the answer", reply is not None and "Blue" in str(reply.get("content")), reply)
-        check("the transcript keeps the question and the answer",
-              any((m.get("asked") or [{}])[0].get("answer", "").startswith("Blue") for m in messages()[start:]),
-              [m for m in messages()[start:] if m.get("asked")])
+        check(
+            "the transcript keeps the question and the answer",
+            any((m.get("asked") or [{}])[0].get("answer", "").startswith("Blue") for m in messages()[start:]),
+            [m for m in messages()[start:] if m.get("asked")],
+        )
         check("no question is left open", wait(lambda: call("/transcript?after=0").get("clarify") is None, 10))
 
         wait(lambda: not generating(), 30)
@@ -226,8 +260,10 @@ def main() -> int:
         side_done = wait(lambda: next((m for m in thread_rows(tid) if "Work finished" in str(m.get("content"))), None), 90)
         main_done = wait(lambda: next((m for m in messages()[main_before:] if "Work finished" in str(m.get("content"))), None), 90)
         check("each thread finishes its own work", side_done is not None and main_done is not None)
-        check("their transcripts stay apart", not any("side plan" in str(m.get("content")) for m in messages())
-              and any("side plan" in str(m.get("content")) for m in thread_rows(tid)))
+        check(
+            "their transcripts stay apart",
+            not any("side plan" in str(m.get("content")) for m in messages()) and any("side plan" in str(m.get("content")) for m in thread_rows(tid)),
+        )
 
         wait(lambda: not thread_busy(tid), 30)
         call("/send", {"text": "QUIZME now", "client_id": "t-side-ask", "thread": tid})
@@ -243,7 +279,11 @@ def main() -> int:
         restarted = wait(lambda: call(f"/transcript?after=0&thread={tid}").get("previous"), 30)
         check("the earlier conversation is kept as history", bool(restarted) and restarted[0].get("messages", 0) > 0, restarted)
         old = call(f"/transcript?after=0&thread={tid}&session={(restarted or [{}])[0].get('id', '')}")
-        check("and can be read", any("side plan" in str(m.get("content")) for m in old.get("messages") or []), [m.get("content") for m in (old.get("messages") or [])][:4])
+        check(
+            "and can be read",
+            any("side plan" in str(m.get("content")) for m in old.get("messages") or []),
+            [m.get("content") for m in (old.get("messages") or [])][:4],
+        )
         renamed = call("/threads/rename", {"thread": tid, "title": "Lisbon trip"})
         archived = call("/threads/archive", {"thread": tid})
         check("a thread can be renamed and archived", renamed.get("ok") and archived.get("ok") and (archived.get("thread") or {}).get("archived") is True)
@@ -253,7 +293,10 @@ def main() -> int:
         reported = call("/threads", {"title": "Reports"})
         rid = (reported.get("thread") or {}).get("id", "")
         bot_r = call("/routines", {"profile": "research-desk", "name": "Ping", "prompt": "BOTPING report in", "schedule": {"kind": "daily", "time": "03:00"}})
-        chief_r = call("/routines", {"profile": "chief", "name": "Thread ping", "prompt": "CHIEFPING report in", "schedule": {"kind": "daily", "time": "03:00"}, "thread": rid})
+        chief_r = call(
+            "/routines",
+            {"profile": "chief", "name": "Thread ping", "prompt": "CHIEFPING report in", "schedule": {"kind": "daily", "time": "03:00"}, "thread": rid},
+        )
         check("routines are created for a bot and for the chief", bot_r.get("ok") is True and chief_r.get("ok") is True, (bot_r, chief_r))
         call("/routines/run", {"profile": "research-desk", "id": (bot_r.get("routine") or {}).get("id", "")})
         call("/routines/run", {"profile": "chief", "id": (chief_r.get("routine") or {}).get("id", "")})
@@ -273,8 +316,17 @@ def main() -> int:
             try:
                 pid = int(json.loads((profile / "gateway.pid").read_text(encoding="utf-8")).get("pid") or 0)
                 if pid:
-                    compat.run([str(p.python), "-B", "-c", "import sys\nfrom gateway.status import write_planned_stop_marker\nwrite_planned_stop_marker(int(sys.argv[1]))", str(pid)],
-                               p.env(HERMES_HOME=str(profile)), timeout=30)
+                    compat.run(
+                        [
+                            str(p.python),
+                            "-B",
+                            "-c",
+                            "import sys\nfrom gateway.status import write_planned_stop_marker\nwrite_planned_stop_marker(int(sys.argv[1]))",
+                            str(pid),
+                        ],
+                        p.env(HERMES_HOME=str(profile)),
+                        timeout=30,
+                    )
                 gateway.wait(timeout=40)
             except Exception:
                 subprocess.run(["taskkill", "/T", "/F", "/PID", str(gateway.pid)], capture_output=True)

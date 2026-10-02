@@ -1,4 +1,5 @@
 """Installing the vendored Second Brain toolkit (apps/desktop/python/provision.py), without Hermes."""
+
 import importlib.util
 import json
 import subprocess

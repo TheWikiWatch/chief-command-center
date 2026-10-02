@@ -10,6 +10,7 @@
 
 Hermes reads SOUL and memory once per session (a frozen snapshot), so changes apply from the next session.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -136,8 +137,7 @@ def write_soul(profile: str, text: str, base_hash: str) -> dict[str, Any]:
     path = home / "SOUL.md"
     current = _read(path)
     if _hash(current) != (base_hash or ""):
-        return {"ok": False, "conflict": True, "error": "SOUL.md changed since you opened it.",
-                "current": {"text": current, "hash": _hash(current)}}
+        return {"ok": False, "conflict": True, "error": "SOUL.md changed since you opened it.", "current": {"text": current, "hash": _hash(current)}}
     if current == text:
         return {"ok": True, "hash": _hash(text), "warnings": _soul_warnings(text), "unchanged": True}
     _keep_version(home, current)
@@ -193,8 +193,7 @@ def _target_view(store: Any, target: str) -> dict[str, Any]:
     limit = store.user_char_limit if target == "user" else store.memory_char_limit
     from tools.memory_tool import ENTRY_DELIMITER
 
-    return {"entries": entries, "limit": int(limit), "used": len(ENTRY_DELIMITER.join(entries)),
-            "enabled": bool(store.target_enabled(target))}
+    return {"entries": entries, "limit": int(limit), "used": len(ENTRY_DELIMITER.join(entries)), "enabled": bool(store.target_enabled(target))}
 
 
 def read_memory(profile: str) -> dict[str, Any]:
@@ -261,8 +260,7 @@ def _plain_memory_error(error: str) -> str:
 
 
 def read_all(profile: str) -> dict[str, Any]:
-    return {"ok": True, "contract": CONTRACT, "profile": (profile or "chief").lower(),
-            "soul": read_soul(profile), **read_memory(profile)}
+    return {"ok": True, "contract": CONTRACT, "profile": (profile or "chief").lower(), "soul": read_soul(profile), **read_memory(profile)}
 
 
 # ---------------------------------------------------------------- name
@@ -311,11 +309,11 @@ def rename(profile: str, name: str, role: str = "", update_soul: bool = True) ->
         pattern = re.compile(r"^(\s*You are )" + re.escape(old_name) + r"(?=[\s,.;:!—-])", re.M)
         match = pattern.search(current)
         if match and match.start() < 400:
-            updated = current[: match.start()] + match.group(1) + name + current[match.end():]
+            updated = current[: match.start()] + match.group(1) + name + current[match.end() :]
             result = write_soul(profile, updated, _hash(current))
             soul_note = "updated" if result.get("ok") else "not updated"
         else:
-            soul_note = "kept (it doesn't open with \"You are " + old_name + "\")"
+            soul_note = "kept (it doesn't open with \"You are " + old_name + '")'
     try:
         from . import identity
 

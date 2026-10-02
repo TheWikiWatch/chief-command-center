@@ -8,6 +8,7 @@ existing directory unless it is already that checkout at the expected commit. `-
 upstream commit (an upgrade candidate, packaging/upstream/); a patch that no longer applies exits with code 3
 and names it.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -49,8 +50,7 @@ def main(argv: list[str] | None = None) -> int:
         git("apply", str(path), cwd=dest)
         print(f"applied {patch['file']}")
     git("add", "-A", cwd=dest)
-    git("-c", "user.name=Chief build", "-c", "user.email=noreply@localhost", "commit", "-q", "-m",
-        f"Chief patch queue on {commit[:7]}", cwd=dest)
+    git("-c", "user.name=Chief build", "-c", "user.email=noreply@localhost", "commit", "-q", "-m", f"Chief patch queue on {commit[:7]}", cwd=dest)
     print(f"prepared {dest} at {git('rev-parse', 'HEAD', cwd=dest)}")
     return 0
 

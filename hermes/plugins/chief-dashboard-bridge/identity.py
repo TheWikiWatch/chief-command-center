@@ -8,6 +8,7 @@
 - push_contact: the VAPID contact push services may use about misbehaving senders
   (CHIEF_PUSH_CONTACT, a mailto: or https: URL).
 """
+
 from __future__ import annotations
 
 import os

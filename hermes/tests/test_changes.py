@@ -1,4 +1,5 @@
 """The change signal, its watcher and the incremental outbox. No Hermes process."""
+
 import importlib
 import json
 import sqlite3

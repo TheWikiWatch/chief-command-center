@@ -38,7 +38,13 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "agent.display": ("build_status_phrase",),
     },
     "profiles": {
-        "hermes_constants": ("get_default_hermes_root", "get_hermes_home", "named_profile_is_deleted", "reset_hermes_home_override", "set_hermes_home_override"),
+        "hermes_constants": (
+            "get_default_hermes_root",
+            "get_hermes_home",
+            "named_profile_is_deleted",
+            "reset_hermes_home_override",
+            "set_hermes_home_override",
+        ),
         "hermes_cli": (),
     },
     "models and keys": {
@@ -64,7 +70,18 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "hermes_cli.profiles": ("create_profile", "export_profile", "import_profile", "launch_model_seed"),
     },
     "routines": {
-        "cron.jobs": ("use_cron_store", "list_jobs", "get_job", "create_job", "update_job", "pause_job", "resume_job", "remove_job", "trigger_job", "_job_output_dir"),
+        "cron.jobs": (
+            "use_cron_store",
+            "list_jobs",
+            "get_job",
+            "create_job",
+            "update_job",
+            "pause_job",
+            "resume_job",
+            "remove_job",
+            "trigger_job",
+            "_job_output_dir",
+        ),
     },
     "voice": {
         "tools.tts_tool": ("_get_provider", "_load_tts_config", "text_to_speech_tool"),

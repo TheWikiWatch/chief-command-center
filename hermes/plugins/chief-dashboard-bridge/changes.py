@@ -7,6 +7,7 @@ message handed to the agent, a new pending approval (the watch loop), and any co
 (transcript rows land there when a turn ends), seen through SQLite's `PRAGMA data_version` on one connection.
 Waiters still re-check on a slow fallback timer, so a missed signal costs seconds, never correctness.
 """
+
 from __future__ import annotations
 
 import logging

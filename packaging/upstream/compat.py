@@ -15,6 +15,7 @@ Runs, against that payload's own Python and launcher, on throwaway homes only:
 
 Exit 0 when everything passed. The Markdown report is what the candidate PR or blocked-upgrade issue shows.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,8 +46,26 @@ class Payload:
         self.launcher = root / manifest["commands"]["hermes"]
 
     def env(self, **extra: str) -> dict[str, str]:
-        keep = {k: v for k, v in os.environ.items() if k.upper() in {"SYSTEMROOT", "WINDIR", "TEMP", "TMP", "PATH", "PATHEXT", "COMSPEC",
-                                                                      "USERPROFILE", "LOCALAPPDATA", "APPDATA", "HOMEDRIVE", "HOMEPATH", "USERNAME"}}
+        keep = {
+            k: v
+            for k, v in os.environ.items()
+            if k.upper()
+            in {
+                "SYSTEMROOT",
+                "WINDIR",
+                "TEMP",
+                "TMP",
+                "PATH",
+                "PATHEXT",
+                "COMSPEC",
+                "USERPROFILE",
+                "LOCALAPPDATA",
+                "APPDATA",
+                "HOMEDRIVE",
+                "HOMEPATH",
+                "USERNAME",
+            }
+        }
         keep.update({"PYTHONPATH": os.pathsep.join([str(self.site), str(self.repo)]), "PYTHONIOENCODING": "utf-8"})
         keep.update(extra)
         return keep
@@ -68,7 +87,15 @@ def private_imports() -> list[str]:
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.module and not node.module.startswith(".") and node.level == 0:
                 for alias in node.names:
-                    if alias.name.startswith("_") and node.module.split(".")[0] in {"hermes_cli", "agent", "tools", "gateway", "hermes_constants", "cli", "utils"}:
+                    if alias.name.startswith("_") and node.module.split(".")[0] in {
+                        "hermes_cli",
+                        "agent",
+                        "tools",
+                        "gateway",
+                        "hermes_constants",
+                        "cli",
+                        "utils",
+                    }:
                         found.append(f"{path.name}: from {node.module} import {alias.name}")
     return found
 
@@ -91,12 +118,27 @@ def gateway_smoke(p: Payload, work: Path) -> tuple[bool, str]:
     profile.mkdir(parents=True, exist_ok=True)
     port = free_port()
     token = secrets.token_urlsafe(32)
-    ok, out = run([str(p.python), "-B", str(REPO / "apps" / "desktop" / "python" / "provision.py"), "--plugins-src", str(REPO / "hermes" / "plugins"),
-                   "--bridge-port", str(port)], p.env(HERMES_HOME=str(profile)))
+    ok, out = run(
+        [
+            str(p.python),
+            "-B",
+            str(REPO / "apps" / "desktop" / "python" / "provision.py"),
+            "--plugins-src",
+            str(REPO / "hermes" / "plugins"),
+            "--bridge-port",
+            str(port),
+        ],
+        p.env(HERMES_HOME=str(profile)),
+    )
     if not ok:
         return False, f"provision failed: {out}"
-    env = p.env(HERMES_HOME=str(root), HERMES_GATEWAY_LOCK_DIR=str(work / "locks"), CHIEF_DASHBOARD_TOKEN=token,
-                CHIEF_DASHBOARD_PORT=str(port), HERMES_BIN=str(p.launcher))
+    env = p.env(
+        HERMES_HOME=str(root),
+        HERMES_GATEWAY_LOCK_DIR=str(work / "locks"),
+        CHIEF_DASHBOARD_TOKEN=token,
+        CHIEF_DASHBOARD_PORT=str(port),
+        HERMES_BIN=str(p.launcher),
+    )
     log = open(work / "gateway-smoke.log", "w", encoding="utf-8")
     proc = subprocess.Popen([str(p.launcher), "-p", "chief", "gateway", "run"], env=env, cwd=profile, stdout=log, stderr=subprocess.STDOUT)
     lines = []
@@ -183,19 +225,28 @@ def main() -> int:
         results.append((name, ok, time.time() - started, detail))
         print(f"{'PASS' if ok else 'FAIL'} {name} ({time.time() - started:.0f}s)", flush=True)
 
-    probe = ("import importlib.util, sys, types, pathlib; p = pathlib.Path(sys.argv[1]); pkg = types.ModuleType('bridge'); "
-             "pkg.__path__ = [str(p)]; sys.modules['bridge'] = pkg\n"
-             "for f in sorted(p.glob('*.py')):\n"
-             "    name = 'bridge.' + ('__init__' if f.stem == '__init__' else f.stem)\n"
-             "    if f.stem == '__init__': continue\n"
-             "    spec = importlib.util.spec_from_file_location(name, f); m = importlib.util.module_from_spec(spec); sys.modules[name] = m; spec.loader.exec_module(m)\n"
-             "print('imported', len(list(p.glob('*.py'))) - 1, 'modules')")
+    probe = (
+        "import importlib.util, sys, types, pathlib; p = pathlib.Path(sys.argv[1]); pkg = types.ModuleType('bridge'); "
+        "pkg.__path__ = [str(p)]; sys.modules['bridge'] = pkg\n"
+        "for f in sorted(p.glob('*.py')):\n"
+        "    name = 'bridge.' + ('__init__' if f.stem == '__init__' else f.stem)\n"
+        "    if f.stem == '__init__': continue\n"
+        "    spec = importlib.util.spec_from_file_location(name, f); m = importlib.util.module_from_spec(spec); sys.modules[name] = m; spec.loader.exec_module(m)\n"
+        "print('imported', len(list(p.glob('*.py'))) - 1, 'modules')"
+    )
     check("plugin imports", lambda: run([str(p.python), "-B", "-c", probe, str(PLUGIN)], p.env(HERMES_HOME=str(work / "import-home" / "profiles" / "chief"))))
     # Every Hermes name the bridge relies on (hermes_api.CAPABILITIES) still exists in this Hermes.
-    capability = ("import importlib.util, json, sys; spec = importlib.util.spec_from_file_location('hermes_api', sys.argv[1]); "
-                  "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); r = m.run_check(); "
-                  "print(json.dumps(r['missing']) if r['missing'] else 'all %d features present' % len(r['features'])); sys.exit(0 if r['ok'] else 1)")
-    check("Hermes names the bridge uses", lambda: run([str(p.python), "-B", "-c", capability, str(PLUGIN / "hermes_api.py")], p.env(HERMES_HOME=str(work / "import-home" / "profiles" / "chief"))))
+    capability = (
+        "import importlib.util, json, sys; spec = importlib.util.spec_from_file_location('hermes_api', sys.argv[1]); "
+        "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); r = m.run_check(); "
+        "print(json.dumps(r['missing']) if r['missing'] else 'all %d features present' % len(r['features'])); sys.exit(0 if r['ok'] else 1)"
+    )
+    check(
+        "Hermes names the bridge uses",
+        lambda: run(
+            [str(p.python), "-B", "-c", capability, str(PLUGIN / "hermes_api.py")], p.env(HERMES_HOME=str(work / "import-home" / "profiles" / "chief"))
+        ),
+    )
     private = private_imports()
     results.append(("private Hermes names used (review)", True, 0.0, "\n".join(private) or "none"))
 
@@ -216,11 +267,24 @@ def main() -> int:
     check("speech model contract" + (" + network" if args.network else ""), lambda: contract("run_speech_model_contract.py", network=args.network))
     check("bridge unit tests", lambda: run([str(p.python), "-B", "-m", "unittest", "discover", "-s", "hermes/tests"], p.env(), cwd=REPO))
     check("gateway start, bridge, stop", lambda: gateway_smoke(p, work))
-    check("chat controls (stop, steer, queue)", lambda: run([str(p.python), "-B", str(REPO / "hermes" / "tests" / "contract" / "run_chat_controls_contract.py"),
-                                                           str(p.root), str(work / "controls")], p.env(), timeout=900))
+    check(
+        "chat controls (stop, steer, queue)",
+        lambda: run(
+            [str(p.python), "-B", str(REPO / "hermes" / "tests" / "contract" / "run_chat_controls_contract.py"), str(p.root), str(work / "controls")],
+            p.env(),
+            timeout=900,
+        ),
+    )
 
     passed = all(ok for _, ok, _, _ in results)
-    report = [f"## Compatibility suite: {'passed' if passed else 'FAILED'}", "", f"Payload: `{p.root.name}`", "", "| Check | Result | Time |", "| --- | --- | --- |"]
+    report = [
+        f"## Compatibility suite: {'passed' if passed else 'FAILED'}",
+        "",
+        f"Payload: `{p.root.name}`",
+        "",
+        "| Check | Result | Time |",
+        "| --- | --- | --- |",
+    ]
     report += [f"| {name} | {'pass' if ok else '**FAIL**'} | {secs:.0f}s |" for name, ok, secs, _ in results]
     report += ["", "<details><summary>Details</summary>", ""]
     for name, _ok, _, detail in results:

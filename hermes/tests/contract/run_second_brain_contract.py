@@ -5,6 +5,7 @@
 
 Uses a throwaway home only. Exit 0 = the contract holds.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -60,8 +61,8 @@ def check(name: str, cond: bool, detail: object = "") -> None:
         failures.append(name)
 
 
-
 from datetime import date
+
 
 def raises(fn) -> str:
     try:
@@ -69,6 +70,7 @@ def raises(fn) -> str:
     except second_brain.SecondBrainError as exc:
         return str(exc)
     return ""
+
 
 # Locations
 check("default folder is Documents, then Second Brain", second_brain.default_folder().endswith("Second Brain"), second_brain.default_folder())
@@ -91,7 +93,9 @@ check("keep mode is refused for an empty folder", "empty" in raises(lambda: seco
 made = second_brain.setup(str(fresh), "new", today=date(2026, 10, 1))
 check("setup creates the layout", made["ok"] and (fresh / "40 Knowledge" / "raw" / "articles").is_dir() and (fresh / "Journal" / "Daily").is_dir(), made)
 agents = (fresh / "AGENTS.md").read_text(encoding="utf-8")
-check("placeholders are filled", "date: 2026-10-01" in agents and "{{layout}}" not in agents and "{{foldermap}}" not in agents and "| `10 Projects/` |" in agents)
+check(
+    "placeholders are filled", "date: 2026-10-01" in agents and "{{layout}}" not in agents and "{{foldermap}}" not in agents and "| `10 Projects/` |" in agents
+)
 check("the rules carry a Folder Map the toolkit reads", "## Folder Map" in agents and "| Person | `30 Resources/People/` |" in agents)
 check("the toolkit's files are there", all((fresh / f).is_file() for f in ("_CLAUDE.md", "CRITICAL_FACTS.md", "index.md", "log.md")))
 example = (fresh / "10 Projects" / "Example project.md").read_text(encoding="utf-8")
@@ -99,19 +103,34 @@ check("relative dates are filled", "due: 2026-10-15" in example and "📅 2026-1
 daily = (fresh / "Templates" / "Daily note.md").read_text(encoding="utf-8")
 check("Obsidian's own template tokens are left alone", "{{date:YYYY-MM-DD}}" in daily)
 status = second_brain.status()
-check("Hermes paths point at the folder", status["configured"] and Path(status["path"]) == fresh and Path(status["wiki_path"]) == fresh / "40 Knowledge", status)
+check(
+    "Hermes paths point at the folder", status["configured"] and Path(status["path"]) == fresh and Path(status["wiki_path"]) == fresh / "40 Knowledge", status
+)
 env_text = (home / ".env").read_text(encoding="utf-8")
 check("the profile .env holds both paths", "OBSIDIAN_VAULT_PATH=" in env_text and "WIKI_PATH=" in env_text)
 skill = home / "skills" / "note-taking" / "second-brain" / "SKILL.md"
-check("the second-brain skill is installed with the real path", skill.is_file() and str(fresh) in skill.read_text(encoding="utf-8") and "{{vault}}" not in skill.read_text(encoding="utf-8"))
+check(
+    "the second-brain skill is installed with the real path",
+    skill.is_file() and str(fresh) in skill.read_text(encoding="utf-8") and "{{vault}}" not in skill.read_text(encoding="utf-8"),
+)
 from agent.skill_utils import parse_frontmatter
+
 meta, _ = parse_frontmatter(skill.read_text(encoding="utf-8"))
 check("the skill's frontmatter parses", meta.get("name") == "second-brain", meta)
 text = skill.read_text(encoding="utf-8")
-check("the skill carries the critical facts", "**Owner:**" in text and "{{critical_facts}}" not in text and "{{toolkit}}" not in text and "## For future agent" not in text)
+check(
+    "the skill carries the critical facts",
+    "**Owner:**" in text and "{{critical_facts}}" not in text and "{{toolkit}}" not in text and "## For future agent" not in text,
+)
 writes = home / "skills" / "note-taking" / "second-brain-writes" / "SKILL.md"
-check("the write gate is installed", writes.is_file() and str(fresh) in writes.read_text(encoding="utf-8") and parse_frontmatter(writes.read_text(encoding="utf-8"))[0].get("name") == "second-brain-writes")
+check(
+    "the write gate is installed",
+    writes.is_file()
+    and str(fresh) in writes.read_text(encoding="utf-8")
+    and parse_frontmatter(writes.read_text(encoding="utf-8"))[0].get("name") == "second-brain-writes",
+)
 import yaml
+
 cfg = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
 check("the skill loads into every conversation", "second-brain" in ((cfg.get("skills") or {}).get("auto_load") or []), cfg.get("skills"))
 check("the toolkit's settings file stays in the profile", "OBSIDIAN_ENV_FILE=" in (home / ".env").read_text(encoding="utf-8"))
@@ -122,11 +141,20 @@ jobs = jobs.get("jobs", jobs) if isinstance(jobs, dict) else jobs
 ours = {j["name"]: j for j in jobs if str(j.get("name", "")).startswith("Second Brain:")}
 check("setup arms the four routines", len(ours) == 4 and made.get("routines") is None or len(ours) == 4, list(ours))
 night = ours.get("Second Brain: nightly") or {}
-check("a routine runs the toolkit's skill in the folder and reports to the app",
-      night.get("deliver") == "command_center" and Path(night.get("workdir") or "") == fresh and "obsidian-nightly" in (night.get("skills") or [])
-      and (night.get("schedule") or {}).get("expr") == "0 22 * * *", night)
+check(
+    "a routine runs the toolkit's skill in the folder and reports to the app",
+    night.get("deliver") == "command_center"
+    and Path(night.get("workdir") or "") == fresh
+    and "obsidian-nightly" in (night.get("skills") or [])
+    and (night.get("schedule") or {}).get("expr") == "0 22 * * *",
+    night,
+)
 listed = second_brain.routines()
-check("routines are listed for the app", [r["id"] for r in listed["routines"]] == ["morning", "nightly", "weekly", "health"] and all(r["enabled"] for r in listed["routines"]), listed)
+check(
+    "routines are listed for the app",
+    [r["id"] for r in listed["routines"]] == ["morning", "nightly", "weekly", "health"] and all(r["enabled"] for r in listed["routines"]),
+    listed,
+)
 off = second_brain.set_routine("nightly", enabled=False)
 check("a routine can be turned off", next(r for r in off["routines"] if r["id"] == "nightly")["enabled"] is False)
 moved = second_brain.set_routine("nightly", at="21:30", enabled=True)
@@ -139,7 +167,9 @@ check("arming twice adds nothing", again_made == [], again_made)
 
 # Critical facts follow the file
 facts = fresh / "CRITICAL_FACTS.md"
-facts.write_text(facts.read_text(encoding="utf-8").replace("- **Owner:** (name, and how they like to be addressed)", "- **Owner:** Sam, call me Sam"), encoding="utf-8")
+facts.write_text(
+    facts.read_text(encoding="utf-8").replace("- **Owner:** (name, and how they like to be addressed)", "- **Owner:** Sam, call me Sam"), encoding="utf-8"
+)
 check("a changed CRITICAL_FACTS.md re-renders the skill", second_brain.sync_critical_facts() and "Sam, call me Sam" in skill.read_text(encoding="utf-8"))
 check("an unchanged one doesn't", second_brain.sync_critical_facts() is False)
 
@@ -151,7 +181,7 @@ state_path.write_text(json.dumps(state), encoding="utf-8")
 for name in ("_CLAUDE.md", "CRITICAL_FACTS.md"):
     (fresh / name).unlink()
 cut = agents.index("## Folder Map")
-(fresh / "AGENTS.md").write_text(agents[:cut] + agents[agents.index("## Notes agents write"):], encoding="utf-8")
+(fresh / "AGENTS.md").write_text(agents[:cut] + agents[agents.index("## Notes agents write") :], encoding="utf-8")
 up = second_brain.upgrade()
 check("an earlier Second Brain gets the new files", up["upgraded"] and (fresh / "_CLAUDE.md").is_file() and (fresh / "CRITICAL_FACTS.md").is_file(), up)
 check("and a Folder Map in its rules", (fresh / "AGENTS.md").read_text(encoding="utf-8").count("## Folder Map") == 1)
@@ -165,19 +195,33 @@ bot.mkdir(exist_ok=True)
 check("a bot is given the Second Brain", second_brain.share_with(bot) is True)
 bot_cfg = yaml.safe_load((bot / "config.yaml").read_text(encoding="utf-8")) or {}
 bot_skill = bot / "skills" / "note-taking" / "second-brain" / "SKILL.md"
-check("with the skill loaded into its conversations", bot_skill.is_file() and str(fresh) in bot_skill.read_text(encoding="utf-8")
-      and "second-brain" in (bot_cfg.get("skills") or {}).get("auto_load", []), bot_cfg.get("skills"))
-check("the write gate, the folder and the chief's toolkit", (bot / "skills" / "note-taking" / "second-brain-writes" / "SKILL.md").is_file()
-      and "OBSIDIAN_VAULT_PATH=" in (bot / ".env").read_text(encoding="utf-8")
-      and any(d.endswith("obsidian-second-brain") for d in (bot_cfg.get("skills") or {}).get("external_dirs", [])), bot_cfg)
-check("sharing twice changes nothing", second_brain.share_with(bot) is True and (yaml.safe_load((bot / "config.yaml").read_text(encoding="utf-8")) or {}) == bot_cfg)
+check(
+    "with the skill loaded into its conversations",
+    bot_skill.is_file() and str(fresh) in bot_skill.read_text(encoding="utf-8") and "second-brain" in (bot_cfg.get("skills") or {}).get("auto_load", []),
+    bot_cfg.get("skills"),
+)
+check(
+    "the write gate, the folder and the chief's toolkit",
+    (bot / "skills" / "note-taking" / "second-brain-writes" / "SKILL.md").is_file()
+    and "OBSIDIAN_VAULT_PATH=" in (bot / ".env").read_text(encoding="utf-8")
+    and any(d.endswith("obsidian-second-brain") for d in (bot_cfg.get("skills") or {}).get("external_dirs", [])),
+    bot_cfg,
+)
+check(
+    "sharing twice changes nothing",
+    second_brain.share_with(bot) is True and (yaml.safe_load((bot / "config.yaml").read_text(encoding="utf-8")) or {}) == bot_cfg,
+)
 check("the chief isn't shared with itself", second_brain.share_with(home) is False)
 
 # Create-only
 (fresh / "Home.md").write_text("My own home page\n", encoding="utf-8")
 (fresh / "Templates" / "Project.md").unlink()
 again = second_brain.inspect(str(fresh))
-check("our own folder is recognized and offers a top-up", again["ours"] and again["choices"] == ["new"] and again["plans"]["new"]["files"] == ["Templates/Project.md"], again["plans"])
+check(
+    "our own folder is recognized and offers a top-up",
+    again["ours"] and again["choices"] == ["new"] and again["plans"]["new"]["files"] == ["Templates/Project.md"],
+    again["plans"],
+)
 topped = second_brain.setup(str(fresh), "new")
 check("a re-run only fills what is missing", topped["created"] == ["Templates/Project.md"] and "Home.md" in topped["kept"], topped)
 check("an edited file is never overwritten", (fresh / "Home.md").read_text(encoding="utf-8") == "My own home page\n")
@@ -191,20 +235,43 @@ vault = work / "My Vault"
 (vault / "Templates").mkdir()
 (vault / "Templates" / "Daily note.md").write_text("mine\n", encoding="utf-8")
 seen = second_brain.inspect(str(vault))
-check("an existing vault is described", seen["obsidian"] and seen["notes"] == 3 and seen["top_folders"] == ["Templates", "Work"] and seen["choices"] == ["keep", "reorganize"], seen)
-check("the keep preview skips files already there", "Templates/Daily note.md" in seen["plans"]["keep"]["existing"] and "10 Projects/Example project.md" not in seen["plans"]["keep"]["files"], seen["plans"]["keep"])
+check(
+    "an existing vault is described",
+    seen["obsidian"] and seen["notes"] == 3 and seen["top_folders"] == ["Templates", "Work"] and seen["choices"] == ["keep", "reorganize"],
+    seen,
+)
+check(
+    "the keep preview skips files already there",
+    "Templates/Daily note.md" in seen["plans"]["keep"]["existing"] and "10 Projects/Example project.md" not in seen["plans"]["keep"]["files"],
+    seen["plans"]["keep"],
+)
 check("new mode is refused for a folder with notes", "already has notes" in raises(lambda: second_brain.setup(str(vault), "new")))
 kept = second_brain.setup(str(vault), "keep")
-check("keep mode adds only the rules, Inbox, Knowledge and Templates", kept["ok"] and not (vault / "10 Projects").exists() and (vault / "00 Inbox" / "Welcome.md").is_file() and (vault / "40 Knowledge" / "SCHEMA.md").is_file(), kept)
-check("keep mode leaves the owner's files alone", (vault / "Templates" / "Daily note.md").read_text(encoding="utf-8") == "mine\n" and (vault / "Work" / "Plans.md").is_file())
-check("keep mode asks Chief to describe the layout", "AGENTS.md" in kept["next_prompt"] and "Where things go" in (vault / "AGENTS.md").read_text(encoding="utf-8"), kept)
+check(
+    "keep mode adds only the rules, Inbox, Knowledge and Templates",
+    kept["ok"] and not (vault / "10 Projects").exists() and (vault / "00 Inbox" / "Welcome.md").is_file() and (vault / "40 Knowledge" / "SCHEMA.md").is_file(),
+    kept,
+)
+check(
+    "keep mode leaves the owner's files alone",
+    (vault / "Templates" / "Daily note.md").read_text(encoding="utf-8") == "mine\n" and (vault / "Work" / "Plans.md").is_file(),
+)
+check(
+    "keep mode asks Chief to describe the layout",
+    "AGENTS.md" in kept["next_prompt"] and "Where things go" in (vault / "AGENTS.md").read_text(encoding="utf-8"),
+    kept,
+)
 check("switching folders repoints Hermes", Path(second_brain.status()["path"]) == vault and str(vault) in skill.read_text(encoding="utf-8"))
 check("status remembers the mode", second_brain.status()["mode"] == "keep")
 
 # Default persona
 (home / "SOUL.md").write_text("You are my custom bot.\n", encoding="utf-8")
-check("a customized SOUL is never replaced", second_brain.seed_soul() == {"ok": True, "seeded": False} and "custom" in (home / "SOUL.md").read_text(encoding="utf-8"))
+check(
+    "a customized SOUL is never replaced",
+    second_brain.seed_soul() == {"ok": True, "seeded": False} and "custom" in (home / "SOUL.md").read_text(encoding="utf-8"),
+)
 from hermes_cli.default_soul import DEFAULT_SOUL_MD
+
 (home / "SOUL.md").write_text(DEFAULT_SOUL_MD, encoding="utf-8")
 seeded = second_brain.seed_soul()
 check("Hermes's stock SOUL becomes Chief's default", seeded["seeded"] and (home / "SOUL.md").read_text(encoding="utf-8").startswith("You are Chief"), seeded)
@@ -213,9 +280,15 @@ check("seeding twice changes nothing", second_brain.seed_soul()["seeded"] is Fal
 v1 = (plugin.parents[1] / "tests" / "fixtures" / "soul_default_v1.md").read_text(encoding="utf-8")
 (home / "SOUL.md").write_text(v1.replace("\n", "\r\n"), encoding="utf-8", newline="")
 refreshed = second_brain.seed_soul()
-check("an unedited earlier default becomes the current one", refreshed["seeded"] and "Your Second Brain:" in (home / "SOUL.md").read_text(encoding="utf-8"), refreshed)
+check(
+    "an unedited earlier default becomes the current one",
+    refreshed["seeded"] and "Your Second Brain:" in (home / "SOUL.md").read_text(encoding="utf-8"),
+    refreshed,
+)
 (home / "SOUL.md").write_text(v1 + "\nOne line of my own.\n", encoding="utf-8")
-check("an edited earlier default is kept", second_brain.seed_soul()["seeded"] is False and "One line of my own." in (home / "SOUL.md").read_text(encoding="utf-8"))
+check(
+    "an edited earlier default is kept", second_brain.seed_soul()["seeded"] is False and "One line of my own." in (home / "SOUL.md").read_text(encoding="utf-8")
+)
 
 # ---------------------------------------------------------------- the agent-first wiki format
 import subprocess
@@ -233,26 +306,52 @@ def tree(root: Path) -> dict:
 
 wiki = work / "wiki-brain"
 seen = second_brain.inspect(str(wiki), "wiki")
-check("a new folder previews the wiki layout", seen["format"] == "wiki" and seen["choices"] == ["new"]
-      and {"_CLAUDE.md", "boards/Personal.md", "drop/README.md", "wiki/reviews/Current Analysis.md"} <= set(seen["plans"]["new"]["files"])
-      and {"raw/originals", "wiki/entities", "drop/_processing", "drop/needs-review"} <= set(seen["plans"]["new"]["folders"]), seen["plans"])
+check(
+    "a new folder previews the wiki layout",
+    seen["format"] == "wiki"
+    and seen["choices"] == ["new"]
+    and {"_CLAUDE.md", "boards/Personal.md", "drop/README.md", "wiki/reviews/Current Analysis.md"} <= set(seen["plans"]["new"]["files"])
+    and {"raw/originals", "wiki/entities", "drop/_processing", "drop/needs-review"} <= set(seen["plans"]["new"]["folders"]),
+    seen["plans"],
+)
 check("an unknown format is refused", "format" in raises(lambda: second_brain.setup(str(wiki), "new", fmt="zettel")))
 made = second_brain.setup(str(wiki), "new", today=date(2026, 10, 1), fmt="wiki")
-check("the wiki layout is created", made["ok"] and made["format"] == "wiki" and made["rules"] == "_CLAUDE.md"
-      and all((wiki / d).is_dir() for d in ("raw/originals", "raw/conversations", "wiki/concepts", "wiki/tasks", "boards", "drop/_processing", "_trash")), made)
+check(
+    "the wiki layout is created",
+    made["ok"]
+    and made["format"] == "wiki"
+    and made["rules"] == "_CLAUDE.md"
+    and all((wiki / d).is_dir() for d in ("raw/originals", "raw/conversations", "wiki/concepts", "wiki/tasks", "boards", "drop/_processing", "_trash")),
+    made,
+)
 manual_text = (wiki / "_CLAUDE.md").read_text(encoding="utf-8")
-check("its manual is filled in and carries a Folder Map", "date: 2026-10-01" in manual_text and "{{" not in manual_text
-      and "## Section 1 - Folder Map" in manual_text and "| Person, company, tool (entity) | `wiki/entities/` |" in manual_text)
+check(
+    "its manual is filled in and carries a Folder Map",
+    "date: 2026-10-01" in manual_text
+    and "{{" not in manual_text
+    and "## Section 1 - Folder Map" in manual_text
+    and "| Person, company, tool (entity) | `wiki/entities/` |" in manual_text,
+)
 check("AGENTS.md points at the manual", second_brain._is_pointer(wiki / "AGENTS.md", "_CLAUDE") and second_brain.manual(wiki) == "_CLAUDE.md")
 board = (wiki / "boards" / "Personal.md").read_text(encoding="utf-8")
-check("the boards are Kanban boards with dated cards", board.startswith("---\n\nkanban-plugin: board") and "@{2026-10-04}" in board
-      and "## ⏳ Waiting On" in board and "%% kanban:settings" in board, board[:300])
+check(
+    "the boards are Kanban boards with dated cards",
+    board.startswith("---\n\nkanban-plugin: board") and "@{2026-10-04}" in board and "## ⏳ Waiting On" in board and "%% kanban:settings" in board,
+    board[:300],
+)
 status = second_brain.status()
 check("status reports the format and its rules file", status["format"] == "wiki" and status["rules"] == "_CLAUDE.md" and Path(status["path"]) == wiki, status)
 check("WIKI_PATH is unset for the wiki format", not status["wiki_path"] and "WIKI_PATH=" not in (home / ".env").read_text(encoding="utf-8"), status)
 text = skill.read_text(encoding="utf-8")
-check("Chief's skill is the wiki variant, pointed at _CLAUDE.md", parse_frontmatter(text)[0].get("name") == "second-brain"
-      and f"{wiki}\\_CLAUDE.md" in text and "boards/" in text and "AGENTS.md" not in text and "{{" not in text, text[:400])
+check(
+    "Chief's skill is the wiki variant, pointed at _CLAUDE.md",
+    parse_frontmatter(text)[0].get("name") == "second-brain"
+    and f"{wiki}\\_CLAUDE.md" in text
+    and "boards/" in text
+    and "AGENTS.md" not in text
+    and "{{" not in text,
+    text[:400],
+)
 gate = writes.read_text(encoding="utf-8")
 check("the write gate is the wiki write-gate", "Board and task note together" in gate and "write-gate: PASS" in gate and f"{wiki}\\_CLAUDE.md" in gate)
 for name in ("second-brain-drop", "second-brain-brief", "second-brain-analysis"):
@@ -262,16 +361,33 @@ for name in ("second-brain-drop", "second-brain-brief", "second-brain-analysis")
 
 ours = cron_jobs()
 listed = second_brain.routines()
-check("the wiki format arms six routines", [r["id"] for r in listed["routines"]] == ["morning", "nightly", "weekly", "health", "drop", "brief"]
-      and all(r["enabled"] for r in listed["routines"]) and len(ours) == 6, listed)
+check(
+    "the wiki format arms six routines",
+    [r["id"] for r in listed["routines"]] == ["morning", "nightly", "weekly", "health", "drop", "brief"]
+    and all(r["enabled"] for r in listed["routines"])
+    and len(ours) == 6,
+    listed,
+)
 drop_job, brief_job, night = ours["Second Brain: drop folder"], ours["Second Brain: morning brief"], ours["Second Brain: nightly"]
-check("the drop folder routine is gated by a script", drop_job.get("script") == second_brain.DROP_GATE_NAME
-      and (home / "scripts" / second_brain.DROP_GATE_NAME).is_file() and (drop_job.get("schedule") or {}).get("expr") == "5,35 * * * *"
-      and Path(drop_job.get("workdir") or "") == wiki, drop_job)
-check("the brief is mirrored into the chat session", brief_job.get("attach_to_session") is True and (brief_job.get("schedule") or {}).get("expr") == "30 8 * * 1-5", brief_job)
+check(
+    "the drop folder routine is gated by a script",
+    drop_job.get("script") == second_brain.DROP_GATE_NAME
+    and (home / "scripts" / second_brain.DROP_GATE_NAME).is_file()
+    and (drop_job.get("schedule") or {}).get("expr") == "5,35 * * * *"
+    and Path(drop_job.get("workdir") or "") == wiki,
+    drop_job,
+)
+check(
+    "the brief is mirrored into the chat session",
+    brief_job.get("attach_to_session") is True and (brief_job.get("schedule") or {}).get("expr") == "30 8 * * 1-5",
+    brief_job,
+)
 check("the nightly ends with Current Analysis", "second-brain-analysis" in (night.get("skills") or []) and "Current Analysis" in night.get("prompt", ""), night)
-check("the drop routine has no time of day", "half hour" in raises(lambda: second_brain.set_routine("drop", at="09:00"))
-      and next(r for r in listed["routines"] if r["id"] == "drop")["days"] == "Every 30 minutes")
+check(
+    "the drop routine has no time of day",
+    "half hour" in raises(lambda: second_brain.set_routine("drop", at="09:00"))
+    and next(r for r in listed["routines"] if r["id"] == "drop")["days"] == "Every 30 minutes",
+)
 
 
 def gate_says(folder: Path) -> str:
@@ -285,7 +401,11 @@ said = gate_says(wiki)
 check("a waiting file wakes it, named", "receipt.txt" in said and "wakeAgent" not in said and "README" not in said, said)
 (wiki / "drop" / "receipt.txt").unlink()
 again = second_brain.inspect(str(wiki))
-check("our own wiki folder is recognized", again["ours"] and again["format"] == "wiki" and again["choices"] == ["new"] and again["plans"]["new"]["files"] == [], again)
+check(
+    "our own wiki folder is recognized",
+    again["ours"] and again["format"] == "wiki" and again["choices"] == ["new"] and again["plans"]["new"]["files"] == [],
+    again,
+)
 
 # An existing agent-first vault with its own manual is used as it is
 mine = work / "my-wiki"
@@ -300,12 +420,22 @@ for rel, body in {
     (mine / rel).write_text(body, encoding="utf-8")
 before = tree(mine)
 seen = second_brain.inspect(str(mine))
-check("an existing wiki vault is recognized with its manual", seen["format_detected"] == "wiki" and seen["format"] == "wiki" and seen["manual"] == "_CLAUDE.md"
-      and seen["choices"] == ["keep", "reorganize"] and seen["plans"]["keep"] == {"folders": [], "files": [], "existing": []}, seen)
+check(
+    "an existing wiki vault is recognized with its manual",
+    seen["format_detected"] == "wiki"
+    and seen["format"] == "wiki"
+    and seen["manual"] == "_CLAUDE.md"
+    and seen["choices"] == ["keep", "reorganize"]
+    and seen["plans"]["keep"] == {"folders": [], "files": [], "existing": []},
+    seen,
+)
 used = second_brain.setup(str(mine), "keep")
 check("it is used as it is: nothing added or changed", used["ok"] and used["created"] == [] and used["own_rules"] and tree(mine) == before, used)
-check("its routines are offered but off", used["routines_on"] is False and all(not r["enabled"] for r in second_brain.routines()["routines"])
-      and len(cron_jobs()) == 6, second_brain.routines())
+check(
+    "its routines are offered but off",
+    used["routines_on"] is False and all(not r["enabled"] for r in second_brain.routines()["routines"]) and len(cron_jobs()) == 6,
+    second_brain.routines(),
+)
 check("Chief is asked to read its manual first", "_CLAUDE.md" in used["next_prompt"] and "Don't change anything" in used["next_prompt"], used)
 text = skill.read_text(encoding="utf-8")
 check("Chief's skill follows the vault's own manual", f"{mine}\\_CLAUDE.md" in text and "AGENTS.md" not in text)
@@ -321,8 +451,11 @@ seen = second_brain.inspect(str(para_own), "para")
 check("an owner's own AGENTS.md is their manual", seen["manual"] == "AGENTS.md" and seen["plans"]["keep"]["files"] == [], seen)
 used = second_brain.setup(str(para_own), "keep", fmt="para")
 check("and nothing is added there either", used["created"] == [] and tree(para_own) == before and used["rules"] == "AGENTS.md", used)
-check("switching to PARA removes the wiki-only routines", [r["id"] for r in second_brain.routines()["routines"]] == ["morning", "nightly", "weekly", "health"]
-      and "Second Brain: drop folder" not in cron_jobs(), list(cron_jobs()))
+check(
+    "switching to PARA removes the wiki-only routines",
+    [r["id"] for r in second_brain.routines()["routines"]] == ["morning", "nightly", "weekly", "health"] and "Second Brain: drop folder" not in cron_jobs(),
+    list(cron_jobs()),
+)
 
 # An install set up before formats existed upgrades to the right format, adding nothing to the owner's vault
 before = tree(mine)
@@ -346,6 +479,7 @@ shared = work / "shared-skills"
 (shared / "note-taking" / "second-brain-writes" / "SKILL.md").write_text("---\nname: second-brain-writes\nauthor: the owner\n---\nmine\n", encoding="utf-8")
 (shared / "obsidian-second-brain" / "references").mkdir(parents=True)
 import yaml as _yaml
+
 cfg = _yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
 cfg.setdefault("skills", {})["external_dirs"] = [shared.as_posix()]
 (home / "config.yaml").write_text(_yaml.safe_dump(cfg), encoding="utf-8")
@@ -353,11 +487,13 @@ for rel in ("note-taking/second-brain-writes", "note-taking/second-brain-drop", 
     shutil.rmtree(home / "skills" / rel, ignore_errors=True)
 for name, job in cron_jobs().items():
     from cron import jobs as _jobs
+
     with _jobs.use_cron_store(home):
         _jobs.remove_job(job["id"])
 (home / second_brain.STATE_FILE).unlink()
 with persona.profile_scope(home):
     from hermes_cli.config import save_env_value
+
     save_env_value("OBSIDIAN_VAULT_PATH", str(own_vault))
 before_vault, before_env = tree(own_vault), (home / ".env").read_text(encoding="utf-8")
 # An adopted install has no copy of the toolkit in the profile (provision --adopted keeps the owner's).
@@ -368,22 +504,36 @@ os.environ["CHIEF_ADOPTED"] = "1"
 try:
     up = second_brain.upgrade()
     state = json.loads((home / second_brain.STATE_FILE).read_text(encoding="utf-8"))
-    check("an adopted vault is recorded as using its own rules, routines off", state.get("adopted") and state.get("own_rules")
-          and state.get("routines_off") and state.get("format") == "wiki" and state.get("rules") == "_CLAUDE.md", state)
-    check("nothing is added to it, and no routine is armed", tree(own_vault) == before_vault and not cron_jobs()
-          and all(not r["exists"] for r in second_brain.routines()["routines"]), up)
-    check("the owner's write gate is never shadowed", not (home / "skills" / "note-taking" / "second-brain-writes").exists()
-          and (shared / "note-taking" / "second-brain-writes" / "SKILL.md").read_text(encoding="utf-8").endswith("mine\n"))
+    check(
+        "an adopted vault is recorded as using its own rules, routines off",
+        state.get("adopted") and state.get("own_rules") and state.get("routines_off") and state.get("format") == "wiki" and state.get("rules") == "_CLAUDE.md",
+        state,
+    )
+    check(
+        "nothing is added to it, and no routine is armed",
+        tree(own_vault) == before_vault and not cron_jobs() and all(not r["exists"] for r in second_brain.routines()["routines"]),
+        up,
+    )
+    check(
+        "the owner's write gate is never shadowed",
+        not (home / "skills" / "note-taking" / "second-brain-writes").exists()
+        and (shared / "note-taking" / "second-brain-writes" / "SKILL.md").read_text(encoding="utf-8").endswith("mine\n"),
+    )
     check("nor are the app's routine skills installed beside the owner's", not (home / "skills" / "note-taking" / "second-brain-brief").exists())
     text = skill.read_text(encoding="utf-8")
-    check("Chief's always-loaded skill points at the vault's manual and the owner's toolkit",
-          f"{own_vault}\\_CLAUDE.md" in text and (shared / "obsidian-second-brain").as_posix() in text)
+    check(
+        "Chief's always-loaded skill points at the vault's manual and the owner's toolkit",
+        f"{own_vault}\\_CLAUDE.md" in text and (shared / "obsidian-second-brain").as_posix() in text,
+    )
     check("the owner's .env keeps its own settings", "OBSIDIAN_ENV_FILE" not in (home / ".env").read_text(encoding="utf-8").replace(before_env, ""))
     learned = load("learning").ensure(home)
     check("Fleet Health arms nothing in an adopted install", learned.get("adopted") and learned["jobs"] == [] and not cron_jobs(), learned)
     turned = second_brain.set_routine("brief", enabled=True)
-    check("turning one routine on creates just that one, with its skill", list(cron_jobs()) == ["Second Brain: morning brief"]
-          and (home / "skills" / "note-taking" / "second-brain-brief" / "SKILL.md").is_file(), list(cron_jobs()))
+    check(
+        "turning one routine on creates just that one, with its skill",
+        list(cron_jobs()) == ["Second Brain: morning brief"] and (home / "skills" / "note-taking" / "second-brain-brief" / "SKILL.md").is_file(),
+        list(cron_jobs()),
+    )
 finally:
     os.environ.pop("CHIEF_ADOPTED", None)
     shutil.move(str(aside), str(own_toolkit_copy))

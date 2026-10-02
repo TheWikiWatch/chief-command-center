@@ -7,6 +7,7 @@ no-silent-download guard in voice.py, against a real Hermes runtime. CONTRACT_NE
 
 Uses a throwaway home only. Exit 0 = the contract holds.
 """
+
 from __future__ import annotations
 
 import base64
@@ -94,7 +95,7 @@ class Hub(BaseHTTPRequestHandler):
         step = 64 * 1024
         for i in range(0, len(chunk), step):
             try:
-                self.wfile.write(chunk[i:i + step])
+                self.wfile.write(chunk[i : i + step])
             except OSError:
                 return
             if behaviour["slow"]:
@@ -106,7 +107,9 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 real_endpoint = os.environ.get("HF_ENDPOINT")
 os.environ["HF_ENDPOINT"] = f"http://127.0.0.1:{server.server_address[1]}"
 speech_model.MODELS["fake"] = {
-    "label": "Fake", "repo": "test/fake", "revision": "abc123",
+    "label": "Fake",
+    "repo": "test/fake",
+    "revision": "abc123",
     "files": [(n, len(b), hashlib.sha256(b).hexdigest()) for n, b in PAYLOAD.items()],
 }
 
@@ -122,7 +125,11 @@ def wait_job(limit: float = 30.0) -> dict:
 
 
 st = speech_model.status()
-check("status lists the real models with sizes", {m["id"]: m["bytes"] for m in st["models"] if m["id"] in ("base", "tiny")} == {"base": 147882941, "tiny": 78203619}, st["models"])
+check(
+    "status lists the real models with sizes",
+    {m["id"]: m["bytes"] for m in st["models"] if m["id"] in ("base", "tiny")} == {"base": 147882941, "tiny": 78203619},
+    st["models"],
+)
 check("nothing is installed on a fresh home", not any(m["installed"] for m in st["models"]))
 
 # Silent-download guard: local STT with a model that isn't on disk is refused before Hermes can fetch it.
@@ -155,7 +162,11 @@ while time.time() < deadline and (speech_model.status()["job"] or {}).get("recei
 speech_model.cancel()
 job = wait_job()
 part = folder / "model.bin.part"
-check("cancel stops the download and keeps the partial file", job["state"] == "cancelled" and part.exists() and 0 < part.stat().st_size < len(PAYLOAD["model.bin"]), job)
+check(
+    "cancel stops the download and keeps the partial file",
+    job["state"] == "cancelled" and part.exists() and 0 < part.stat().st_size < len(PAYLOAD["model.bin"]),
+    job,
+)
 behaviour["slow"] = False
 speech_model.download("fake")
 job = wait_job()
@@ -197,8 +208,11 @@ if os.environ.get("CONTRACT_NETWORK") == "1":
     check("the real tiny model downloads and verifies", job["state"] == "done" and speech_model.installed("tiny"), job)
     print(f"      ({job['total'] / 1e6:.1f} MB in {time.time() - started:.0f} s)")
     spoken = voice.speak("Please remind me to call the plumber tomorrow morning.")
-    check("Edge speaks a test phrase without a key", spoken.get("ok") is True and str(spoken.get("data_url", "")).startswith("data:audio"),
-          {k: v for k, v in spoken.items() if k != "data_url"})
+    check(
+        "Edge speaks a test phrase without a key",
+        spoken.get("ok") is True and str(spoken.get("data_url", "")).startswith("data:audio"),
+        {k: v for k, v in spoken.items() if k != "data_url"},
+    )
     if spoken.get("ok"):
         mime = spoken["data_url"][5:].split(";", 1)[0]
         heard = voice.transcribe({"data_url": spoken["data_url"], "mime_type": mime})

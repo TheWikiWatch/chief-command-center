@@ -1,4 +1,5 @@
 """The chat's extras: the chief's open question, notices that aren't replies, and the current step."""
+
 import importlib
 import json
 import sqlite3
@@ -51,7 +52,7 @@ class CronUnwrapTests(unittest.TestCase):
         "(job_id: a94696753a42)\n"
         "-------------\n\n"
         "Logged three changes to the Inbox.\n\n"
-        "To stop or manage this job, send me a new message (e.g. \"stop reminder Second Brain: nightly\")."
+        'To stop or manage this job, send me a new message (e.g. "stop reminder Second Brain: nightly").'
     )
 
     def test_the_answer_and_the_routine(self):
@@ -94,8 +95,9 @@ class ChatStateTests(unittest.TestCase):
     def test_an_open_question_is_read_and_answered_with_a_choice(self):
         entry = _Entry("c1", "Which inbox?", ["Gmail (Recommended)", "Outlook"])
         with patch.dict(sys.modules, _fake_clarify(entry)):
-            self.assertEqual(chat_state.pending_clarify("session"),
-                             {"id": "c1", "question": "Which inbox?", "choices": ["Gmail (Recommended)", "Outlook"], "multi": False})
+            self.assertEqual(
+                chat_state.pending_clarify("session"), {"id": "c1", "question": "Which inbox?", "choices": ["Gmail (Recommended)", "Outlook"], "multi": False}
+            )
             self.assertIsNone(chat_state.pending_clarify("other"))
             self.assertEqual(chat_state.resolve_clarify("session", "c1", "Outlook"), {"ok": True})
             self.assertEqual(entry.response, "Outlook")
@@ -125,10 +127,13 @@ class ChatStateTests(unittest.TestCase):
     def test_a_finished_question_shows_in_the_transcript_with_its_answer(self):
         with self.database() as conn:
             conn.execute("INSERT INTO messages VALUES (1, 'user', 'I want an email bot', '10.0', NULL, 's', 1)")
-            conn.execute("INSERT INTO messages VALUES (2, 'assistant', '', '11.0', ?, 's', 1)",
-                         (json.dumps([{"function": {"name": "clarify", "arguments": "{}"}}]),))
-            conn.execute("INSERT INTO messages VALUES (3, 'tool', ?, '12.0', NULL, 's', 1)",
-                         (json.dumps({"question": "Which inbox?", "choices_offered": ["Gmail", "Outlook"], "user_response": "Gmail"}),))
+            conn.execute(
+                "INSERT INTO messages VALUES (2, 'assistant', '', '11.0', ?, 's', 1)", (json.dumps([{"function": {"name": "clarify", "arguments": "{}"}}]),)
+            )
+            conn.execute(
+                "INSERT INTO messages VALUES (3, 'tool', ?, '12.0', NULL, 's', 1)",
+                (json.dumps({"question": "Which inbox?", "choices_offered": ["Gmail", "Outlook"], "user_response": "Gmail"}),),
+            )
             conn.execute("INSERT INTO messages VALUES (4, 'tool', '{\"ok\": true}', '12.5', NULL, 's', 1)")
             conn.execute("INSERT INTO messages VALUES (5, 'assistant', 'Gmail it is.', '13.0', NULL, 's', 1)")
         rows = data.transcript("session")["messages"]
@@ -138,8 +143,13 @@ class ChatStateTests(unittest.TestCase):
         self.assertEqual([m["id"] for m in rows], [1, 2, 3, 5])
 
     def test_batched_and_unanswered_questions(self):
-        result = {"responses": [{"question": "A?", "choices_offered": ["x"], "user_response": ["x"]},
-                                {"question": "B?", "choices_offered": None, "user_response": ""}], "timed_out": True}
+        result = {
+            "responses": [
+                {"question": "A?", "choices_offered": ["x"], "user_response": ["x"]},
+                {"question": "B?", "choices_offered": None, "user_response": ""},
+            ],
+            "timed_out": True,
+        }
         asked = chat_state.asked_from_tool_row(json.dumps(result))
         self.assertEqual(asked[0]["answer"], ["x"])
         self.assertTrue(asked[1]["unanswered"])
@@ -150,21 +160,24 @@ class ChatStateTests(unittest.TestCase):
 
     def test_notices_are_sends_that_are_not_replies(self):
         with self.database() as conn:
-            conn.execute("INSERT INTO messages VALUES (1, 'assistant', ?, '100.0', NULL, 's', 1)",
-                         ("Here is the plan:\n\n1. one\n2. two",))
+            conn.execute("INSERT INTO messages VALUES (1, 'assistant', ?, '100.0', NULL, 's', 1)", ("Here is the plan:\n\n1. one\n2. two",))
         rows = [
-            ("Here is the plan:\n\n1. one\n2. two", "send", 100.1),    # the reply itself
-            ("1. one", "send", 100.2),                                 # a piece of the reply
+            ("Here is the plan:\n\n1. one\n2. two", "send", 100.1),  # the reply itself
+            ("1. one", "send", 100.2),  # a piece of the reply
             ("⏳ Working — 3 min — iteration 5, clarify", "send", 150.0),  # busy status: never a notice
-            ("Morning brief: 3 tasks due", "cron", 160.0),             # a scheduled job
-            ("📬 No home channel is set", "send", 170.0),              # a gateway notice
+            ("Morning brief: 3 tasks due", "cron", 160.0),  # a scheduled job
+            ("📬 No home channel is set", "send", 170.0),  # a gateway notice
         ]
         path = outbox._outbox_path()
-        path.write_text("".join(json.dumps({"id": f"o{i}", "at": at, "chat_id": "owner", "message": m, "source": src, "read": False}) + "\n"
-                                for i, (m, src, at) in enumerate(rows)), encoding="utf-8")
+        path.write_text(
+            "".join(
+                json.dumps({"id": f"o{i}", "at": at, "chat_id": "owner", "message": m, "source": src, "read": False}) + "\n"
+                for i, (m, src, at) in enumerate(rows)
+            ),
+            encoding="utf-8",
+        )
         found = chat_state.notices("session", since=0)
-        self.assertEqual([(n["text"], n["source"]) for n in found],
-                         [("Morning brief: 3 tasks due", "scheduled"), ("📬 No home channel is set", "notice")])
+        self.assertEqual([(n["text"], n["source"]) for n in found], [("Morning brief: 3 tasks due", "scheduled"), ("📬 No home channel is set", "notice")])
         self.assertEqual([n["text"] for n in chat_state.notices("session", since=165)], ["📬 No home channel is set"])
         self.assertEqual(chat_state.notice_head(), "o4")
 
@@ -192,9 +205,17 @@ class ChatStateTests(unittest.TestCase):
         self.assertIsNone(chat_state.activity("session", generating=False))
         with self.database() as conn:
             conn.execute("INSERT INTO messages VALUES (1, 'user', 'hi', '100.0', NULL, 's', 1)")
-            conn.execute("INSERT INTO messages VALUES (2, 'assistant', '', '101.0', ?, 's', 1)",
-                         (json.dumps([{"function": {"name": "skill_view", "arguments": json.dumps({"name": "fleet-ops"})}},
-                                      {"function": {"name": "skill_view", "arguments": json.dumps({"name": "fleet-builder"})}}]),))
+            conn.execute(
+                "INSERT INTO messages VALUES (2, 'assistant', '', '101.0', ?, 's', 1)",
+                (
+                    json.dumps(
+                        [
+                            {"function": {"name": "skill_view", "arguments": json.dumps({"name": "fleet-ops"})}},
+                            {"function": {"name": "skill_view", "arguments": json.dumps({"name": "fleet-builder"})}},
+                        ]
+                    ),
+                ),
+            )
         now = chat_state.activity("session", generating=True)
         self.assertEqual(now["since"], 100.0)
         self.assertEqual(now["steps"], 2)
@@ -204,7 +225,6 @@ class ChatStateTests(unittest.TestCase):
         with conn:
             conn.execute("INSERT INTO messages VALUES (3, 'tool', '{}', '102.0', NULL, 's', 1)")
         self.assertEqual(chat_state.activity("session", generating=True)["label"], "Thinking it over")
-
 
     def test_live_steps_come_from_hermes_status_as_tools_start(self):
         display = types.ModuleType("agent.display")
@@ -226,8 +246,7 @@ class ChatStateTests(unittest.TestCase):
         now = chat_state.activity("session", generating=True, chat_id="owner")
         self.assertEqual(now["steps"], 3)
         self.assertEqual(now["label"], "Reading Home.md")
-        self.assertEqual([label for _, label in chat_state.live_steps("owner", 0)],
-                         ["Checking the team", None, "Planning the steps", "Reading Home.md"])
+        self.assertEqual([label for _, label in chat_state.live_steps("owner", 0)], ["Checking the team", None, "Planning the steps", "Reading Home.md"])
         chat_state.record_status("owner", None)
         self.assertEqual(chat_state.activity("session", generating=True, chat_id="owner")["label"], "Thinking it over")
         chat_state._live.clear()
@@ -238,9 +257,11 @@ class DefaultSoulTests(unittest.TestCase):
         second_brain = importlib.import_module("test_bridge_plugin.second_brain")
         shipped = (ROOT / "hermes/plugins/chief-dashboard-bridge/second_brain/SOUL.md").read_text(encoding="utf-8")
         self.assertEqual(
-            second_brain._soul_digest(shipped), second_brain.CURRENT_DEFAULT_SOUL,
+            second_brain._soul_digest(shipped),
+            second_brain.CURRENT_DEFAULT_SOUL,
             "second_brain/SOUL.md changed: move CURRENT_DEFAULT_SOUL into _PREVIOUS_DEFAULT_SOULS (so unedited "
-            "installs still get the new default) and set CURRENT_DEFAULT_SOUL to the new digest.")
+            "installs still get the new default) and set CURRENT_DEFAULT_SOUL to the new digest.",
+        )
         self.assertNotIn(second_brain.CURRENT_DEFAULT_SOUL, second_brain._PREVIOUS_DEFAULT_SOULS)
 
 

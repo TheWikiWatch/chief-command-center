@@ -21,13 +21,14 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: |
+            package-lock.json
             apps/web/package-lock.json
             apps/desktop/package-lock.json
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - name: Python test dependencies
-        run: python -m pip install --disable-pip-version-check pyyaml cryptography requests
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
       - name: Privacy scan (files and full history)
         env:
           PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}
@@ -42,6 +43,10 @@ jobs:
         run: |
           npm --prefix apps/desktop ci
           npm --prefix apps/desktop run check
+      - name: Python lint and types (Ruff, pyright)
+        run: |
+          npm ci
+          npm run lint:python
       - name: Python tests
         run: python -B -m unittest discover -s hermes/tests
       - name: Backup engine tests

@@ -13,6 +13,7 @@ A backup is zipped in a local temporary folder, verified (every entry's CRC and 
 encrypted if asked, written to the destination under a temporary name, and renamed only when complete.
 SQLite databases are copied with SQLite's online backup API, so Chief can keep running.
 """
+
 from __future__ import annotations
 
 import errno
@@ -39,10 +40,35 @@ SUFFIX = ".chiefbackup"
 PARTS = ("setup", "second-brain")
 
 # Anywhere in the Hermes root.
-_SKIP_DIRS = {"cache", "image_cache", "audio_cache", "logs", "hf-cache", "runtime", "__pycache__", "node_modules", ".git",
-              "pm-runtime", "uv-cache", "crash-dumps"}
-_SKIP_FILES = ["*.lock", "*.pid", "*.db-wal", "*.db-shm", "*.db-journal", "*.tmp", "*.part", "gateway_state.json",
-               "gateway.heartbeat", "*_cache.json", "models_dev_cache.*", "provider_models_cache.json", "install_id"]
+_SKIP_DIRS = {
+    "cache",
+    "image_cache",
+    "audio_cache",
+    "logs",
+    "hf-cache",
+    "runtime",
+    "__pycache__",
+    "node_modules",
+    ".git",
+    "pm-runtime",
+    "uv-cache",
+    "crash-dumps",
+}
+_SKIP_FILES = [
+    "*.lock",
+    "*.pid",
+    "*.db-wal",
+    "*.db-shm",
+    "*.db-journal",
+    "*.tmp",
+    "*.part",
+    "gateway_state.json",
+    "gateway.heartbeat",
+    "*_cache.json",
+    "models_dev_cache.*",
+    "provider_models_cache.json",
+    "install_id",
+]
 # Only at the top of the Hermes root: launchers and install records belong to this PC's app install.
 _SKIP_ROOT = {"bin", "installs"}
 # Only directly in a profile: the speech model is re-downloadable and large.
@@ -51,8 +77,12 @@ _SKIP_PROFILE = {"models"}
 MACHINE_LOCAL_ROOT = ("bin", "installs", "install_id")
 MACHINE_LOCAL_PROFILE = ("models",)
 # Secret files: kept only in an encrypted backup.
-_SECRET_FILES = {"auth.json": "sign-ins (auth.json)", ".token": "the app's bridge token",
-                 "command_center_vapid.json": "phone-alert keys", "command_center_push_subscriptions.json": "phone-alert subscriptions"}
+_SECRET_FILES = {
+    "auth.json": "sign-ins (auth.json)",
+    ".token": "the app's bridge token",
+    "command_center_vapid.json": "phone-alert keys",
+    "command_center_push_subscriptions.json": "phone-alert subscriptions",
+}
 _SECRET_PATTERNS = ["*.pem", "*.key", "*.p12", "*.pfx", "credentials.json"]
 _SECRET_ENV = re.compile(r"(KEY|TOKEN|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|COOKIE|SESSION|AUTH|PRIVATE)", re.I)
 _ENV_LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
@@ -65,6 +95,7 @@ class BackupError(RuntimeError):
 @dataclass
 class Plan:
     """What a backup will contain: (archive path, source file, kind) plus the secrets left out."""
+
     entries: list[tuple[str, Path, str]] = field(default_factory=list)
     dropped: list[str] = field(default_factory=list)
     sanitized_env: dict[str, str] = field(default_factory=dict)  # archive path -> sanitized text
@@ -282,8 +313,7 @@ def create(
                     "home": str(Path.home()),
                     "user": getpass.getuser(),
                 },
-                "summary": {"profiles": _profiles(plan), "notes": _count_notes(plan), "files": len(files),
-                            "bytes": sum(f["size"] for f in files)},
+                "summary": {"profiles": _profiles(plan), "notes": _count_notes(plan), "files": len(files), "bytes": sum(f["size"] for f in files)},
                 "files": files,
             }
             zf.writestr("manifest.json", json.dumps(manifest, indent=1))
@@ -297,8 +327,15 @@ def create(
             out.flush()
             os.fsync(out.fileno())
         os.replace(partial, final)
-        return {"ok": True, "path": str(final), "bytes": final.stat().st_size, "parts": parts, "encrypted": bool(passphrase),
-                "dropped_secrets": plan.dropped, "summary": manifest["summary"]}
+        return {
+            "ok": True,
+            "path": str(final),
+            "bytes": final.stat().st_size,
+            "parts": parts,
+            "encrypted": bool(passphrase),
+            "dropped_secrets": plan.dropped,
+            "summary": manifest["summary"],
+        }
     except OSError as exc:
         partial.unlink(missing_ok=True)
         if exc.errno == errno.ENOSPC or getattr(exc, "winerror", 0) in (39, 112):
@@ -333,7 +370,7 @@ def prune(dest_dir: Path, keep: int, kind: str = "auto") -> list[str]:
     label = backup_name(kind).rsplit(" ", 2)[0]  # "Chief backup (auto)", "Chief backup (before update)"
     autos = sorted(dest_dir.glob(f"{label} *{SUFFIX}"), key=lambda p: p.name, reverse=True)
     removed = []
-    for old in autos[max(keep, 1):]:
+    for old in autos[max(keep, 1) :]:
         try:
             old.unlink()
             removed.append(old.name)

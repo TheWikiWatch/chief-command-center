@@ -3,6 +3,7 @@
 Owns session identity, busy/typing (_active_sessions), outbound send (outbox + SSE),
 and cron delivery via standalone_sender_fn. Dual-runs beside Discord until Phase 3.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -122,8 +123,13 @@ class CommandCenterAdapter(BasePlatformAdapter):
         return SendResult(success=True, message_id=mid)
 
     async def send_clarify(
-        self, chat_id: str, question: str, choices: list | None, clarify_id: str,
-        session_key: str, metadata: dict[str, Any] | None = None,
+        self,
+        chat_id: str,
+        question: str,
+        choices: list | None,
+        clarify_id: str,
+        session_key: str,
+        metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """The chief's question as a card in the chat (the bridge reads it from Hermes's clarify registry
         with the transcript). Typing in the chat answers it too, as with Hermes's text fallback."""

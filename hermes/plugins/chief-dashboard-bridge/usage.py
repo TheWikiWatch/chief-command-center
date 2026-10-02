@@ -23,6 +23,7 @@ never as free.
 The budget (`usage_budget.json` in the chief's profile) is advisory: the app turns amber at 80 % and sends one
 notification when a month passes 100 %. Nothing is ever stopped.
 """
+
 from __future__ import annotations
 
 import json
@@ -114,10 +115,12 @@ def _provider_name(slug: str) -> str:
 # ---------------------------------------------------------------- reading Hermes
 
 
-_COUNTER_SQL = ("COALESCE(input_tokens,0) AS input, COALESCE(output_tokens,0) AS output, "
-                "COALESCE(cache_read_tokens,0) AS cache_read, COALESCE(cache_write_tokens,0) AS cache_write, "
-                "COALESCE(reasoning_tokens,0) AS reasoning, COALESCE(api_call_count,0) AS calls, "
-                "estimated_cost_usd AS estimated, actual_cost_usd AS actual, cost_status")
+_COUNTER_SQL = (
+    "COALESCE(input_tokens,0) AS input, COALESCE(output_tokens,0) AS output, "
+    "COALESCE(cache_read_tokens,0) AS cache_read, COALESCE(cache_write_tokens,0) AS cache_write, "
+    "COALESCE(reasoning_tokens,0) AS reasoning, COALESCE(api_call_count,0) AS calls, "
+    "estimated_cost_usd AS estimated, actual_cost_usd AS actual, cost_status"
+)
 
 
 def _has(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -142,17 +145,24 @@ def _rows(home: Path) -> list[dict[str, Any]]:
         sprov = "COALESCE(billing_provider,'')" if "billing_provider" in scols else "''"
         ends = [c for c in ("last_activity_at", "ended_at") if c in scols]
         slast = f"MAX(started_at, {', '.join(f'COALESCE({c}, started_at)' for c in ends)})" if ends else "started_at"
-        sessions = [dict(r) for r in conn.execute(
-            f"SELECT id AS session, COALESCE(model,'') AS model, {sprov} AS provider, started_at AS first, "
-            f"{slast} AS last, {_COUNTER_SQL} FROM sessions")]
+        sessions = [
+            dict(r)
+            for r in conn.execute(
+                f"SELECT id AS session, COALESCE(model,'') AS model, {sprov} AS provider, started_at AS first, {slast} AS last, {_COUNTER_SQL} FROM sessions"
+            )
+        ]
         ledger: list[dict[str, Any]] = []
         lcols = _has(conn, "session_model_usage")
         if {"session_id", "model", "task", "first_seen"} <= lcols:
             lprov = "COALESCE(billing_provider,'')" if "billing_provider" in lcols else "''"
             llast = "COALESCE(last_seen, first_seen)" if "last_seen" in lcols else "first_seen"
-            ledger = [dict(r) for r in conn.execute(
-                f"SELECT session_id AS session, model, {lprov} AS provider, COALESCE(task,'') AS task, "
-                f"first_seen AS first, {llast} AS last, {_COUNTER_SQL} FROM session_model_usage")]
+            ledger = [
+                dict(r)
+                for r in conn.execute(
+                    f"SELECT session_id AS session, model, {lprov} AS provider, COALESCE(task,'') AS task, "
+                    f"first_seen AS first, {llast} AS last, {_COUNTER_SQL} FROM session_model_usage"
+                )
+            ]
 
     except sqlite3.Error:
         logger.debug("usage read failed for %s", home.name, exc_info=True)
@@ -194,10 +204,12 @@ def _replies(home: Path, sessions: list[str]) -> dict[str, dict[str, int]]:
         if not {"session_id", "role", "timestamp"} <= _has(conn, "messages"):
             return out
         for i in range(0, len(sessions), 500):
-            chunk = sessions[i:i + 500]
+            chunk = sessions[i : i + 500]
             for sid, day, n in conn.execute(
-                    "SELECT session_id, date(timestamp, 'unixepoch', 'localtime'), COUNT(*) FROM messages "
-                    f"WHERE role = 'assistant' AND session_id IN ({','.join('?' * len(chunk))}) GROUP BY 1, 2", chunk):
+                "SELECT session_id, date(timestamp, 'unixepoch', 'localtime'), COUNT(*) FROM messages "
+                f"WHERE role = 'assistant' AND session_id IN ({','.join('?' * len(chunk))}) GROUP BY 1, 2",
+                chunk,
+            ):
                 out.setdefault(str(sid), {})[str(day)] = int(n)
     except sqlite3.Error:
         logger.debug("usage replies read failed for %s", home.name, exc_info=True)
@@ -220,7 +232,8 @@ def _journal() -> sqlite3.Connection:
         "cache_read INT DEFAULT 0, cache_write INT DEFAULT 0, reasoning INT DEFAULT 0, calls INT DEFAULT 0, "
         "cost REAL DEFAULT 0, cost_status TEXT, PRIMARY KEY (day, profile, session, model, provider, task));"
         "CREATE INDEX IF NOT EXISTS usage_day ON usage(day);"
-        "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);")
+        "CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);"
+    )
     return conn
 
 
@@ -261,8 +274,18 @@ def _add(conn: sqlite3.Connection, day: str, profile: str, row: dict[str, Any], 
         "input = input + excluded.input, output = output + excluded.output, cache_read = cache_read + excluded.cache_read, "
         "cache_write = cache_write + excluded.cache_write, reasoning = reasoning + excluded.reasoning, "
         "calls = calls + excluded.calls, cost = cost + excluded.cost, cost_status = COALESCE(excluded.cost_status, cost_status)",
-        (day, profile, str(row["session"]), str(row["model"] or "unknown"), str(row["provider"] or ""), str(row["task"]),
-         *(int(amounts[k]) for k in COUNTERS), float(amounts["cost"]), row.get("cost_status")))
+        (
+            day,
+            profile,
+            str(row["session"]),
+            str(row["model"] or "unknown"),
+            str(row["provider"] or ""),
+            str(row["task"]),
+            *(int(amounts[k]) for k in COUNTERS),
+            float(amounts["cost"]),
+            row.get("cost_status"),
+        ),
+    )
 
 
 def sync(now: float | None = None) -> None:
@@ -294,7 +317,8 @@ def sync(now: float | None = None) -> None:
                         "VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(profile, key) DO UPDATE SET input = excluded.input, "
                         "output = excluded.output, cache_read = excluded.cache_read, cache_write = excluded.cache_write, "
                         "reasoning = excluded.reasoning, calls = excluded.calls, cost = excluded.cost",
-                        (profile, row["key"], *(current[k] for k in COUNTERS), current["cost"]))
+                        (profile, row["key"], *(current[k] for k in COUNTERS), current["cost"]),
+                    )
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK") if conn.in_transaction else None
@@ -307,8 +331,19 @@ def sync(now: float | None = None) -> None:
 
 
 def _blank() -> dict[str, Any]:
-    return {"cost": 0.0, "input": 0, "output": 0, "cacheRead": 0, "reasoning": 0, "tokens": 0, "calls": 0,
-            "sessions": 0, "unpriced": 0, "_ids": set(), "_spend": {}}
+    return {
+        "cost": 0.0,
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "reasoning": 0,
+        "tokens": 0,
+        "calls": 0,
+        "sessions": 0,
+        "unpriced": 0,
+        "_ids": set(),
+        "_spend": {},
+    }
 
 
 def _put(total: dict[str, Any], row: sqlite3.Row) -> None:
@@ -377,8 +412,7 @@ def summary(period: str = "month", now: datetime | None = None) -> dict[str, Any
             _put(totals, row)
             _put(mine.setdefault(row["profile"], _blank()), row)
             model, provider = str(row["model"] or "unknown"), str(row["provider"] or "")
-            _put(models.setdefault((model, provider), {**_blank(), "model": model, "provider": provider,
-                                                       "providerName": _provider_name(provider)}), row)
+            _put(models.setdefault((model, provider), {**_blank(), "model": model, "provider": provider, "providerName": _provider_name(provider)}), row)
             d = days.setdefault(day, {"day": day, "cost": 0.0, "tokens": 0, "byBot": {}})
             d["cost"] += float(row["cost"])
             d["tokens"] += int(row["input"]) + int(row["output"]) + int(row["cache_read"]) + int(row["cache_write"])
@@ -391,20 +425,34 @@ def summary(period: str = "month", now: datetime | None = None) -> dict[str, Any
     # Every day of the period, including empty ones, so a chart has no gaps.
     start_day = date.fromtimestamp(since)
     span = (now.date() - start_day).days + 1
-    daily = [days.get((start_day + timedelta(days=i)).isoformat(), {"day": (start_day + timedelta(days=i)).isoformat(), "cost": 0.0, "tokens": 0, "byBot": {}})
-             for i in range(max(span, 1))]
+    daily = [
+        days.get((start_day + timedelta(days=i)).isoformat(), {"day": (start_day + timedelta(days=i)).isoformat(), "cost": 0.0, "tokens": 0, "byBot": {}})
+        for i in range(max(span, 1))
+    ]
     bots.sort(key=lambda b: (-b["cost"], -b["tokens"]))
     budget = read_budget()
     limit = budget.get("monthly")
     ratio = (month["cost"] / limit) if limit else None
     return {
-        "ok": True, "contract": CONTRACT, "period": period, "since": since, "generatedAt": time.time(),
+        "ok": True,
+        "contract": CONTRACT,
+        "period": period,
+        "since": since,
+        "generatedAt": time.time(),
         # Days before this are spread from the chief's replies; from it on, each call is on the day it was made.
         "exactSince": exact_since or None,
-        "totals": totals, "today": today, "month": month,
-        "bots": bots, "models": sorted(models.values(), key=lambda m: (-m["cost"], -m["tokens"])), "daily": daily,
-        "budget": {"monthly": limit, "spent": month["cost"], "ratio": ratio,
-                   "state": "none" if ratio is None else "over" if ratio >= 1 else "warn" if ratio >= WARN_AT else "ok"},
+        "totals": totals,
+        "today": today,
+        "month": month,
+        "bots": bots,
+        "models": sorted(models.values(), key=lambda m: (-m["cost"], -m["tokens"])),
+        "daily": daily,
+        "budget": {
+            "monthly": limit,
+            "spent": month["cost"],
+            "ratio": ratio,
+            "state": "none" if ratio is None else "over" if ratio >= 1 else "warn" if ratio >= WARN_AT else "ok",
+        },
     }
 
 

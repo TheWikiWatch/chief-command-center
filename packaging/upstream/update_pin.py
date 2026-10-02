@@ -1,7 +1,8 @@
 """Point hermes/pin.json at an upgrade candidate that passed the compatibility suite.
 
-    python packaging/upstream/update_pin.py --commit <sha> --base-version <tag>
+python packaging/upstream/update_pin.py --commit <sha> --base-version <tag>
 """
+
 from __future__ import annotations
 
 import argparse

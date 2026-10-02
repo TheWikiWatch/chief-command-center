@@ -7,6 +7,7 @@ package and no second interpreter. One function per concern:
 - `vapid_authorization(endpoint, private_key, public_key_b64, subject)` → the Authorization header.
 - `send(subscription, payload, ...)` → POST it; returns ("sent" | "gone" | "error", detail).
 """
+
 from __future__ import annotations
 
 import base64
@@ -52,8 +53,7 @@ def _public_bytes(key: ec.EllipticCurvePublicKey) -> bytes:
     return key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
 
 
-def encrypt(plaintext: bytes, p256dh: str, auth: str, *, salt: bytes | None = None,
-            sender_key: ec.EllipticCurvePrivateKey | None = None) -> bytes:
+def encrypt(plaintext: bytes, p256dh: str, auth: str, *, salt: bytes | None = None, sender_key: ec.EllipticCurvePrivateKey | None = None) -> bytes:
     """The aes128gcm body for one push subscription (`salt`/`sender_key` only for tests)."""
     ua_public = b64url_decode(p256dh)
     auth_secret = b64url_decode(auth)
@@ -77,14 +77,12 @@ def encrypt(plaintext: bytes, p256dh: str, auth: str, *, salt: bytes | None = No
     return header + ciphertext
 
 
-def vapid_authorization(endpoint: str, private_key: ec.EllipticCurvePrivateKey, subject: str,
-                        *, expires_in: int = 12 * 3600) -> str:
+def vapid_authorization(endpoint: str, private_key: ec.EllipticCurvePrivateKey, subject: str, *, expires_in: int = 12 * 3600) -> str:
     """`vapid t=<JWT>, k=<public key>` for the push service that owns `endpoint` (RFC 8292)."""
     parsed = urlparse(endpoint)
     audience = f"{parsed.scheme}://{parsed.netloc}"
     header = b64url_encode(json.dumps({"typ": "JWT", "alg": "ES256"}, separators=(",", ":")).encode())
-    claims = b64url_encode(json.dumps({"aud": audience, "exp": int(time.time()) + expires_in, "sub": subject},
-                                      separators=(",", ":")).encode())
+    claims = b64url_encode(json.dumps({"aud": audience, "exp": int(time.time()) + expires_in, "sub": subject}, separators=(",", ":")).encode())
     signing_input = f"{header}.{claims}".encode("ascii")
     r, s = decode_dss_signature(private_key.sign(signing_input, ec.ECDSA(hashes.SHA256())))
     signature = b64url_encode(r.to_bytes(32, "big") + s.to_bytes(32, "big"))
@@ -92,9 +90,17 @@ def vapid_authorization(endpoint: str, private_key: ec.EllipticCurvePrivateKey, 
     return f"vapid t={header}.{claims}.{signature}, k={public}"
 
 
-def send(subscription: dict[str, Any], payload: bytes, *, private_key: ec.EllipticCurvePrivateKey,
-         subject: str, ttl: int, timeout: float, headers: dict[str, str] | None = None,
-         session: Any = None) -> tuple[str, str]:
+def send(
+    subscription: dict[str, Any],
+    payload: bytes,
+    *,
+    private_key: ec.EllipticCurvePrivateKey,
+    subject: str,
+    ttl: int,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+    session: Any = None,
+) -> tuple[str, str]:
     """Deliver one encrypted push. ("sent", ""), ("gone", status) for an expired subscription, or ("error", why)."""
     import requests
 

@@ -27,26 +27,63 @@ _AVATAR_EXTS = ("png", "jpg", "jpeg", "webp", "gif")
 _SKIP_ROLES = {"system", "session_meta"}
 _CRON_MIRROR = "[Cron delivery:"
 _MEDIA_EXTS = (
-    "png", "jpg", "jpeg", "webp", "gif", "bmp", "svg",
-    "mp4", "webm", "mov", "mkv", "avi",
-    "mp3", "wav", "ogg", "opus", "m4a", "flac",
-    "pdf", "zip", "docx", "xlsx", "pptx", "txt", "md", "csv",
+    "png",
+    "jpg",
+    "jpeg",
+    "webp",
+    "gif",
+    "bmp",
+    "svg",
+    "mp4",
+    "webm",
+    "mov",
+    "mkv",
+    "avi",
+    "mp3",
+    "wav",
+    "ogg",
+    "opus",
+    "m4a",
+    "flac",
+    "pdf",
+    "zip",
+    "docx",
+    "xlsx",
+    "pptx",
+    "txt",
+    "md",
+    "csv",
 )
 _IMAGE_EXTS = {"png", "jpg", "jpeg", "webp", "gif", "bmp", "svg"}
 _VIDEO_EXTS = {"mp4", "webm", "mov", "mkv", "avi"}
 _AUDIO_EXTS = {"mp3", "wav", "ogg", "opus", "m4a", "flac"}
 _MIME = {
-    "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp",
-    "gif": "image/gif", "bmp": "image/bmp", "svg": "image/svg+xml",
-    "mp4": "video/mp4", "webm": "video/webm", "mov": "video/quicktime",
-    "mkv": "video/x-matroska", "avi": "video/x-msvideo",
-    "mp3": "audio/mpeg", "wav": "audio/wav", "ogg": "audio/ogg",
-    "opus": "audio/ogg", "m4a": "audio/mp4", "flac": "audio/flac",
-    "pdf": "application/pdf", "zip": "application/zip",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "webp": "image/webp",
+    "gif": "image/gif",
+    "bmp": "image/bmp",
+    "svg": "image/svg+xml",
+    "mp4": "video/mp4",
+    "webm": "video/webm",
+    "mov": "video/quicktime",
+    "mkv": "video/x-matroska",
+    "avi": "video/x-msvideo",
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "ogg": "audio/ogg",
+    "opus": "audio/ogg",
+    "m4a": "audio/mp4",
+    "flac": "audio/flac",
+    "pdf": "application/pdf",
+    "zip": "application/zip",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-    "txt": "text/plain", "md": "text/markdown", "csv": "text/csv",
+    "txt": "text/plain",
+    "md": "text/markdown",
+    "csv": "text/csv",
 }
 _EXT_GROUP = "|".join(_MEDIA_EXTS)
 _MEDIA_PATH_RE = re.compile(rf"(?P<path>[^\n]+?\.(?:{_EXT_GROUP}))(?=\s+MEDIA:|\s*$)", re.IGNORECASE)
@@ -125,6 +162,7 @@ def load_yaml(path: Path) -> dict:
             if hit and hit[0] == mtime:
                 return copy.deepcopy(hit[1])
             from yaml.loader import SafeLoader
+
             value = yaml.load(path.read_text(encoding="utf-8"), Loader=SafeLoader) or {}
             result = value if isinstance(value, dict) else {}
             _yaml_cache[key] = (mtime, result)
@@ -217,23 +255,25 @@ def list_roster() -> dict[str, Any]:
                         avatar = f"/api/bridge/avatar/{entry.name}"
                         break
             flav = flavor.get(entry.name, {})
-            people.append({
-                "id": entry.name,
-                "name": name,
-                "title": name,
-                "description": desc,
-                "section": str(assign.get(entry.name) or ""),
-                "shape": str(bots.get("shape") or ""),
-                "color": str(bots.get("color") or ""),
-                "imageKind": str(bots.get("imageKind") or ""),
-                "custom": bool(bots.get("custom")),
-                "pet": bots.get("pet"),
-                "avatarUrl": avatar,
-                "model": str(model.get("default") or ""),
-                "provider": str(model.get("provider") or ""),
-                "flavor": flav.get("flavor") or "",
-                "isChief": entry.name == "chief",
-            })
+            people.append(
+                {
+                    "id": entry.name,
+                    "name": name,
+                    "title": name,
+                    "description": desc,
+                    "section": str(assign.get(entry.name) or ""),
+                    "shape": str(bots.get("shape") or ""),
+                    "color": str(bots.get("color") or ""),
+                    "imageKind": str(bots.get("imageKind") or ""),
+                    "custom": bool(bots.get("custom")),
+                    "pet": bots.get("pet"),
+                    "avatarUrl": avatar,
+                    "model": str(model.get("default") or ""),
+                    "provider": str(model.get("provider") or ""),
+                    "flavor": flav.get("flavor") or "",
+                    "isChief": entry.name == "chief",
+                }
+            )
 
     people.sort(key=lambda p: (0 if p["isChief"] else 1, p["section"], p["name"].lower()))
     return {
@@ -254,6 +294,7 @@ def _pid_exists_win32(pid: int) -> bool:
     """psutil-free Windows liveness probe. Never os.kill(pid, 0) — that is CTRL_C_EVENT."""
     try:
         import ctypes
+
         kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
         kernel32.OpenProcess.restype = ctypes.c_void_p
         kernel32.WaitForSingleObject.restype = ctypes.c_uint
@@ -280,6 +321,7 @@ def _pid_alive(pid: Any) -> bool:
         return False
     try:
         import psutil  # type: ignore
+
         try:
             if psutil.Process(pid_int).status() == getattr(psutil, "STATUS_ZOMBIE", "zombie"):
                 return False
@@ -538,7 +580,7 @@ def _extract_media_from_text(text: str) -> tuple[str, list[dict[str, Any]]]:
         match = _MEDIA_PATH_RE.match(chunk) or _MEDIA_INLINE_RE.match(chunk)
         if match:
             att = _attach_from_path(match.group("path"))
-            rest = chunk[match.end():]
+            rest = chunk[match.end() :]
         else:
             line, _, leftover = chunk.partition("\n")
             att = _attach_from_path(line)
@@ -614,8 +656,24 @@ def parse_message_content(content: Any) -> tuple[str, list[dict[str, Any]]]:
 
 
 _INLINE_EXTS = {
-    ".txt", ".md", ".markdown", ".csv", ".tsv", ".log", ".json", ".xml", ".yaml", ".yml",
-    ".py", ".ts", ".tsx", ".js", ".jsx", ".html", ".css", ".toml",
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".tsv",
+    ".log",
+    ".json",
+    ".xml",
+    ".yaml",
+    ".yml",
+    ".py",
+    ".ts",
+    ".tsx",
+    ".js",
+    ".jsx",
+    ".html",
+    ".css",
+    ".toml",
 }
 _INLINE_MAX = 100_000
 MAX_ATTACHMENTS = 8
@@ -681,9 +739,13 @@ def stage_uploads(items: list[Any], dest: Path | None = None) -> list[dict[str, 
         if len(payload) > MAX_ATTACHMENT_BYTES:
             raise UploadError(f"{name} is over 25MB.")
         ext = Path(name).suffix.lower()
-        kind = "image" if mime.startswith("image/") or ext.lstrip(".") in _IMAGE_EXTS else (
-            "video" if mime.startswith("video/") or ext.lstrip(".") in _VIDEO_EXTS else (
-                "audio" if mime.startswith("audio/") or ext.lstrip(".") in _AUDIO_EXTS else "file"
+        kind = (
+            "image"
+            if mime.startswith("image/") or ext.lstrip(".") in _IMAGE_EXTS
+            else (
+                "video"
+                if mime.startswith("video/") or ext.lstrip(".") in _VIDEO_EXTS
+                else ("audio" if mime.startswith("audio/") or ext.lstrip(".") in _AUDIO_EXTS else "file")
             )
         )
         path = root / f"up_{uuid_hex()}_{name}"
@@ -692,13 +754,15 @@ def stage_uploads(items: list[Any], dest: Path | None = None) -> list[dict[str, 
         inline = ""
         if ext in _INLINE_EXTS and len(payload) <= _INLINE_MAX:
             inline = payload.decode("utf-8", errors="replace")
-        staged.append({
-            "path": str(path),
-            "name": name,
-            "mime": mime or "application/octet-stream",
-            "kind": kind,
-            "inline": inline,
-        })
+        staged.append(
+            {
+                "path": str(path),
+                "name": name,
+                "mime": mime or "application/octet-stream",
+                "kind": kind,
+                "inline": inline,
+            }
+        )
     return staged
 
 
@@ -728,12 +792,14 @@ def compose_user_turn(text: str, staged: list[dict[str, Any]]) -> dict[str, Any]
             name = str(item.get("name") or "file")
             inline_blocks.append(f"[Content of {name}]:\n{inline}\n[End of {name}]")
         media_lines.append(f"MEDIA:{item['path']}")
-        media.append({
-            "path": item["path"],
-            "mime": item.get("mime") or "application/octet-stream",
-            "name": item.get("name") or "",
-            "inlined": bool(inline),
-        })
+        media.append(
+            {
+                "path": item["path"],
+                "mime": item.get("mime") or "application/octet-stream",
+                "name": item.get("name") or "",
+                "inlined": bool(inline),
+            }
+        )
         kinds.append(str(item.get("kind") or "file"))
     parts = list(inline_blocks)
     caption = (text or "").strip()
@@ -940,8 +1006,7 @@ def _replay_window(conn: sqlite3.Connection, session_id: str) -> tuple[int, int 
     closed as by design).
     """
     marker = conn.execute(
-        "SELECT id, CAST(timestamp AS REAL) AS t FROM messages "
-        "WHERE session_id = ? AND active = 1 AND content LIKE ? ORDER BY id DESC LIMIT 1",
+        "SELECT id, CAST(timestamp AS REAL) AS t FROM messages WHERE session_id = ? AND active = 1 AND content LIKE ? ORDER BY id DESC LIMIT 1",
         (session_id, _COMPACTION_PREFIX + "%"),
     ).fetchone()
     if not marker or marker["t"] is None:
@@ -1009,8 +1074,7 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
         fetch = max(limit * 6, 240)
         if before_id:
             rows = conn.execute(
-                "SELECT id, role, content, timestamp, tool_calls FROM messages "
-                "WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
+                "SELECT id, role, content, timestamp, tool_calls FROM messages WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
                 (sid, before_id, fetch),
             ).fetchall()
             rows = list(reversed(rows))
@@ -1018,14 +1082,12 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
             scanned_from = rows[0]["id"] if rows else before_id
         elif after_id:
             rows = conn.execute(
-                "SELECT id, role, content, timestamp, tool_calls FROM messages "
-                "WHERE session_id = ? AND active = 1 AND id > ? ORDER BY id ASC LIMIT ?",
+                "SELECT id, role, content, timestamp, tool_calls FROM messages WHERE session_id = ? AND active = 1 AND id > ? ORDER BY id ASC LIMIT ?",
                 (sid, after_id, fetch),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, role, content, timestamp, tool_calls FROM messages "
-                "WHERE session_id = ? AND active = 1 ORDER BY id DESC LIMIT ?",
+                "SELECT id, role, content, timestamp, tool_calls FROM messages WHERE session_id = ? AND active = 1 ORDER BY id DESC LIMIT ?",
                 (sid, fetch),
             ).fetchall()
             rows = list(reversed(rows))
@@ -1045,8 +1107,9 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
 
                 asked = asked_from_tool_row(row["content"])
                 if asked:
-                    messages.append({"id": row["id"], "role": "assistant", "content": "", "timestamp": row["timestamp"],
-                                     "tools": [], "attachments": [], "asked": asked})
+                    messages.append(
+                        {"id": row["id"], "role": "assistant", "content": "", "timestamp": row["timestamp"], "tools": [], "attachments": [], "asked": asked}
+                    )
                 continue
             content = ""
             attachments: list[dict[str, Any]] = []

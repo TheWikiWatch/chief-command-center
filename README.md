@@ -29,11 +29,12 @@ One Windows app that gives you a chief of staff: a [Hermes](https://github.com/N
 
 ## Develop
 
-Requirements: Windows 11, Node 22+, Python 3.11+ (3.14 for building the Hermes payload), Git.
+Requirements: Windows 11, Node 22+, Python 3.13+ (3.14 for building the Hermes payload), Git.
 
 ```powershell
-npm --prefix apps/web ci
-npm run check          # web typecheck + tests, Python tests, privacy scan
+npm ci; npm --prefix apps/web ci; npm --prefix apps/desktop ci
+python -m pip install -r requirements-dev.txt
+npm run check          # web and desktop typecheck + tests, Python lint (Ruff, pyright) + tests, privacy scan
 npm --prefix apps/web run dev   # http://127.0.0.1:3100
 ```
 

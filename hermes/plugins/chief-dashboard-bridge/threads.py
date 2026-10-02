@@ -9,6 +9,7 @@ Memory, skills and the Second Brain belong to the profile, so every thread share
 The list (titles, archived or not) is `command_center_threads.json` in the chief's profile. A thread's title is
 the owner's, else the title Hermes gave its latest session.
 """
+
 from __future__ import annotations
 
 import json
@@ -77,8 +78,8 @@ def thread_of(chat: str) -> str:
     """The thread a chat id belongs to (an unknown chat is the main thread)."""
     owner = identity.owner_id()
     prefix = f"{owner}."
-    if chat and chat.startswith(prefix) and _ID.match(chat[len(prefix):]):
-        return chat[len(prefix):]
+    if chat and chat.startswith(prefix) and _ID.match(chat[len(prefix) :]):
+        return chat[len(prefix) :]
     return MAIN
 
 
@@ -99,7 +100,9 @@ def _sessions(key: str) -> list[dict[str, Any]]:
         try:
             rows = conn.execute(
                 "SELECT id, title, started_at, ended_at, last_activity_at, message_count FROM sessions "
-                "WHERE session_key = ? ORDER BY COALESCE(last_activity_at, started_at) DESC", (key,)).fetchall()
+                "WHERE session_key = ? ORDER BY COALESCE(last_activity_at, started_at) DESC",
+                (key,),
+            ).fetchall()
         finally:
             conn.close()
         return [dict(r) for r in rows]
@@ -111,9 +114,17 @@ def _sessions(key: str) -> list[dict[str, Any]]:
 def previous_sessions(thread: str) -> list[dict[str, Any]]:
     """The thread's earlier conversations (before its fresh starts), newest first."""
     rows = _sessions(session_key(thread))[1:]
-    return [{"id": r["id"], "title": str(r.get("title") or ""), "started": float(r.get("started_at") or 0),
-             "ended": float(r.get("last_activity_at") or r.get("ended_at") or 0), "messages": int(r.get("message_count") or 0)}
-            for r in rows if int(r.get("message_count") or 0) > 0]
+    return [
+        {
+            "id": r["id"],
+            "title": str(r.get("title") or ""),
+            "started": float(r.get("started_at") or 0),
+            "ended": float(r.get("last_activity_at") or r.get("ended_at") or 0),
+            "messages": int(r.get("message_count") or 0),
+        }
+        for r in rows
+        if int(r.get("message_count") or 0) > 0
+    ]
 
 
 def describe(thread: str, entry: dict[str, Any] | None = None, *, busy=None, question=None, approval=None) -> dict[str, Any]:

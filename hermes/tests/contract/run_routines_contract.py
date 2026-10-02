@@ -5,6 +5,7 @@
 
 Throwaway home only. Exit 0 = the contract holds.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -83,9 +84,14 @@ check("a time is needed", "time" in raises(lambda: routines.schedule_expr({"kind
 thread = threads.create("Research")["thread"]["id"]
 mine = routines.create("chief", "Morning brief", "Summarize what's due today.", {"kind": "weekdays", "time": "07:30"})["routine"]
 check("the chief's routine is created", mine["profile"] == "chief" and mine["schedule"]["text"] == "Weekdays at 07:30" and mine["thread"] == "main", mine)
-sams = routines.create("research-desk", "Source sweep", "Look for new papers on solar storage.", {"kind": "weekly", "time": "09:00", "days": [1]}, thread)["routine"]
-check("a bot's routine lives in its own store and reports to the chosen thread", sams["profile"] == "research-desk" and sams["bot"] == "Sam" and sams["thread"] == thread
-      and (bot / "cron" / "jobs.json").is_file(), sams)
+sams = routines.create("research-desk", "Source sweep", "Look for new papers on solar storage.", {"kind": "weekly", "time": "09:00", "days": [1]}, thread)[
+    "routine"
+]
+check(
+    "a bot's routine lives in its own store and reports to the chosen thread",
+    sams["profile"] == "research-desk" and sams["bot"] == "Sam" and sams["thread"] == thread and (bot / "cron" / "jobs.json").is_file(),
+    sams,
+)
 from cron import jobs as cron_jobs
 
 with cron_jobs.use_cron_store(bot):
@@ -100,18 +106,31 @@ out_dir.mkdir(parents=True, exist_ok=True)
 outbox = load("outbox")
 check("a new run is relayed once, a silent one isn't", routines.relay() == 1 and routines.relay() == 0)
 row = [r for r in outbox.read_outbox(limit=1000) if "Three new papers" in r.get("message", "")]
-check("into the chosen thread, labelled with the bot", len(row) == 1 and row[0]["chat_id"] == threads.chat_id(thread) and "(Sam)" in row[0]["message"]
-      and row[0]["source"] == "cron", row)
+check(
+    "into the chosen thread, labelled with the bot",
+    len(row) == 1 and row[0]["chat_id"] == threads.chat_id(thread) and "(Sam)" in row[0]["message"] and row[0]["source"] == "cron",
+    row,
+)
 listed = routines.list_routines()
-check("the list has both, with who runs them", {(r["profile"], r["name"]) for r in listed["routines"]} >= {("chief", "Morning brief"), ("research-desk", "Source sweep")}
-      and {b["id"] for b in listed["bots"]} == {"chief", "research-desk"}, listed)
+check(
+    "the list has both, with who runs them",
+    {(r["profile"], r["name"]) for r in listed["routines"]} >= {("chief", "Morning brief"), ("research-desk", "Source sweep")}
+    and {b["id"] for b in listed["bots"]} == {"chief", "research-desk"},
+    listed,
+)
 check("an unknown bot is refused", raises(lambda: routines.create("nobody", "x", "y", {"kind": "daily", "time": "08:00"})) != "")
 check("an unknown thread is refused", raises(lambda: routines.create("chief", "x", "y", {"kind": "daily", "time": "08:00"}, "t-ffffffff")) != "")
 check("a name of the app's own is refused", raises(lambda: routines.create("chief", "Fleet: mine", "y", {"kind": "daily", "time": "08:00"})) != "")
 
 # Edit, pause, run, delete
-edited = routines.update("research-desk", sams["id"], prompt="Look for new papers on grid batteries.", schedule={"kind": "daily", "time": "06:45"}, thread="main")["routine"]
-check("a routine can be rewritten, retimed and moved", edited["prompt"].endswith("grid batteries.") and edited["schedule"]["text"] == "Every day at 06:45" and edited["thread"] == "main", edited)
+edited = routines.update(
+    "research-desk", sams["id"], prompt="Look for new papers on grid batteries.", schedule={"kind": "daily", "time": "06:45"}, thread="main"
+)["routine"]
+check(
+    "a routine can be rewritten, retimed and moved",
+    edited["prompt"].endswith("grid batteries.") and edited["schedule"]["text"] == "Every day at 06:45" and edited["thread"] == "main",
+    edited,
+)
 off = routines.update("research-desk", sams["id"], enabled=False)["routine"]
 check("switched off", off["enabled"] is False)
 ran = routines.run_now("research-desk", sams["id"])["routine"]
@@ -125,7 +144,11 @@ with cron_jobs.use_cron_store(home):
 check("a built-in routine is marked", next(r for r in routines.list_routines()["routines"] if r["id"] == built["id"])["builtIn"] is True)
 check("a built-in can't be deleted", "switched off" in raises(lambda: routines.delete("chief", built["id"])))
 kept = routines.update("chief", built["id"], prompt="something else", name="Mine now", schedule={"kind": "daily", "time": "21:30"})["routine"]
-check("a built-in keeps its words but can be retimed", kept["prompt"] == "Run the nightly tidy." and kept["name"] == "Second Brain: nightly" and kept["schedule"]["time"] == "21:30", kept)
+check(
+    "a built-in keeps its words but can be retimed",
+    kept["prompt"] == "Run the nightly tidy." and kept["name"] == "Second Brain: nightly" and kept["schedule"]["time"] == "21:30",
+    kept,
+)
 
 print(json.dumps({"failures": failures}))
 sys.exit(1 if failures else 0)

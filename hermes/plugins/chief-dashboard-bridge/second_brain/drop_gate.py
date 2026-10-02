@@ -4,6 +4,7 @@ Hermes runs this before the routine (`script` on the cron job) from the Second B
 nothing to file, it prints `{"wakeAgent": false}` and the model is never called. Otherwise it lists what is
 waiting, which Hermes adds to the routine's prompt. Standard library only.
 """
+
 import json
 import os
 import sys
@@ -13,8 +14,7 @@ IGNORE = {"readme.md", "desktop.ini", "thumbs.db"}
 
 
 def waiting(folder: Path) -> list[Path]:
-    return sorted((p for p in folder.iterdir() if p.is_file() and not p.name.startswith(".") and p.name.lower() not in IGNORE),
-                  key=lambda p: p.stat().st_mtime)
+    return sorted((p for p in folder.iterdir() if p.is_file() and not p.name.startswith(".") and p.name.lower() not in IGNORE), key=lambda p: p.stat().st_mtime)
 
 
 def main() -> int:

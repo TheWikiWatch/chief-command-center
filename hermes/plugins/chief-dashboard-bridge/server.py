@@ -202,6 +202,7 @@ class BridgeServer:
         self.command_center_adapter = adapter
         try:
             from . import adapter as cc_mod
+
             # keep module-level ref warm if handler fires after connect
             if adapter is not None:
                 cc_mod._set_adapter(adapter)
@@ -237,9 +238,19 @@ class BridgeServer:
         bind["sessionKey"] = threads.session_key(thread)
         return bind, threads.chat_id(thread)
 
-    def live_transcript(self, after: int, wait: float = 0, gen: str = "", approval: str = "", before: int = 0,
-                        clarify: str | None = None, notice: str | None = None, notice_since: float = 0.0,
-                        thread: str = threads.MAIN, session: str = "") -> dict[str, Any]:
+    def live_transcript(
+        self,
+        after: int,
+        wait: float = 0,
+        gen: str = "",
+        approval: str = "",
+        before: int = 0,
+        clarify: str | None = None,
+        notice: str | None = None,
+        notice_since: float = 0.0,
+        thread: str = threads.MAIN,
+        session: str = "",
+    ) -> dict[str, Any]:
         """The transcript with the chief's state: generating, the pending approval, its open question
         (`clarify`), notices that aren't replies, and the current step (`activity`). With `wait` (seconds)
         and `after`, hold until a row lands after it or generating, the approval, the question or the
@@ -726,6 +737,7 @@ class BridgeServer:
 
     def outbox(self, after_id: str = "", limit: int = 50) -> dict[str, Any]:
         from . import adapter as cc_mod
+
         rows = cc_mod.read_outbox(after_id=after_id, limit=limit)
         return {"ok": True, "items": rows, "path": str(cc_mod._outbox_path())}
 
@@ -756,7 +768,14 @@ def _guarded(fn) -> dict[str, Any]:
     """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
     try:
         return fn()
-    except (persona.PersonaError, second_brain.SecondBrainError, speech_model.SpeechModelError, fleet.FleetError, threads.ThreadError, routines.RoutineError) as exc:
+    except (
+        persona.PersonaError,
+        second_brain.SecondBrainError,
+        speech_model.SpeechModelError,
+        fleet.FleetError,
+        threads.ThreadError,
+        routines.RoutineError,
+    ) as exc:
         return {"ok": False, "error": str(exc)}
     except Exception as exc:  # the adapter maps expected failures itself
         logger.warning("bridge action failed: %s", type(exc).__name__)

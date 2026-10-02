@@ -456,18 +456,14 @@ def _collect_secrets(
     if stt_key:
         target = str(stt_body.get("provider") or stt_now).strip()
         row = _row_by_id(stt_rows, target)
-        env_key = str((row or {}).get("env_key") or "") or (
-            "ELEVENLABS_API_KEY" if target == "elevenlabs" else ""
-        )
+        env_key = str((row or {}).get("env_key") or "") or ("ELEVENLABS_API_KEY" if target == "elevenlabs" else "")
         if env_key:
             out[env_key] = stt_key
     tts_key = str(tts_body.get("api_key") or "").strip()
     if tts_key:
         target = str(tts_body.get("provider") or tts_now).strip()
         row = _row_by_id(tts_rows, target)
-        env_key = str((row or {}).get("env_key") or "") or (
-            "ELEVENLABS_API_KEY" if target == "elevenlabs" else ""
-        )
+        env_key = str((row or {}).get("env_key") or "") or ("ELEVENLABS_API_KEY" if target == "elevenlabs" else "")
         if env_key:
             out[env_key] = tts_key
     return out

@@ -105,13 +105,7 @@ def _voice_config_inner() -> dict[str, Any]:
         stt_provider = _get_provider(stt_cfg)
         nested = stt_cfg.get(stt_provider) if isinstance(stt_cfg.get(stt_provider), dict) else {}
         local = subdict(stt_cfg, "local")
-        stt_model = str(
-            (nested or {}).get("model")
-            or (nested or {}).get("model_id")
-            or (local or {}).get("model")
-            or stt_cfg.get("model")
-            or ""
-        )
+        stt_model = str((nested or {}).get("model") or (nested or {}).get("model_id") or (local or {}).get("model") or stt_cfg.get("model") or "")
     except Exception:
         logger.debug("voice-config stt probe failed", exc_info=True)
     try:
@@ -177,14 +171,11 @@ def transcribe(body: dict[str, Any]) -> dict[str, Any]:
         return {"ok": False, "error": "Audio recording is too large"}
 
     if _local_model_missing():
-        return {"ok": False, "code": "model_missing",
-                "error": "Voice typing needs its speech model. Download it in Settings, then Voice (Check my system)."}
+        return {"ok": False, "code": "model_missing", "error": "Voice typing needs its speech model. Download it in Settings, then Voice (Check my system)."}
 
     temp_path = ""
     try:
-        with tempfile.NamedTemporaryFile(
-            prefix="chief-dashboard-voice-", suffix=_ext_for_mime(mime_type), delete=False
-        ) as tmp:
+        with tempfile.NamedTemporaryFile(prefix="chief-dashboard-voice-", suffix=_ext_for_mime(mime_type), delete=False) as tmp:
             tmp.write(audio_bytes)
             temp_path = tmp.name
         from tools.voice_mode import transcribe_recording

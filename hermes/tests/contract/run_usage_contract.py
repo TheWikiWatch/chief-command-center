@@ -7,6 +7,7 @@ The dashboard's model picker switches a live conversation without starting a new
 `sessions` row on the model the session started with and records every call in `session_model_usage` under the
 model that call really used; usage.py relies on both. Throwaway home only. Exit 0 = the contract holds.
 """
+
 from __future__ import annotations
 
 import importlib.util
@@ -56,37 +57,40 @@ db = SessionDB(home / "state.db")
 db.create_session("switch", "command_center", model="deepseek-flash")
 # Two calls on the first model, then the picker switches the same conversation to another provider.
 for _ in range(2):
-    db.update_token_counts("switch", input_tokens=1000, output_tokens=100, model="deepseek-flash",
-                           billing_provider="deepseek", estimated_cost_usd=0.001, api_call_count=1)
-db.update_token_counts("switch", input_tokens=500, output_tokens=50, model="glm-5.3-flash",
-                       billing_provider="zai", estimated_cost_usd=0.004, api_call_count=1)
+    db.update_token_counts(
+        "switch", input_tokens=1000, output_tokens=100, model="deepseek-flash", billing_provider="deepseek", estimated_cost_usd=0.001, api_call_count=1
+    )
+db.update_token_counts("switch", input_tokens=500, output_tokens=50, model="glm-5.3-flash", billing_provider="zai", estimated_cost_usd=0.004, api_call_count=1)
 db.close()
 
 conn = sqlite3.connect(home / "state.db")
 row = conn.execute("SELECT model, input_tokens, api_call_count FROM sessions WHERE id='switch'").fetchone()
 check("sessions keeps the starting model (why usage.py can't bucket by it)", row and row[0] == "deepseek-flash", row)
 check("sessions holds the lifetime totals", row and row[1] == 2500 and row[2] == 3, row)
-ledger = {(m, p): (i, c) for m, p, i, c in conn.execute(
-    "SELECT model, billing_provider, input_tokens, api_call_count FROM session_model_usage "
-    "WHERE session_id='switch' AND task=''")}
+ledger = {
+    (m, p): (i, c)
+    for m, p, i, c in conn.execute(
+        "SELECT model, billing_provider, input_tokens, api_call_count FROM session_model_usage WHERE session_id='switch' AND task=''"
+    )
+}
 conn.close()
-check("the ledger splits the conversation by model and provider",
-      ledger == {("deepseek-flash", "deepseek"): (2000, 2), ("glm-5.3-flash", "zai"): (500, 1)}, ledger)
+check(
+    "the ledger splits the conversation by model and provider",
+    ledger == {("deepseek-flash", "deepseek"): (2000, 2), ("glm-5.3-flash", "zai"): (500, 1)},
+    ledger,
+)
 
 summary = usage.summary("today")
 models = {(m["model"], m["provider"]): m for m in summary["models"]}
 check("usage shows both models", set(models) == {("deepseek-flash", "deepseek"), ("glm-5.3-flash", "zai")}, list(models))
 glm = models.get(("glm-5.3-flash", "zai")) or {}
-check("the new model carries its own spend", glm.get("input") == 500 and glm.get("calls") == 1
-      and abs(glm.get("cost", 0) - 0.004) < 1e-9, glm)
+check("the new model carries its own spend", glm.get("input") == 500 and glm.get("calls") == 1 and abs(glm.get("cost", 0) - 0.004) < 1e-9, glm)
 check("Hermes names the provider", glm.get("providerName") not in (None, "", "zai"), glm.get("providerName"))
-check("totals are not counted twice", summary["totals"]["input"] == 2500 and summary["totals"]["sessions"] == 1,
-      summary["totals"])
+check("totals are not counted twice", summary["totals"]["input"] == 2500 and summary["totals"]["sessions"] == 1, summary["totals"])
 
 # The journal: a later call in the same long conversation adds only itself, once.
 db = SessionDB(home / "state.db")
-db.update_token_counts("switch", input_tokens=300, output_tokens=30, model="glm-5.3-flash",
-                       billing_provider="zai", estimated_cost_usd=0.002, api_call_count=1)
+db.update_token_counts("switch", input_tokens=300, output_tokens=30, model="glm-5.3-flash", billing_provider="zai", estimated_cost_usd=0.002, api_call_count=1)
 db.close()
 # Reads sync at most every 15 s; an explicit `now` (as the budget check passes) always syncs.
 from datetime import datetime

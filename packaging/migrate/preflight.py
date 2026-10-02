@@ -14,6 +14,7 @@ It covers:
 - Absolute paths in config, routines and skills that must keep working in place.
 - Whether the live gateway answers.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -29,7 +30,21 @@ from pathlib import Path
 
 APP_PLUGINS = {"chief-dashboard-bridge", "command-center", "voicestudio-tts"}
 PORTS = {3000: "dashboard", 7790: "chief bridge", 8790: "Ops API", 3900: "VoiceStudio"}
-SKIP_SIZE = {"cache", "image_cache", "audio_cache", "logs", "models", "node_modules", "__pycache__", "hermes-agent", "tools", "venv", "pm-runtime", "uv-cache", "crash-dumps"}
+SKIP_SIZE = {
+    "cache",
+    "image_cache",
+    "audio_cache",
+    "logs",
+    "models",
+    "node_modules",
+    "__pycache__",
+    "hermes-agent",
+    "tools",
+    "venv",
+    "pm-runtime",
+    "uv-cache",
+    "crash-dumps",
+}
 
 
 def size_of(path: Path, skip: set[str] = SKIP_SIZE) -> int:
@@ -118,8 +133,14 @@ def main() -> int:
     startup = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
     vbs = sorted(p.name for p in startup.glob("*") if re.search(r"hermes|chief|fleet|gateway", p.name, re.I)) if startup.is_dir() else []
     out += [f"- Startup items: {', '.join(f'`{v}`' for v in vbs) or 'none'}."]
-    procs = run(["powershell", "-NoProfile", "-Command",
-                 "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.ExecutablePath } | Select-Object ProcessId, ExecutablePath, CommandLine | ConvertTo-Json -Compress"])
+    procs = run(
+        [
+            "powershell",
+            "-NoProfile",
+            "-Command",
+            "Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.ExecutablePath } | Select-Object ProcessId, ExecutablePath, CommandLine | ConvertTo-Json -Compress",
+        ]
+    )
     try:
         rows = json.loads(procs) if procs.strip() else []
         rows = rows if isinstance(rows, list) else [rows]
@@ -174,13 +195,16 @@ def main() -> int:
             if m and m.group(1) in {"HERMES_BIN", "OBSIDIAN_VAULT_PATH", "WIKI_PATH", "CHIEF_DASHBOARD_PORT", "COMMAND_CENTER_HOME_CHANNEL"}:
                 env_keys.append(f"{env_file.parent.name}: {m.group(1)}")
     out += ["", f"{hits} path line(s) found. Path-type settings in profile .env files (names only): {', '.join(env_keys) or 'none'}.", ""]
-    out += ["## What migration would change (not done by this preflight)", "",
-            "1. A full backup (Settings → Backup & restore engine), to a folder you choose.",
-            "2. With your consent: disable the gateway guard task and the Startup launcher (both restorable).",
-            "3. Move the app-owned plugin copies listed above into the backup; the bundled versions take over.",
-            "4. `HERMES_BIN` → the app's payload launcher; the bridge token → DPAPI (same value, so phones stay authorized).",
-            "5. The app supervises Chief with `sharedGatewayLock` and `hermesRoot` pointing here; ports unchanged.",
-            "6. Verify, with a journal to replay backwards for rollback."]
+    out += [
+        "## What migration would change (not done by this preflight)",
+        "",
+        "1. A full backup (Settings → Backup & restore engine), to a folder you choose.",
+        "2. With your consent: disable the gateway guard task and the Startup launcher (both restorable).",
+        "3. Move the app-owned plugin copies listed above into the backup; the bundled versions take over.",
+        "4. `HERMES_BIN` → the app's payload launcher; the bridge token → DPAPI (same value, so phones stay authorized).",
+        "5. The app supervises Chief with `sharedGatewayLock` and `hermesRoot` pointing here; ports unchanged.",
+        "6. Verify, with a journal to replay backwards for rollback.",
+    ]
     report.write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"report: {report}")
     return 0

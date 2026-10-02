@@ -10,6 +10,7 @@
    over from the current setup when they exist, and any other old absolute paths are listed for review.
 4. `finish` (after Chief starts healthy) removes the old folders; `rollback` puts them back.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -104,7 +105,7 @@ def _staging_for(target: Path) -> Path:
 def _safe_rel(arc: str, prefix: str) -> PurePosixPath | None:
     if not arc.startswith(prefix + "/"):
         return None
-    rel = PurePosixPath(arc[len(prefix) + 1:])
+    rel = PurePosixPath(arc[len(prefix) + 1 :])
     if not rel.parts or rel.is_absolute() or any(p in ("..", "") or ":" in p for p in rel.parts):
         raise RestoreError("The backup contains an unsafe path and was not restored.")
     return rel
@@ -179,9 +180,17 @@ def stage(
                     if digest.hexdigest() != expected[arc]["sha256"]:
                         raise RestoreError(f"{arc} didn't match its checksum; nothing was changed.")
         state_dir.mkdir(parents=True, exist_ok=True)
-        journal = {"state": "staged", "staged_at": time.time(), "parts": parts, "live_root": str(hermes_root) if hermes_root else "", "manifest": {k: v for k, v in manifest.items() if k != "files"},
-                   "targets": {k: str(v) for k, v in targets.items()}, "staged": staged,
-                   "current_second_brain": str(current_second_brain) if current_second_brain else "", "steps": []}
+        journal = {
+            "state": "staged",
+            "staged_at": time.time(),
+            "parts": parts,
+            "live_root": str(hermes_root) if hermes_root else "",
+            "manifest": {k: v for k, v in manifest.items() if k != "files"},
+            "targets": {k: str(v) for k, v in targets.items()},
+            "staged": staged,
+            "current_second_brain": str(current_second_brain) if current_second_brain else "",
+            "steps": [],
+        }
         _write_journal(state_dir, journal)
         return {"ok": True, "parts": parts, "targets": journal["targets"], "files": len(expected)}
     except BaseException:
@@ -229,10 +238,10 @@ def _under(value: str, root: str) -> bool:
 
 def _swap_prefix(value: str, old: str, new: str) -> str:
     v = os.path.normpath(value)
-    return new + v[len(os.path.normpath(old)):]
+    return new + v[len(os.path.normpath(old)) :]
 
 
-_ENV_VALUE = re.compile(r'^(\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)(.*?)\s*$')
+_ENV_VALUE = re.compile(r"^(\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*)(.*?)\s*$")
 
 
 def _env_read(text: str) -> dict[str, str]:
@@ -298,8 +307,14 @@ def pid_alive(pid: int) -> bool:
         return False
 
 
-def apply(state_dir: Path, *, safety_dir: Path, app_version: str = "0.0.0", is_alive: Callable[[int], bool] = pid_alive,
-          hooks: dict[str, Callable[[], None]] | None = None) -> dict:
+def apply(
+    state_dir: Path,
+    *,
+    safety_dir: Path,
+    app_version: str = "0.0.0",
+    is_alive: Callable[[int], bool] = pid_alive,
+    hooks: dict[str, Callable[[], None]] | None = None,
+) -> dict:
     journal = _read_journal(state_dir)
     if not journal or journal.get("state") != "staged":
         raise RestoreError("There is no staged restore to apply.")
@@ -320,9 +335,16 @@ def apply(state_dir: Path, *, safety_dir: Path, app_version: str = "0.0.0", is_a
         safety_parts.append("second-brain")
     safety = None
     if safety_parts:
-        safety = archive.create(safety_dir, parts=safety_parts, hermes_root=hermes_root, app_dir=targets.get("app"),
-                                second_brain=brain_target if replacing_brain else None, kind="safety",
-                                app_version=app_version, secrets_plain=True)
+        safety = archive.create(
+            safety_dir,
+            parts=safety_parts,
+            hermes_root=hermes_root,
+            app_dir=targets.get("app"),
+            second_brain=brain_target if replacing_brain else None,
+            kind="safety",
+            app_version=app_version,
+            secrets_plain=True,
+        )
     journal["safety_backup"] = safety["path"] if safety else ""
 
     # 2. The swap, journaled step by step.
@@ -428,7 +450,7 @@ def _remap(journal: dict, manifest: dict) -> dict:
             if changed:
                 env_file.write_text(text, encoding="utf-8")
             final_values = _env_read(text)
-            for name in (manifest.get("dropped_secrets", []) if setup_restored else []):
+            for name in manifest.get("dropped_secrets", []) if setup_restored else []:
                 if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) and name not in final_values and name not in missing:
                     missing.append(name)
         # Second Brain record and skill.

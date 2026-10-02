@@ -1,0 +1,6 @@
+# Python tools for `npm run check` (the bridge, the backup engine and the packaging scripts).
+# Install with: python -m pip install -r requirements-dev.txt
+pyyaml
+cryptography
+requests
+ruff==0.14.14

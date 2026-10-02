@@ -1,4 +1,5 @@
 """Isolated bridge contracts. No Hermes process, real credentials or external writes."""
+
 import base64
 import importlib
 import json
@@ -128,11 +129,14 @@ class BridgeTests(unittest.TestCase):
         # The morning brief is mirrored into the session (attach_to_session) so Chief knows its questions;
         # the chat shows it once, as a notice, never as the owner's own message.
         with self.database() as conn:
-            conn.executemany("INSERT INTO messages VALUES (?, ?, ?, '1', NULL, 's', 1)", [
-                (2, "user", "[Cron delivery: Second Brain: morning brief]\n# Morning brief\n1. Pick a date?"),
-                (3, "user", "1. Friday"),
-                (4, "assistant", "Filed: Friday."),
-            ])
+            conn.executemany(
+                "INSERT INTO messages VALUES (?, ?, ?, '1', NULL, 's', 1)",
+                [
+                    (2, "user", "[Cron delivery: Second Brain: morning brief]\n# Morning brief\n1. Pick a date?"),
+                    (3, "user", "1. Friday"),
+                    (4, "assistant", "Filed: Friday."),
+                ],
+            )
         page = data.transcript("session", after_id=1)
         self.assertEqual([m["id"] for m in page["messages"]], [3, 4])
         self.assertEqual(page["lastId"], 4)
@@ -142,17 +146,26 @@ class BridgeTests(unittest.TestCase):
         # at the marker's time (assistant) or their old time (user). 9 is a genuinely new reply.
         db = self.database()
         with db as conn:
-            conn.executemany("INSERT INTO messages VALUES (?, ?, ?, ?, NULL, 's', 0)", [
-                (2, "user", "status?", "100.0"), (3, "assistant", "all green", "101.0"), (4, "assistant", "next up", "102.0"),
-            ])
-            conn.executemany("INSERT INTO messages VALUES (?, ?, ?, ?, NULL, 's', 1)", [
-                (5, "user", "[CONTEXT COMPACTION] summary", "500.0"),
-                (6, "user", "status?", "100.0"), (7, "assistant", "all green", "500.0"), (8, "assistant", "next up", "500.0"),
-                (9, "assistant", "fresh reply", "503.5"),
-            ])
+            conn.executemany(
+                "INSERT INTO messages VALUES (?, ?, ?, ?, NULL, 's', 0)",
+                [
+                    (2, "user", "status?", "100.0"),
+                    (3, "assistant", "all green", "101.0"),
+                    (4, "assistant", "next up", "102.0"),
+                ],
+            )
+            conn.executemany(
+                "INSERT INTO messages VALUES (?, ?, ?, ?, NULL, 's', 1)",
+                [
+                    (5, "user", "[CONTEXT COMPACTION] summary", "500.0"),
+                    (6, "user", "status?", "100.0"),
+                    (7, "assistant", "all green", "500.0"),
+                    (8, "assistant", "next up", "500.0"),
+                    (9, "assistant", "fresh reply", "503.5"),
+                ],
+            )
         page = data.transcript("session", after_id=4)
-        self.assertEqual([(m["id"], bool(m.get("replay"))) for m in page["messages"]],
-                         [(5, False), (6, True), (7, True), (8, True), (9, False)])
+        self.assertEqual([(m["id"], bool(m.get("replay"))) for m in page["messages"]], [(5, False), (6, True), (7, True), (8, True), (9, False)])
         # A reader that joins after the compaction pages past the block and sees nothing flagged.
         self.assertEqual([m.get("replay") for m in data.transcript("session", after_id=8)["messages"]], [None])
         # Right after a compaction, before any new row, the whole tail is still a replay.
@@ -194,8 +207,14 @@ class BridgeTests(unittest.TestCase):
 
     def test_hermes_logs_sessions_and_config_are_never_served(self):
         root = self.home / "hermes-root"
-        for rel in ("logs/gateway.log", "sessions/sessions.json", "memories/MEMORY.md", "profiles/chief/config.yaml",
-                    "profiles/chief/logs/agent.png", "image_cache/shot.png"):
+        for rel in (
+            "logs/gateway.log",
+            "sessions/sessions.json",
+            "memories/MEMORY.md",
+            "profiles/chief/config.yaml",
+            "profiles/chief/logs/agent.png",
+            "image_cache/shot.png",
+        ):
             (root / rel).parent.mkdir(parents=True, exist_ok=True)
             (root / rel).write_bytes(b"synthetic")
         with patch.object(data, "install_root", return_value=root), patch.object(data, "_allow_roots", return_value=[root]):
@@ -327,7 +346,11 @@ class BridgeTests(unittest.TestCase):
     def test_platform_fallback_and_attachment(self):
         env = {"COMMAND_CENTER_ENABLED": "1"}
         discord_keys = ["agent:main:discord:group:1546:owner"]
-        with patch.object(data, "_allowed_user_id", return_value="owner"), patch.object(data, "_session_keys_from_db", return_value=discord_keys), patch.dict(os.environ, env):
+        with (
+            patch.object(data, "_allowed_user_id", return_value="owner"),
+            patch.object(data, "_session_keys_from_db", return_value=discord_keys),
+            patch.dict(os.environ, env),
+        ):
             bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
             bound = bridge.binding()
             self.assertEqual(bound["platform"], "command_center")
@@ -340,7 +363,11 @@ class BridgeTests(unittest.TestCase):
             self.assertFalse(pending["bound"])
 
     def test_discord_fallback_only_when_command_center_disabled(self):
-        with patch.object(data, "_allowed_user_id", return_value="owner"), patch.object(data, "_session_keys_from_db", return_value=["agent:main:discord:dm:owner"]), patch.dict(os.environ, {"COMMAND_CENTER_ENABLED": "0"}):
+        with (
+            patch.object(data, "_allowed_user_id", return_value="owner"),
+            patch.object(data, "_session_keys_from_db", return_value=["agent:main:discord:dm:owner"]),
+            patch.dict(os.environ, {"COMMAND_CENTER_ENABLED": "0"}),
+        ):
             bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
             self.assertEqual(bridge.binding()["platform"], "discord")
 
@@ -348,10 +375,12 @@ class BridgeTests(unittest.TestCase):
         note = b"hello from the file"
         payload = "data:text/plain;base64," + base64.b64encode(note).decode("ascii")
         image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("ascii")
-        staged = data.stage_uploads([
-            {"name": "notes.txt", "mime": "text/plain", "data_url": payload},
-            {"name": "shot.png", "mime": "image/png", "data_url": image},
-        ])
+        staged = data.stage_uploads(
+            [
+                {"name": "notes.txt", "mime": "text/plain", "data_url": payload},
+                {"name": "shot.png", "mime": "image/png", "data_url": image},
+            ]
+        )
         self.assertEqual(staged[0]["inline"], "hello from the file")
         self.assertFalse(staged[1]["inline"])
         self.assertTrue(Path(staged[0]["path"]).is_file())
@@ -361,10 +390,7 @@ class BridgeTests(unittest.TestCase):
         self.assertEqual(composed["message_type"], "document")
         self.assertTrue(composed["media"][0]["inlined"])
         visible, attachments = data.parse_message_content(
-            "[The user sent a document: 'notes.txt'. It is saved at: "
-            + staged[0]["path"]
-            + "]\n\n"
-            + composed["text"]
+            "[The user sent a document: 'notes.txt'. It is saved at: " + staged[0]["path"] + "]\n\n" + composed["text"]
         )
         visible = data.strip_agent_attachment_notes(visible)
         self.assertEqual(visible, "look")
@@ -386,11 +412,16 @@ class BridgeTests(unittest.TestCase):
                 inject=lambda *_: False,
             )
             bridge.command_center_adapter = Adapter()
-            with patch.object(data, "resolve_session_key", return_value={"sessionKey": "agent:main:command_center:dm:owner", "platform": "command_center", "kind": "dm"}):
-                result = bridge.send("look", [
-                    {"name": "notes.txt", "mime": "text/plain", "data_url": payload},
-                    {"name": "shot.png", "mime": "image/png", "data_url": image},
-                ])
+            with patch.object(
+                data, "resolve_session_key", return_value={"sessionKey": "agent:main:command_center:dm:owner", "platform": "command_center", "kind": "dm"}
+            ):
+                result = bridge.send(
+                    "look",
+                    [
+                        {"name": "notes.txt", "mime": "text/plain", "data_url": payload},
+                        {"name": "shot.png", "mime": "image/png", "data_url": image},
+                    ],
+                )
         self.assertTrue(result["ok"])
         self.assertEqual(seen["message_type"], "document")
         self.assertEqual(len(seen["media"]), 2)
@@ -475,6 +506,7 @@ class MediaHelperTests(unittest.TestCase):
 
     def test_thumb_generation_with_ffmpeg(self):
         import shutil
+
         if not shutil.which("ffmpeg"):
             self.skipTest("ffmpeg not on PATH")
         scratch = ROOT / "hermes/tests/.runtime"
@@ -482,9 +514,9 @@ class MediaHelperTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(dir=scratch) as tmp:
             src = Path(tmp) / "sample.mp4"
             gen = subprocess.run(
-                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-                 "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=10", str(src)],
-                capture_output=True, text=True,
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "testsrc=duration=1:size=320x240:rate=10", str(src)],
+                capture_output=True,
+                text=True,
             )
             if gen.returncode != 0 or not src.is_file():
                 self.skipTest("cannot synthesize sample video")
@@ -544,26 +576,34 @@ class PushTests(unittest.TestCase):
         from cryptography.hazmat.primitives.asymmetric import ec
         from cryptography.hazmat.primitives import serialization
         from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
         salt, idlen = body[:16], body[20]
-        sender_public = body[21:21 + idlen]
+        sender_public = body[21 : 21 + idlen]
         ua_public = key.public_key().public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
         shared = key.exchange(ec.ECDH(), ec.EllipticCurvePublicKey.from_encoded_point(ec.SECP256R1(), sender_public))
         ikm = webpush._hkdf_expand(webpush._hkdf_extract(auth, shared), b"WebPush: info\x00" + ua_public + sender_public, 32)
         prk = webpush._hkdf_extract(salt, ikm)
         cek = webpush._hkdf_expand(prk, b"Content-Encoding: aes128gcm\x00", 16)
         nonce = webpush._hkdf_expand(prk, b"Content-Encoding: nonce\x00", 12)
-        plain = AESGCM(cek).decrypt(nonce, body[21 + idlen:], None)
+        plain = AESGCM(cek).decrypt(nonce, body[21 + idlen :], None)
         self.assertEqual(plain[-1:], b"\x02")
         return plain[:-1]
 
     def test_rfc8291_example(self):
         from cryptography.hazmat.primitives.asymmetric import ec
+
         sender = ec.derive_private_key(int.from_bytes(webpush.b64url_decode("yfWPiYE-n46HLnH0KqZOF1fJJU3MYrct3AELtAQ-oRw"), "big"), ec.SECP256R1())
-        body = webpush.encrypt(b"When I grow up, I want to be a watermelon",
-                               "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
-                               "BTBZMqHH6r4Tts7J_aSIgg", salt=webpush.b64url_decode("DGv6ra1nlYgDCS1FRnbzlw"), sender_key=sender)
-        self.assertEqual(webpush.b64url_encode(body),
-                         "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN")
+        body = webpush.encrypt(
+            b"When I grow up, I want to be a watermelon",
+            "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4",
+            "BTBZMqHH6r4Tts7J_aSIgg",
+            salt=webpush.b64url_decode("DGv6ra1nlYgDCS1FRnbzlw"),
+            sender_key=sender,
+        )
+        self.assertEqual(
+            webpush.b64url_encode(body),
+            "DGv6ra1nlYgDCS1FRnbzlwAAEABBBP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A_yl95bQpu6cVPTpK4Mqgkf1CXztLVBSt2Ks3oZwbuwXPXLWyouBWLVWGNWQexSgSxsj_Qulcy4a-fN",
+        )
 
     def test_send_sets_ttl_timeout_topic_and_signs_per_push_service(self):
         with patch.dict(os.environ, {"CHIEF_PUSH_CONTACT": "mailto:owner@example.com"}):
@@ -622,6 +662,7 @@ class PushTests(unittest.TestCase):
 
     def test_enqueue_never_blocks_the_caller(self):
         import threading
+
         release = threading.Event()
         started = threading.Event()
 
@@ -834,7 +875,6 @@ class LivePathTests(unittest.TestCase):
         self.assertGreaterEqual(server._SEND_ID_TTL, 24 * 60 * 60)
 
 
-
 class BridgeLogFileTests(unittest.TestCase):
     def test_attaches_one_rotating_file_in_the_profile(self):
         plugin = importlib.import_module("test_bridge_plugin.__init__")
@@ -851,6 +891,7 @@ class BridgeLogFileTests(unittest.TestCase):
             finally:
                 plugin.logger.removeHandler(first)
                 first.close()
+
 
 if __name__ == "__main__":
     unittest.main()
