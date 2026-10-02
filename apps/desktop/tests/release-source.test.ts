@@ -122,8 +122,16 @@ describe("Updater with a GitHub source", () => {
   });
 });
 
-it("a GitHub source without a key says where to put one, and asks GitHub nothing", async () => {
-  const gh = fakeGithub({});
-  await expect(githubSource("me", "r", "", gh.impl).refresh()).rejects.toThrow(/needs an update key/);
-  expect(gh.calls).toHaveLength(0);
+it("a public release repository is read without a key, and no Authorization header is sent", async () => {
+  const gh = fakeGithub({ "release.json": Buffer.from("{}") });
+  const src = githubSource("me", "chief-releases", "", gh.impl);
+  await src.refresh();
+  expect((await src.read("release.json")).toString()).toBe("{}");
+  expect(gh.calls.length).toBeGreaterThan(0);
+  expect(gh.calls.every((c) => c.auth === null)).toBe(true);
+});
+
+it("without a key, a private or missing repository and the rate limit are explained", async () => {
+  await expect(githubSource("me", "r", "", fakeGithub({}, { status: 404 }).impl).refresh()).rejects.toThrow(/or is private \(then it needs an update key/);
+  await expect(githubSource("me", "r", "", fakeGithub({}, { status: 403 }).impl).refresh()).rejects.toThrow(/limit for checks without a key/);
 });

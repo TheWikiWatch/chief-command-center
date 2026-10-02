@@ -158,10 +158,10 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
   );
 }
 
-/** `github:owner/repo` or a github.com URL: a private release repository read with a key. */
+/** `github:owner/repo` or a github.com URL: a release repository (public, or private and read with a key). */
 export const isGithubFeed = (feed: string) => /^(github:|https:\/\/github\.com\/)[\w-]+\/[\w.-]+/.test(feed.trim());
 
-/** Settings → Updates: where updates come from (a release folder, or a private GitHub release repository and its key), and the card. */
+/** Settings → Updates: where updates come from (a release folder, or a GitHub release repository and, if it is private, its key), and the card. */
 export function UpdatesPanel() {
   const { api } = useUpdates();
   const [feed, setFeed] = useState("");
@@ -215,7 +215,7 @@ export function UpdatesPanel() {
       </div>
       {github && api.setKey ? (
         <div className="text-callout text-fg-2">
-          <label htmlFor="update-key">Update key</label>
+          <label htmlFor="update-key">Update key (only for a private release repository)</label>
           <div className="mt-1.5 flex gap-2">
             <input
               id="update-key"
@@ -224,7 +224,7 @@ export function UpdatesPanel() {
               value={key}
               onChange={(e) => setKey(e.target.value)}
               spellCheck={false}
-              placeholder={hasKey ? "A key is saved; paste a new one to replace it" : "Paste the key you were given"}
+              placeholder={hasKey ? "A key is saved; paste a new one to replace it" : "Not needed for a public release repository"}
               className={field({ mono: true, extra: "min-w-0 flex-1 py-2" })}
             />
             {key.trim() ? (
@@ -240,7 +240,7 @@ export function UpdatesPanel() {
             ) : null}
           </div>
           <p className="mt-1 text-caption text-fg-3">
-            {hasKey ? "Saved and protected by Windows for your account. " : ""}It only lets this app read new releases; ask whoever gave it to you when it expires.
+            {hasKey ? "Saved and protected by Windows for your account. " : ""}A key only lets this app read new releases from a private repository; a public one needs none.
           </p>
         </div>
       ) : null}

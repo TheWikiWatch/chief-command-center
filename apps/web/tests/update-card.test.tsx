@@ -105,7 +105,7 @@ it("a private GitHub release source asks for its key once, and keeps it sealed i
   expect(isGithubFeed("https://github.com/me/r")).toBe(true);
   expect(isGithubFeed("E:\Releases")).toBe(false);
   render(<UpdatesPanel />);
-  const field = (await screen.findByLabelText("Update key")) as HTMLInputElement;
+  const field = (await screen.findByLabelText(/^Update key/)) as HTMLInputElement;
   expect(field.type).toBe("password");
   fireEvent.change(field, { target: { value: " github_pat_abc " } });
   fireEvent.click(screen.getByRole("button", { name: "Save key" }));

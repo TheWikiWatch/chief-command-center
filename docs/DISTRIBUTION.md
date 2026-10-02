@@ -1,16 +1,18 @@
-# Distributing to a few testers (closed phase)
+# Distributing to testers
 
-The source repository stays private. Releases go to a **second private repository that holds only releases** (the
-signed manifest and the package; no code). Each tester gets their own **read-only key** for that one repository.
-The app checks it for updates, verifies every release against the pinned Ed25519 key, and installs only when the
-tester clicks Install.
+Releases go to a **second repository that holds only releases** (the signed manifest, the package and its bill of
+materials; no code). It is **public**: the app reads it without a key, verifies every release against the pinned
+Ed25519 key, and installs only when the tester clicks Install. Anyone can download a release, nobody can forge one:
+a release must verify against the release key, and Windows checks the package's signature (and still asks a new
+tester to trust the publisher certificate by hand).
 
-A leaked key can't push a fake update: a release must still verify against the release key, and Windows checks the
-package's signature. A key only lets someone download the releases.
+Until 0.1.21 the releases repository was private and each tester had a read-only key. Versions before 0.1.21
+still send that key, so keep the keys until everyone is on 0.1.21 or later; then they can be deleted. The app
+still accepts a key, for a private releases repository.
 
 ## Maintainer: once
 
-1. **The releases repository:** `<owner>/chief-command-center-releases`, private, with a README (GitHub needs one commit before it can hold releases).
+1. **The releases repository:** `<owner>/chief-command-center-releases`, public, with a README (GitHub needs one commit before it can hold releases).
 2. **The signing material** stays outside the repo:
    - the package certificate (`.pfx` and password), for the MSIX;
    - the Ed25519 release key, whose public half is pinned in `apps/desktop/src/release-key.ts`.
@@ -45,9 +47,9 @@ Testers' apps find it within a day (they check at launch and daily), or at once 
 `packaging/upstream/compat.py` on it, point `payloadDir` at it, and release. The app backs up testers' data before
 the new Hermes first starts. Step by step: `CLAUDE.md`, "Hermes updates".
 
-## Maintainer: a key for each tester
+## Maintainer: a key for each tester (only for a private releases repository)
 
-On GitHub: Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.
+Not needed while the releases repository is public. For a private one, on GitHub: Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.
 
 - **Name:** the tester's name, so you can tell keys apart.
 - **Expiration:** up to 366 days (GitHub's limit; there are no non-expiring fine-grained tokens).
@@ -58,9 +60,9 @@ Send the key privately. To cut someone off, delete their token; nobody else is a
 
 ## Maintainer: sharing with a new tester
 
-1. **The setup zip.** Every release also writes `<releasesDir>\Chief-Command-Center-setup-<version>.zip` (needs `testerCert` in `release.local.json`: the public `.cer`). To make one for an existing build: `npm run tester-kit` (newest) or `npm run tester-kit -- --version X.Y.Z`. It holds `Install Chief.cmd`, `install-chief.ps1`, a README, the certificate and the signed package (about 850 MB), and never a key.
+1. **The setup zip.** Every release also writes `<releasesDir>\Chief-Command-Center-setup-<version>.zip` (needs `testerCert` in `release.local.json`: the public `.cer`). To make one for an existing build: `npm run tester-kit` (newest) or `npm run tester-kit -- --version X.Y.Z`. It holds `Install Chief.cmd`, `install-chief.ps1`, a README, the certificate and the signed package (about 850 MB).
 2. **Check it before sending** (changes nothing): unzip it and run `powershell -ExecutionPolicy Bypass -File install-chief.ps1 -CheckOnly` in the folder.
-3. **Send the zip** by a OneDrive or Google Drive link, and **their key separately** (a different channel is best).
+3. **Send the zip** by a OneDrive or Google Drive link, and **the certificate fingerprint separately** (a message, not next to the zip: the installer asks for it, so a tampered folder can't vouch for itself).
 
 Later versions reach them through the app's update card; the zip is only for the first install (or a reinstall).
 
@@ -72,11 +74,9 @@ Later versions reach them through the app's update card; the zip is only for the
    - installs Chief, or updates it in place, and opens it.
 
    If SmartScreen says it protected your PC, click **More info**, then **Run anyway**. Running it again later is safe.
-2. In the app: **Settings → Backup & updates → Update key:** paste the key you were given, then Save key. Windows keeps it protected for your account; the page never shows it again. The update source is already filled in.
+From then on (nothing to set up: the update source is built in), an "Update available — install?" card appears when a new release is out. Install backs up first, waits until Chief isn't working, and relaunches the app. After an update, a small "What's new" note shows that version's notes once; **History** (Settings → Backup & updates, or About) lists every published version.
 
-From then on, an "Update available — install?" card appears when a new release is out. Install backs up first, waits until Chief isn't working, and relaunches the app. After an update, a small "What's new" note shows that version's notes once; **History** (Settings → Backup & updates, or About) lists every published version.
-
-3. Optional, **the phone:** Settings → Phone sets up private access through Tailscale step by step (the tester README has the short version).
+2. Optional, **the phone:** Settings → Phone sets up private access through Tailscale step by step (the tester README has the short version).
 
 By hand, without the script: in an administrator PowerShell, `Import-Certificate -FilePath .\chief-test-signing.cer -CertStoreLocation Cert:\LocalMachine\TrustedPeople`, then `Add-AppxPackage -Path .\ChiefCommandCenter-<version>.appx`.
 

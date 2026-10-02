@@ -38,7 +38,7 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown, opts: { bo
 export async function syncHistory(): Promise<{ ok: boolean; added?: number; error?: string }> {
   const repo = parseGithub(effectiveFeed(ctx.store.value.updateFeed, ctx.shippedFeed));
   const key = readUpdateKey(ctx.paths.secrets, safeStorage);
-  if (!repo || !key) return { ok: true, added: 0 };
+  if (!repo) return { ok: true, added: 0 };
   try {
     return { ok: true, added: await syncGithubHistory(repo.owner, repo.repo, key, ctx.paths.appDir, RELEASE_KEYS) };
   } catch (e) {

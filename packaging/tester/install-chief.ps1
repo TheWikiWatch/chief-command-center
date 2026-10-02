@@ -2,8 +2,8 @@
 #
 # 1. Checks Windows (64-bit, Windows 10 2004 or later).
 # 2. Checks that the package in this folder is signed by the certificate in this folder, that the signature
-#    is intact, and that the certificate is the one you were told about separately (its fingerprint comes
-#    with your update key, never in this folder, so a tampered folder can't vouch for itself).
+#    is intact, and that the certificate is the one you were told about separately (its fingerprint is sent by
+#    message, never in this folder, so a tampered folder can't vouch for itself).
 # 3. Trusts that certificate for app packages on this PC (one administrator prompt, first time only).
 # 4. Installs the package, then opens the app.
 #
@@ -53,7 +53,7 @@ if (-not $CheckOnly) {
   if (-not $expected) {
     Say ""
     Say "Certificate fingerprint: $($cert.Thumbprint)"
-    Say "Compare it with the fingerprint you were sent together with your update key."
+    Say "Compare it with the fingerprint you were sent separately (by message)."
     $expected = ((Read-Host "Type the first 8 characters of the fingerprint you were sent") -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
   }
   if ($expected.Length -lt 8 -or -not $cert.Thumbprint.ToUpperInvariant().StartsWith($expected)) {
@@ -62,7 +62,7 @@ if (-not $CheckOnly) {
   Say "Fingerprint matches."
 }
 if ($CheckOnly) {
-  Say "Certificate fingerprint (send it with each update key): $($cert.Thumbprint)"
+  Say "Certificate fingerprint (send it by message, separately from the folder): $($cert.Thumbprint)"
   Say ""
   Say "Check only: $($package.Name) is ready to install. Nothing was changed."
   exit 0
@@ -110,7 +110,5 @@ Step "Opening Chief"
 Start-Process "shell:AppsFolder\$($now.PackageFamilyName)!$identity"
 Say "Chief is starting. The first start sets things up and can take a minute."
 Say ""
-Say "One thing left, for updates:"
-Say "  In Chief: Settings > Backup & updates > Update key: paste the key you were sent, then Save key."
-Say "  After that, new versions show up as an 'Update available' card."
+Say "New versions show up in Chief as an 'Update available' card; nothing else to set up."
 exit 0

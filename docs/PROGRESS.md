@@ -760,3 +760,8 @@
 **Fixed: right-hand panels couldn't be closed in the desktop app.**
 
 - Team & Routines (and the other panels that slide in from the right: connection status, keyboard shortcuts) reach the window's top-right corner, where Windows draws minimize, maximize and close. The panel's own close button sat under them, so clicking it maximized the window instead. Their headers now keep clear of the window buttons, as the app's own headers already did. Checked with real clicks in an app-style window: before, the click resized the window and the panel stayed; after, the panel closes.
+
+**Updates without a key.**
+
+- The app now reads a public releases repository without a key (a saved key is still sent, for a private one), and the release history works the same way. Settings → Backup & updates marks the key as needed only for a private repository. Once the releases repository is public, new testers install from the zip and get updates with nothing to set up; they still check the certificate fingerprint, sent by message.
+- Versions before 0.1.21 still need their key to reach 0.1.21, so the old keys stay valid until everyone has updated.

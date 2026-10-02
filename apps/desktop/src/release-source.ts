@@ -6,8 +6,8 @@ import { Readable } from "node:stream";
 /**
  * Where releases come from (PLAN §8a). Two kinds:
  * - a folder (a local or network release folder);
- * - a private GitHub repository holding only releases, read with a per-person read-only key (a fine-grained
- *   token with Contents: read on that one repository). Testers never see the source code.
+ * - a GitHub repository holding only releases: a public one read without a key, or a private one read with a
+ *   per-person read-only key (a fine-grained token with Contents: read on that one repository).
  * Either way the updater still verifies release.json against the pinned Ed25519 key and the package against
  * its signed digest, so a leaked key can't deliver a forged update.
  */
@@ -71,20 +71,31 @@ export function parseGithub(feed: string): { owner: string; repo: string } | nul
 
 type Fetch = typeof fetch;
 
-/** A private GitHub release repository read with a per-person key: the API calls both the updater and the history use. */
+/**
+ * A GitHub release repository: the API calls both the updater and the history use. A public repository needs no
+ * key (GitHub allows 60 unauthenticated calls an hour per network; a check makes one or two); a saved key is
+ * sent when there is one, so a private repository keeps working.
+ */
 export function githubApi(owner: string, repo: string, key: string, fetchImpl: Fetch = fetch) {
   const api = `https://api.github.com/repos/${owner}/${repo}`;
-  const headers = { Authorization: `Bearer ${key}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "ChiefCommandCenter" };
+  const headers: Record<string, string> = { "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "ChiefCommandCenter", ...(key ? { Authorization: `Bearer ${key}` } : {}) };
   const refused = (status: number) =>
     status === 401
-      ? new SourceError("the update key was refused: it may have expired or been revoked. Ask for a new key.")
-      : status === 403
-        ? new SourceError("the update key can't read the release repository (or GitHub's rate limit was reached). Try again later, or ask for a new key.")
+      ? new SourceError("the update key was refused: it may have expired or been revoked. Ask for a new key, or clear it if the release repository is public.")
+      : status === 403 || status === 429
+        ? new SourceError(
+            key
+              ? "the update key can't read the release repository (or GitHub's rate limit was reached). Try again later, or ask for a new key."
+              : "GitHub's limit for checks without a key was reached on this network. Try again in an hour.",
+          )
         : status === 404
-          ? new SourceError(`the release repository (${owner}/${repo}) wasn't found, or the key can't read it, or it has no release yet.`)
+          ? new SourceError(
+              key
+                ? `the release repository (${owner}/${repo}) wasn't found, or the key can't read it, or it has no release yet.`
+                : `the release repository (${owner}/${repo}) wasn't found or is private (then it needs an update key: Settings, then Backup & updates), or it has no release yet.`,
+            )
           : new SourceError(`GitHub answered ${status}.`);
   const json = async <T>(pathPart: string): Promise<T> => {
-    if (!key) throw new SourceError("this release repository needs an update key: paste the one you were given in Settings, then Backup & updates.");
     let res: Response;
     try {
       res = await fetchImpl(`${api}${pathPart}`, { headers: { ...headers, Accept: "application/vnd.github+json" } });
