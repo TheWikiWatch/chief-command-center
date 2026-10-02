@@ -3,6 +3,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { ledgerConfig } from "@/lib/server/app-config";
+import { childEnv } from "@/lib/server/child-env";
 
 /**
  * Fleet Health's optional connector: a learning ledger's report folder and the program that maintains it
@@ -33,7 +34,7 @@ export function runLedger(args: string[], timeoutMs = 60_000): Promise<string> {
   const { tool, python } = ledger();
   return new Promise((resolve, reject) => {
     // Diffs carry arrows and dashes: without this, Python on Windows writes cp1252 and fails on them.
-    const env = { ...process.env, PYTHONIOENCODING: "utf-8" };
+    const env = childEnv({ PYTHONIOENCODING: "utf-8" });
     execFile(python, [tool, ...args], { timeout: timeoutMs, windowsHide: true, encoding: "utf8", env }, (error, stdout, stderr) => {
       if (error) reject(new Error((stderr || stdout || error.message).trim().split(/\r?\n/).pop() || "The ledger failed"));
       else resolve(stdout.trim());

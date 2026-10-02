@@ -32,12 +32,12 @@ afterAll(() => {
   rmSync(tmp, { recursive: true, force: true });
 });
 
-async function call(method: string, op: string, body?: unknown, origin = "http://127.0.0.1:3100") {
+async function call(method: string, op: string, body?: unknown, origin = "http://127.0.0.1:3100", extra: Record<string, string> = {}) {
   const mod = await import("@/app/api/backup/[...op]/route");
   const { NextRequest } = await import("next/server");
   const req = new NextRequest(`http://127.0.0.1:3100/api/backup/${op}`, {
     method,
-    headers: { origin, host: "127.0.0.1:3100", "content-type": "application/json" },
+    headers: { origin, host: "127.0.0.1:3100", "content-type": "application/json", ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const handler = (mod as unknown as Record<string, (r: Request, c: { params: Promise<{ op: string[] }> }) => Promise<Response>>)[method];
@@ -116,4 +116,16 @@ it("stages a restore of the Second Brain into a new folder, verified, without to
   expect((await call("POST", "restore/discard", {})).body).toMatchObject({ ok: true, action: "discarded-staging" });
   expect(existsSync(path.join(appData, "restore", "restore-journal.json"))).toBe(false);
   vi.resetModules();
+});
+
+it("a phone can see backups and change the schedule, but not choose folders or files on the PC", async () => {
+  // What Tailscale Serve adds to a request from the phone.
+  const phone = { "x-forwarded-proto": "https", "x-forwarded-for": "100.64.0.9", "tailscale-user-login": "me@example.com" };
+  const folder = await call("PUT", "settings", { folder: path.join(tmp, "elsewhere") }, "http://127.0.0.1:3100", phone);
+  expect(folder.status).toBe(403);
+  const schedule = await call("PUT", "settings", { schedule: "off" }, "http://127.0.0.1:3100", phone);
+  expect(schedule.status).toBe(200);
+  for (const op of ["inspect", "restore/stage", "restore/discard", "restore/finish"]) {
+    expect((await call("POST", op, { file: "C:/anything.chiefbackup" }, "http://127.0.0.1:3100", phone)).status, op).toBe(403);
+  }
 });

@@ -7,6 +7,7 @@ import { validMutationOrigin } from "@/lib/proxy-policy";
 import { AppDataNotConfigured, readAppSettings, suggestedBackupFolder, updateAppSettings, type BackupParts } from "@/lib/server/app-settings";
 import { currentJob, engineConfig, restoreStateDir, runEngine, startBackup } from "@/lib/server/backup";
 import { secondBrain } from "@/lib/server/second-brain";
+import { isDirectLoopback } from "@/lib/tailnet-guard";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -24,7 +25,13 @@ export const runtime = "nodejs";
  *   POST restore/finish              after the desktop app applied a restore and Chief is healthy
  *
  * Applying a staged restore stops Chief, so only the desktop app does it (lib/desktop.ts).
+ *
+ * Operations that take a path on the PC (choosing the folder, inspecting or staging a file, finishing a
+ * restore) are for the desktop app only: a phone over Tailscale can see backups and start one, but can't make
+ * the PC create folders or read files it names.
  */
+const PC_ONLY = new Set(["POST inspect", "POST restore/stage", "POST restore/discard", "POST restore/finish"]);
+
 const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { "Cache-Control": "no-store" } });
 const REMIND_MS = 30 * 24 * 3600 * 1000;
 const PARTS: BackupParts[] = ["everything", "setup", "second-brain"];
@@ -68,6 +75,9 @@ async function status() {
 async function handle(req: NextRequest, op: string): Promise<Response> {
   const method = req.method;
   if (method !== "GET" && !validMutationOrigin(req.headers, req.url)) return json({ ok: false, error: "Invalid request origin" }, 403);
+  if (PC_ONLY.has(`${method} ${op}`) && !isDirectLoopback(req.headers)) {
+    return json({ ok: false, error: "Do this in Chief on the PC. Folders and backup files can't be chosen from another device." }, 403);
+  }
   if (method === "GET" && op === "status") return json(await status());
   if (method === "GET" && op === "list") {
     const { backup } = await readAppSettings();
@@ -77,6 +87,9 @@ async function handle(req: NextRequest, op: string): Promise<Response> {
   if (method === "PUT" && op === "settings") {
     const b = await body(req);
     const folder = typeof b.folder === "string" ? b.folder.trim() : undefined;
+    if (folder !== undefined && !isDirectLoopback(req.headers)) {
+      return json({ ok: false, error: "Choose the backup folder in Chief on the PC." }, 403);
+    }
     if (folder) {
       const problem = await writableFolder(folder);
       if (problem) return json({ ok: false, error: problem }, 400);

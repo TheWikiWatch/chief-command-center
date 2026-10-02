@@ -277,6 +277,12 @@ function WhoCanOpen({ state, busy, onChange }: { state: PhoneState; busy: boolea
           );
         })}
       </div>
+      {state.access === "tailnet" ? (
+        <p role="note" className="mx-2 mb-2 rounded-ctl border border-warn/30 bg-warn/10 px-3 py-2 text-caption text-warn">
+          Every login that can reach this PC on Tailscale can read your chats and notes, and approve commands. That includes
+          people a device was shared with. Choose Only you unless you share this PC on purpose.
+        </p>
+      ) : null}
     </Group>
   );
 }

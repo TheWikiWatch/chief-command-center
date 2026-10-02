@@ -51,6 +51,11 @@ EXCLUDE_DIRS = ["crash-dumps", "hermes-agent", "tools", "cache", "image_cache", 
 # ---------------------------------------------------------------- small helpers
 
 
+
+def _pq(value: object) -> str:
+    """A PowerShell single-quoted string literal (task names and paths come from the scheduler)."""
+    return "'" + str(value).replace("'", "''") + "'"
+
 def ps(script: str, timeout: int = 120) -> str:
     out = subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script], capture_output=True,
                          text=True, encoding="utf-8", errors="replace", timeout=timeout)
@@ -317,7 +322,7 @@ def apply(inst: Install) -> None:
     for t in inst.guard_tasks():
         if t["State"] in (1, "Disabled"):
             continue
-        ps(f"Disable-ScheduledTask -TaskPath '{t['TaskPath']}' -TaskName '{t['TaskName']}' | Out-Null")
+        ps(f"Disable-ScheduledTask -TaskPath {_pq(t['TaskPath'])} -TaskName {_pq(t['TaskName'])} | Out-Null")
         journal.add("task-disabled", path=t["TaskPath"], name=t["TaskName"])
     for item in inst.startup_items():
         off = item.with_name(item.name + ".chief-app-off")
@@ -450,7 +455,7 @@ def rollback(inst: Install) -> None:
             Path(step["renamed"]).rename(step["original"])
             say(f"Startup item back: {Path(step['original']).name}")
         elif kind == "task-disabled":
-            ps(f"Enable-ScheduledTask -TaskPath '{step['path']}' -TaskName '{step['name']}' | Out-Null")
+            ps(f"Enable-ScheduledTask -TaskPath {_pq(step['path'])} -TaskName {_pq(step['name'])} | Out-Null")
             say(f"Scheduled task on again: {step['name']} (it starts the old gateway within a minute)")
         elif kind == "dashboard-stopped" and step.get("command"):
             # The command line exactly as it ran, detached and windowless like before.

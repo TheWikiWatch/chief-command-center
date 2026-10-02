@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { appDataDir, readAppSettings, updateAppSettings, type BackupParts } from "@/lib/server/app-settings";
 import { secondBrain } from "@/lib/server/second-brain";
+import { childEnv } from "@/lib/server/child-env";
 
 /**
  * Backups through the engine in `backup/chief_backup` (Python; the payload's Python in the app).
@@ -62,7 +63,7 @@ export function runEngine(args: string[], opts: { passphrase?: string; onProgres
     const child = spawn(cfg.python, ["-B", "-m", "chief_backup", ...args, ...(opts.passphrase !== undefined ? ["--passphrase-stdin"] : [])], {
       cwd: cfg.engine,
       windowsHide: true,
-      env: { ...process.env, PYTHONPATH: [cfg.engine, ...(process.env.CHIEF_PYTHONPATH || "").split(";").filter(Boolean)].join(";"), PYTHONIOENCODING: "utf-8" },
+      env: childEnv({ PYTHONPATH: [cfg.engine, ...(process.env.CHIEF_PYTHONPATH || "").split(";").filter(Boolean)].join(";"), PYTHONIOENCODING: "utf-8" }),
     });
     const timer = setTimeout(() => child.kill(), opts.timeoutMs ?? 6 * 3600 * 1000);
     child.stdout.setEncoding("utf8").on("data", (chunk: string) => (stdout += chunk));
