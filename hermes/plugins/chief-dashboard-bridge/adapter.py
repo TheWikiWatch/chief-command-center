@@ -21,6 +21,7 @@ from gateway.platforms._shared import get_scoped_secret, seed_extra_from_env
 from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 
+from . import changes
 from . import identity
 from .outbox import _outbox_path, append_outbox, read_outbox  # noqa: F401 (re-exported: the bridge reads them here)
 
@@ -139,6 +140,7 @@ class CommandCenterAdapter(BasePlatformAdapter):
                 self._broadcast({"type": "cc_clarify", "at": time.time(), "id": clarify_id})
             except Exception:
                 logger.debug("cc broadcast failed", exc_info=True)
+        changes.bump("clarify")
         return SendResult(success=True, message_id=f"clarify-{clarify_id}")
 
     async def retire_clarify_card(self, clarify_id: str, notice: str = "") -> None:
@@ -148,6 +150,7 @@ class CommandCenterAdapter(BasePlatformAdapter):
                 self._broadcast({"type": "cc_clarify", "at": time.time(), "id": clarify_id, "retired": True})
             except Exception:
                 pass
+        changes.bump("clarify")
 
     def set_status_text(self, chat_id: str, text: Optional[str]) -> None:
         super().set_status_text(chat_id, text)
@@ -157,6 +160,7 @@ class CommandCenterAdapter(BasePlatformAdapter):
             record_status(chat_id, text)
         except Exception:
             logger.debug("live step record failed", exc_info=True)
+        changes.bump("status")
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
         if self._broadcast:

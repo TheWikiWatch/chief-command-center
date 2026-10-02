@@ -336,14 +336,26 @@ def _done(total: dict[str, Any]) -> dict[str, Any]:
     return total
 
 
+_SYNC_EVERY = 15.0
+_last_sync = 0.0
+
+
 def summary(period: str = "month", now: Optional[datetime] = None) -> dict[str, Any]:
-    """Totals, per bot, per model and per day for `period` (today, 7d, 30d, month), plus today and this month."""
+    """Totals, per bot, per model and per day for `period` (today, 7d, 30d, month), plus today and this month.
+
+    A sync scans every profile's sessions and ledger, so a read syncs at most every 15 seconds (the Usage page
+    and its strip both ask; the watch loop keeps the journal current in between). An explicit `now` (tests,
+    the budget check) always syncs."""
+    global _last_sync
     period = period if period in PERIODS else "month"
+    explicit = now is not None
     now = now or datetime.now()
-    try:
-        sync()
-    except Exception:
-        logger.warning("usage journal sync failed", exc_info=True)
+    if explicit or time.monotonic() - _last_sync >= _SYNC_EVERY:
+        try:
+            sync()
+            _last_sync = time.monotonic()
+        except Exception:
+            logger.warning("usage journal sync failed", exc_info=True)
     since = _since(period, now)
     since_day, month_day, today_day = _day(since), _day(_since("month", now)), _day(_since("today", now))
     totals, today, month = _blank(), _blank(), _blank()

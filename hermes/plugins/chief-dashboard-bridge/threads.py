@@ -136,6 +136,16 @@ def describe(thread: str, entry: Optional[dict[str, Any]] = None, *, busy=None, 
     }
 
 
+def any_working(busy) -> bool:
+    """Whether any thread other than the main one is working, from the in-memory busy check alone (no database
+    read: /snapshot asks every few seconds)."""
+    for entry in _load()["threads"]:
+        tid = str(entry.get("id") or "")
+        if tid != MAIN and _ID.match(tid) and busy(session_key(tid)):
+            return True
+    return False
+
+
 def list_threads(*, busy=None, question=None, approval=None) -> dict[str, Any]:
     state = _load()
     main_entry = next((t for t in state["threads"] if t.get("id") == MAIN), None)

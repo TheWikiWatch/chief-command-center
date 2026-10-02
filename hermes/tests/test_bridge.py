@@ -42,6 +42,18 @@ identity = importlib.import_module("test_bridge_plugin.identity")
 bridge_token = importlib.import_module("test_bridge_plugin.bridge_token")
 
 
+class ByteRangeTests(unittest.TestCase):
+    def test_ranges_including_the_suffix_form(self):
+        self.assertEqual(server.byte_range("bytes=0-99", 1000), (0, 99, True))
+        self.assertEqual(server.byte_range("bytes=900-", 1000), (900, 999, True))
+        self.assertEqual(server.byte_range("bytes=-100", 1000), (900, 999, True))  # the last 100 bytes
+        self.assertEqual(server.byte_range("bytes=-5000", 1000), (0, 999, True))
+        self.assertEqual(server.byte_range("bytes=0-99999", 1000), (0, 999, True))
+        self.assertEqual(server.byte_range("bytes=x-y", 1000), (0, 999, False))
+        self.assertEqual(server.byte_range("", 1000), (0, 999, False))
+        self.assertEqual(server.byte_range("bytes=0-10", 0), (0, 0, False))
+
+
 class BridgeTokenTests(unittest.TestCase):
     """The token is read once and leaves the environment, so the agent's commands can't inherit it."""
 

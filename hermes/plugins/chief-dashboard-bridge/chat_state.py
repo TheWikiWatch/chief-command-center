@@ -156,9 +156,9 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
     """Gateway sends at or after `since` that aren't replies: newest `limit`, oldest first. With `chat_id`, only
     that thread's (the main chat also gets sends without a chat)."""
     from . import identity
-    from .outbox import read_outbox
+    from .outbox import read_since
 
-    rows = [r for r in read_outbox(limit=100000) if float(r.get("at") or 0) >= since]
+    rows = read_since(since)
     if chat_id:
         main = chat_id == identity.owner_id()
         rows = [r for r in rows if str(r.get("chat_id") or "") == chat_id or (main and not r.get("chat_id"))]
@@ -183,24 +183,10 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
 
 
 def notice_head() -> str:
-    """The newest outbox id (a cheap "anything new?" for the long-poll)."""
-    from .outbox import _outbox_path
+    """The newest outbox id (a cheap "anything new?" for the long-poll: the outbox is read incrementally)."""
+    from .outbox import head_id
 
-    path = _outbox_path()
-    try:
-        with open(path, "rb") as f:
-            f.seek(0, 2)
-            size = f.tell()
-            f.seek(max(0, size - 4096))
-            tail = f.read().decode("utf-8", "ignore").strip().splitlines()
-        for line in reversed(tail):
-            try:
-                return str(json.loads(line).get("id") or "")
-            except ValueError:
-                continue
-    except OSError:
-        pass
-    return ""
+    return head_id()
 
 
 # ----------------------------------------------------------------------------- current step

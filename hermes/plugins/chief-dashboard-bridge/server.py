@@ -10,11 +10,13 @@ import secrets
 import socket
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Optional
 from urllib.parse import parse_qs, urlparse
 
+from . import changes
 from . import chat_state
 from . import data
 from . import identity
@@ -40,9 +42,10 @@ _BOUND_MARK = "CHIEF_DASHBOARD_BRIDGE_BOUND"
 # How long a composer send id is remembered, so a retry after a timeout is not a second message.
 # The dashboard's outbox (lib/outbox.ts) retries queued sends for up to 24 hours with the same id.
 _SEND_ID_TTL = 24 * 60 * 60
-# /transcript?wait=N holds the request until something changes, at most this long.
+# /transcript?wait=N holds the request until something changes, at most this long. It wakes on the change
+# signal (changes.py) and otherwise re-checks every _LONGPOLL_STEP seconds, in case a change has no signal.
 _LONGPOLL_MAX = 25
-_LONGPOLL_STEP = 0.5
+_LONGPOLL_STEP = 2.0
 # binding() reads sessions.json and scans the sessions table; every poll asks for it.
 _BINDING_TTL = 2.0
 # Watch loop: approvals every tick, fleet flags every _FLAG_EVERY, the /events signature every _SIG_EVERY.
@@ -239,6 +242,7 @@ class BridgeServer:
             payload = data.transcript(sk, before_id=before, limit=60)
         else:
             deadline = time.monotonic() + max(0.0, min(float(wait or 0), _LONGPOLL_MAX))
+            seen = changes.version()
             # `after` 0 is a conversation with no rows yet (a fresh install): hold until the first one.
             while time.monotonic() < deadline and not self._watch_stop.is_set():
                 pending = data.pending_approval(sk)
@@ -252,7 +256,7 @@ class BridgeServer:
                     break
                 if notice is not None and chat_state.notice_head() != notice:
                     break
-                time.sleep(_LONGPOLL_STEP)
+                seen = changes.wait(seen, min(_LONGPOLL_STEP, max(0.0, deadline - time.monotonic())))
                 if thread in ("", threads.MAIN):
                     bind = self.binding()
                     if (bind.get("sessionKey") or "") != sk:
@@ -317,6 +321,20 @@ class BridgeServer:
         self.broadcast({"type": "thread_fresh", "at": time.time(), "thread": thread})
         return {"ok": True, "thread": thread}
 
+    def _change_signature(self) -> tuple:
+        """What the change watcher compares every 250 ms: which sessions are working, and the main chat's pending
+        approval (both live in Hermes's memory, not in files the watcher can see)."""
+        keys: tuple = ()
+        for ad in (self.command_center_adapter, self.discord_adapter):
+            active = getattr(ad, "_active_sessions", None) if ad is not None else None
+            try:
+                keys += tuple(sorted(str(k) for k in (active or ())))
+            except Exception:
+                continue
+        sk = self.binding().get("sessionKey") or ""
+        pending = data.pending_approval(sk) if sk else None
+        return keys, (pending or {}).get("requestId") or ""
+
     def generating(self, session_key: str) -> bool:
         """True while the owning platform adapter still has this session busy."""
         if not session_key:
@@ -362,6 +380,7 @@ class BridgeServer:
         httpd.daemon_threads = True
         self._httpd = httpd
         threading.Thread(target=self._watch_loop, name="chief-dashboard-watch", daemon=True).start()
+        changes.Watcher(lambda: [data.chief_home() / "state.db", data.install_root() / "kanban.db"], self._change_signature).start()
         logger.info("bound 127.0.0.1:%s", self.port)
         try:
             httpd.serve_forever()
@@ -412,8 +431,7 @@ class BridgeServer:
                     logger.debug("fleet flag push check failed", exc_info=True)
             if tick % _SIG_EVERY:
                 continue
-            # The dashboard polls instead of using /events, so usually nobody listens.
-            # Skip the roster/kanban/transcript reads until a subscriber appears.
+            # Bots appearing or leaving (profile folders) have no database signal: check while someone listens.
             with self._sub_lock:
                 idle = not self._subscribers
             if idle:
@@ -422,7 +440,7 @@ class BridgeServer:
             try:
                 sig = self._snapshot_sig()
                 if sig != last_sig and last_sig:
-                    self.broadcast({"type": "change", "at": time.time()})
+                    changes.bump("roster")
                 last_sig = sig
             except Exception:
                 logger.debug("watch snapshot failed", exc_info=True)
@@ -486,6 +504,7 @@ class BridgeServer:
         return f"{ids}|{jobs}|{last}|{bind.get('sessionKey')}|{rid}|{gen}"
 
     def broadcast(self, payload: dict) -> None:
+        changes.bump(str(payload.get("type") or "event"))
         with self._sub_lock:
             subs = list(self._subscribers)
         dead = []
@@ -530,7 +549,7 @@ class BridgeServer:
             "workers": work.get("workers") or [],
             "approval": approval,
             # The chief is thinking when any of its threads is working.
-            "generating": self.generating(sk) or any(t["working"] for t in threads.list_threads(busy=self.generating)["threads"][1:]),
+            "generating": self.generating(sk) or threads.any_working(self.generating),
         }
 
     def approvals(self, thread: str = threads.MAIN) -> dict[str, Any]:
@@ -779,9 +798,45 @@ def _cc_push():
     return vapid
 
 
+def byte_range(header: str, size: int) -> tuple[int, int, bool]:
+    """(start, end, partial) for a `Range: bytes=…` header: `a-b`, `a-` and the suffix form `-n` (the last n
+    bytes). Anything unparsable is the whole file."""
+    if not header.startswith("bytes=") or not size:
+        return 0, max(size - 1, 0), False
+    first = header[6:].split(",", 1)[0].strip()
+    lo, _, hi = first.partition("-")
+    try:
+        if not lo and hi:
+            n = int(hi)
+            return max(size - n, 0), size - 1, True
+        start = int(lo) if lo else 0
+        end = int(hi) if hi else size - 1
+    except ValueError:
+        return 0, size - 1, False
+    end = min(max(end, 0), size - 1)
+    start = min(max(start, 0), end)
+    return start, end, True
+
+
 def _make_handler(bridge: BridgeServer):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        # A client that stops sending mid-request no longer holds a thread forever.
+        timeout = 60
+
+        def handle_one_request(self):
+            # An unexpected error answers 500 with a reason instead of dropping the connection.
+            try:
+                super().handle_one_request()
+            except (ConnectionError, TimeoutError, OSError):
+                self.close_connection = True
+            except Exception:
+                logger.exception("bridge request failed: %s", getattr(self, "path", ""))
+                try:
+                    self._json({"ok": False, "error": "The bridge hit an unexpected error."}, 500)
+                except Exception:
+                    pass
+                self.close_connection = True
 
         def log_message(self, fmt, *args):
             logger.debug("%s - " + fmt, self.address_string(), *args)
@@ -979,21 +1034,8 @@ def _make_handler(bridge: BridgeServer):
                         return
                     resolved, mime = thumb, "image/jpeg"
                 size = resolved.stat().st_size
-                start, end = 0, max(size - 1, 0)
-                status = 200
-                range_h = self.headers.get("Range") or ""
-                if range_h.startswith("bytes=") and size:
-                    spec = range_h[6:].split("-", 1)
-                    try:
-                        if spec[0]:
-                            start = int(spec[0])
-                        if len(spec) > 1 and spec[1]:
-                            end = int(spec[1])
-                    except ValueError:
-                        start, end = 0, size - 1
-                    end = min(max(end, 0), size - 1)
-                    start = min(max(start, 0), end)
-                    status = 206
+                start, end, partial = byte_range(self.headers.get("Range") or "", size)
+                status = 206 if partial else 200
                 length = (end - start + 1) if size else 0
                 safe_name = resolved.name.replace('"', "")
                 self.send_response(status)
@@ -1258,37 +1300,39 @@ def _make_handler(bridge: BridgeServer):
             self._reject(404, "not found")
 
         def _sse(self):
+            """The dashboard's live channel: a `change` event (coalesced) whenever the change signal moves, the
+            bridge's own events as they happen, and a comment every 15 s so proxies and Tailscale Serve keep the
+            connection. The page refetches what it shows on `change` instead of polling on a short timer."""
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Accel-Buffering", "no")
             self.send_header("Connection", "keep-alive")
             self.end_headers()
-            queue: list[dict] = []
-            lock = threading.Lock()
+            pending: deque = deque(maxlen=200)
 
             def push(payload: dict) -> None:
-                with lock:
-                    queue.append(payload)
+                pending.append(payload)
 
             bridge.subscribe(push)
+            seen = changes.version()
             try:
-                self.wfile.write(b"data: {\"type\":\"hello\"}\n\n")
+                self.wfile.write(b'retry: 3000\ndata: {"type":"hello"}\n\n')
                 self.wfile.flush()
-                while True:
-                    item = None
-                    with lock:
-                        if queue:
-                            item = queue.pop(0)
-                    if item is None:
-                        time.sleep(0.25)
-                        try:
-                            self.wfile.write(b": keepalive\n\n")
-                            self.wfile.flush()
-                        except Exception:
-                            break
+                while not bridge._watch_stop.is_set():
+                    current = changes.wait(seen, 15.0)
+                    if current == seen and not pending:
+                        self.wfile.write(b": ping\n\n")
+                        self.wfile.flush()
                         continue
-                    line = "data: " + json.dumps(item, default=str) + "\n\n"
-                    self.wfile.write(line.encode("utf-8"))
+                    # A burst of changes (a turn ending writes several rows) becomes one event.
+                    time.sleep(0.15)
+                    seen = changes.version()
+                    out = []
+                    while pending:
+                        out.append("data: " + json.dumps(pending.popleft(), default=str) + "\n\n")
+                    out.append(f"event: change\ndata: {json.dumps({'v': seen})}\n\n")
+                    self.wfile.write("".join(out).encode("utf-8"))
                     self.wfile.flush()
             except Exception:
                 pass

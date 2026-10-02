@@ -49,6 +49,9 @@ class ThreadTests(unittest.TestCase):
         listed = threads.list_threads(busy=lambda key: key.endswith(made["id"]))["threads"]
         self.assertEqual(listed[0]["id"], "main")
         self.assertEqual({t["id"]: t["working"] for t in listed}[made["id"]], True)
+        # The snapshot's flag, from the busy check alone (the main thread doesn't count).
+        self.assertTrue(threads.any_working(lambda key: key.endswith(made["id"])))
+        self.assertFalse(threads.any_working(lambda key: key.endswith(":owner")))
         self.assertEqual(threads.rename(made["id"], "Trip to Lisbon")["thread"]["title"], "Trip to Lisbon")
         self.assertTrue(threads.archive(made["id"])["thread"]["archived"])
         self.assertFalse(threads.archive(made["id"], False)["thread"]["archived"])
