@@ -12,7 +12,6 @@ import logging
 import os
 import sys
 import threading
-from pathlib import Path
 
 from .server import BridgeServer
 
@@ -59,12 +58,10 @@ def register(ctx):
 
 def _register(ctx):
     global _server
-    plugin_dir = Path(__file__).resolve().parent
-    token = (
-        str(ctx.get_config("token", "") or "").strip()
-        or os.environ.get("CHIEF_DASHBOARD_TOKEN", "").strip()
-        or _read_token(plugin_dir)
-    )
+    from . import bridge_token
+
+    # Read once and removed from the environment, so the agent's own commands never inherit it (bridge_token.py).
+    token = bridge_token.take(str(ctx.get_config("token", "") or ""))
     port_cfg = ctx.get_config("port", None)
     session_cfg = ctx.get_config("session_key", "")
     if not token:
@@ -114,11 +111,3 @@ def _register(ctx):
     thread.start()
     _server = server
     logger.info("chief-dashboard-bridge listening on 127.0.0.1:%s", port)
-
-
-def _read_token(plugin_dir: Path) -> str:
-    path = plugin_dir / ".token"
-    try:
-        return path.read_text(encoding="utf-8").strip()
-    except OSError:
-        return ""

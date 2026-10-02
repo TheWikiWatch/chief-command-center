@@ -24,6 +24,7 @@
 | Ledger output | Diffs with `→` crashed a Windows child's cp1252 stdout (500 on /api/fleet/diff) | ledger forces UTF-8; `runLedger` sets `PYTHONIOENCODING` |
 | Outbox | A retry that doubles a message; a queued bubble matched by an arriving copy; the flush loop cancelled by its own commits | `chat-actions.test.tsx` (same id, reload, Cancel), `outbox.test.ts` |
 | Long-poll | A bridge that answers at once turns the poll into a tight loop; header marks Chat stale during a 25s hold | client backs off after 3 quick returns; stale window 40s while long-polling; `transcript-live.test.tsx`, `LivePathTests`, live contract |
+| Bridge token in the agent's environment | Hermes builds every child's environment from `os.environ` and its scrub doesn't know `CHIEF_DASHBOARD_TOKEN`, so the agent's terminal could call `/approve` on its own prompt | `bridge_token.take()` removes it at registration; `run_chat_controls_contract.py` ("the agent's terminal doesn't see the bridge token", via the fake model's `ENVCHECK`); `BridgeTokenTests` |
 | Load earlier | History before a compaction is archived (`active = 0`); each compaction's copies duplicate its tail; a page of filtered rows repeats forever | `LivePathTests` (archived rows, all windows flagged, cursor moves on), `transcript-live.test.tsx` |
 
 ## Commands

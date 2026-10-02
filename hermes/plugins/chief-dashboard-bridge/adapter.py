@@ -257,14 +257,18 @@ async def _standalone_send(
     force_document: bool = False,
 ) -> Dict[str, Any]:
     mid = append_outbox(chat_id or identity.owner_id(), message or "", source="cron")
-    # Best-effort nudge live bridge SSE
+    # Best-effort nudge of the live bridge, on its own thread: a blocking request here would stall the event loop.
+    threading.Thread(target=_notify_bridge, args=(mid,), name="chief-outbox-notify", daemon=True).start()
+    return {"success": True, "message_id": mid}
+
+
+def _notify_bridge(mid) -> None:
     try:
         import urllib.request
 
-        token = os.environ.get("CHIEF_DASHBOARD_TOKEN", "").strip()
-        plugin = Path(__file__).resolve().with_name(".token")
-        if not token and plugin.is_file():
-            token = plugin.read_text(encoding="utf-8").strip()
+        from . import bridge_token
+
+        token = bridge_token.get()
         port = int(os.environ.get("CHIEF_DASHBOARD_PORT") or 7790)
         if token:
             req = urllib.request.Request(
@@ -279,7 +283,6 @@ async def _standalone_send(
             urllib.request.urlopen(req, timeout=2)
     except Exception:
         pass
-    return {"success": True, "message_id": mid}
 
 
 def register_platform(ctx) -> None:

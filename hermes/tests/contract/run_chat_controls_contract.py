@@ -9,7 +9,8 @@ the bundled bridge, then through the bridge's HTTP API:
 - queue: a message sent with "send after" is answered after the running turn finishes;
 - questions: a turn that calls Hermes's `clarify` shows the question with the transcript (not as a notice),
   an answer through /clarify or a typed message resumes it, and the transcript keeps the question and answer;
-- the running turn reports its current step, and the owner's chat is the home channel (no "/sethome" notice).
+- the running turn reports its current step, and the owner's chat is the home channel (no "/sethome" notice);
+- the agent's own terminal commands don't inherit the bridge token.
 The gateway is stopped with Hermes's planned-stop marker for its own home only.
 """
 from __future__ import annotations
@@ -118,6 +119,13 @@ def main() -> int:
 
         def assistant_after(n: int, needle: str):
             return next((m for m in messages()[n:] if m.get("role") == "assistant" and needle in str(m.get("content"))), None)
+
+        # The bridge token never reaches the agent's own commands (bridge_token.py): a terminal child of the
+        # gateway reports whether CHIEF_DASHBOARD_TOKEN is set.
+        start = len(messages())
+        call("/send", {"text": "ENVCHECK please", "client_id": "c-env"})
+        env_reply = wait(lambda: assistant_after(start, "Env check"), 90)
+        check("the agent's terminal doesn't see the bridge token", env_reply is not None and "TOKEN-ABSENT" in str(env_reply.get("content")), env_reply)
 
         # Steer: context reaches the running turn.
         start = len(messages())

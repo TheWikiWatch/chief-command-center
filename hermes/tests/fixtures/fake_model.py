@@ -11,6 +11,8 @@ Behaviour, from the latest user message of a turn:
   The final answer lists every `CTX-<word>` marker seen anywhere in the conversation of that turn.
 - contains "QUIZME": calls Hermes's `clarify` tool ("Which colour?", Red / Blue; "QUIZME FREE" asks without
   choices), then answers "You picked: <the owner's answer>." from the tool's result.
+- contains "ENVCHECK": runs one harmless `terminal` command that reports whether the bridge token is in the
+  agent's own environment, then answers "Env check: <the command's output>." (the token must never be seen).
 - anything else: "Hello from the local test model. You said: …".
 Streaming and non-streaming are both supported.
 """
@@ -111,6 +113,17 @@ class Handler(BaseHTTPRequestHandler):
             except (ValueError, AttributeError):
                 picked = _text(answered[-1].get("content"))
             self._reply({"role": "assistant", "content": f"You picked: {picked}."}, "stop", stream)
+            return
+        if "ENVCHECK" in opener:
+            answered = [m for m in turn if m.get("role") == "tool"]
+            if not answered:
+                cmd = 'if [ -n "${CHIEF_DASHBOARD_TOKEN:-}" ]; then echo TOKEN-SEEN; else echo TOKEN-ABSENT; fi'
+                call = {"id": "call_env", "type": "function", "function": {"name": "terminal", "arguments": json.dumps({"command": cmd})}}
+                self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
+                return
+            out = _text(answered[-1].get("content"))
+            seen = "TOKEN-SEEN" if "TOKEN-SEEN" in out else "TOKEN-ABSENT" if "TOKEN-ABSENT" in out else f"unclear: {out[:200]}"
+            self._reply({"role": "assistant", "content": f"Env check: {seen}."}, "stop", stream)
             return
         if "WORK" not in opener:
             self._reply({"role": "assistant", "content": f"Hello from the local test model. You said: {opener[-80:]}"}, "stop", stream)

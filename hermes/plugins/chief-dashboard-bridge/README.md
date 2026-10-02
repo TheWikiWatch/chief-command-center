@@ -18,7 +18,7 @@ The socket is exclusive (`SO_EXCLUSIVEADDRUSE` on Windows), so two processes can
 
 ## Configuration
 
-Token, in order: plugin config `token`, `CHIEF_DASHBOARD_TOKEN`, or a `.token` file next to the plugin (never committed). The app's server sends the same value as `Authorization: Bearer …`.
+Token, in order: plugin config `token`, `CHIEF_DASHBOARD_TOKEN`, or a `.token` file next to the plugin (never committed). The app's server sends the same value as `Authorization: Bearer …`. The plugin removes `CHIEF_DASHBOARD_TOKEN` from the gateway's environment once it has read it (`bridge_token.py`): Hermes builds each child's environment from it, and its secret scrub doesn't know the name, so the agent's own commands would otherwise inherit the token.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |

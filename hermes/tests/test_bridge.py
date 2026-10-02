@@ -39,6 +39,31 @@ media = importlib.import_module("test_bridge_plugin.media")
 vapid = importlib.import_module("test_bridge_plugin.vapid")
 webpush = importlib.import_module("test_bridge_plugin.webpush")
 identity = importlib.import_module("test_bridge_plugin.identity")
+bridge_token = importlib.import_module("test_bridge_plugin.bridge_token")
+
+
+class BridgeTokenTests(unittest.TestCase):
+    """The token is read once and leaves the environment, so the agent's commands can't inherit it."""
+
+    def tearDown(self):
+        bridge_token._token = ""
+        os.environ.pop(bridge_token.ENV, None)
+
+    def test_take_removes_it_from_the_environment(self):
+        os.environ[bridge_token.ENV] = "  secret-from-desktop  "
+        self.assertEqual(bridge_token.take(""), "secret-from-desktop")
+        self.assertNotIn(bridge_token.ENV, os.environ)
+        self.assertEqual(bridge_token.get(), "secret-from-desktop")
+
+    def test_plugin_config_wins_and_the_environment_is_still_cleared(self):
+        os.environ[bridge_token.ENV] = "from-env"
+        self.assertEqual(bridge_token.take("from-config"), "from-config")
+        self.assertNotIn(bridge_token.ENV, os.environ)
+
+    def test_a_second_take_keeps_the_first_token(self):
+        os.environ[bridge_token.ENV] = "first"
+        bridge_token.take("")
+        self.assertEqual(bridge_token.take(""), "first")
 
 
 class BridgeTests(unittest.TestCase):
