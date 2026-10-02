@@ -179,7 +179,7 @@ const build = spawnSync("npm", ["run", "dist:msix"], {
   encoding: "utf8",
   env: {
     ...process.env, SIGNTOOL_PATH: local.signtool, CHIEF_PAYLOAD_DIR: local.payloadDir, CHIEF_RELEASE_DIR: local.releaseDir, CHIEF_SIGN_PFX: local.pfx, CHIEF_SIGN_PASSWORD: password,
-    // A new install already knows where updates come from; testers only paste their key.
+    // A new install already knows where updates come from (the public releases repository: no key needed).
     CHIEF_UPDATE_FEED: `github:${local.releasesRepo}`,
   },
 });
@@ -215,11 +215,17 @@ run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "-
 run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pub", signer.publicKey]);
 rmSync(feedPkg, { force: true });
 
-// The zip for a new tester (scripts/tester-kit.mjs); the release stands even if this step fails.
-function testerKit() {
+// The zip for a new tester (scripts/tester-kit.mjs), attached to a published release so anyone can install from the
+// releases page (the READMEs link it). The release stands even if this step fails.
+function testerKit({ upload = false } = {}) {
   if (!local.testerCert) return console.log("\n(No testerCert in release.local.json: skipped the tester setup zip.)");
   step("Making the tester setup zip…");
-  run("node", ["scripts/tester-kit.mjs", "--version", version], { allowFail: true });
+  const made = run("node", ["scripts/tester-kit.mjs", "--version", version], { allowFail: true });
+  const zip = path.join(local.releasesDir, `Chief-Command-Center-setup-${version}.zip`);
+  if (!upload || made.status !== 0 || !existsSync(zip)) return;
+  step("Attaching the setup zip to the release…");
+  const up = run("gh", ["release", "upload", `v${version}`, zip, "--repo", local.releasesRepo, "--clobber"], { allowFail: true });
+  if (up.status !== 0) console.log(`⚠ The zip wasn't attached. Attach it by hand: gh release upload v${version} "${zip}" --repo ${local.releasesRepo}`);
 }
 
 if (flag("no-publish")) {
@@ -255,5 +261,5 @@ step(`Publishing ${version}…`);
 run("node", ["packaging/release/release-tool.mjs", "undraft", "--version", version, "--repo", local.releasesRepo], {
   what: `Making the draft live (the version is pushed; finish with: node packaging/release/release-tool.mjs undraft --version ${version} --repo ${local.releasesRepo})`,
 });
-testerKit();
+testerKit({ upload: true });
 console.log(`\n✓ Released ${version}. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);

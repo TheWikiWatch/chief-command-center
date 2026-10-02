@@ -2,7 +2,28 @@
 
 One Windows app that gives you a chief of staff: a [Hermes](https://github.com/NousResearch/hermes-agent) agent as the engine, and a fast, living dashboard as the interface. You chat with your chief (typed or by voice), it works through your Second Brain and your tasks, it can run a team of specialist agents, and it learns: its skills, memory and routines improve as you use it.
 
-> Status: in development, not released yet. Windows 11 first.
+> Status: early testing. Windows 10 (version 2004 or later) and Windows 11, 64-bit.
+
+## Install
+
+1. Download **`Chief-Command-Center-setup-<version>.zip`** from the
+   [latest release](https://github.com/TheWikiWatch/chief-command-center-releases/releases/latest) and unzip it
+   (Downloads is fine; don't run it from inside the zip).
+2. Double-click **`Install Chief.cmd`**. It checks the package's signature, then asks for the first 8 characters of
+   the publisher certificate's fingerprint. Compare with the fingerprint you were sent, or with this one:
+
+   `AE12F08579ADD8AFB6C8593B7C97A76EA5A2070C`
+
+   If they don't match, stop: the folder isn't the published one.
+3. Windows asks for administrator permission once, to trust that certificate for app packages (the builds are
+   signed with the project's own certificate, not yet a publicly trusted one). If SmartScreen says it protected
+   your PC, click **More info**, then **Run anyway**.
+4. Chief opens. Its first-run screens connect an AI model (you'll need a key or sign-in for at least one provider)
+   and set up your notes folder.
+
+Updates arrive by themselves: an "Update available" card appears, and nothing installs until you click it. Every
+update is checked against the project's signing key first. To remove Chief: Settings → Apps → Installed apps →
+Chief Command Center → Uninstall.
 
 ## What it does
 

@@ -62,7 +62,7 @@ Send the key privately. To cut someone off, delete their token; nobody else is a
 
 1. **The setup zip.** Every release also writes `<releasesDir>\Chief-Command-Center-setup-<version>.zip` (needs `testerCert` in `release.local.json`: the public `.cer`). To make one for an existing build: `npm run tester-kit` (newest) or `npm run tester-kit -- --version X.Y.Z`. It holds `Install Chief.cmd`, `install-chief.ps1`, a README, the certificate and the signed package (about 850 MB).
 2. **Check it before sending** (changes nothing): unzip it and run `powershell -ExecutionPolicy Bypass -File install-chief.ps1 -CheckOnly` in the folder.
-3. **Send the zip** by a OneDrive or Google Drive link, and **the certificate fingerprint separately** (a message, not next to the zip: the installer asks for it, so a tampered folder can't vouch for itself).
+3. **Send the link** to the [latest release](https://github.com/TheWikiWatch/chief-command-center-releases/releases/latest) (every published release carries the setup zip; the READMEs of both repositories have the install steps), or the zip by a OneDrive or Google Drive link, and **the certificate fingerprint separately** (a message, not next to the zip: the installer asks for it, so a tampered folder can't vouch for itself).
 
 Later versions reach them through the app's update card; the zip is only for the first install (or a reinstall).
 

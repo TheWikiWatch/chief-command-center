@@ -769,3 +769,7 @@
 **Both repositories are public.**
 
 - The source repository's history was rewritten to remove the owner's chief name from about 45 early commits (it was in names in code, identifiers and one file name), with today's files unchanged; the full-history privacy scan is clean. The releases repository is public too, so updates need no key (0.1.21). The privacy scan's history mode now skips submodule entries, which it couldn't read in a fresh clone.
+
+**Install from the releases page.**
+
+- Every published release now carries the setup zip (`Chief-Command-Center-setup-<version>.zip`) next to the package, so the install link is simply the latest release. 0.1.21's zip was attached by hand (its checksum on GitHub matches the local file). Both repositories' READMEs have the install steps and the certificate fingerprint to compare with; the releases README also explains how updates are verified.
