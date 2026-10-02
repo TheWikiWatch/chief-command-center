@@ -21,7 +21,7 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from . import archive, crypto
 
@@ -101,7 +101,7 @@ def _staging_for(target: Path) -> Path:
     return target.parent / f".{target.name}.chief-restore"
 
 
-def _safe_rel(arc: str, prefix: str) -> Optional[PurePosixPath]:
+def _safe_rel(arc: str, prefix: str) -> PurePosixPath | None:
     if not arc.startswith(prefix + "/"):
         return None
     rel = PurePosixPath(arc[len(prefix) + 1:])
@@ -115,10 +115,10 @@ def stage(
     passphrase: str,
     *,
     parts: list[str],
-    hermes_root: Optional[Path],
-    app_dir: Optional[Path],
-    second_brain: Optional[Path],
-    current_second_brain: Optional[Path],
+    hermes_root: Path | None,
+    app_dir: Path | None,
+    second_brain: Path | None,
+    current_second_brain: Path | None,
     state_dir: Path,
     app_version: str = "0.0.0",
 ) -> dict:
@@ -158,6 +158,8 @@ def stage(
                 wanted = [arc for arc in expected if arc.startswith(prefix + "/")]
                 for arc in wanted:
                     rel = _safe_rel(arc, prefix)
+                    if rel is None:
+                        continue
                     dest = staging / Path(*rel.parts)
                     dest.parent.mkdir(parents=True, exist_ok=True)
                     digest = hashlib.sha256()
@@ -207,7 +209,7 @@ def _write_journal(state_dir: Path, journal: dict) -> None:
     os.replace(tmp, state_dir / JOURNAL)
 
 
-def _read_journal(state_dir: Path) -> Optional[dict]:
+def _read_journal(state_dir: Path) -> dict | None:
     try:
         return json.loads((state_dir / JOURNAL).read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -297,7 +299,7 @@ def pid_alive(pid: int) -> bool:
 
 
 def apply(state_dir: Path, *, safety_dir: Path, app_version: str = "0.0.0", is_alive: Callable[[int], bool] = pid_alive,
-          hooks: Optional[dict[str, Callable[[], None]]] = None) -> dict:
+          hooks: dict[str, Callable[[], None]] | None = None) -> dict:
     journal = _read_journal(state_dir)
     if not journal or journal.get("state") != "staged":
         raise RestoreError("There is no staged restore to apply.")
@@ -312,7 +314,6 @@ def apply(state_dir: Path, *, safety_dir: Path, app_version: str = "0.0.0", is_a
     safety_parts = []
     if hermes_root and hermes_root.is_dir():
         safety_parts.append("setup")
-    current_brain = Path(journal["current_second_brain"]) if journal.get("current_second_brain") else None
     brain_target = targets.get("second-brain")
     replacing_brain = bool(brain_target and brain_target.exists() and any(brain_target.iterdir()))
     if replacing_brain:
@@ -464,7 +465,7 @@ def _remap(journal: dict, manifest: dict) -> dict:
     return {"remapped": remapped, "review": review[:200], "missing_secrets": missing}
 
 
-def _previous_path(journal: dict, key: str, now: Path) -> Optional[Path]:
+def _previous_path(journal: dict, key: str, now: Path) -> Path | None:
     for step in journal.get("steps", []):
         if step["key"] == key and step.get("moved_old"):
             rel = now.relative_to(step["target"])

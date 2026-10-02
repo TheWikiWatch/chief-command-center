@@ -18,9 +18,11 @@ import shutil
 import threading
 import time
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 
 from . import data
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -111,10 +113,10 @@ class _Job:
 
 
 _lock = threading.Lock()
-_job: Optional[_Job] = None
+_job: _Job | None = None
 # Tests replace this with a local fetcher: (url, headers, timeout) -> response with .status_code, .headers,
 # .iter_content(n) and .close().
-_http_get: Optional[Callable[..., Any]] = None
+_http_get: Callable[..., Any] | None = None
 
 
 def _get(url: str, headers: dict[str, str]):
@@ -129,7 +131,7 @@ def _endpoint() -> str:
     return (os.environ.get("HF_ENDPOINT") or "https://huggingface.co").rstrip("/")
 
 
-def _hash_file(path: Path, job: Optional[_Job] = None) -> "hashlib._Hash":
+def _hash_file(path: Path, job: _Job | None = None) -> hashlib._Hash:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         while True:
@@ -310,10 +312,10 @@ def use(model_id: str) -> str:
     return ""
 
 
-def local_model_ready(stt_cfg: Optional[dict[str, Any]] = None) -> bool:
+def local_model_ready(stt_cfg: dict[str, Any] | None = None) -> bool:
     """Whether Hermes's local STT can load its model without downloading anything."""
     cfg = stt_cfg if stt_cfg is not None else _stt_config()
-    local = cfg.get("local") if isinstance(cfg.get("local"), dict) else {}
+    local = subdict(cfg, "local")
     model = str((local or {}).get("model") or "base")
     candidate = Path(model)
     if candidate.is_absolute():

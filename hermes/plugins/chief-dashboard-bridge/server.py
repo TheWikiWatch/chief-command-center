@@ -13,16 +13,16 @@ import time
 from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
+from collections.abc import Callable
 from urllib.parse import parse_qs, urlparse
 
 from . import changes
 from . import chat_state
 from . import data
-from . import hermes_api
+from . import routes
 from . import identity
 from . import learning
-from . import media
 from . import push
 from . import vapid
 from . import persona
@@ -33,8 +33,6 @@ from . import usage
 from . import fleet
 from . import speech_model
 from . import providers
-from . import settings as hermes_settings
-from . import voice
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -61,7 +59,7 @@ _BUDGET_EVERY = 120
 _RELAY_EVERY = 4
 
 
-def learning_report_path() -> Optional[Path]:
+def learning_report_path() -> Path:
     """Fleet Health's report.json: CHIEF_LEARNING_DIR, else the bundled ledger's <root>/learning."""
     return learning.folder() / "report.json"
 
@@ -94,6 +92,7 @@ def _live_command_center_adapter() -> Any:
         if mod is not None:
             ad = mod.get_adapter()
             if ad is not None:
+                note_legacy("cc_shared_singleton adapter")
                 found.append(ad)
     except Exception:
         pass
@@ -101,6 +100,22 @@ def _live_command_center_adapter() -> Any:
         if _loop_running(ad):
             return ad
     return found[0] if found else None
+
+
+# Legacy paths from before the app had its own chat platform (a Discord DM session, an older shared adapter
+# module). They stay until no install uses them: each use is logged once and listed on /health ("legacy"), so the
+# diagnostics bundle shows whether an install still depends on one.
+_LEGACY: set[str] = set()
+
+
+def note_legacy(name: str) -> None:
+    if name not in _LEGACY:
+        _LEGACY.add(name)
+        logger.warning("chief-dashboard-bridge: legacy path in use: %s (please mention it when sending diagnostics)", name)
+
+
+def legacy_in_use() -> list[str]:
+    return sorted(_LEGACY)
 
 
 def _busy_input_mode() -> str:
@@ -167,14 +182,14 @@ class BridgeServer:
         self.discord_adapter = None
         self.command_center_adapter = None
         self._started = time.monotonic()
-        self._httpd: Optional[ThreadingHTTPServer] = None
-        self._subscribers: list[callable] = []
+        self._httpd: ThreadingHTTPServer | None = None
+        self._subscribers: list[Callable[[dict], None]] = []
         self._sub_lock = threading.Lock()
         self._watch_stop = threading.Event()
         self._send_lock = threading.Lock()
         self._sent_ids: dict[str, float] = {}
         self._pushed_approvals: dict[str, float] = {}
-        self._binding_cache: Optional[tuple[bool, float, dict]] = None
+        self._binding_cache: tuple[bool, float, dict] | None = None
         self._flags_mtime = 0.0
 
     def set_discord_bot(self, bot) -> None:
@@ -223,7 +238,7 @@ class BridgeServer:
         return bind, threads.chat_id(thread)
 
     def live_transcript(self, after: int, wait: float = 0, gen: str = "", approval: str = "", before: int = 0,
-                        clarify: Optional[str] = None, notice: Optional[str] = None, notice_since: float = 0.0,
+                        clarify: str | None = None, notice: str | None = None, notice_since: float = 0.0,
                         thread: str = threads.MAIN, session: str = "") -> dict[str, Any]:
         """The transcript with the chief's state: generating, the pending approval, its open question
         (`clarify`), notices that aren't replies, and the current step (`activity`). With `wait` (seconds)
@@ -361,7 +376,7 @@ class BridgeServer:
             logger.info("7790 already bound in this process; skip duplicate plugin copy")
             return
         handler = _make_handler(self)
-        httpd: Optional[ThreadingHTTPServer] = None
+        httpd: ThreadingHTTPServer | None = None
         deadline = time.time() + 90.0
         attempt = 0
         while httpd is None:
@@ -454,9 +469,10 @@ class BridgeServer:
             return
         self._pushed_approvals[rid] = time.time()
         if len(self._pushed_approvals) > 50:
-            for old in sorted(self._pushed_approvals, key=self._pushed_approvals.get)[:-50]:
+            for old in sorted(self._pushed_approvals, key=lambda k: self._pushed_approvals[k])[:-50]:
                 self._pushed_approvals.pop(old, None)
-        push.notify_approval(pending)
+        if pending:
+            push.notify_approval(pending)
 
     def _push_new_flags(self) -> None:
         """Phone alert for each new fleet oversight flag in the learning report (once per flag id)."""
@@ -697,6 +713,7 @@ class BridgeServer:
                 "accepted": True,
                 "platform": "command_center",
             }
+        note_legacy("Discord DM session (inject)")
         try:
             accepted = bool(self.inject(text, sk))
         except Exception as exc:
@@ -752,7 +769,7 @@ def hermes_build() -> str:
     try:
         import hermes_cli
 
-        stamp = json.loads((Path(hermes_cli.__file__).resolve().parents[1] / "install-stamp.json").read_text(encoding="utf-8"))
+        stamp = json.loads((Path(hermes_cli.__file__ or "").resolve().parents[1] / "install-stamp.json").read_text(encoding="utf-8"))
     except Exception:
         return ""
     parts = [str(stamp.get("baseVersion") or stamp.get("displayVersion") or "")]
@@ -820,6 +837,8 @@ def byte_range(header: str, size: int) -> tuple[int, int, bool]:
 
 
 def _make_handler(bridge: BridgeServer):
+    table = routes.build(bridge)
+
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
         # A client that stops sending mid-request no longer holds a thread forever.
@@ -850,7 +869,7 @@ def _make_handler(bridge: BridgeServer):
             token = header[7:].strip() if header.lower().startswith("bearer ") else ""
             return bool(token) and secrets.compare_digest(token, bridge.token)
 
-        def _read_json(self, limit: int) -> Optional[dict]:
+        def _read_json(self, limit: int) -> dict | None:
             """Object body, or None after a 4xx. A cut-off upload must not look like an empty message."""
             try:
                 length = int(self.headers.get("Content-Length") or 0)
@@ -883,12 +902,6 @@ def _make_handler(bridge: BridgeServer):
             err = str(result.get("error") or "")[:120] if isinstance(result, dict) and not ok else ""
             logger.info("bridge %s %s ok=%s %.0fms%s", self.command, path, ok, (time.time() - started) * 1000, f" error={err!r}" if err else "")
 
-        def _int_param(self, qs: dict, name: str, default: int) -> int:
-            try:
-                return int((qs.get(name) or [str(default)])[0] or default)
-            except ValueError:
-                return default
-
         def _reject(self, code: int, msg: str) -> None:
             body = json.dumps({"ok": False, "error": msg}).encode("utf-8")
             self.send_response(code)
@@ -910,395 +923,46 @@ def _make_handler(bridge: BridgeServer):
             self.send_response(204)
             self.end_headers()
 
-        def do_GET(self):
+        def _dispatch(self, method: str) -> None:
+            """Answer from the route table (routes.py): 401 without the token, 404 for anything not in it."""
             if not self._authorized():
                 self._reject(401, "unauthorized")
                 return
             parsed = urlparse(self.path)
             path = parsed.path.rstrip("/") or "/"
-            qs = parse_qs(parsed.query)
-            if path == "/health":
-                self._json({"ok": True, "gateway": True, "voice": True, "profile": "chief", "longpoll": True, "hermes": hermes_api.check()})
+            route = routes.find(table, method, path)
+            if route is None:
+                self._reject(404, "not found")
                 return
-            if path == "/snapshot":
-                self._json(bridge.snapshot())
-                return
-            if path == "/approvals":
-                self._json(_guarded(lambda: bridge.approvals(_thread_param(qs))))
-                return
-            if path == "/threads":
-                self._json(_guarded(bridge.thread_list))
-                return
-            if path == "/routines":
-                self._json(_guarded(routines.list_routines))
-                return
-            if path == "/voice-config":
-                self._json(voice.voice_config())
-                return
-            if path == "/persona":
-                profile = str((qs.get("profile") or ["chief"])[0])
-                self._json(_guarded(lambda: persona.read_all(profile)))
-                return
-            if path == "/persona/soul/version":
-                profile = str((qs.get("profile") or ["chief"])[0])
-                version = str((qs.get("id") or [""])[0])
-                self._json(_guarded(lambda: {"ok": True, **persona.read_version(profile, version)}))
-                return
-            if path == "/setup/status":
-                self._json({"ok": True, "contract": providers.CONTRACT, **providers.status()})
-                return
-            if path == "/setup/second-brain":
-                self._json(_guarded(second_brain.status))
-                return
-            if path == "/second-brain/routines":
-                self._json(_guarded(second_brain.routines))
-                return
-            if path == "/about":
-                self._json(_about())
-                return
-            if path == "/usage":
-                period = str((qs.get("period") or ["month"])[0])
-                self._json(_guarded(lambda: usage.summary(period)))
-                return
-            if path == "/voice/model":
-                self._json(_guarded(speech_model.status))
-                return
-            if path == "/fleet":
-                self._json(_guarded(fleet.roster))
-                return
-            if path == "/fleet/models":
-                self._json(_guarded(lambda: fleet.models(refresh=_flag(qs, "refresh"))))
-                return
-            if path == "/setup/providers":
-                self._json(_guarded(lambda: providers.catalog(refresh=_flag(qs, "refresh"))))
-                return
-            if path == "/setup/models":
-                slug = str((qs.get("provider") or [""])[0])
-                self._json(_guarded(lambda: providers.provider_models(slug)))
-                return
-            if path == "/settings":
-                self._json(hermes_settings.get_settings())
-                return
-            if path == "/transcript":
-                self._json(_guarded(lambda: bridge.live_transcript(
-                    max(0, self._int_param(qs, "after", 0)),
-                    wait=max(0, self._int_param(qs, "wait", 0)),
-                    gen=(qs.get("gen") or [""])[0],
-                    approval=(qs.get("approval") or [""])[0][:128],
-                    before=max(0, self._int_param(qs, "before", 0)),
-                    clarify=(qs.get("clarify") or [None])[0],
-                    notice=(qs.get("notice") or [None])[0],
-                    notice_since=_float_param(qs, "nsince"),
-                    thread=_thread_param(qs),
-                    session=str((qs.get("session") or [""])[0])[:64],
-                )))
-                return
-            if path == "/outbox":
-                after_id = (qs.get("after") or [""])[0] or ""
-                limit = min(max(1, self._int_param(qs, "limit", 50)), 500)
-                self._json(bridge.outbox(after_id=after_id, limit=limit))
-                return
-            if path.startswith("/profile/"):
-                name = path.split("/")[-1]
-                self._json(data.profile_peek(name))
-                return
-            if path.startswith("/avatar/"):
-                name = path.split("/")[-1]
-                blob = data.avatar_bytes(name)
-                if not blob:
-                    self._reject(404, "no avatar")
+            started = time.time()
+            body: dict = {}
+            if method in ("POST", "PATCH"):
+                read = self._read_json(route.limit)
+                if read is None:
+                    logger.info("bridge %s %s rejected before handling", method, path)
                     return
-                raw, mime = blob
-                self.send_response(200)
-                self.send_header("Content-Type", mime)
-                self.send_header("Content-Length", str(len(raw)))
-                self.send_header("Cache-Control", "private, max-age=60")
-                self.end_headers()
-                self.wfile.write(raw)
-                return
-            if path in ("/file", "/preview", "/thumb"):
-                raw_path = (qs.get("path") or [""])[0]
-                bind = bridge.binding()
-                data.warm_media_cache(bind.get("sessionKey") or "")
-                allowed = data.file_is_allowed(raw_path)
-                if not allowed:
-                    self._reject(404, "not found")
-                    return
-                resolved, mime = allowed
-                if path == "/preview":
-                    resolved = media.preview_for(resolved)
-                    mime = "video/mp4" if resolved.suffix.lower() == ".mp4" else mime
-                elif path == "/thumb":
-                    thumb = media.thumb_for(resolved) if mime.startswith("video/") else None
-                    if not thumb:
-                        self._reject(404, "no thumbnail")
-                        return
-                    resolved, mime = thumb, "image/jpeg"
-                size = resolved.stat().st_size
-                start, end, partial = byte_range(self.headers.get("Range") or "", size)
-                status = 206 if partial else 200
-                length = (end - start + 1) if size else 0
-                safe_name = resolved.name.replace('"', "")
-                self.send_response(status)
-                self.send_header("Content-Type", mime)
-                self.send_header("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'none'")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.send_header("Content-Length", str(length))
-                self.send_header("Accept-Ranges", "bytes")
-                disposition = "attachment" if mime in ("image/svg+xml", "application/octet-stream", "text/html") else "inline"
-                self.send_header("Content-Disposition", f'{disposition}; filename="{safe_name}"')
-                cache_seconds = 3600 if path == "/thumb" else 60
-                self.send_header("Cache-Control", f"private, max-age={cache_seconds}")
-                if status == 206:
-                    self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
-                self.end_headers()
-                with resolved.open("rb") as fh:
-                    fh.seek(start)
-                    remaining = length
-                    while remaining > 0:
-                        chunk = fh.read(min(65536, remaining))
-                        if not chunk:
-                            break
-                        self.wfile.write(chunk)
-                        remaining -= len(chunk)
-                return
-            if path == "/events":
-                self._sse()
-                return
-            if path == "/push/vapidPublicKey":
-                try:
-                    mod = _cc_push()
-                    self._json({"ok": True, "publicKey": mod.public_key()})
-                except Exception as exc:
-                    self._json({"ok": False, "error": str(exc)}, 500)
-                return
-            if path == "/push/subscriptions":
-                try:
-                    mod = _cc_push()
-                    subs = mod.load_subs()
-                    self._json({"ok": True, "count": len(subs)})
-                except Exception as exc:
-                    self._json({"ok": False, "error": str(exc)}, 500)
-                return
-            self._reject(404, "not found")
+                body = read
+            result = route.run(routes.Request(self, path, parse_qs(parsed.query), body))
+            if result is None:
+                return  # the handler wrote the response itself (a file, the event stream)
+            code = 200
+            if isinstance(result, tuple):
+                result, code = result
+            if code != 200:
+                self._json(result, code)
+            elif route.action:
+                self._act(path, started, result)
+            else:
+                self._json(result)
+
+        def do_GET(self):
+            self._dispatch("GET")
 
         def do_POST(self):
-            if not self._authorized():
-                self._reject(401, "unauthorized")
-                return
-            parsed = urlparse(self.path)
-            path = parsed.path.rstrip("/") or "/"
-            started = time.time()
-            # Keep in step with lib/upload-limits.ts (55 MB of files is ~73 MB of base64 JSON).
-            limit = 80 * 1024 * 1024 if path == "/send" else voice.MAX_UPLOAD_BYTES * 2
-            body = self._read_json(limit)
-            if body is None:
-                logger.info("bridge POST %s rejected before handling", path)
-                return
-            if path == "/send":
-                attachments = body.get("attachments")
-                self._act(path, started, bridge.send(
-                    str(body.get("text") or ""),
-                    attachments if isinstance(attachments, list) else [],
-                    str(body.get("client_id") or ""),
-                    _thread_body(body),
-                ))
-                return
-            if path == "/outbox/notify":
-                bridge.broadcast({"type": "cc_outbox", "at": time.time(), "id": body.get("id")})
-                self._json({"ok": True})
-                return
-            if path in ("/stop", "/steer", "/queue"):
-                self._act(path, started, bridge.control(path[1:], str(body.get("text") or ""), _thread_body(body)))
-                return
-            if path == "/clarify":
-                answer = body.get("answer")
-                if not isinstance(answer, (str, list)):
-                    self._reject(400, "answer must be text or a list")
-                    return
-                self._act(path, started, _guarded(lambda: bridge.answer_question(str(body.get("id") or "")[:128], answer, _thread_body(body))))
-                return
-            if path == "/approve":
-                request_id = str(body.get("request_id") or body.get("requestId") or "")
-                choice = str(body.get("choice") or "").strip().lower()
-                self._act(path, started, _guarded(lambda: bridge.approve(request_id, choice, _thread_body(body))))
-                return
-            if path == "/threads":
-                self._act(path, started, _guarded(lambda: threads.create(str(body.get("title") or ""))))
-                return
-            if path == "/threads/rename":
-                self._act(path, started, _guarded(lambda: threads.rename(_thread_body(body), str(body.get("title") or ""))))
-                return
-            if path == "/threads/archive":
-                self._act(path, started, _guarded(lambda: threads.archive(_thread_body(body), body.get("archived") is not False)))
-                return
-            if path == "/routines":
-                self._act(path, started, _guarded(lambda: routines.create(
-                    str(body.get("profile") or "chief"), str(body.get("name") or ""), str(body.get("prompt") or ""),
-                    body.get("schedule") if isinstance(body.get("schedule"), dict) else {}, _thread_body(body))))
-                return
-            if path == "/routines/update":
-                schedule = body.get("schedule")
-                enabled = body.get("enabled")
-                self._act(path, started, _guarded(lambda: routines.update(
-                    str(body.get("profile") or "chief"), str(body.get("id") or ""),
-                    name=body.get("name") if isinstance(body.get("name"), str) else None,
-                    prompt=body.get("prompt") if isinstance(body.get("prompt"), str) else None,
-                    schedule=schedule if isinstance(schedule, dict) else None,
-                    thread=body.get("thread") if isinstance(body.get("thread"), str) else None,
-                    enabled=enabled if isinstance(enabled, bool) else None)))
-                return
-            if path == "/routines/run":
-                self._act(path, started, _guarded(lambda: routines.run_now(str(body.get("profile") or "chief"), str(body.get("id") or ""))))
-                return
-            if path == "/routines/delete":
-                self._act(path, started, _guarded(lambda: routines.delete(str(body.get("profile") or "chief"), str(body.get("id") or ""))))
-                return
-            if path == "/threads/fresh":
-                self._act(path, started, _guarded(lambda: bridge.fresh_start(_thread_body(body))))
-                return
-            if path == "/transcribe":
-                self._act(path, started, voice.transcribe(body))
-                return
-            if path == "/persona/soul":
-                self._act(path, started, _guarded(lambda: persona.write_soul(
-                    str(body.get("profile") or "chief"), str(body.get("text") or ""), str(body.get("base_hash") or ""))))
-                return
-            if path == "/usage/budget":
-                self._act(path, started, _guarded(lambda: usage.set_budget(body.get("monthly"))))
-                return
-            if path == "/profile/rename":
-                self._act(path, started, _guarded(lambda: persona.rename(
-                    str(body.get("profile") or "chief"), str(body.get("name") or ""), str(body.get("role") or ""),
-                    update_soul=body.get("update_soul") is not False)))
-                return
-            if path == "/persona/soul/restore":
-                self._act(path, started, _guarded(lambda: persona.restore_version(
-                    str(body.get("profile") or "chief"), str(body.get("id") or ""), str(body.get("base_hash") or ""))))
-                return
-            if path == "/persona/memory":
-                ops = body.get("ops") if isinstance(body.get("ops"), list) else []
-                self._act(path, started, _guarded(lambda: persona.edit_memory(
-                    str(body.get("profile") or "chief"), str(body.get("target") or ""), ops)))
-                return
-            if path == "/setup/key":
-                self._act(path, started, _guarded(lambda: providers.save_key(str(body.get("provider") or ""), str(body.get("key") or ""))))
-                return
-            if path == "/setup/model":
-                self._act(path, started, _guarded(lambda: providers.choose_model(
-                    str(body.get("provider") or ""), str(body.get("model") or ""), confirm_expensive=bool(body.get("confirm")))))
-                return
-            if path == "/setup/endpoint/check":
-                self._act(path, started, _guarded(lambda: providers.check_endpoint(str(body.get("base_url") or ""), str(body.get("api_key") or ""))))
-                return
-            if path == "/setup/endpoint/save":
-                self._act(path, started, _guarded(lambda: providers.save_endpoint(
-                    str(body.get("name") or ""), str(body.get("base_url") or ""), str(body.get("model") or ""), str(body.get("api_key") or ""),
-                    make_default=body.get("make_default") is not False)))
-                return
-            if path == "/setup/second-brain/inspect":
-                self._act(path, started, _guarded(lambda: second_brain.inspect(str(body.get("path") or ""), body.get("format") or None)))
-                return
-            if path == "/setup/second-brain":
-                self._act(path, started, _guarded(lambda: second_brain.setup(
-                    str(body.get("path") or ""), str(body.get("mode") or ""), fmt=body.get("format") or None,
-                    routines_on=body.get("routines") if isinstance(body.get("routines"), bool) else None)))
-                return
-            if path == "/second-brain/routines":
-                enabled = body.get("enabled")
-                at = body.get("time")
-                self._act(path, started, _guarded(lambda: second_brain.set_routine(
-                    str(body.get("id") or ""),
-                    enabled=enabled if isinstance(enabled, bool) else None,
-                    at=str(at) if isinstance(at, str) else None,
-                )))
-                return
-            if path == "/fleet/model":
-                self._act(path, started, _guarded(lambda: fleet.set_model(
-                    str(body.get("profile") or "chief"), str(body.get("provider") or ""), str(body.get("model") or ""),
-                    confirm_expensive=bool(body.get("confirm")))))
-                return
-            if path == "/fleet/retire":
-                # The dashboard asks the owner before calling this; the request itself is the go-ahead.
-                self._act(path, started, _guarded(lambda: fleet.retire(str(body.get("profile") or ""), owner_confirmed=True)))
-                return
-            if path == "/fleet/restore":
-                self._act(path, started, _guarded(lambda: fleet.restore(str(body.get("archive_id") or ""))))
-                return
-            if path == "/fleet/archive/remove":
-                self._act(path, started, _guarded(lambda: fleet.remove_archive(str(body.get("archive_id") or ""))))
-                return
-            if path == "/setup/key/remove":
-                self._act(path, started, _guarded(lambda: providers.remove_key(str(body.get("provider") or ""))))
-                return
-            if path == "/voice/model/download":
-                self._act(path, started, _guarded(lambda: speech_model.download(str(body.get("id") or speech_model.DEFAULT_MODEL))))
-                return
-            if path == "/voice/model/cancel":
-                self._act(path, started, _guarded(speech_model.cancel))
-                return
-            if path == "/voice/model/delete":
-                self._act(path, started, _guarded(lambda: speech_model.delete(str(body.get("id") or ""))))
-                return
-            if path == "/voice/model/use":
-                model_id = str(body.get("id") or "")
-                self._act(path, started, _guarded(lambda: (lambda err: {"ok": not err, "error": err} if err else {"ok": True})(speech_model.use(model_id))))
-                return
-            if path == "/setup/soul/seed":
-                self._act(path, started, _guarded(second_brain.seed_soul))
-                return
-            if path == "/setup/test":
-                self._act(path, started, _guarded(providers.test_message))
-                return
-            if path == "/speak":
-                self._act(path, started, voice.speak(str(body.get("text") or "")))
-                return
-            if path == "/settings":
-                self._act(path, started, hermes_settings.patch_settings(body))
-                return
-            if path == "/push/subscribe":
-                try:
-                    mod = _cc_push()
-                    sub = body.get("subscription") if isinstance(body, dict) else None
-                    if not isinstance(sub, dict):
-                        sub = body if isinstance(body, dict) else {}
-                    self._json(mod.upsert_subscription(sub))
-                except Exception as exc:
-                    self._json({"ok": False, "error": str(exc)}, 500)
-                return
-            if path == "/push/unsubscribe":
-                try:
-                    mod = _cc_push()
-                    endpoint = str((body or {}).get("endpoint") or "")
-                    self._json(mod.remove_subscription(endpoint))
-                except Exception as exc:
-                    self._json({"ok": False, "error": str(exc)}, 500)
-                return
-            if path == "/push/test":
-                try:
-                    title = str((body or {}).get("title") or identity.assistant_name())
-                    body_text = str((body or {}).get("body") or "Test push from Chief")
-                    url = str((body or {}).get("url") or "/")
-                    self._json(push.send(title, body_text, url=url, tag="test"))
-                except Exception as exc:
-                    self._json({"ok": False, "error": str(exc)}, 500)
-                return
-            self._reject(404, "not found")
+            self._dispatch("POST")
 
         def do_PATCH(self):
-            if not self._authorized():
-                self._reject(401, "unauthorized")
-                return
-            parsed = urlparse(self.path)
-            path = parsed.path.rstrip("/") or "/"
-            started = time.time()
-            body = self._read_json(65536)
-            if body is None:
-                return
-            if path == "/settings":
-                self._act(path, started, hermes_settings.patch_settings(body))
-                return
-            self._reject(404, "not found")
+            self._dispatch("PATCH")
 
         def _sse(self):
             """The dashboard's live channel: a `change` event (coalesced) whenever the change signal moves, the

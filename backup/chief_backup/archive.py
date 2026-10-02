@@ -29,7 +29,7 @@ import time
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Callable, Iterator, Optional
+from collections.abc import Callable, Iterator
 
 from . import crypto
 
@@ -101,7 +101,7 @@ def _walk(root: Path, *, skip: Callable[[PurePosixPath, bool], bool]) -> Iterato
                 yield rel, Path(current) / name
 
 
-def plan_setup(hermes_root: Path, app_dir: Optional[Path], *, secrets: bool, exclude: list[Path]) -> Plan:
+def plan_setup(hermes_root: Path, app_dir: Path | None, *, secrets: bool, exclude: list[Path]) -> Plan:
     plan = Plan()
     excluded = [p.resolve() for p in exclude]
 
@@ -189,7 +189,7 @@ def _profiles(plan: Plan) -> list[str]:
     return sorted(found)
 
 
-def backup_name(kind: str = "manual", when: Optional[float] = None) -> str:
+def backup_name(kind: str = "manual", when: float | None = None) -> str:
     stamp = time.strftime("%Y-%m-%d %H%M%S", time.localtime(when or time.time()))
     label = {"auto": " (auto)", "safety": " (before restore)", "pre-update": " (before update)"}.get(kind, "")
     return f"Chief backup{label} {stamp}{SUFFIX}"
@@ -199,15 +199,15 @@ def create(
     dest_dir: Path,
     *,
     parts: list[str],
-    hermes_root: Optional[Path] = None,
-    app_dir: Optional[Path] = None,
-    second_brain: Optional[Path] = None,
+    hermes_root: Path | None = None,
+    app_dir: Path | None = None,
+    second_brain: Path | None = None,
     passphrase: str = "",
     app_version: str = "0.0.0",
     hermes_version: str = "",
     kind: str = "manual",
-    tmp_dir: Optional[Path] = None,
-    progress: Optional[Callable[[int, int], None]] = None,
+    tmp_dir: Path | None = None,
+    progress: Callable[[int, int], None] | None = None,
     secrets_plain: bool = False,
 ) -> dict:
     """`secrets_plain` is only for the local safety backup a restore takes of the live data (which already
@@ -223,11 +223,13 @@ def create(
     exclude = [dest_dir] + ([tmp_dir] if tmp_dir else [])
     plan = Plan()
     if "setup" in parts:
+        assert hermes_root is not None  # checked above
         setup = plan_setup(hermes_root, app_dir, secrets=bool(passphrase) or secrets_plain, exclude=exclude)
         plan.entries += setup.entries
         plan.dropped += setup.dropped
         plan.sanitized_env.update(setup.sanitized_env)
     if "second-brain" in parts:
+        assert second_brain is not None  # checked above
         plan.entries += plan_second_brain(second_brain, exclude=exclude).entries
 
     final = dest_dir / backup_name(kind)

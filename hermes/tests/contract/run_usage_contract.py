@@ -50,7 +50,7 @@ def check(name: str, cond: bool, detail: object = "") -> None:
         failures.append(name)
 
 
-from hermes_state import SessionDB  # noqa: E402
+from hermes_state import SessionDB
 
 db = SessionDB(home / "state.db")
 db.create_session("switch", "command_center", model="deepseek-flash")
@@ -88,9 +88,12 @@ db = SessionDB(home / "state.db")
 db.update_token_counts("switch", input_tokens=300, output_tokens=30, model="glm-5.3-flash",
                        billing_provider="zai", estimated_cost_usd=0.002, api_call_count=1)
 db.close()
-again = usage.summary("today")
+# Reads sync at most every 15 s; an explicit `now` (as the budget check passes) always syncs.
+from datetime import datetime
+
+again = usage.summary("today", now=datetime.now())
 check("a later call adds only itself", again["totals"]["input"] == 2800 and again["totals"]["calls"] == 4, again["totals"])
-check("a sync with nothing new adds nothing", usage.summary("today")["totals"]["input"] == 2800)
+check("a sync with nothing new adds nothing", usage.summary("today", now=datetime.now())["totals"]["input"] == 2800)
 check("the journal says from when its days are exact", bool(again.get("exactSince")), again.get("exactSince"))
 
 print(f"\n{len(failures)} failure(s)" if failures else "\nusage contract holds")

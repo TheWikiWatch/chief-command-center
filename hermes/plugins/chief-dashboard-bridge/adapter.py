@@ -6,6 +6,7 @@ and cron delivery via standalone_sender_fn. Dual-runs beside Discord until Phase
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
@@ -13,8 +14,8 @@ import threading
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 from gateway.config import Platform, PlatformConfig
 from gateway.platforms._shared import get_scoped_secret, seed_extra_from_env
@@ -27,15 +28,15 @@ from .outbox import _outbox_path, append_outbox, read_outbox  # noqa: F401 (re-e
 
 logger = logging.getLogger("command-center-platform")
 
-_ADAPTER_REF: Optional["CommandCenterAdapter"] = None
+_ADAPTER_REF: CommandCenterAdapter | None = None
 _ADAPTER_LOCK = threading.Lock()
 
 
-def get_adapter() -> Optional["CommandCenterAdapter"]:
+def get_adapter() -> CommandCenterAdapter | None:
     return _ADAPTER_REF
 
 
-def _set_adapter(adapter: Optional["CommandCenterAdapter"]) -> None:
+def _set_adapter(adapter: CommandCenterAdapter | None) -> None:
     global _ADAPTER_REF
     with _ADAPTER_LOCK:
         _ADAPTER_REF = adapter
@@ -66,8 +67,8 @@ class CommandCenterAdapter(BasePlatformAdapter):
 
     def __init__(self, config: PlatformConfig):
         super().__init__(config, Platform("command_center"))
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
-        self._broadcast: Optional[Callable[[dict], None]] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._broadcast: Callable[[dict], None] | None = None
         self.chat_id = identity.owner_id()
         try:
             from .chat_state import install_status_capture
@@ -96,8 +97,8 @@ class CommandCenterAdapter(BasePlatformAdapter):
         self,
         chat_id: str,
         content: str,
-        reply_to: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        reply_to: str | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         mid = append_outbox(chat_id or self.chat_id, content or "", source="send")
         # Hermes's "⏳ Working — N min" busy notices feed the chat's step line; they never ping the phone.
@@ -121,8 +122,8 @@ class CommandCenterAdapter(BasePlatformAdapter):
         return SendResult(success=True, message_id=mid)
 
     async def send_clarify(
-        self, chat_id: str, question: str, choices: Optional[list], clarify_id: str,
-        session_key: str, metadata: Optional[Dict[str, Any]] = None,
+        self, chat_id: str, question: str, choices: list | None, clarify_id: str,
+        session_key: str, metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         """The chief's question as a card in the chat (the bridge reads it from Hermes's clarify registry
         with the transcript). Typing in the chat answers it too, as with Hermes's text fallback."""
@@ -152,7 +153,7 @@ class CommandCenterAdapter(BasePlatformAdapter):
                 pass
         changes.bump("clarify")
 
-    def set_status_text(self, chat_id: str, text: Optional[str]) -> None:
+    def set_status_text(self, chat_id: str, text: str | None) -> None:
         super().set_status_text(chat_id, text)
         try:
             from .chat_state import record_status
@@ -215,7 +216,7 @@ class CommandCenterAdapter(BasePlatformAdapter):
 
         fut = asyncio.run_coroutine_threadsafe(_run(), loop)
 
-        def _done(done: "asyncio.Future[None]") -> None:
+        def _done(done: concurrent.futures.Future[None]) -> None:
             try:
                 done.result()
             except Exception:
@@ -256,10 +257,10 @@ async def _standalone_send(
     chat_id: str,
     message: str,
     *,
-    thread_id: Optional[str] = None,
-    media_files: Optional[List[str]] = None,
+    thread_id: str | None = None,
+    media_files: list[str] | None = None,
     force_document: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     mid = append_outbox(chat_id or identity.owner_id(), message or "", source="cron")
     # Best-effort nudge of the live bridge, on its own thread: a blocking request here would stall the event loop.
     threading.Thread(target=_notify_bridge, args=(mid,), name="chief-outbox-notify", daemon=True).start()

@@ -13,11 +13,13 @@ import copy
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
+from collections.abc import Iterator
 
 import yaml
 
 from hermes_constants import get_default_hermes_root, named_profile_is_deleted
+from .util import subdict, sublist
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -78,12 +80,12 @@ def install_root() -> Path:
         return Path(local) / "hermes" if local else Path.home() / "AppData" / "Local" / "hermes"
 
 
-def chief_home(root: Optional[Path] = None) -> Path:
+def chief_home(root: Path | None = None) -> Path:
     root = root or install_root()
     return root / "profiles" / "chief"
 
 
-def is_chief_home(path: Optional[Path] = None) -> bool:
+def is_chief_home(path: Path | None = None) -> bool:
     try:
         from hermes_constants import get_hermes_home
 
@@ -105,7 +107,7 @@ def chief_config_scope() -> Iterator[None]:
         reset_hermes_home_override(token)
 
 
-def profiles_dir(root: Optional[Path] = None) -> Path:
+def profiles_dir(root: Path | None = None) -> Path:
     return (root or install_root()) / "profiles"
 
 
@@ -189,7 +191,7 @@ def list_roster() -> dict[str, Any]:
         except Exception:
             sections_doc = {}
     section_order = [s for s in (sections_doc.get("sections") or []) if isinstance(s, str)]
-    assign = sections_doc.get("assign") if isinstance(sections_doc.get("assign"), dict) else {}
+    assign = subdict(sections_doc, "assign")
     flavor = _roster_flavor(root)
 
     people: list[dict[str, Any]] = []
@@ -203,7 +205,7 @@ def list_roster() -> dict[str, Any]:
             bots = (meta.get("ui_meta") or {}).get("hermes-bots") if isinstance(meta.get("ui_meta"), dict) else {}
             bots = bots if isinstance(bots, dict) else {}
             cfg = load_yaml(entry / "config.yaml")
-            model = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
+            model = subdict(cfg, "model")
             name, desc = _bot_identity(meta, bots, entry.name)
             avatar = None
             # Bot Mode backfills shape faces as PNG; only real photos should use <img>.
@@ -645,7 +647,7 @@ def _safe_upload_name(name: str) -> str:
     return base or "file"
 
 
-def stage_uploads(items: list[Any], dest: Optional[Path] = None) -> list[dict[str, Any]]:
+def stage_uploads(items: list[Any], dest: Path | None = None) -> list[dict[str, Any]]:
     """Write composer uploads into the inbound cache and return paths the chief can read."""
     if not items:
         return []
@@ -1109,9 +1111,10 @@ def profile_peek(name: str) -> dict[str, Any]:
     if skills_dir.is_dir():
         for md in sorted(skills_dir.rglob("SKILL.md")):
             skill_names.append(md.parent.name)
-    toolsets = cfg.get("toolsets") if isinstance(cfg.get("toolsets"), list) else []
-    tools_block = cfg.get("tools") if isinstance(cfg.get("tools"), dict) else {}
-    enabled = tools_block.get("enabled_toolsets") if isinstance(tools_block.get("enabled_toolsets"), list) else toolsets
+    toolsets = sublist(cfg, "toolsets")
+    tools_block = subdict(cfg, "tools")
+    listed = tools_block.get("enabled_toolsets")
+    enabled = listed if isinstance(listed, list) else toolsets
     jobs = work_status()["jobs"]
     job = job_for_person(jobs, name)
     flavor = _roster_flavor(root).get(name, {})

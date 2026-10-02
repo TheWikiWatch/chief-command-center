@@ -32,9 +32,10 @@ import re
 import time
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import data, persona
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -167,7 +168,7 @@ class SecondBrainError(ValueError):
 
 def default_folder() -> str:
     """`Documents\\Second Brain`, using the real Documents folder (it may be redirected, e.g. to OneDrive)."""
-    docs: Optional[Path] = None
+    docs: Path | None = None
     if os.name == "nt":
         try:
             import ctypes
@@ -179,7 +180,7 @@ def default_folder() -> str:
             # FOLDERID_Documents {FDD39AD0-238F-46AF-ADB4-6C85480369C7}
             fid = _GUID(0xFDD39AD0, 0x238F, 0x46AF, (ctypes.c_ubyte * 8)(0xAD, 0xB4, 0x6C, 0x85, 0x48, 0x03, 0x69, 0xC7))
             out = ctypes.c_wchar_p()
-            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(fid), 0, None, ctypes.byref(out)) == 0:
+            if ctypes.windll.shell32.SHGetKnownFolderPath(ctypes.byref(fid), 0, None, ctypes.byref(out)) == 0 and out.value:
                 docs = Path(out.value)
                 ctypes.windll.ole32.CoTaskMemFree(out)
         except Exception:
@@ -265,7 +266,7 @@ def manual(path: Path) -> str:
     return ""
 
 
-def detect_format(path: Path, rules: str = "") -> Optional[str]:
+def detect_format(path: Path, rules: str = "") -> str | None:
     """Which format a folder already uses: `wiki` (the toolkit's wiki-style layout: `wiki/` and `raw/`, or a
     `_CLAUDE.md` describing them), `para` (the app's PARA layout), or None."""
     if not path.is_dir():
@@ -286,7 +287,7 @@ def detect_format(path: Path, rules: str = "") -> Optional[str]:
     return None
 
 
-def _ours(path: Path) -> Optional[str]:
+def _ours(path: Path) -> str | None:
     """The format of a Second Brain the app made, or None."""
     if (path / "AGENTS.md").is_file() and (path / "40 Knowledge" / "SCHEMA.md").is_file():
         return "para"
@@ -383,7 +384,7 @@ def _would_create(path: Path, mode: str, fmt: str = "para") -> dict[str, list[st
     }
 
 
-def inspect(raw_path: str, fmt: Optional[str] = None) -> dict[str, Any]:
+def inspect(raw_path: str, fmt: str | None = None) -> dict[str, Any]:
     """What a folder holds, which format it already uses, and what setting it up in `fmt` would create
     (`fmt` defaults to the detected format, else PARA)."""
     path = _clean_path(raw_path)
@@ -491,7 +492,7 @@ def _external_dirs(home: Path) -> list[Path]:
         config = yaml.safe_load((home / "config.yaml").read_text(encoding="utf-8")) or {}
     except (OSError, ValueError):
         return []
-    skills = config.get("skills") if isinstance(config.get("skills"), dict) else {}
+    skills = subdict(config, "skills")
     return [Path(str(d)) for d in skills.get("external_dirs") or []]
 
 
@@ -524,8 +525,8 @@ def _owner_skill(home: Path, name: str, ours: Path) -> bool:
     return False
 
 
-def install_skill(home: Path, vault: Path, fmt: Optional[str] = None, rules: Optional[str] = None,
-                  extras: Optional[bool] = None) -> Path:
+def install_skill(home: Path, vault: Path, fmt: str | None = None, rules: str | None = None,
+                  extras: bool | None = None) -> Path:
     """The `second-brain` skill (the folder, its rules file, its critical facts, which skill does what) and the
     `second-brain-writes` write gate, in the variant for the folder's format, rendered for this folder. The wiki
     format also gets its routines' skills (drop folder, morning brief, Current Analysis), unless the folder has its
@@ -584,7 +585,7 @@ def _wiki_path(home: Path, vault: Path, fmt: str) -> None:
             remove_env_value("WIKI_PATH")
 
 
-def _configure(home: Path, vault: Path, fmt: Optional[str] = None, rules: Optional[str] = None) -> None:
+def _configure(home: Path, vault: Path, fmt: str | None = None, rules: str | None = None) -> None:
     from hermes_cli.config import save_env_value
 
     if fmt is None or rules is None:
@@ -724,8 +725,8 @@ def _job_args(routine: dict[str, Any], fmt: str, home: Path) -> tuple[str, dict[
     return prompt, {"skills": skills, **kwargs}
 
 
-def ensure_routines(home: Path, vault: Path, fmt: Optional[str] = None, paused: bool = False,
-                    switch: Optional[bool] = None, only: Optional[str] = None) -> list[str]:
+def ensure_routines(home: Path, vault: Path, fmt: str | None = None, paused: bool = False,
+                    switch: bool | None = None, only: str | None = None) -> list[str]:
     """Create each of the format's routines that doesn't exist yet (none while `paused`). An existing one keeps
     its time and on/off state, but follows the folder and the format (prompt, skills, workdir, gate). A wiki-only
     routine left from an earlier format is removed. `switch` (setup only) turns them all on or off. Returns the ids
@@ -775,7 +776,7 @@ def ensure_routines(home: Path, vault: Path, fmt: Optional[str] = None, paused: 
         return []
 
 
-def _time_of(schedule: dict[str, Any]) -> str:
+def _time_of(schedule: dict[str, Any] | None) -> str:
     """HH:MM of a daily or weekly cron expression ("0 22 * * *" -> "22:00"), else "" (e.g. every half hour)."""
     expr = str((schedule or {}).get("expr") or "").split()
     if len(expr) == 5 and expr[0].isdigit() and expr[1].isdigit():
@@ -814,7 +815,7 @@ def routines(profile: str = "chief") -> dict[str, Any]:
 _TIME = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 
 
-def set_routine(routine_id: str, enabled: Optional[bool] = None, at: Optional[str] = None, profile: str = "chief") -> dict[str, Any]:
+def set_routine(routine_id: str, enabled: bool | None = None, at: str | None = None, profile: str = "chief") -> dict[str, Any]:
     """Turn a routine on or off, or move it to another time of day (same days)."""
     home = _profile_home(profile)
     routine = next((r for r in ROUTINES + WIKI_ROUTINES if r["id"] == routine_id), None)
@@ -916,8 +917,8 @@ def upgrade(profile: str = "chief") -> dict[str, Any]:
     return {"ok": True, "upgraded": bool(done or made), "changed": done, "routines": made}
 
 
-def setup(raw_path: str, mode: str, profile: str = "chief", today: Optional[date] = None, fmt: Optional[str] = None,
-          routines_on: Optional[bool] = None) -> dict[str, Any]:
+def setup(raw_path: str, mode: str, profile: str = "chief", today: date | None = None, fmt: str | None = None,
+          routines_on: bool | None = None) -> dict[str, Any]:
     """Set up the folder in a format (default: what it already uses, else PARA). A folder with its own rules file
     gets nothing added. `routines_on` defaults to on, except for a folder with its own rules file."""
     mode = str(mode or "").strip().lower()
@@ -927,7 +928,7 @@ def setup(raw_path: str, mode: str, profile: str = "chief", today: Optional[date
         raise SecondBrainError("Choose a format: Organized (PARA) or Agent-first wiki.")
     home = _profile_home(profile)
     found = inspect(raw_path, fmt)
-    fmt = found["format"]
+    fmt = str(found["format"])
     path = Path(found["path"])
     if mode not in found["choices"]:
         if mode == "new":

@@ -13,7 +13,6 @@ import os
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -49,7 +48,7 @@ def _run(cmd: list[str], timeout: int) -> bool:
         return False
 
 
-def thumb_for(src: Path) -> Optional[Path]:
+def thumb_for(src: Path) -> Path | None:
     """Cached jpeg frame for a video; None when unavailable."""
     out = _cache_root() / "thumbs" / (_key(src) + ".jpg")
     if out.is_file() and out.stat().st_size > 0:
@@ -122,7 +121,7 @@ def _build_preview(src: Path, out: Path, key: str) -> None:
             _inflight.discard(key)
 
 
-def _probe_height(src: Path) -> Optional[int]:
+def _probe_height(src: Path) -> int | None:
     try:
         r = subprocess.run(
             [FFPROBE, "-v", "error", "-select_streams", "v:0",

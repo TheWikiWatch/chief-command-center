@@ -17,7 +17,7 @@ import json
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import data, threads
 
@@ -168,7 +168,7 @@ def _key(profile: str, job_id: str) -> str:
     return f"{profile}/{job_id}"
 
 
-def _set_bot_thread(profile: str, job_id: str, thread: Optional[str]) -> None:
+def _set_bot_thread(profile: str, job_id: str, thread: str | None) -> None:
     """Where a bot's routine reports (None forgets it). A new routine relays from its first run on."""
     key = _key(profile, job_id)
     mapping, relayed = _read(_THREADS_FILE), _read(_RELAYED_FILE)
@@ -182,7 +182,7 @@ def _set_bot_thread(profile: str, job_id: str, thread: Optional[str]) -> None:
     _write(_RELAYED_FILE, relayed)
 
 
-def _thread_of(deliver: Any) -> Optional[str]:
+def _thread_of(deliver: Any) -> str | None:
     text = str(deliver or "")
     if text == "command_center":
         return threads.MAIN
@@ -280,8 +280,8 @@ def create(profile: str, name: str, prompt: str, schedule: dict[str, Any], threa
     return {"ok": True, "routine": _describe(profile, home, job, jobs)}
 
 
-def update(profile: str, routine_id: str, *, name: Optional[str] = None, prompt: Optional[str] = None,
-           schedule: Optional[dict[str, Any]] = None, thread: Optional[str] = None, enabled: Optional[bool] = None) -> dict[str, Any]:
+def update(profile: str, routine_id: str, *, name: str | None = None, prompt: str | None = None,
+           schedule: dict[str, Any] | None = None, thread: str | None = None, enabled: bool | None = None) -> dict[str, Any]:
     home, job = _find(profile, routine_id)
     profile = home.name if home != data.chief_home() else "chief"
     built_in = str(job.get("name") or "").startswith(BUILT_IN)
@@ -344,7 +344,7 @@ def delete(profile: str, routine_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------- relaying a bot's runs
 
 
-def _answer(text: str) -> Optional[str]:
+def _answer(text: str) -> str | None:
     """What a run said, from its output file: the answer, a short failure line, or None (silent/blocked)."""
     if "## Response" in text:
         answer = text.rpartition("## Response")[2].strip()

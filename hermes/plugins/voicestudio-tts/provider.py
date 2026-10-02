@@ -30,11 +30,12 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
+from collections.abc import Callable
 
 try:
     from agent.tts_provider import TTSProvider
-except Exception:  # noqa: BLE001 — importable (and testable) outside Hermes
+except Exception:
     class TTSProvider:  # type: ignore[no-redef]
         pass
 
@@ -49,7 +50,7 @@ LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 FORMATS = {"mp3", "wav", "opus", "flac"}
 
 #: Designed voices: fast, stable (fixed seed), no setup. Tags are OmniVoice's voice-design whitelist.
-DESIGNED: List[tuple[str, str]] = [
+DESIGNED: list[tuple[str, str]] = [
     ("British man, deep", "male, middle-aged, low pitch, british accent"),
     ("British man", "male, young adult, moderate pitch, british accent"),
     ("American man, deep", "male, middle-aged, low pitch, american accent"),
@@ -61,24 +62,24 @@ DESIGNED: List[tuple[str, str]] = [
     ("Canadian woman", "female, young adult, moderate pitch, canadian accent"),
 ]
 
-Http = Callable[[str, str, Optional[bytes], float], bytes]
+Http = Callable[[str, str, bytes | None, float], bytes]
 
 
-def _http(method: str, url: str, body: Optional[bytes], timeout: float) -> bytes:
+def _http(method: str, url: str, body: bytes | None, timeout: float) -> bytes:
     headers = {"content-type": "application/json"} if body is not None else {}
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
 
 
-def _load_config() -> Dict[str, Any]:
+def _load_config() -> dict[str, Any]:
     try:
         from tools.tts_tool import _load_tts_config
 
         tts = _load_tts_config()
         section = tts.get(NAME) if isinstance(tts, dict) else None
         return section if isinstance(section, dict) else {}
-    except Exception:  # noqa: BLE001
+    except Exception:
         return {}
 
 
@@ -95,9 +96,9 @@ def loopback_base(raw: Any) -> str:
     return url
 
 
-def speech_body(text: str, voice: str, cfg: Dict[str, Any], fmt: str, speed: Optional[float]) -> Dict[str, Any]:
+def speech_body(text: str, voice: str, cfg: dict[str, Any], fmt: str, speed: float | None) -> dict[str, Any]:
     """The /v1/audio/speech request for a voice id (see the module docstring)."""
-    body: Dict[str, Any] = {"model": "omnivoice", "input": text, "response_format": fmt, "voice": "default"}
+    body: dict[str, Any] = {"model": "omnivoice", "input": text, "response_format": fmt, "voice": "default"}
     rate = speed if speed is not None else cfg.get("speed")
     if isinstance(rate, (int, float)) and rate > 0 and float(rate) != 1.0:
         body["speed"] = max(0.25, min(4.0, float(rate)))
@@ -117,11 +118,11 @@ def speech_body(text: str, voice: str, cfg: Dict[str, Any], fmt: str, speed: Opt
 class VoiceStudioTTS(TTSProvider):
     """`tts.provider: voicestudio`."""
 
-    def __init__(self, http: Http = _http, config: Callable[[], Dict[str, Any]] = _load_config, edge: Optional[Callable[[str, str, str], None]] = None):
+    def __init__(self, http: Http = _http, config: Callable[[], dict[str, Any]] = _load_config, edge: Callable[[str, str, str], None] | None = None):
         self._http = http
         self._config = config
         self._edge = edge or _edge_fallback
-        self._profiles: tuple[float, List[Dict[str, Any]]] = (0.0, [])
+        self._profiles: tuple[float, list[dict[str, Any]]] = (0.0, [])
         self._lock = threading.Lock()
         #: When the last reply fell back to Edge (epoch seconds) and why; read by the dashboard bridge.
         self.last_fallback: float = 0.0
@@ -136,7 +137,7 @@ class VoiceStudioTTS(TTSProvider):
     def display_name(self) -> str:
         return "VoiceStudio (local)"
 
-    def get_setup_schema(self) -> Dict[str, Any]:
+    def get_setup_schema(self) -> dict[str, Any]:
         return {"name": "VoiceStudio (local)", "badge": "local", "tag": "Designed and cloned voices on this PC", "env_vars": []}
 
     def is_available(self) -> bool:
@@ -148,24 +149,24 @@ class VoiceStudioTTS(TTSProvider):
         return True
 
     # -- voices ------------------------------------------------------------
-    def _base(self, cfg: Dict[str, Any]) -> str:
+    def _base(self, cfg: dict[str, Any]) -> str:
         return loopback_base(cfg.get("base_url"))
 
-    def _saved_profiles(self, cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _saved_profiles(self, cfg: dict[str, Any]) -> list[dict[str, Any]]:
         at, cached = self._profiles
         if time.time() - at < 30:
             return cached
         try:
             rows = json.loads(self._http("GET", f"{self._base(cfg)}/profiles", None, 2.5))
             profiles = [r for r in rows if isinstance(r, dict) and r.get("id")] if isinstance(rows, list) else []
-        except Exception:  # noqa: BLE001 — backend down: designed voices still list
+        except Exception:
             profiles = cached
         self._profiles = (time.time(), profiles)
         return profiles
 
-    def list_voices(self) -> List[Dict[str, Any]]:
+    def list_voices(self) -> list[dict[str, Any]]:
         cfg = self._config()
-        voices: List[Dict[str, Any]] = [{"id": f"design:{tags}", "display": label, "group": "Designed · fast"} for label, tags in DESIGNED]
+        voices: list[dict[str, Any]] = [{"id": f"design:{tags}", "display": label, "group": "Designed · fast"} for label, tags in DESIGNED]
         voices.append({"id": "default", "display": "OmniVoice default", "group": "Designed · fast"})
         for p in self._saved_profiles(cfg):
             kind = "cloned" if str(p.get("kind") or "clone") == "clone" else "designed"
@@ -176,17 +177,17 @@ class VoiceStudioTTS(TTSProvider):
             voices.append({"id": current, "display": current, "group": "Your VoiceStudio voices"})
         return voices
 
-    def current_voice(self, cfg: Optional[Dict[str, Any]] = None) -> str:
+    def current_voice(self, cfg: dict[str, Any] | None = None) -> str:
         cfg = self._config() if cfg is None else cfg
         voice = str(cfg.get("voice") or "").strip()
         return voice or DEFAULT_VOICE
 
-    def default_voice(self) -> Optional[str]:
+    def default_voice(self) -> str | None:
         return DEFAULT_VOICE
 
     # -- speech ------------------------------------------------------------
-    def synthesize(self, text: str, output_path: str, *, voice: Optional[str] = None, model: Optional[str] = None,
-                   speed: Optional[float] = None, format: str = "mp3", **extra: Any) -> str:
+    def synthesize(self, text: str, output_path: str, *, voice: str | None = None, model: str | None = None,
+                   speed: float | None = None, format: str = "mp3", **extra: Any) -> str:
         cfg = self._config()
         fmt = format if format in FORMATS else "mp3"
         path = _with_ext(output_path, fmt)
@@ -208,7 +209,7 @@ class VoiceStudioTTS(TTSProvider):
             with open(path, "wb") as fh:
                 fh.write(audio)
             return path
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             reason = _reason(exc)
             if cfg.get("fallback", True) is False:
                 raise RuntimeError(f"VoiceStudio: {reason}") from exc
@@ -228,12 +229,12 @@ class VoiceStudioTTS(TTSProvider):
             try:
                 body = json.dumps(speech_body("Hi.", self.current_voice(cfg), cfg, "mp3", None)).encode("utf-8")
                 self._http("POST", f"{self._base(cfg)}/v1/audio/speech", body, 120)
-            except Exception:  # noqa: BLE001 — best effort
+            except Exception:
                 logger.debug("voicestudio-tts: warm-up failed", exc_info=True)
 
         threading.Thread(target=go, name="voicestudio-warm", daemon=True).start()
 
-    def fallback_status(self, within_s: float = 600) -> Optional[Dict[str, Any]]:
+    def fallback_status(self, within_s: float = 600) -> dict[str, Any] | None:
         """The most recent Edge fallback if it happened within `within_s`, for the dashboard."""
         with self._lock:
             if self.last_fallback and time.time() - self.last_fallback < within_s:

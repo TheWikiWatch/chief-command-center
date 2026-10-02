@@ -13,7 +13,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Callable, Optional
+from collections.abc import Callable
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -45,12 +45,12 @@ class Watcher:
     """Bumps on every commit to the watched SQLite databases by another connection (`PRAGMA data_version`), and
     whenever an in-memory signature changes (which sessions are working, the pending approval): every 250 ms."""
 
-    def __init__(self, paths: Callable[[], list[Path]], signature: Optional[Callable[[], object]] = None, every: float = 0.25):
+    def __init__(self, paths: Callable[[], list[Path]], signature: Callable[[], object] | None = None, every: float = 0.25):
         self._paths = paths
         self._signature = signature
         self._every = every
         self._stop = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self._thread is None:

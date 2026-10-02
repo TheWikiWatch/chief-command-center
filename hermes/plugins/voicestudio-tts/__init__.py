@@ -16,5 +16,5 @@ def register(ctx):
 
     try:
         ctx.register_tts_provider(VoiceStudioTTS())
-    except Exception:  # noqa: BLE001 — a failed registration must never take the gateway down
+    except Exception:
         logger.warning("voicestudio-tts: registration failed", exc_info=True)

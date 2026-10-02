@@ -12,6 +12,7 @@ from typing import Any
 
 from . import voice
 from .data import chief_config_scope
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -280,7 +281,7 @@ def _get_settings_inner() -> dict[str, Any]:
     tts_providers: list[dict[str, Any]] = []
     try:
         config = _load_config()
-        stt_cfg = config.get("stt") if isinstance(config.get("stt"), dict) else {}
+        stt_cfg = subdict(config, "stt")
         stt_model = _stt_model_value(stt_cfg or {}, stt_provider)
         stt_providers = _catalog("stt", config)
         tts_providers = _catalog("tts", config)
@@ -446,7 +447,7 @@ def _collect_secrets(
     tts_now: str,
 ) -> dict[str, str]:
     out: dict[str, str] = {}
-    raw = body.get("secrets") if isinstance(body.get("secrets"), dict) else {}
+    raw = subdict(body, "secrets")
     for key, val in raw.items():
         text = str(val or "").strip()
         if text:
@@ -480,9 +481,9 @@ def patch_settings(body: dict[str, Any]) -> dict[str, Any]:
 def _patch_settings_inner(body: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(body, dict):
         return {"ok": False, "error": "Invalid settings payload"}
-    stt_body = body.get("stt") if isinstance(body.get("stt"), dict) else {}
-    tts_body = body.get("tts") if isinstance(body.get("tts"), dict) else {}
-    secrets_body = body.get("secrets") if isinstance(body.get("secrets"), dict) else {}
+    stt_body = subdict(body, "stt")
+    tts_body = subdict(body, "tts")
+    secrets_body = subdict(body, "secrets")
     if not stt_body and not tts_body and not secrets_body:
         return get_settings()
 

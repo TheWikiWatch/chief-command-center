@@ -32,9 +32,10 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import data
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -49,7 +50,7 @@ REST = "~rest"  # the task name for a session's remainder beyond its ledger rows
 _lock = threading.Lock()
 
 
-def _since(period: str, now: Optional[datetime] = None) -> float:
+def _since(period: str, now: datetime | None = None) -> float:
     now = now or datetime.now()
     midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
     if period == "today":
@@ -81,8 +82,8 @@ def _profiles() -> list[tuple[str, Path]]:
 def _title(profile: str, home: Path) -> str:
     try:
         meta = data.load_yaml(home / "profile.yaml") if (home / "profile.yaml").is_file() else {}
-        ui = meta.get("ui_meta") if isinstance(meta.get("ui_meta"), dict) else {}
-        bots = ui.get("hermes-bots") if isinstance(ui.get("hermes-bots"), dict) else {}
+        ui = subdict(meta, "ui_meta")
+        bots = subdict(ui, "hermes-bots")
         title = str(bots.get("title") or "")
     except Exception:
         title = ""
@@ -264,7 +265,7 @@ def _add(conn: sqlite3.Connection, day: str, profile: str, row: dict[str, Any], 
          *(int(amounts[k]) for k in COUNTERS), float(amounts["cost"]), row.get("cost_status")))
 
 
-def sync(now: Optional[float] = None) -> None:
+def sync(now: float | None = None) -> None:
     """Bring the journal up to date with every profile's running totals."""
     now = now or time.time()
     with _lock:
@@ -283,7 +284,7 @@ def sync(now: Optional[float] = None) -> None:
                         for day, share in _split(current, _spread(row, replies.get(str(row["session"]), {}))):
                             _add(conn, day, profile, row, share)
                     else:
-                        delta = {k: max(0, current[k] - int(mark[k] or 0)) for k in COUNTERS}
+                        delta: dict[str, float] = {k: max(0, current[k] - int(mark[k] or 0)) for k in COUNTERS}
                         delta["cost"] = max(0.0, current["cost"] - float(mark["cost"] or 0))
                         _add(conn, _day(row["last"] or now), profile, row, delta)
                         if all(current[k] == int(mark[k] or 0) for k in COUNTERS) and current["cost"] == float(mark["cost"] or 0):
@@ -340,7 +341,7 @@ _SYNC_EVERY = 15.0
 _last_sync = 0.0
 
 
-def summary(period: str = "month", now: Optional[datetime] = None) -> dict[str, Any]:
+def summary(period: str = "month", now: datetime | None = None) -> dict[str, Any]:
     """Totals, per bot, per model and per day for `period` (today, 7d, 30d, month), plus today and this month.
 
     A sync scans every profile's sessions and ledger, so a read syncs at most every 15 seconds (the Usage page
@@ -442,7 +443,7 @@ def set_budget(monthly: Any) -> dict[str, Any]:
     return {"ok": True, "budget": {"monthly": amount}}
 
 
-def check_budget(now: Optional[datetime] = None) -> Optional[dict[str, Any]]:
+def check_budget(now: datetime | None = None) -> dict[str, Any] | None:
     """Once per month, when spend passes the budget: return what to tell the owner (and remember it)."""
     budget = read_budget()
     limit = budget.get("monthly")

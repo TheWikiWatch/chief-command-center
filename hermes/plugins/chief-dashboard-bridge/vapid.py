@@ -14,7 +14,7 @@ import json
 import os
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -40,7 +40,7 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
-def load_vapid() -> Optional[dict[str, str]]:
+def load_vapid() -> dict[str, str] | None:
     try:
         data = json.loads(vapid_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):

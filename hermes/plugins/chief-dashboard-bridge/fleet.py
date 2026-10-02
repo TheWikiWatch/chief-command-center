@@ -24,9 +24,10 @@ import shutil
 import stat
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import data, persona, providers
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -85,8 +86,8 @@ def _describe(entry: Path) -> dict[str, Any]:
     ui = (meta.get("ui_meta") or {}).get("hermes-bots") if isinstance(meta.get("ui_meta"), dict) else {}
     ui = ui if isinstance(ui, dict) else {}
     cfg = _load_yaml(entry / "config.yaml")
-    model = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
-    terminal = cfg.get("terminal") if isinstance(cfg.get("terminal"), dict) else {}
+    model = subdict(cfg, "model")
+    terminal = subdict(cfg, "terminal")
     return {
         "id": entry.name,
         "title": str(ui.get("title") or entry.name),
@@ -104,14 +105,14 @@ def roster() -> dict[str, Any]:
 # ---------------------------------------------------------------- sections (the Fleet tab's grouping)
 
 
-def _sections_assign(name: str, section: Optional[str]) -> None:
+def _sections_assign(name: str, section: str | None) -> None:
     path = _root() / "bot-sections.json"
     try:
         doc = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
     except ValueError:
         doc = {}
     sections = [s for s in (doc.get("sections") or []) if isinstance(s, str)]
-    assign = doc.get("assign") if isinstance(doc.get("assign"), dict) else {}
+    assign = subdict(doc, "assign")
     if section:
         if section not in sections:
             sections.append(section)
@@ -129,7 +130,7 @@ def _sections_assign(name: str, section: Optional[str]) -> None:
 
 def _chief_model() -> dict[str, str]:
     cfg = _load_yaml(data.chief_home() / "config.yaml")
-    model = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
+    model = subdict(cfg, "model")
     return {"provider": str(model.get("provider") or ""), "model": str(model.get("default") or "")}
 
 
@@ -171,7 +172,7 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
         if not isinstance(meta.get("ui_meta"), dict):
             meta["ui_meta"] = {}
         ui = meta["ui_meta"]
-        bots = ui.get("hermes-bots") if isinstance(ui.get("hermes-bots"), dict) else {}
+        bots = subdict(ui, "hermes-bots")
         bots["title"] = f"{display_name} - {role}"
         ui["hermes-bots"] = bots
         if description:

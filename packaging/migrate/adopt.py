@@ -39,7 +39,7 @@ import urllib.request
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "upstream"))
-from compat import Payload  # noqa: E402
+from compat import Payload
 
 APP_PACKAGE = "ChiefCommandCenter"
 APP_EXE = "Chief Command Center.exe"

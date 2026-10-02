@@ -12,6 +12,7 @@ import time
 from typing import Any
 
 from .data import chief_config_scope
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -79,7 +80,8 @@ def _fallback_status(provider_name: str) -> dict[str, Any] | None:
     if not callable(status):
         return None
     try:
-        return status()
+        result = status()
+        return result if isinstance(result, dict) else None
     except Exception:
         return None
 
@@ -102,7 +104,7 @@ def _voice_config_inner() -> dict[str, Any]:
         stt_enabled = is_stt_enabled(stt_cfg)
         stt_provider = _get_provider(stt_cfg)
         nested = stt_cfg.get(stt_provider) if isinstance(stt_cfg.get(stt_provider), dict) else {}
-        local = stt_cfg.get("local") if isinstance(stt_cfg.get("local"), dict) else {}
+        local = subdict(stt_cfg, "local")
         stt_model = str(
             (nested or {}).get("model")
             or (nested or {}).get("model_id")

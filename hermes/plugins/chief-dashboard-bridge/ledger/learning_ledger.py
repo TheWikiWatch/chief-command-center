@@ -387,8 +387,8 @@ def line_counts(conn: sqlite3.Connection, row) -> tuple[int, int]:
     if row["added"] is not None and row["removed"] is not None:
         return int(row["added"]), int(row["removed"])
     diff = diff_text(conn, row).splitlines()
-    added = sum(1 for l in diff if l.startswith("+") and not l.startswith("+++"))
-    removed = sum(1 for l in diff if l.startswith("-") and not l.startswith("---"))
+    added = sum(1 for line in diff if line.startswith("+") and not line.startswith("+++"))
+    removed = sum(1 for line in diff if line.startswith("-") and not line.startswith("---"))
     with conn:
         conn.execute("UPDATE versions SET added = ?, removed = ? WHERE id = ?", (added, removed, row["id"]))
     return added, removed

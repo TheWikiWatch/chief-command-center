@@ -102,7 +102,9 @@ def ensure(home: Path | None = None) -> dict[str, Any]:
 
 def _ledger_module():
     spec = importlib.util.spec_from_file_location("chief_learning_ledger", LEDGER_SOURCE)
-    module = importlib.util.module_from_spec(spec)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Fleet Health's ledger isn't loadable from {LEDGER_SOURCE}")
+    module: Any = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.HERMES = data.install_root()
     module.OUT = folder()

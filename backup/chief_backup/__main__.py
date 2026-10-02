@@ -30,7 +30,7 @@ def _passphrase(args) -> str:
     return sys.stdin.readline().rstrip("\r\n") if args.passphrase_stdin else ""
 
 
-def _progress(done: int, total: int, _last=[0.0]) -> None:
+def _progress(done: int, total: int, _last=[0.0]) -> None:  # noqa: B006 (the list is the throttle's memory)
     now = time.monotonic()
     if now - _last[0] >= 0.25 or done >= total:
         _last[0] = now

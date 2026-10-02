@@ -223,7 +223,7 @@ def main() -> int:
     report = [f"## Compatibility suite: {'passed' if passed else 'FAILED'}", "", f"Payload: `{p.root.name}`", "", "| Check | Result | Time |", "| --- | --- | --- |"]
     report += [f"| {name} | {'pass' if ok else '**FAIL**'} | {secs:.0f}s |" for name, ok, secs, _ in results]
     report += ["", "<details><summary>Details</summary>", ""]
-    for name, ok, _, detail in results:
+    for name, _ok, _, detail in results:
         report += [f"### {name}", "", "```", detail[-3000:], "```", ""]
     report.append("</details>")
     text = "\n".join(report)

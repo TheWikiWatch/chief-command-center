@@ -14,7 +14,7 @@ import json
 import os
 import struct
 import time
-from typing import Any, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives import hashes, serialization
@@ -52,8 +52,8 @@ def _public_bytes(key: ec.EllipticCurvePublicKey) -> bytes:
     return key.public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
 
 
-def encrypt(plaintext: bytes, p256dh: str, auth: str, *, salt: Optional[bytes] = None,
-            sender_key: Optional[ec.EllipticCurvePrivateKey] = None) -> bytes:
+def encrypt(plaintext: bytes, p256dh: str, auth: str, *, salt: bytes | None = None,
+            sender_key: ec.EllipticCurvePrivateKey | None = None) -> bytes:
     """The aes128gcm body for one push subscription (`salt`/`sender_key` only for tests)."""
     ua_public = b64url_decode(p256dh)
     auth_secret = b64url_decode(auth)
@@ -93,7 +93,7 @@ def vapid_authorization(endpoint: str, private_key: ec.EllipticCurvePrivateKey, 
 
 
 def send(subscription: dict[str, Any], payload: bytes, *, private_key: ec.EllipticCurvePrivateKey,
-         subject: str, ttl: int, timeout: float, headers: Optional[dict[str, str]] = None,
+         subject: str, ttl: int, timeout: float, headers: dict[str, str] | None = None,
          session: Any = None) -> tuple[str, str]:
     """Deliver one encrypted push. ("sent", ""), ("gone", status) for an expired subscription, or ("error", why)."""
     import requests

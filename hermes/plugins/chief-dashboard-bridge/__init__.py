@@ -13,7 +13,7 @@ import os
 import sys
 import threading
 
-from .server import BridgeServer
+from .server import BridgeServer, note_legacy
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -48,7 +48,7 @@ LOG_BYTES = 2 * 1024 * 1024
 LOG_KEEP = 3
 
 
-def attach_log_file(home) -> "logging.Handler | None":
+def attach_log_file(home) -> logging.Handler | None:
     """The bridge's own rotating log in the chief's profile (`logs/chief-bridge.log`, 2 MB x 3), once per process.
 
     Hermes's console output already reaches the app's gateway log; this file keeps the bridge's warnings findable
@@ -115,7 +115,7 @@ def _register(ctx):
     port = int(port_cfg or os.environ.get("CHIEF_DASHBOARD_PORT") or 7790)
     session_key = str(session_cfg or os.environ.get("CHIEF_DASHBOARD_SESSION_KEY") or "").strip()
 
-    server = BridgeServer(
+    bridge = BridgeServer(
         token=token,
         port=port,
         session_key_override=session_key,
@@ -123,8 +123,9 @@ def _register(ctx):
     )
 
     def on_discord(native, adapter):
-        server.set_discord_bot(native)
-        server.set_discord_adapter(adapter)
+        note_legacy("Discord platform connected")
+        bridge.set_discord_bot(native)
+        bridge.set_discord_adapter(adapter)
 
     try:
         ctx.register_platform_handler("discord", on_discord)
@@ -137,7 +138,7 @@ def _register(ctx):
         from .adapter import register_platform
         register_platform(ctx)
         ctx.register_platform_handler(
-            "command_center", lambda native, adapter: server.set_command_center_adapter(adapter)
+            "command_center", lambda native, adapter: bridge.set_command_center_adapter(adapter)
         )
     except Exception:
         logger.warning("Command Center adapter unavailable; using Discord", exc_info=True)
@@ -151,7 +152,7 @@ def _register(ctx):
     except Exception:
         logger.warning("chief-dashboard-bridge: fleet tools unavailable", exc_info=True)
 
-    thread = threading.Thread(target=server.serve_forever, name="chief-dashboard-bridge", daemon=True)
+    thread = threading.Thread(target=bridge.serve_forever, name="chief-dashboard-bridge", daemon=True)
     thread.start()
-    _server = server
+    _server = bridge
     logger.info("chief-dashboard-bridge listening on 127.0.0.1:%s", port)

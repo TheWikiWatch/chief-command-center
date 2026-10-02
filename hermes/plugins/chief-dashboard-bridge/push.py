@@ -18,7 +18,7 @@ import queue
 import re
 import threading
 import time
-from typing import Any, Optional
+from typing import Any
 
 from . import identity, vapid, webpush
 
@@ -65,7 +65,7 @@ def _topic(tag: str) -> str:
 
 
 def send(title: str, body: str, *, url: str = "/", tag: str = REPLY_TAG, ttl: int = REPLY_TTL,
-         urgency: str = "normal", open_: Optional[dict] = None, session: Any = None) -> dict[str, Any]:
+         urgency: str = "normal", open_: dict | None = None, session: Any = None) -> dict[str, Any]:
     """Send one alert to every subscribed device now (blocking). Use ``enqueue`` from gateway code."""
     subs = vapid.load_subs()
     if not subs:
@@ -105,8 +105,8 @@ def send(title: str, body: str, *, url: str = "/", tag: str = REPLY_TAG, ttl: in
     return {"ok": True, "sent": sent, "gone": len(gone), "errors": errors[:5]}
 
 
-_queue: "queue.Queue[tuple[tuple, dict]]" = queue.Queue(maxsize=50)
-_worker: Optional[threading.Thread] = None
+_queue: queue.Queue[tuple[tuple, dict]] = queue.Queue(maxsize=50)
+_worker: threading.Thread | None = None
 _worker_lock = threading.Lock()
 
 

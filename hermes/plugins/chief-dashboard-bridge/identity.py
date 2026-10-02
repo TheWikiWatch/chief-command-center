@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import re
 import time
-from typing import Optional
+from .util import subdict
 
 DEFAULT_OWNER_ID = "owner"
 DEFAULT_ASSISTANT = "Chief"
@@ -49,13 +49,13 @@ def assistant_name(ttl: float = 30.0) -> str:
     return name
 
 
-def _assistant_from_profile() -> Optional[str]:
+def _assistant_from_profile() -> str | None:
     try:
         from .data import chief_home, load_yaml
 
         meta = load_yaml(chief_home() / "profile.yaml")
-        ui = meta.get("ui_meta") if isinstance(meta.get("ui_meta"), dict) else {}
-        bots = ui.get("hermes-bots") if isinstance(ui.get("hermes-bots"), dict) else {}
+        ui = subdict(meta, "ui_meta")
+        bots = subdict(ui, "hermes-bots")
         return split_title(str(bots.get("title") or "")) or None
     except Exception:
         return None

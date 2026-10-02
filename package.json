@@ -16,5 +16,8 @@
     "hermes:payload": "python packaging/payload/stage.py",
     "test:desktop": "npm --prefix apps/desktop test",
     "desktop": "npm --prefix apps/desktop start"
+  },
+  "devDependencies": {
+    "pyright": "1.1.414"
   }
 }

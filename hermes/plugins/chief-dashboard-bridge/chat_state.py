@@ -17,16 +17,17 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .data import _message_session_id, chief_home
+from .util import subdict, sublist
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
 # ----------------------------------------------------------------------------- question (clarify)
 
 
-def pending_clarify(session_key: str) -> Optional[dict[str, Any]]:
+def pending_clarify(session_key: str) -> dict[str, Any] | None:
     """The oldest unanswered question the chief asked in this session, or None."""
     if not session_key:
         return None
@@ -91,7 +92,8 @@ def asked_from_tool_row(content: Any) -> list[dict[str, Any]]:
         return []
     if not isinstance(data, dict):
         return []
-    items = data.get("responses") if isinstance(data.get("responses"), list) else [data]
+    responses = data.get("responses")
+    items = responses if isinstance(responses, list) else [data]
     out = []
     for item in items:
         if not isinstance(item, dict) or "question" not in item or "user_response" not in item:
@@ -269,7 +271,7 @@ def _calls(tool_calls: Any) -> list[tuple[str, dict]]:
     for tc in parsed if isinstance(parsed, list) else []:
         if not isinstance(tc, dict):
             continue
-        fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
+        fn = subdict(tc, "function")
         name = str(tc.get("name") or fn.get("name") or "")
         raw = fn.get("arguments", tc.get("arguments"))
         try:
@@ -277,10 +279,10 @@ def _calls(tool_calls: Any) -> list[tuple[str, dict]]:
         except (TypeError, ValueError):
             args = {}
         if name == "tool_call" and isinstance(args, dict):
-            inner = args.get("calls") if isinstance(args.get("calls"), list) else []
+            inner = sublist(args, "calls")
             for call in inner:
                 if isinstance(call, dict) and call.get("name"):
-                    out.append((str(call["name"]), call.get("arguments") if isinstance(call.get("arguments"), dict) else {}))
+                    out.append((str(call["name"]), subdict(call, "arguments")))
             if inner:
                 continue
         out.append((name, args if isinstance(args, dict) else {}))
@@ -326,7 +328,7 @@ def step_label(name: str, args: dict, vault: str = "") -> str:
 # phrase itself is used, tidied.
 _tls = threading.local()
 _live_lock = threading.Lock()
-_live: dict[str, list[tuple[float, Optional[str]]]] = {}
+_live: dict[str, list[tuple[float, str | None]]] = {}
 _vault_cache: tuple[float, str] = (0.0, "")
 
 
@@ -374,7 +376,7 @@ def _tidy(phrase: str) -> str:
     return text[:1].upper() + text[1:] if text else "Working"
 
 
-def record_status(chat_id: str, phrase: Optional[str]) -> None:
+def record_status(chat_id: str, phrase: str | None) -> None:
     """A tool started (`phrase`) or finished (None) in this chat's running turn."""
     last = getattr(_tls, "last", None)
     _tls.last = None
@@ -387,12 +389,12 @@ def record_status(chat_id: str, phrase: Optional[str]) -> None:
         del steps[:-80]
 
 
-def live_steps(chat_id: str, since: float) -> list[tuple[float, Optional[str]]]:
+def live_steps(chat_id: str, since: float) -> list[tuple[float, str | None]]:
     with _live_lock:
         return [s for s in _live.get(str(chat_id or ""), []) if s[0] >= since]
 
 
-def activity(session_key: str, generating: bool, vault: str = "", chat_id: str = "") -> Optional[dict[str, Any]]:
+def activity(session_key: str, generating: bool, vault: str = "", chat_id: str = "") -> dict[str, Any] | None:
     """While a turn runs: when it started, how many steps it has taken, and what it's doing now."""
     if not generating or not session_key:
         return None

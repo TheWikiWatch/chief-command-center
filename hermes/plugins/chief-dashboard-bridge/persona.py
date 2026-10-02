@@ -19,9 +19,11 @@ import re
 import time
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator, Optional
+from typing import Any
+from collections.abc import Iterator
 
 from . import data
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -81,7 +83,7 @@ def _soul_warnings(text: str) -> list[str]:
         return []
 
 
-def _soul_limit() -> Optional[int]:
+def _soul_limit() -> int | None:
     try:
         from agent import prompt_builder
 
@@ -230,7 +232,7 @@ def edit_memory(profile: str, target: str, ops: list[dict[str, Any]]) -> dict[st
         removing = [b for b in batch if b["action"] == "remove"]
         # Hermes refuses a batch that empties a store (a guard against model mistakes); an owner deleting
         # everything is deliberate, so the last removal goes through the single remove() path.
-        last: Optional[dict[str, Any]] = None
+        last: dict[str, Any] | None = None
         if current and removing and not any(b["action"] == "add" for b in batch):
             remaining = [e for e in current if e not in {b["matched_entry"] for b in removing}]
             replaced = [b for b in batch if b["action"] == "replace"]
@@ -288,8 +290,8 @@ def rename(profile: str, name: str, role: str = "", update_soul: bool = True) ->
     meta_path = home / "profile.yaml"
     meta = data.load_yaml(meta_path) if meta_path.is_file() else {}
     meta = meta if isinstance(meta, dict) else {}
-    ui = meta.get("ui_meta") if isinstance(meta.get("ui_meta"), dict) else {}
-    bots = ui.get("hermes-bots") if isinstance(ui.get("hermes-bots"), dict) else {}
+    ui = subdict(meta, "ui_meta")
+    bots = subdict(ui, "hermes-bots")
     old_name, old_role = _title_parts(bots.get("title") or "")
     if not old_name and profile in ("chief", ""):
         from . import identity

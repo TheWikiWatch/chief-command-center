@@ -19,7 +19,7 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from . import identity
 from .data import chief_home
@@ -116,7 +116,7 @@ def previous_sessions(thread: str) -> list[dict[str, Any]]:
             for r in rows if int(r.get("message_count") or 0) > 0]
 
 
-def describe(thread: str, entry: Optional[dict[str, Any]] = None, *, busy=None, question=None, approval=None) -> dict[str, Any]:
+def describe(thread: str, entry: dict[str, Any] | None = None, *, busy=None, question=None, approval=None) -> dict[str, Any]:
     key = session_key(thread)
     sessions = _sessions(key)
     latest = sessions[0] if sessions else {}

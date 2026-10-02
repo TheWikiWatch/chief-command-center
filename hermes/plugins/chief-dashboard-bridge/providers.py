@@ -21,9 +21,10 @@ import asyncio
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from .data import chief_config_scope
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -45,7 +46,7 @@ def _run(coro):
 _UNREGISTERED_KEY_ENV = {"openrouter": "OPENROUTER_API_KEY"}
 
 
-def _key_env(slug: str, raw: Optional[dict[str, Any]] = None) -> str:
+def _key_env(slug: str, raw: dict[str, Any] | None = None) -> str:
     reg = _registry(slug)
     if reg is not None and getattr(reg, "auth_type", "") in _KEY_AUTH:
         env_vars = [str(v) for v in (getattr(reg, "api_key_env_vars", None) or ()) if v]
@@ -119,7 +120,7 @@ def status() -> dict[str, Any]:
             from hermes_cli.config import load_config
 
             cfg = load_config() or {}
-            model_cfg = cfg.get("model") if isinstance(cfg.get("model"), dict) else {}
+            model_cfg = subdict(cfg, "model")
             provider = str(model_cfg.get("provider") or "").strip()
             model = str(model_cfg.get("default") or model_cfg.get("model") or "").strip()
             if not provider or not model:
@@ -187,7 +188,7 @@ def provider_models(slug: str) -> dict[str, Any]:
     return {"ok": False, "error": "Unknown provider."}
 
 
-def _scope(home: Optional[Path]):
+def _scope(home: Path | None):
     """Hermes code as if HERMES_HOME were `home` (a worker profile), or the chief's profile."""
     if home is None:
         return chief_config_scope()
@@ -196,7 +197,7 @@ def _scope(home: Optional[Path]):
     return profile_scope(home)
 
 
-def choose_model(slug: str, model: str, *, confirm_expensive: bool = False, home: Optional[Path] = None) -> dict[str, Any]:
+def choose_model(slug: str, model: str, *, confirm_expensive: bool = False, home: Path | None = None) -> dict[str, Any]:
     """Make provider/model a profile's main model (the chief's unless `home` names another), through Hermes's
     own model assignment, so its expensive-model guard applies."""
     slug, model = (slug or "").strip(), (model or "").strip()

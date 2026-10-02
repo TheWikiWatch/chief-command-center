@@ -3,7 +3,6 @@ import importlib.util
 import json
 import os
 import sqlite3
-import sys
 import tempfile
 import time
 import unittest

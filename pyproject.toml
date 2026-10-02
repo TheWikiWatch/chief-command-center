@@ -1,0 +1,29 @@
+# Python tooling for the bridge plugin, the backup engine and the packaging scripts (not a package).
+[tool.ruff]
+target-version = "py313"
+line-length = 160
+extend-exclude = ["hermes/vendor", "hermes/tests/.runtime", "apps", "**/node_modules"]
+
+[tool.ruff.lint]
+# Errors and likely bugs first: pyflakes, pycodestyle errors, bugbear, and a few simplifications.
+select = ["F", "E4", "E7", "E9", "B", "UP", "SIM101", "RUF100"]
+ignore = [
+  "B008",  # function calls in defaults are fine here (no FastAPI)
+  "UP007", # Optional[...] stays readable where it's used
+]
+
+[tool.ruff.lint.per-file-ignores]
+"hermes/tests/**" = ["B011", "B905"]
+# Contract runners put the payload on sys.path before importing Hermes.
+"hermes/tests/contract/**" = ["E402", "B007"]
+
+[tool.ruff.format]
+line-ending = "auto"
+
+[tool.pyright]
+include = ["hermes/plugins/chief-dashboard-bridge", "backup/chief_backup"]
+exclude = ["**/__pycache__", "hermes/plugins/chief-dashboard-bridge/ledger"]
+pythonVersion = "3.13"
+typeCheckingMode = "basic"
+reportMissingImports = "none"   # Hermes and its dependencies exist only inside the payload
+reportMissingModuleSource = "none"
