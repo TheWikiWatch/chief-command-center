@@ -144,7 +144,9 @@ function SheetBody({
         ) : null}
         {bare ? null : (
           <header
-            className={`flex shrink-0 items-center gap-3 px-4 ${bottom ? "pb-3" : "border-b border-line py-3"}`}
+            // A right-hand panel over the whole window reaches its top-right corner, where the desktop app draws
+            // minimize, maximize and close (globals.css --wco): its own close button keeps clear of them.
+            className={`flex shrink-0 items-center gap-3 px-4 ${bottom ? "pb-3" : "border-b border-line py-3"} ${side === "right" && scope === "viewport" ? "titlebar-clear" : ""}`}
             onPointerDown={(e) => {
               if (bottom && !closeDisabled && !(e.target as HTMLElement).closest("button,a,input,select,textarea")) drag.start(e);
             }}

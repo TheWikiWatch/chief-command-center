@@ -756,3 +756,7 @@
 **Fixed: the Fleet screen's top buttons didn't respond in the desktop app.**
 
 - Fleet / Today / Vault, Crew / Health, the usage button and Team & Routines sit over the strip the window is dragged by. In the desktop app a drag strip takes every click inside it, even under buttons drawn on top, unless those buttons are marked as clickable. These weren't (they float over the strip instead of sitting inside a header), so clicks there moved the window instead. Browsers ignore drag strips, which is why the phone and browser checks never showed it. Fleet Health's content and the first-run screen, which scroll under such a strip, are marked too; a test now fails if a free-standing strip comes without that.
+
+**Fixed: right-hand panels couldn't be closed in the desktop app.**
+
+- Team & Routines (and the other panels that slide in from the right: connection status, keyboard shortcuts) reach the window's top-right corner, where Windows draws minimize, maximize and close. The panel's own close button sat under them, so clicking it maximized the window instead. Their headers now keep clear of the window buttons, as the app's own headers already did. Checked with real clicks in an app-style window: before, the click resized the window and the panel stayed; after, the panel closes.
