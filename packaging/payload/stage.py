@@ -53,6 +53,10 @@ def _inner(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Upstream's bytecode check names the expected .pyc files with this interpreter's tag; the payload's Python is
+    # 3.14, so an older host reports every module as uncompiled after the whole build.
+    if sys.version_info[:2] < (3, 14):
+        raise SystemExit(f"stage.py needs Python 3.14 (the payload's own version); this is {sys.version.split()[0]}. Run it with py -3.14 or a 3.14 python.")
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--hermes-src", required=True)
     parser.add_argument("--out", required=True)
