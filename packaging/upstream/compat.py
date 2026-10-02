@@ -191,6 +191,11 @@ def main() -> int:
              "    spec = importlib.util.spec_from_file_location(name, f); m = importlib.util.module_from_spec(spec); sys.modules[name] = m; spec.loader.exec_module(m)\n"
              "print('imported', len(list(p.glob('*.py'))) - 1, 'modules')")
     check("plugin imports", lambda: run([str(p.python), "-B", "-c", probe, str(PLUGIN)], p.env(HERMES_HOME=str(work / "import-home" / "profiles" / "chief"))))
+    # Every Hermes name the bridge relies on (hermes_api.CAPABILITIES) still exists in this Hermes.
+    capability = ("import importlib.util, json, sys; spec = importlib.util.spec_from_file_location('hermes_api', sys.argv[1]); "
+                  "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); r = m.run_check(); "
+                  "print(json.dumps(r['missing']) if r['missing'] else 'all %d features present' % len(r['features'])); sys.exit(0 if r['ok'] else 1)")
+    check("Hermes names the bridge uses", lambda: run([str(p.python), "-B", "-c", capability, str(PLUGIN / "hermes_api.py")], p.env(HERMES_HOME=str(work / "import-home" / "profiles" / "chief"))))
     private = private_imports()
     results.append(("private Hermes names used (review)", True, 0.0, "\n".join(private) or "none"))
 

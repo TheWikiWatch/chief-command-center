@@ -1145,10 +1145,13 @@ def pending_approval(session_key: str) -> dict[str, Any] | None:
     """Oldest unresolved gateway exec approval for the bound Discord session."""
     if not session_key:
         return None
+    from . import hermes_api
+
     try:
-        from tools.approval import get_pending_gateway_approval, list_gateway_approvals
-    except Exception:
-        return None
+        get_pending_gateway_approval = hermes_api.get("tools.approval", "get_pending_gateway_approval")
+        list_gateway_approvals = hermes_api.get("tools.approval", "list_gateway_approvals")
+    except hermes_api.HermesMissing:
+        return None  # logged once by hermes_api, and reported on /health
     try:
         pending = get_pending_gateway_approval(session_key)
         if not pending:
@@ -1184,9 +1187,13 @@ def resolve_approval(session_key: str, request_id: str, choice: str) -> dict[str
         return {"ok": False, "error": "bad choice"}
     if not session_key:
         return {"ok": False, "error": "no session bound"}
-    try:
-        from tools.approval import resolve_gateway_approval
+    from . import hermes_api
 
+    try:
+        resolve_gateway_approval = hermes_api.get("tools.approval", "resolve_gateway_approval")
+    except hermes_api.HermesMissing:
+        return {"ok": False, "error": "This Hermes can't answer approvals from the app (see Status)."}
+    try:
         n = resolve_gateway_approval(session_key, choice, request_id=request_id or None)
         return {"ok": True, "resolved": int(n)}
     except Exception:

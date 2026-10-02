@@ -8,6 +8,7 @@ import { SettingsIcon } from "@/components/icons";
 import { ResourceStatus } from "@/components/resource-status";
 import { Tip } from "@/components/ui/popovers";
 import { Sheet } from "@/components/ui/sheet";
+import { fetchHealth, type HermesCompat } from "@/lib/bridge";
 import { summarizeHealth, useHealthEntries } from "@/lib/health-store";
 import { SPRING } from "@/lib/motion";
 import { shortcutText } from "@/lib/shortcuts";
@@ -111,6 +112,7 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
             ))}
           </ul>
         </section>
+        <HermesFeatures open={open} />
         <VoiceLog />
         {deepseek ? (
         <section>
@@ -122,6 +124,31 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
         ) : null}
       </div>
     </Sheet>
+  );
+}
+
+/** Hermes features the bridge can't reach in this Hermes (an upstream change): said plainly, never silently off. */
+export function hermesSummary(compat: HermesCompat | undefined): { tone: "ok" | "warn" | "muted"; text: string } {
+  if (!compat || compat.pending) return { tone: "muted", text: "Checking the parts of Hermes the app uses…" };
+  const off = Object.entries(compat.features || {}).filter(([, ok]) => !ok).map(([name]) => name);
+  if (!off.length) return { tone: "ok", text: `Everything the app uses is there (${Object.keys(compat.features || {}).length} features).` };
+  return { tone: "warn", text: `Not working with this Hermes: ${off.join(", ")}. An app update fixes this; Settings → About → Create diagnostics has the details.` };
+}
+
+function HermesFeatures({ open }: { open: boolean }) {
+  const [compat, setCompat] = useState<HermesCompat | undefined>(undefined);
+  useEffect(() => {
+    if (!open) return;
+    const ac = new AbortController();
+    void fetchHealth(ac.signal).then((h) => setCompat(h.hermes));
+    return () => ac.abort();
+  }, [open]);
+  const summary = hermesSummary(compat);
+  return (
+    <section>
+      <h3 className="mb-2 px-1 text-callout font-medium text-fg-2">Hermes</h3>
+      <p className={`rounded-card border border-line bg-card px-4 py-3 text-callout ${summary.tone === "ok" ? "text-fg-2" : summary.tone === "warn" ? "text-warn" : "text-fg-3"}`}>{summary.text}</p>
+    </section>
   );
 }
 

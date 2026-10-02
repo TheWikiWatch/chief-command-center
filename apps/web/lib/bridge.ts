@@ -23,7 +23,11 @@ export type HealthResult = {
   error?: string;
   voice?: boolean;
   profile?: string;
+  /** The bridge's check of the Hermes names it relies on (hermes_api.py); `pending` while it runs. */
+  hermes?: HermesCompat;
 };
+
+export type HermesCompat = { pending?: boolean; ok?: boolean; missing?: string[]; features?: Record<string, boolean> };
 
 export type VoiceConfig = {
   ok: boolean;

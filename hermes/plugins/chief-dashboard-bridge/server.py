@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 from . import changes
 from . import chat_state
 from . import data
+from . import hermes_api
 from . import identity
 from . import learning
 from . import media
@@ -917,7 +918,7 @@ def _make_handler(bridge: BridgeServer):
             path = parsed.path.rstrip("/") or "/"
             qs = parse_qs(parsed.query)
             if path == "/health":
-                self._json({"ok": True, "gateway": True, "voice": True, "profile": "chief", "longpoll": True})
+                self._json({"ok": True, "gateway": True, "voice": True, "profile": "chief", "longpoll": True, "hermes": hermes_api.check()})
                 return
             if path == "/snapshot":
                 self._json(bridge.snapshot())

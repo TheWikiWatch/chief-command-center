@@ -20,3 +20,14 @@ describe("the engine banner", () => {
     expect(engineMessage(state("running"), "Nova", true)).toEqual({ tone: "ok", text: "Nova restarted and is back.", retry: false });
   });
 });
+
+describe("the status sheet's Hermes line", async () => {
+  const { hermesSummary } = await import("@/components/connection-status");
+  it("says when everything is there, and names what isn't", () => {
+    expect(hermesSummary({ pending: true }).tone).toBe("muted");
+    expect(hermesSummary({ ok: true, features: { approvals: true, voice: true } }).text).toContain("2 features");
+    const off = hermesSummary({ ok: false, features: { approvals: false, voice: true, routines: false } });
+    expect(off.tone).toBe("warn");
+    expect(off.text).toContain("approvals, routines");
+  });
+});

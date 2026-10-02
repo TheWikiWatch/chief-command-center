@@ -107,6 +107,11 @@ def _register(ctx):
     except Exception:  # logging never stops the bridge
         logger.debug("chief-dashboard-bridge: log file setup failed", exc_info=True)
 
+    # Every part of Hermes the bridge relies on, checked in the background; /health reports what's missing.
+    from . import hermes_api
+
+    hermes_api.check()
+
     port = int(port_cfg or os.environ.get("CHIEF_DASHBOARD_PORT") or 7790)
     session_key = str(session_cfg or os.environ.get("CHIEF_DASHBOARD_SESSION_KEY") or "").strip()
 
