@@ -1,7 +1,12 @@
 "use client";
 
 import { CommandShell } from "@/components/command-shell";
+import { TipProvider } from "@/components/ui/popovers";
 
 export default function HomePage() {
-  return <CommandShell />;
+  return (
+    <TipProvider>
+      <CommandShell />
+    </TipProvider>
+  );
 }

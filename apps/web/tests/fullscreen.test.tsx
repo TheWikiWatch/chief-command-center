@@ -1,7 +1,6 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-import { FullscreenButton } from "@/components/fullscreen-button";
 import { isFullscreenKey, toggleFullscreen, useFullscreenShortcut } from "@/lib/use-fullscreen";
 import { openLayer, resetLayers } from "@/lib/overlay-stack";
 
@@ -31,28 +30,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   resetLayers();
-});
-
-it("renders nothing where the browser has no element full screen (iPhone Safari)", () => {
-  support(false);
-  const { container } = render(<FullscreenButton />);
-  expect(container).toBeEmptyDOMElement();
-});
-
-it("enters and leaves full screen, and the pressed state follows the document", async () => {
-  render(<FullscreenButton />);
-  const button = screen.getByRole("button", { name: "Full screen" });
-  expect(button).toHaveAttribute("aria-pressed", "false");
-  await act(async () => void fireEvent.click(button));
-  expect(request).toHaveBeenCalledWith({ navigationUI: "hide" });
-  expect(button).toHaveAttribute("aria-pressed", "true");
-  expect(button).toHaveAttribute("title", "Exit full screen (Esc)");
-  // Esc exits natively; the button hears it through fullscreenchange.
-  await act(async () => {
-    element = null;
-    document.dispatchEvent(new Event("fullscreenchange"));
-  });
-  expect(button).toHaveAttribute("aria-pressed", "false");
 });
 
 it("toggleFullscreen exits when already full screen and reports refusal", async () => {
@@ -92,10 +69,8 @@ it("the desktop shortcut calls the Fullscreen API", async () => {
   expect(request).toHaveBeenCalledTimes(1);
 });
 
-it("the header shows the button only where asked (desktop chat), never in the phone headers", async () => {
+it("the header has no full-screen button (F11, Settings and the command palette have it)", async () => {
   const { HeaderStatus } = await import("@/components/connection-status");
-  const view = render(<HeaderStatus connected onOpenSettings={() => {}} />);
+  render(<HeaderStatus connected onOpenSettings={() => {}} />);
   expect(screen.queryByRole("button", { name: "Full screen" })).toBeNull();
-  view.rerender(<HeaderStatus connected onOpenSettings={() => {}} fullscreen />);
-  expect(screen.getByRole("button", { name: "Full screen" })).toBeInTheDocument();
 });

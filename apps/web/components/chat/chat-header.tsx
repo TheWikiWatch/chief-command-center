@@ -6,9 +6,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { BotFace, FaceRing } from "@/components/bot-face";
 import { HeaderStatus, useLinkLabel } from "@/components/connection-status";
 import { DeepseekChip } from "@/components/deepseek-chip";
-import { AudioLinesIcon, PauseIcon, PlayIcon, SquareIcon } from "@/components/icons";
+import { AudioLinesIcon, EllipsisIcon, PauseIcon, PlayIcon, SettingsIcon, SquareIcon, WifiIcon } from "@/components/icons";
+import { ActionMenu, Tip, type MenuEntry } from "@/components/ui/popovers";
 import { splitTitle } from "@/lib/names";
 import { EASE } from "@/lib/motion";
+import { shortcutText } from "@/lib/shortcuts";
 import type { Person } from "@/lib/types";
 import { useAssistantName } from "@/lib/identity";
 
@@ -164,20 +166,41 @@ export function ChatHeader({
           </motion.div>
         ) : null}
       </AnimatePresence>
-      {onVoiceMode && !speakingish ? (
-        <button
-          type="button"
-          aria-label="Voice mode"
-          title="Voice mode"
-          className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
-          onClick={onVoiceMode}
-        >
-          <AudioLinesIcon size={19} />
-        </button>
-      ) : null}
-      {/* Full screen isn't a header button: F11, Settings → This app and the command palette have it, and the
-          header must leave room for the window's own buttons in the desktop app. */}
-      <HeaderStatus connected={connected} authFailed={authFailed} onOpenStatus={onOpenStatus} onOpenSettings={onOpenSettings} quiet={compact} />
+      {compact ? (
+        // The phone: presence, name, state and one overflow. The connection's words are on the state line.
+        <ActionMenu
+          trigger={
+            <button type="button" aria-label="More" className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
+              <EllipsisIcon size={20} />
+            </button>
+          }
+          items={
+            [
+              onVoiceMode && !speakingish ? { id: "voice", label: "Voice mode", icon: <AudioLinesIcon size={17} />, onSelect: onVoiceMode } : null,
+              onOpenStatus ? { id: "status", label: "Connection status", icon: <WifiIcon size={17} />, onSelect: onOpenStatus } : null,
+              onOpenSettings ? { id: "settings", label: "Settings", icon: <SettingsIcon size={17} />, onSelect: onOpenSettings } : null,
+            ].filter(Boolean) as MenuEntry[]
+          }
+        />
+      ) : (
+        <>
+          {onVoiceMode && !speakingish ? (
+            <Tip label="Voice mode" shortcut={shortcutText("voice")}>
+              <button
+                type="button"
+                aria-label="Voice mode"
+                className="press grid size-10 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
+                onClick={onVoiceMode}
+              >
+                <AudioLinesIcon size={19} />
+              </button>
+            </Tip>
+          ) : null}
+          {/* Full screen isn't a header button: F11, Settings → This app and the command palette have it, and the
+              header must leave room for the window's own buttons in the desktop app. */}
+          <HeaderStatus connected={connected} authFailed={authFailed} onOpenStatus={onOpenStatus} onOpenSettings={onOpenSettings} />
+        </>
+      )}
     </header>
   );
 }

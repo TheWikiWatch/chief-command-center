@@ -1216,16 +1216,12 @@ body {
   translate: calc((var(--mo-gz-dx1, 0) + var(--mo-gz-dx2, 0)) * 0.28px) calc((var(--mo-gz-dy1, 0) + var(--mo-gz-dy2, 0)) * 0.22px);
 }
 
-/* A narrow chat pane (desktop, pane dragged small): the header tightens and drops the full-screen
-   button (it is also in Settings) so the thread switcher and Settings stay in view. */
+/* A narrow chat pane (desktop, pane dragged small): the header tightens so the thread switcher and Settings stay in view. */
 .chief-chat {
   container: chat / inline-size;
 }
 @container chat (max-width: 440px) {
   .chat-header {
     gap: 0.5rem;
-  }
-  .chat-header-fullscreen {
-    display: none;
   }
 }

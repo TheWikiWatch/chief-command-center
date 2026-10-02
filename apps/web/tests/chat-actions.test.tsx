@@ -99,7 +99,7 @@ it("Cancel takes a queued message back into the draft",async()=>{
   expect(localStorage.getItem("chief-outbox")).toBeNull();
 });
 it("opens voice mode from the header and closes it with the button or Escape",async()=>{
-  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected/>);
   fireEvent.click(screen.getByRole("button",{name:"Voice mode"}));
   const dialog=await screen.findByRole("dialog",{name:"Voice mode"});
   expect(dialog).toHaveTextContent("Hold to talk");
@@ -110,4 +110,14 @@ it("opens voice mode from the header and closes it with the button or Escape",as
   await screen.findByRole("dialog",{name:"Voice mode"});
   fireEvent.keyDown(window,{key:"Escape"});
   await waitFor(()=>expect(screen.queryByRole("dialog",{name:"Voice mode"})).toBeNull());
+});
+
+it("the phone header folds voice mode, status and settings into one overflow menu",async()=>{
+  const onOpenSettings=vi.fn();
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact onOpenSettings={onOpenSettings}/>);
+  expect(screen.queryByRole("button",{name:"Voice mode"})).toBeNull();
+  fireEvent.click(screen.getByRole("button",{name:"More"}));
+  expect(await screen.findByRole("menuitem",{name:"Voice mode"})).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("menuitem",{name:"Settings"}));
+  expect(onOpenSettings).toHaveBeenCalled();
 });

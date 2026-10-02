@@ -4,12 +4,13 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 
 import { DeepseekChip } from "@/components/deepseek-chip";
-import { FullscreenButton } from "@/components/fullscreen-button";
 import { SettingsIcon } from "@/components/icons";
 import { ResourceStatus } from "@/components/resource-status";
+import { Tip } from "@/components/ui/popovers";
 import { Sheet } from "@/components/ui/sheet";
 import { summarizeHealth, useHealthEntries } from "@/lib/health-store";
 import { SPRING } from "@/lib/motion";
+import { shortcutText } from "@/lib/shortcuts";
 import { useSpeechLog, type SpeechLogEntry } from "@/lib/speech-log";
 import { useAssistantName } from "@/lib/identity";
 
@@ -52,30 +53,32 @@ export function ConnectionDot({ connected, authFailed, onOpen, quiet = false }: 
   const { state, label, text } = useLinkLabel({ connected, authFailed });
   const color = state === "ok" ? "bg-ok" : state === "degraded" ? "bg-warn" : "bg-danger";
   return (
-    <button
-      type="button"
-      onClick={onOpen}
-      className="press flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full px-2"
-      aria-label={label ? `Connection: ${label}. Show status` : "Connection healthy. Show status"}
-    >
-      <span className="relative flex h-2.5 w-2.5">
-        {state !== "ok" ? <span className={`absolute inset-0 animate-ping rounded-full opacity-60 ${color}`} /> : null}
-        <span className={`relative h-2.5 w-2.5 rounded-full ${color} ${state === "ok" ? "shadow-[0_0_8px_rgb(var(--c-ok)/0.6)]" : ""}`} />
-      </span>
-      <AnimatePresence initial={false}>
-        {label && !quiet ? (
-          <motion.span
-            key={label}
-            className={`whitespace-nowrap text-caption font-medium ${text}`}
-            initial={{ opacity: 0, x: -4 }}
-            animate={{ opacity: 1, x: 0, transition: SPRING.snappy }}
-            exit={{ opacity: 0, transition: { duration: 0.12 } }}
-          >
-            {label}
-          </motion.span>
-        ) : null}
-      </AnimatePresence>
-    </button>
+    <Tip label={label ? `${label} · show status` : "Connection status"}>
+      <button
+        type="button"
+        onClick={onOpen}
+        className="press flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full px-2"
+        aria-label={label ? `Connection: ${label}. Show status` : "Connection healthy. Show status"}
+      >
+        <span className="relative flex h-2.5 w-2.5">
+          {state !== "ok" ? <span className={`absolute inset-0 animate-ping rounded-full opacity-60 ${color}`} /> : null}
+          <span className={`relative h-2.5 w-2.5 rounded-full ${color} ${state === "ok" ? "shadow-[0_0_8px_rgb(var(--c-ok)/0.6)]" : ""}`} />
+        </span>
+        <AnimatePresence initial={false}>
+          {label && !quiet ? (
+            <motion.span
+              key={label}
+              className={`whitespace-nowrap text-caption font-medium ${text}`}
+              initial={{ opacity: 0, x: -4 }}
+              animate={{ opacity: 1, x: 0, transition: SPRING.snappy }}
+              exit={{ opacity: 0, transition: { duration: 0.12 } }}
+            >
+              {label}
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
+      </button>
+    </Tip>
   );
 }
 
@@ -176,26 +179,21 @@ export function HeaderStatus({
   onOpenStatus,
   onOpenSettings,
   quiet,
-  fullscreen,
-}: LinkState & { onOpenStatus?: () => void; onOpenSettings?: () => void; quiet?: boolean; fullscreen?: boolean }) {
+}: LinkState & { onOpenStatus?: () => void; onOpenSettings?: () => void; quiet?: boolean }) {
   return (
     <div className="flex shrink-0 items-center">
       <ConnectionDot connected={connected} authFailed={authFailed} onOpen={onOpenStatus} quiet={quiet} />
-      {/* Desktop only: on the phone the header is full, and full screen lives in Settings. */}
-      {fullscreen ? (
-        <span className="chat-header-fullscreen contents">
-          <FullscreenButton />
-        </span>
-      ) : null}
       {onOpenSettings ? (
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          aria-label="Settings"
-          className="press flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
-        >
-          <SettingsIcon size={20} />
-        </button>
+        <Tip label="Settings" shortcut={shortcutText("settings")}>
+          <button
+            type="button"
+            onClick={onOpenSettings}
+            aria-label="Settings"
+            className="press flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
+          >
+            <SettingsIcon size={20} />
+          </button>
+        </Tip>
       ) : null}
     </div>
   );
