@@ -1233,3 +1233,30 @@ body {
     gap: 0.5rem;
   }
 }
+
+/* Switching surfaces on the desktop (<ViewTransition> in command-shell.tsx): the old one fades, the new one fades
+   in from 12px to the right. Only the surface animates; the rest of the window doesn't cross-fade. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+::view-transition-old(.surface-out) {
+  animation: vt-fade-out 120ms var(--ease-exit, ease-in) both;
+}
+::view-transition-new(.surface-in) {
+  animation: vt-slide-in 240ms var(--ease-enter, ease-out) both;
+}
+@keyframes vt-fade-out {
+  to { opacity: 0; }
+}
+@keyframes vt-slide-in {
+  from { opacity: 0; transform: translateX(12px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-new(.surface-in) {
+    animation-name: vt-fade-in;
+  }
+  @keyframes vt-fade-in {
+    from { opacity: 0; }
+  }
+}

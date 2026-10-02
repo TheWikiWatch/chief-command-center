@@ -2,7 +2,8 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import { useRef, useState, type UIEvent } from "react";
-import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "@/components/icons";
+import { matches } from "@/components/command-palette";
+import { ChevronLeftIcon, ChevronRightIcon, SearchIcon, XIcon } from "@/components/icons";
 import { PhoneSettings } from "@/components/phone/phone-settings";
 import { Sheet } from "@/components/ui/sheet";
 import { EASE, SPRING } from "@/lib/motion";
@@ -98,6 +99,29 @@ function SettingsWindow({
     }
   };
   const meta = CATEGORIES.find((c) => c.id === current);
+  // Find a page by its name or the words it covers ("microphone" finds Voice); the palette shares the words.
+  const [query, setQuery] = useState("");
+  const shown = CATEGORIES.filter((c) => matches({ label: c.label, keywords: `${c.keywords} ${c.blurb}`, group: "Settings" }, query));
+  const search = (
+    <label className="mb-2 flex min-h-10 items-center gap-2 rounded-ctl border border-line-2 bg-well px-2.5 text-callout text-fg-3 focus-within:border-line-3">
+      <SearchIcon size={15} className="shrink-0" />
+      <input
+        type="search"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && shown[0]) {
+            e.preventDefault();
+            choose(shown[0].id);
+          }
+        }}
+        placeholder="Search settings"
+        aria-label="Search settings"
+        className="min-w-0 flex-1 bg-transparent text-fg outline-hidden placeholder:text-fg-3"
+      />
+    </label>
+  );
+  const nothing = shown.length === 0 ? <p className="px-2.5 py-3 text-callout text-fg-3">No settings match.</p> : null;
   const page = current ? <CategoryPage id={current} phone={phone} onAskChief={onAskChief} chief={chief} /> : null;
 
   if (phone) {
@@ -126,22 +150,26 @@ function SettingsWindow({
                 {page}
               </motion.div>
             ) : (
-              <motion.ul key="list" initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1, transition: { duration: 0.2, ease: EASE.enter } }} exit={{ x: -30, opacity: 0, transition: { duration: 0.12 } }} className="mx-4 divide-y divide-(--line-1) overflow-hidden rounded-card border border-line bg-card">
-                {CATEGORIES.map(({ id, label, blurb, Icon }) => (
-                  <li key={id}>
-                    <button type="button" onClick={() => choose(id)} className="press flex min-h-14 w-full items-center gap-3 px-3.5 py-2.5 text-left hover:bg-fill-1">
-                      <span className="grid size-8 shrink-0 place-items-center rounded-ctl bg-fill-2 text-fg-2">
-                        <Icon className="size-4" />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-body text-fg">{label}</span>
-                        <span className="block truncate text-caption text-fg-3">{blurb}</span>
-                      </span>
-                      <ChevronRightIcon size={16} className="shrink-0 text-fg-3" />
-                    </button>
-                  </li>
-                ))}
-              </motion.ul>
+              <motion.div key="list" initial={{ x: -30, opacity: 0 }} animate={{ x: 0, opacity: 1, transition: { duration: 0.2, ease: EASE.enter } }} exit={{ x: -30, opacity: 0, transition: { duration: 0.12 } }} className="px-4 pb-8">
+                {search}
+                {nothing}
+                <ul className="divide-y divide-(--line-1)">
+                  {shown.map(({ id, label, blurb, Icon }) => (
+                    <li key={id}>
+                      <button type="button" onClick={() => choose(id)} className="press -mx-1 flex min-h-14 w-[calc(100%+0.5rem)] items-center gap-3 rounded-ctl px-1 py-2.5 text-left hover:bg-fill-1">
+                        <span className="grid size-8 shrink-0 place-items-center rounded-ctl bg-fill-2 text-fg-2">
+                          <Icon className="size-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-body text-fg">{label}</span>
+                          <span className="block truncate text-caption text-fg-3">{blurb}</span>
+                        </span>
+                        <ChevronRightIcon size={16} className="shrink-0 text-fg-3" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
             )}
           </AnimatePresence>
         </div>
@@ -155,8 +183,10 @@ function SettingsWindow({
         <h2 id="settings-title" className="px-2 pb-3 pt-1 text-title text-fg">
           Settings
         </h2>
+        {search}
+        {nothing}
         <ul className="space-y-0.5">
-          {CATEGORIES.map(({ id, label, Icon }) => {
+          {shown.map(({ id, label, Icon }) => {
             const on = current === id;
             return (
               <li key={id}>

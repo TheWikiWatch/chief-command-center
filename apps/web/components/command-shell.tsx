@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState, ViewTransition } from "react";
 import { Panel, PanelGroup, PanelResizeHandle, type ImperativePanelGroupHandle } from "react-resizable-panels";
 import { FxRoot } from "@/components/fx-root";
 import { HeaderStatus, StatusSheet } from "@/components/connection-status";
@@ -313,7 +313,8 @@ export function CommandShell() {
   }, []);
 
   function changeSurface(next: Surface) {
-    setSurface(next);
+    // A transition, so the desktop's <ViewTransition> animates the swap (globals.css "surface-in").
+    startTransition(() => setSurface(next));
     if (next !== "fleet") setLooking(null);
     try {
       localStorage.setItem(SURFACE_KEY, next);
@@ -717,7 +718,9 @@ export function CommandShell() {
           }}
         >
           <Panel defaultSize={60} minSize={32} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-pane">
-            {surface === "today" ? today : surface === "vault" ? vault : fleet}
+            <ViewTransition key={surface} enter="surface-in" exit="surface-out">
+              <div className="relative flex h-full min-h-0 flex-col">{surface === "today" ? today : surface === "vault" ? vault : fleet}</div>
+            </ViewTransition>
           </Panel>
           <PanelResizeHandle
             className="group relative z-20 flex w-3 items-center justify-center bg-transparent"

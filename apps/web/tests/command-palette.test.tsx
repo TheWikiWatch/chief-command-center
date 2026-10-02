@@ -79,3 +79,18 @@ describe("the palette's memory and search", () => {
     expect(screen.getAllByRole("option")[0]).toHaveTextContent("Fleet");
   });
 });
+
+describe("settings search", () => {
+  it("finds a page by the words it covers, and Enter opens the first match", async () => {
+    const { SettingsPanel } = await import("@/components/settings-panel");
+    render(<SettingsPanel open phone={false} onClose={() => {}} />);
+    const box = await screen.findByRole("searchbox", { name: "Search settings" });
+    fireEvent.change(box, { target: { value: "microphone" } });
+    const nav = screen.getByRole("navigation", { name: "Settings" });
+    expect([...nav.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["Voice"]);
+    fireEvent.keyDown(box, { key: "Enter" });
+    expect(await screen.findByRole("heading", { name: "Voice", level: 3 })).toBeInTheDocument();
+    fireEvent.change(box, { target: { value: "zzzz" } });
+    expect(screen.getByText("No settings match.")).toBeInTheDocument();
+  });
+});
