@@ -318,6 +318,8 @@ function ThreadRow({
         </label>
         <input
           id={`rename-${t.id}`}
+          // Shown only after the owner chose Rename, so focus belongs here.
+          // eslint-disable-next-line jsx-a11y/no-autofocus
           autoFocus
           value={title}
           maxLength={60}

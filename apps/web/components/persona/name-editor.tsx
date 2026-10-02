@@ -48,6 +48,8 @@ export function NameEditor({
   }
 
   return (
+    // Escape anywhere in the form cancels it (the keys reach the form from its own fields).
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
     <form
       className="w-full max-w-sm space-y-2.5 text-left"
       onSubmit={(e) => {

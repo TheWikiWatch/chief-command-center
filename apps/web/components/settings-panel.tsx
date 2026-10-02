@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode, type UIEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
 
 import {
   AudioLinesIcon,
@@ -31,7 +31,7 @@ import { UpdatesPanel, useUpdates } from "@/components/updates/update-card";
 import { UpdateHistoryButton } from "@/components/updates/update-history";
 import { PhoneSettings } from "@/components/phone/phone-settings";
 import { Sheet } from "@/components/ui/sheet";
-import { Group, PillButton, Row } from "@/components/ui/settings-group";
+import { Group, Row } from "@/components/ui/settings-group";
 import { Segmented, Switch } from "@/components/ui/controls";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
 import { FONT_STEPS, notifyVoiceConfig, useDashboardPrefs } from "@/lib/dashboard-prefs";

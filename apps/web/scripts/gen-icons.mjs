@@ -60,7 +60,7 @@ for (const name of names) {
   const match = /const __iconNode = (\[[\s\S]*?\]);\n/.exec(text);
   if (!match) throw new Error(`no icon node in ${name}`);
   const node = Function(`return ${match[1]}`)().map(([tag, attrs]) => {
-    const { key, ...rest } = attrs;
+    const { key: _key, ...rest } = attrs;
     return [tag, rest];
   });
   out += `export const ${pascal(name)}Icon = make(${JSON.stringify(node)}, "${pascal(name)}Icon");\n`;

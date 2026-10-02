@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { forgetHealth, reportHealth } from "@/lib/health-store";
 
@@ -35,7 +35,8 @@ export function useResourceHealth(label?: string, staleAfter = 5_000) {
     if (!label) return;
     return () => forgetHealth(label);
   }, [label]);
-  return { health: health.current, success, failure };
+  // One object for the component's life, so effects and callbacks can list it as a dependency.
+  return useMemo(() => ({ success, failure }), [success, failure]);
 }
 
 export function ResourceStatus({ label, health, staleAfter = 5_000 }: { label: string; health: ResourceHealth; staleAfter?: number }) {

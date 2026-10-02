@@ -230,7 +230,7 @@ export function CommandShell() {
       if (!signal.aborted) snapshotHealth.failure(error);
       /* snapshot miss alone does not raise the reconnect banner */
     }
-  }, []);
+  }, [snapshotHealth]);
 
   useEffect(() => {
     readyAt.current = Date.now() + 4000;
@@ -272,7 +272,7 @@ export function CommandShell() {
       if (data.approval?.requestId !== dismissedApproval.current) setApproval((prev) => share(prev, data.approval ?? null));
       approvalHealth.success();
     } catch (error) { if (!signal.aborted) approvalHealth.failure(error); }
-  }, () => (Date.now() - approvalsViaChatAt.current < 60_000 ? 30_000 : approvalRef.current || thinkingRef.current ? 800 : 4000)), []);
+  }, () => (Date.now() - approvalsViaChatAt.current < 60_000 ? 30_000 : approvalRef.current || thinkingRef.current ? 800 : 4000)), [approvalHealth]);
 
   useEffect(() => {
     const n = loadSplit();

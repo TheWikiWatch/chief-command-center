@@ -244,6 +244,7 @@ export function Thread({
 
   // Images and videos grow the thread after it renders; stay pinned to the bottom unless you scrolled up.
   const content = useRef<HTMLDivElement>(null);
+  const empty = messages.length === 0;
   useEffect(() => {
     const el = scroller.current;
     const inner = content.current;
@@ -263,7 +264,7 @@ export function Thread({
     ro.observe(inner);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [messages.length === 0]);
+  }, [empty]);
 
   const thinkingSince = useRef<number | null>(null);
   if (awaiting && thinkingSince.current === null) thinkingSince.current = Date.now();
@@ -271,6 +272,8 @@ export function Thread({
 
   return (
     <div className="relative min-h-0 flex-1">
+      {/* The listeners only note that the owner scrolled by hand (stop following new rows); nothing to activate. */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
         ref={scroller}
         className="h-full overflow-y-auto overscroll-contain px-4 pb-4 pt-3"

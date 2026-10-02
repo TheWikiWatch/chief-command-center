@@ -116,7 +116,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
       setOnline(false);
       setError(e instanceof Error ? e.message : "Could not read the vault.");
     }
-  }, []);
+  }, [builtin, resourceHealth]);
 
   useEffect(() => poll(refresh, () => pollSeconds.current * 1000), [refresh, tick]);
 

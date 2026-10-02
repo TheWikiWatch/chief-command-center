@@ -455,7 +455,7 @@ export function ChiefChat({
     } catch (error) {
       if (!signal.aborted) transcriptHealth.failure(error);
     }
-  }, () => (longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript]);
+  }, () => (longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript, transcriptHealth]);
 
   // Load earlier: pages of older rows before the oldest one shown.
   // Where the next page starts: the bridge's cursor, so rows skipped here are never asked for again.
