@@ -837,7 +837,8 @@ def _cc_push():
 
 def byte_range(header: str, size: int) -> tuple[int, int, bool]:
     """(start, end, partial) for a `Range: bytes=…` header: `a-b`, `a-` and the suffix form `-n` (the last n
-    bytes). Anything unparsable is the whole file."""
+    bytes). Anything unparsable, backwards (`5-3`), empty (`-0`) or starting past the end is the whole file (a
+    server may always ignore a Range), never a start after the end or bytes the client didn't ask for."""
     if not header.startswith("bytes=") or not size:
         return 0, max(size - 1, 0), False
     first = header[6:].split(",", 1)[0].strip()
@@ -845,14 +846,16 @@ def byte_range(header: str, size: int) -> tuple[int, int, bool]:
     try:
         if not lo and hi:
             n = int(hi)
+            if n <= 0:
+                return 0, size - 1, False
             return max(size - n, 0), size - 1, True
         start = int(lo) if lo else 0
         end = int(hi) if hi else size - 1
     except ValueError:
         return 0, size - 1, False
-    end = min(max(end, 0), size - 1)
-    start = min(max(start, 0), end)
-    return start, end, True
+    if start < 0 or start >= size or end < start:
+        return 0, size - 1, False
+    return start, min(end, size - 1), True
 
 
 def _make_handler(bridge: BridgeServer):
