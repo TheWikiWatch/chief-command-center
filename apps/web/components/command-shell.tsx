@@ -63,6 +63,8 @@ const Onboarding = dynamic(() => import("@/components/onboarding/onboarding").th
  */
 function usePrefetchLater() {
   useEffect(() => {
+    // Not in tests: the fetch would land after the test file has finished.
+    if (process.env.NODE_ENV === "test") return;
     const load = () => {
       void import("@/components/settings-panel");
       void import("@/components/vault-pane");

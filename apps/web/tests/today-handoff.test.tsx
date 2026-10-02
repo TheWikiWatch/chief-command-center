@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
-import { IntentSheet } from "@/components/today-pane";
+import { IntentSheet } from "@/components/today/intent-sheet";
 const launch=vi.hoisted(()=>vi.fn());
 vi.mock("@/lib/ops",()=>({ops:{launch}}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});

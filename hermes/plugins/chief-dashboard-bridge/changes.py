@@ -57,8 +57,11 @@ class Watcher:
             self._thread = threading.Thread(target=self._run, name="chief-change-watch", daemon=True)
             self._thread.start()
 
-    def stop(self) -> None:
+    def stop(self, wait: float = 2.0) -> None:
+        """Stop watching; waits for the thread to close its database connections."""
         self._stop.set()
+        if self._thread is not None and self._thread is not threading.current_thread():
+            self._thread.join(wait)
 
     def _run(self) -> None:
         conns: dict[str, sqlite3.Connection] = {}
