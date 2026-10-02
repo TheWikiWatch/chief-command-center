@@ -143,6 +143,15 @@ def main() -> int:
         def assistant_after(n: int, needle: str):
             return next((m for m in messages()[n:] if m.get("role") == "assistant" and needle in str(m.get("content"))), None)
 
+        # Warm-up: one ordinary message, answered before the timed checks. On GitHub's Windows runner the first turn
+        # after start waits ("Another Hermes process is using this session") while the setup's own Hermes commands
+        # let go of the session; the controls below are about a running chief, not a cold start.
+        warm = call("/send", {"text": "hello, warming up", "client_id": "c-warm"})
+        check("the first message is accepted", warm.get("ok") is True, warm)
+        check("the first message is answered", bool(wait(lambda: assistant_after(0, "Hello from the local test model"), 300)))
+        wait(lambda: not generating(), 60)
+        warmed_at = time.time()
+
         # Steer: context reaches the running turn.
         start = len(messages())
         first = call("/send", {"text": "WORK on the report", "client_id": "c-steer"})
@@ -228,8 +237,10 @@ def main() -> int:
         reply = wait(lambda: assistant_after(start, "You picked"), 45)
         check("the typed answer reached the turn", reply is not None and "teal please" in str(reply.get("content")), reply)
 
+        # Home-channel notices count from the start; busy notices only after the warm-up (see above).
         notices = call("/transcript?after=0").get("notices") or []
-        check("no home-channel or busy notices", not any("/sethome" in n.get("text", "") or n.get("text", "").startswith("⏳") for n in notices), notices)
+        flagged = [n for n in notices if "/sethome" in n.get("text", "") or (n.get("text", "").startswith("⏳") and float(n.get("at") or 0) >= warmed_at)]
+        check("no home-channel or busy notices", not flagged, flagged)
 
         # The bridge token never reaches the agent's own commands (bridge_token.py): a terminal child of the
         # gateway reports whether CHIEF_DASHBOARD_TOKEN is set.
