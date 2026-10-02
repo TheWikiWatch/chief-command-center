@@ -33,10 +33,11 @@ describe("the diagnostics bundle", () => {
     expect(readFileSync(path.join(staging, "logs", "main.jsonl"), "utf8")).toContain("Bearer [redacted]");
   });
 
+  // Zipping goes through Windows' own tools, which took 18 s on a GitHub runner (under a second here).
   it.runIf(process.platform === "win32")("zips them with an about file", () => {
     const out = path.join(tmp, "diag.zip");
     const r = createDiagnostics({ sources, info: { app: "1.2.3" }, redact, out });
     expect(r.ok).toBe(true);
     expect(existsSync(out)).toBe(true);
-  });
+  }, 60_000);
 });

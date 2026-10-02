@@ -36,7 +36,8 @@ it("long-polls once the bridge can hold requests, with what the bridge last repo
     .mockReturnValue(hold);
   const update = vi.fn();
   render(<ChiefChat chief={undefined} lookAtEl={null} connected compact onApprovalUpdate={update} />);
-  await waitFor(() => expect(api.transcript).toHaveBeenCalledTimes(3));
+  // Rendering the whole chat can take over a second when the full suite runs in parallel.
+  await waitFor(() => expect(api.transcript).toHaveBeenCalledTimes(3), { timeout: 5000 });
   expect(api.transcript.mock.calls[0].slice(0, 1)).toEqual([0]);
   expect(api.transcript.mock.calls[0][2]).toBeUndefined(); // the first load never waits
   expect(api.transcript.mock.calls[1][0]).toBe(50);
