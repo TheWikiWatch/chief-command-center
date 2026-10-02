@@ -54,8 +54,10 @@ copyFileSync(pkg, path.join(folder, `ChiefCommandCenter-${version}.appx`));
 const zip = path.join(local.releasesDir, `Chief-Command-Center-setup-${version}.zip`);
 rmSync(zip, { force: true });
 console.log(`Zipping ${name} (about a minute)…`);
-// Windows' own tar writes zip files with -a.
-const r = spawnSync("tar.exe", ["-a", "-c", "-f", zip, "-C", stage, name], { stdio: "inherit" });
+// Windows' own tar (bsdtar) writes zip files with -a. Called by full path: from Git Bash, "tar.exe" is GNU tar,
+// which reads "E:\…" as a remote host and can't write zips.
+const windowsTar = path.join(process.env.SystemRoot || "C:\\Windows", "System32", "tar.exe");
+const r = spawnSync(windowsTar, ["-a", "-c", "-f", zip, "-C", stage, name], { stdio: "inherit" });
 rmSync(stage, { recursive: true, force: true });
 if (r.status !== 0) fail(`tar failed (exit ${r.status}).`);
 console.log(`\n✓ ${zip} (${Math.round(statSync(zip).size / 1048576)} MB)`);
