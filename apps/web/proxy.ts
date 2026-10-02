@@ -16,7 +16,8 @@ function refused(req: NextRequest, detail: string, hint: string) {
   );
 }
 
-export async function middleware(req: NextRequest) {
+/** Next 16's request gate (formerly middleware; runs on Node): who may open the dashboard at all. */
+export async function proxy(req: NextRequest) {
   if (isDirectLoopback(req.headers)) {
     // The desktop app's per-launch secret (lib/loopback-session.ts): loopback alone proves nothing.
     const secret = sessionSecret();

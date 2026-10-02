@@ -84,7 +84,7 @@ const config = (phase: string): NextConfig => ({
   experimental: {
     // Above the bridge's 80 MB /send cap. Next truncates (not rejects) bodies past this.
     // Composer limits live in lib/upload-limits.ts.
-    middlewareClientMaxBodySize: "110mb",
+    proxyClientMaxBodySize: "110mb",
   },
   async headers() {
     return [

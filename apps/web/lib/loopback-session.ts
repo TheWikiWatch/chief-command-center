@@ -3,9 +3,9 @@
  *
  * Loopback is shared by every process on the PC, including other Windows users' sessions, so "came from
  * 127.0.0.1" proves nothing about who is asking. When the desktop app runs the dashboard it generates a secret
- * each launch, hands it to the server, and sets it as an httpOnly cookie on its own window. The middleware then
+ * each launch, hands it to the server, and sets it as an httpOnly cookie on its own window. The proxy (proxy.ts) then
  * admits a direct-loopback request only with that cookie. Opening Chief in a browser on the same PC goes
- * through a short-lived signed ticket from the desktop app (tray → Open in browser), which the middleware
+ * through a short-lived signed ticket from the desktop app (tray → Open in browser), which the proxy
  * swaps for the cookie. Phones keep using their Tailscale identity. Without the variable (development servers)
  * nothing changes.
  */

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
 
 import { makeTicket, sameSecret, sessionCookieName, ticketValid } from "@/lib/loopback-session";
-import { middleware } from "@/middleware";
+import { proxy as middleware } from "@/proxy";
 import { openTicket, sessionCookieName as desktopCookieName } from "../../desktop/src/session";
 
 const SECRET = "a".repeat(64);

@@ -28,7 +28,7 @@ function everyListed(value: string | null, ok: (item: string) => boolean): boole
  * Loopback Host alone is spoofable: Tailscale Serve routes by SNI and forwards the client's
  * Host unchanged. Serve always sets X-Forwarded-Proto: https and X-Forwarded-For to the
  * tailnet client, and a client cannot override either. Next dev fills these in from the
- * socket (http, 127.0.0.1) before middleware runs, so judge their values, not presence.
+ * socket (http, 127.0.0.1) before the proxy runs, so judge their values, not presence.
  */
 export function isDirectLoopback(headers: Headers): boolean {
   return (

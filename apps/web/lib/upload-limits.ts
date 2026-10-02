@@ -1,6 +1,6 @@
 /**
  * One place for composer attachment limits. They must stay under every layer below:
- * - Next middleware buffer: next.config.ts `middlewareClientMaxBodySize` (110mb)
+ * - Next proxy buffer: next.config.ts `proxyClientMaxBodySize` (110mb)
  * - bridge /send body cap: server.py (80 MB of JSON)
  * - bridge per-file cap: data.py MAX_ATTACHMENTS / MAX_ATTACHMENT_BYTES
  * Base64 inflates files by 4/3, so 55 MB of files is about 73 MB on the wire.

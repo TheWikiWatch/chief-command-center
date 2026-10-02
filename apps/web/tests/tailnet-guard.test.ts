@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it } from "vitest";
 import { NextRequest } from "next/server";
-import { middleware } from "@/middleware";
+import { proxy as middleware } from "@/proxy";
 import { isDirectLoopback } from "@/lib/tailnet-guard";
 
 const ORIGINAL = process.env.CHIEF_DASHBOARD_TAILSCALE_USER;
@@ -20,7 +20,7 @@ describe("tailnet guard", () => {
     process.env.CHIEF_DASHBOARD_TAILSCALE_USER = "me@example.com";
     expect(await status({ host: "127.0.0.1:3000" })).toBe(200);
     expect(await status({ host: "localhost:3000" })).toBe(200);
-    // What Next dev fills in from the socket before middleware runs.
+    // What Next dev fills in from the socket before the proxy runs.
     for (const ip of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
       expect(await status({ host: "127.0.0.1:3000", "x-forwarded-for": ip, "x-forwarded-proto": "http", "x-forwarded-host": "127.0.0.1:3000" })).toBe(200);
     }
