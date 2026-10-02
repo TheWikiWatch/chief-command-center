@@ -6,6 +6,7 @@ import { BackupPanel } from "@/components/backup/backup-panel";
 import { UpdatesPanel, useUpdates } from "@/components/updates/update-card";
 import { UpdateHistoryButton } from "@/components/updates/update-history";
 import { Group, Row } from "@/components/ui/settings-group";
+import { LoadingLine } from "@/components/ui/surface";
 
 /* Settings → Backup & updates. */
 
@@ -48,7 +49,7 @@ export function BackupGroup() {
 }
 
 export function BackupSummaryRow() {
-  const [line, setLine] = useState("…");
+  const [line, setLine] = useState("");
   useEffect(() => {
     import("@/lib/backup-client").then(({ backups, agoLabel }) =>
       backups
@@ -59,7 +60,7 @@ export function BackupSummaryRow() {
         .catch(() => setLine("Not available right now.")),
     );
   }, []);
-  return <Row label={line} />;
+  return <Row label={line || <LoadingLine className="w-44" label="Checking backups" />} />;
 }
 
 /* ------------------------------------------------------------------ Check my system */

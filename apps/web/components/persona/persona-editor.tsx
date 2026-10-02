@@ -6,6 +6,7 @@ import { CircleAlertIcon, HistoryIcon, PlusIcon, TriangleAlertIcon, XIcon } from
 import { memoryOps, memoryUsed, persona, type MemoryRow, type MemoryTarget, type Persona, type Soul, type SoulVersion } from "@/lib/persona-client";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/surface";
 
 type Tab = "soul" | "memory" | "user";
 
@@ -52,9 +53,7 @@ export function PersonaEditor({ profile, name }: { profile: string; name: string
       {error ? (
         <Problem text={error} action={<Ghost onClick={load}>Try again</Ghost>} />
       ) : !data ? (
-        <p className="text-callout text-fg-3" role="status">
-          Loading…
-        </p>
+        <Skeleton lines={5} label="Loading the persona" />
       ) : tab === "soul" ? (
         <SoulEditor profile={profile} soul={data.soul} onSaved={(soul) => setData({ ...data, soul })} />
       ) : (

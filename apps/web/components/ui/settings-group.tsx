@@ -40,7 +40,7 @@ export function Row({
   children,
 }: {
   label: ReactNode;
-  hint?: string;
+  hint?: ReactNode;
   stacked?: boolean;
   dim?: boolean;
   children?: ReactNode;
@@ -48,8 +48,8 @@ export function Row({
   return (
     <div className={`px-3.5 py-3 transition-opacity duration-fast ${dim ? "opacity-45" : ""}`}>
       <div className={stacked ? "mb-2" : ""}>
-        <p className="text-body text-fg">{label}</p>
-        {hint ? <p className="mt-0.5 text-caption text-fg-3">{hint}</p> : null}
+        <div className="text-body text-fg">{label}</div>
+        {hint ? <div className="mt-0.5 text-caption text-fg-3">{hint}</div> : null}
       </div>
       {children}
     </div>

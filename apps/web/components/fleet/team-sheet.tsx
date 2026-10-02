@@ -13,6 +13,7 @@ import { OPEN_TEAM_EVENT, type TeamTab } from "@/lib/settings-nav";
 import type { Person } from "@/lib/types";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
+import { SkeletonRows } from "@/components/ui/surface";
 
 const TAB_KEY = "chief-team-tab";
 
@@ -183,7 +184,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
 
       <section className="space-y-2">
         <h3 className="text-body font-medium text-fg">Retired</h3>
-        {archives === null ? <p className="text-callout text-fg-3">Loading…</p> : null}
+        {archives === null ? <SkeletonRows rows={2} label="Loading retired bots" /> : null}
         {archives && !archives.length ? <p className="text-callout text-fg-3">No retired bots. A retired bot is archived (its identity, memory and skills) and can be brought back.</p> : null}
         {archives?.length ? (
           <ul className="divide-y divide-line overflow-hidden rounded-card border border-line">

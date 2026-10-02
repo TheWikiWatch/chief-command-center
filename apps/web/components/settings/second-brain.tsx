@@ -11,6 +11,7 @@ import { secondBrain, type Routine, type SecondBrainStatus } from "@/lib/setup-c
 import { useAppConfig } from "@/lib/app-config";
 import { field } from "@/components/ui/field";
 import { MODE_LABEL } from "@/components/settings-panel";
+import { LoadingLine } from "@/components/ui/surface";
 
 /* Settings → Second Brain: the folder and its routines. */
 
@@ -56,7 +57,7 @@ export function SecondBrainGroup({ onAskChief }: { onAskChief?: (text: string) =
       ) : (
         <>
           <Row
-            label={path ? <span className="break-all font-mono text-code">{path}</span> : status ? "Not set up" : "…"}
+            label={path ? <span className="break-all font-mono text-code">{path}</span> : status ? "Not set up" : <LoadingLine className="w-48" />}
             hint={
               error ||
               (fromEnv

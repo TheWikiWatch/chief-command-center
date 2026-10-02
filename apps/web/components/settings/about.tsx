@@ -5,6 +5,7 @@ import { BookOpenIcon, InfoIcon } from "@/components/icons";
 import { UpdateHistoryButton } from "@/components/updates/update-history";
 import { Group, Row } from "@/components/ui/settings-group";
 import { fetchAbout, type AboutInfo } from "@/lib/about-client";
+import { LoadingLine } from "@/components/ui/surface";
 
 /* Settings → About. */
 
@@ -19,8 +20,8 @@ export function AboutGroup() {
   return (
     <>
       <Group icon={<InfoIcon className="size-4" />} title="Chief Command Center" action={<UpdateHistoryButton />}>
-        <Row label="Version" hint={about?.app || "…"} />
-        <Row label="Hermes Agent" hint={about ? `${about.hermes || "version unknown"}, by Nous Research (MIT)` : "…"} />
+        <Row label="Version" hint={about ? about.app || "unknown" : <LoadingLine className="w-16" />} />
+        <Row label="Hermes Agent" hint={about ? `${about.hermes || "version unknown"}, by Nous Research (MIT)` : <LoadingLine className="w-40" />} />
         <Row
           label="Hermes updates"
           hint="Hermes is built into the app and never updates itself. A newer Hermes reaches you as an app update, once it passes the app's compatibility checks; the app backs up your data before Hermes first starts on it."

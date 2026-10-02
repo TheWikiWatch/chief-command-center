@@ -8,6 +8,7 @@ import { SPRING } from "@/lib/motion";
 import { absoluteVaultPath, displayName, obsidianToMarkdown, parseVaultHref, repairMojibake, splitFrontmatter, vaultBacklinks, vaultFileUrl, vaultText } from "@/lib/vault-client";
 import { btn } from "@/components/ui/button";
 import { Open } from "@/components/vault-pane";
+import { Skeleton } from "@/components/ui/surface";
 
 /* The Vault's reader: notes with properties and backlinks, plain text, PDFs and other files. */
 
@@ -283,7 +284,7 @@ export function PropText({ text, onFollow }: { text: string; onFollow: (ref: str
 export function TextView({ path }: { path: string }) {
   const { text, error } = useFileText(path);
   if (error) return <p className="m-4 text-callout text-danger">{error}</p>;
-  if (text === null) return <p className="p-5 text-callout text-fg-3">Loading…</p>;
+  if (text === null) return <Skeleton lines={8} className="m-5" label="Opening the file" />;
   return <pre className="m-4 overflow-x-auto rounded-card border border-line bg-canvas p-4 font-mono text-code text-fg-2">{repairMojibake(text)}</pre>;
 }
 

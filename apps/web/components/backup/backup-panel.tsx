@@ -8,6 +8,7 @@ import { agoLabel, backups, sizeLabel, type BackupFile, type BackupParts, type B
 import { desktop } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
 import { field } from "@/components/ui/field";
+import { Skeleton } from "@/components/ui/surface";
 
 const PARTS: { id: BackupParts; label: string; hint: string }[] = [
   { id: "everything", label: "Everything", hint: "Your setup and your Second Brain" },
@@ -96,7 +97,7 @@ export function BackupPanel() {
     return <RestoreFlow initialFile={restoring} secondBrain={status?.secondBrain || ""} onClose={() => setRestoring(null)} />;
   }
   if (!status) {
-    return error ? <Note tone="warn">{error}</Note> : <p className="text-callout text-fg-3">Loading…</p>;
+    return error ? <Note tone="warn">{error}</Note> : <Skeleton lines={3} label="Loading backups" />;
   }
 
   const job = status.job;

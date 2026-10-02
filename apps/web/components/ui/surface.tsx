@@ -56,3 +56,25 @@ export function Skeleton({ lines, className = "", label = "Loading" }: { lines?:
   }
   return <div role="status" aria-label={label} className={`skeleton rounded-card ${className}`.trim()} />;
 }
+
+/** A value still on its way, inside a line of text (a version number, a folder path). */
+export function LoadingLine({ className = "w-28", label = "Loading" }: { className?: string; label?: string }) {
+  return <span role="status" aria-label={label} className={`skeleton inline-block h-3 rounded-full align-middle ${className}`.trim()} />;
+}
+
+/** A list still loading: row-shaped placeholders. */
+export function SkeletonRows({ rows = 4, className = "", label = "Loading" }: { rows?: number; className?: string; label?: string }) {
+  return (
+    <div role="status" aria-label={label} className={`divide-y divide-(--line-1) ${className}`.trim()}>
+      {Array.from({ length: rows }, (_, i) => (
+        <div key={i} className="flex items-center gap-3 py-3.5">
+          <div className="skeleton size-6 shrink-0 rounded-full" />
+          <div className="min-w-0 flex-1 space-y-2">
+            <div className="skeleton h-3.5 rounded-full" style={{ width: `${78 - ((i * 17) % 34)}%` }} />
+            <div className="skeleton h-2.5 w-24 rounded-full" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}

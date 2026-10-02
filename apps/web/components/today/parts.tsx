@@ -2,9 +2,10 @@
 
 import { animate as animateValue, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { ClockIcon, RefreshCwIcon, TriangleAlertIcon, WifiOffIcon } from "@/components/icons";
+import { ClockIcon, RefreshCwIcon, TriangleAlertIcon } from "@/components/icons";
 import { EASE } from "@/lib/motion";
 import { type TodayItem } from "@/lib/ops";
+import { StateFace } from "@/components/state-face";
 
 /* Today's pieces: the morning count-up, stat tiles, banners, the outage card and task rows. */
 
@@ -90,9 +91,7 @@ export function Banner({ tone, children }: { tone: "danger" | "warn" | "neutral"
 export function OpsDown({ builtin, error, onRetry }: { builtin: boolean; error: string | null; onRetry: () => void }) {
   return (
     <div className="flex flex-col items-center px-6 py-16 text-center">
-      <span className="flex h-16 w-16 items-center justify-center rounded-full border border-line-2 bg-card text-fg-3">
-        <WifiOffIcon size={28} />
-      </span>
+      <StateFace mood="asleep" size={64} />
       <h2 className="mt-5 text-title text-fg">Your vault is out of reach</h2>
       <p className="mt-2 max-w-xs text-body text-fg-3">
         {builtin ? "Today reads tasks from your Second Brain folder, and it couldn't be read." : "Today reads tasks through your task service, and it isn't answering."}

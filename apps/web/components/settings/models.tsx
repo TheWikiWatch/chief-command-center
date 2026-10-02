@@ -7,6 +7,7 @@ import { useAssistantName } from "@/lib/identity";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { ModelsKeys } from "@/components/fleet/models-keys";
 import { setup, type SetupStatus } from "@/lib/setup-client";
+import { LoadingLine } from "@/components/ui/surface";
 
 /* Settings → Models & keys. */
 
@@ -43,7 +44,7 @@ export function ConnectionGroup() {
           />
         </div>
       ) : (
-        <Row label={status?.model || (status ? "No model chosen" : "…")} hint={error || (status ? (status.ready ? `via ${status.provider}` : status.error || "Not connected") : "")}>
+        <Row label={status?.model || (status ? "No model chosen" : <LoadingLine className="w-36" />)} hint={error || (status ? (status.ready ? `via ${status.provider}` : status.error || "Not connected") : "")}>
           {status ? (
             <span className={`rounded-full px-2 py-0.5 text-caption ${status.ready ? "bg-ok/15 text-ok" : "bg-warn/15 text-warn"}`}>{status.ready ? "Ready" : "Needs setup"}</span>
           ) : null}

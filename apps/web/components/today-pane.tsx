@@ -19,6 +19,8 @@ import { Banner, OpsDown, StatTiles, TaskRow, useMorning } from "@/components/to
 import { SettingsSheet } from "@/components/today/vault-settings";
 import { ViewSwitch } from "@/components/ui/controls";
 import { TodaySide } from "@/components/today/side-column";
+import { StateFace } from "@/components/state-face";
+import { EmptyState, SkeletonRows } from "@/components/ui/surface";
 
 export const TASK_INTENTS: { id: Intent; label: string }[] = [
   { id: "task.discuss", label: "Discuss" },
@@ -335,11 +337,17 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
                       )}
                     </div>
                     {matches.length === 0 ? (
-                      <p className="rounded-card border border-line bg-card px-4 py-6 text-center text-body text-fg-3">
-                        {q ? "No tasks match that search." : meta ? "Nothing ranked for today. Enjoy it." : "Reading vault…"}
-                      </p>
+                      q ? (
+                        <p className="px-1 py-6 text-center text-body text-fg-3">No tasks match that search.</p>
+                      ) : meta ? (
+                        <EmptyState visual={<StateFace mood="celebrating" size={56} />} title="Nothing ranked for today">
+                          Enjoy it. New tasks in your Second Brain show up here.
+                        </EmptyState>
+                      ) : (
+                        <SkeletonRows rows={4} label="Reading your tasks" />
+                      )
                     ) : (
-                      <ol className="overflow-hidden rounded-card border border-line bg-card">
+                      <ol className="-mx-3.5 border-y border-line">
                         {matches.map((item, i) => (
                           <motion.li
                             key={item.id}
