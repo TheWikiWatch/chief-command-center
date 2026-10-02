@@ -48,6 +48,7 @@ import { WhatsNewCard } from "@/components/updates/update-history";
 import "@/lib/install-prompt";
 import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunchTarget, type OpenTarget } from "@/lib/open-target";
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
+import { ViewSwitch } from "@/components/ui/controls";
 
 // Loaded the first time they are needed, not with the first screen (each is its own chunk).
 const SettingsPanel = dynamic(() => import("@/components/settings-panel").then((m) => m.SettingsPanel), { ssr: false });
@@ -665,28 +666,17 @@ export function CommandShell() {
 
 /** Fleet surface: the crew (orbit / list) or its health (scorecards, learning, runtime, proposals). */
 function FleetViewSwitch({ view, onChange, flags = 0 }: { view: FleetView; onChange: (next: FleetView) => void; flags?: number }) {
-  return (
-    <div className="glass flex shrink-0 rounded-full p-0.5" role="tablist" aria-label="Fleet view">
-      {(["crew", "health"] as const).map((id) => (
-        <button
-          key={id}
-          type="button"
-          role="tab"
-          aria-selected={view === id}
-          onClick={() => onChange(id)}
-          className={`relative min-h-9 rounded-full px-3 text-callout font-medium transition-colors duration-fast ${view === id ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
-        >
-          {view === id ? <motion.span layoutId="fleet-view" className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
-          <span className="relative">{id === "crew" ? "Crew" : "Health"}</span>
-          {id === "health" && flags ? (
-            <span className="relative ml-1.5 inline-grid min-w-[18px] place-items-center rounded-full bg-warn/20 px-1 font-mono text-micro leading-[18px] text-warn tabular" aria-label={`${flags} new ${flags === 1 ? "flag" : "flags"}`}>
-              {flags}
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </div>
+  const health = (
+    <>
+      Health
+      {flags ? (
+        <span className="ml-1.5 inline-grid min-w-[18px] place-items-center rounded-full bg-warn/20 px-1 font-mono text-micro leading-[18px] text-warn tabular" aria-label={`${flags} new ${flags === 1 ? "flag" : "flags"}`}>
+          {flags}
+        </span>
+      ) : null}
+    </>
   );
+  return <ViewSwitch label="Fleet view" value={view} onChange={onChange} glass options={[["crew", "Crew"], ["health", health]]} />;
 }
 
 function rememberChief(p: Person) {

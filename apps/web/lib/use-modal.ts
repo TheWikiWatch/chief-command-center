@@ -18,17 +18,8 @@ export function useModal(ref: RefObject<HTMLElement | null>, opts: { active?: bo
   const active = opts.active ?? true;
   const inert = opts.inert ?? false;
 
-  useEffect(() => {
-    if (!active) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const el = ref.current;
-    const target = el?.querySelector<HTMLElement>("[data-autofocus]") || el;
-    target?.focus({ preventScroll: true });
-    return () => {
-      if (previous && document.contains(previous)) previous.focus({ preventScroll: true });
-    };
-  }, [active, ref]);
-
+  // Order matters: on close React runs these cleanups in order, and focus can't return to an element that is
+  // still inert. So the page is made interactive again first, then focus goes back.
   useEffect(() => {
     if (!active || !inert) return;
     const el = ref.current;
@@ -48,6 +39,17 @@ export function useModal(ref: RefObject<HTMLElement | null>, opts: { active?: bo
       for (const item of changed) item.inert = false;
     };
   }, [active, inert, ref]);
+
+  useEffect(() => {
+    if (!active) return;
+    const previous = document.activeElement as HTMLElement | null;
+    const el = ref.current;
+    const target = el?.querySelector<HTMLElement>("[data-autofocus]") || el;
+    target?.focus({ preventScroll: true });
+    return () => {
+      if (previous && document.contains(previous)) previous.focus({ preventScroll: true });
+    };
+  }, [active, ref]);
 
   /** Put on the dialog element: keeps Tab inside it. */
   return function onKeyDown(e: KeyboardEvent<HTMLElement>) {

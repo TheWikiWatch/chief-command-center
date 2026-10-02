@@ -7,7 +7,7 @@ import { useResourceHealth } from "@/components/resource-status";
 import { share } from "@/lib/share";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
 import { SearchIcon, SlidersHorizontalIcon, XIcon } from "@/components/icons";
-import { EASE, SPRING } from "@/lib/motion";
+import { EASE } from "@/lib/motion";
 import { useScopeVisible } from "@/lib/overlay-stack";
 import { ops, fetchOpsHealth, pulseLine, type Board, type FocusCard, type Intent, type LaunchTarget, type Meta, type Pulse, type TaskCard, type TodayItem } from "@/lib/ops";
 import { useAssistantName } from "@/lib/identity";
@@ -17,6 +17,7 @@ import { AreaDrill } from "@/components/today/area-drill";
 import { IntentSheet } from "@/components/today/intent-sheet";
 import { Banner, OpsDown, StatTiles, TaskRow, useMorning } from "@/components/today/parts";
 import { SettingsSheet } from "@/components/today/vault-settings";
+import { ViewSwitch } from "@/components/ui/controls";
 
 export const TASK_INTENTS: { id: Intent; label: string }[] = [
   { id: "task.discuss", label: "Discuss" },
@@ -321,24 +322,12 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
                 <div className="mb-2 mt-1 flex items-center justify-between gap-3">
                   <h2 className="text-headline text-fg">{q ? "Matches" : attention ? "Needs attention" : "Do first"}</h2>
                   {q ? null : (
-                    <div className="flex rounded-full border border-line bg-card p-0.5" role="tablist" aria-label="Order">
-                      {[
-                        { on: !attention, label: "Ranked", set: false },
-                        { on: attention, label: "Attention", set: true },
-                      ].map((opt) => (
-                        <button
-                          key={opt.label}
-                          type="button"
-                          role="tab"
-                          aria-selected={opt.on}
-                          className={`relative min-h-9 rounded-full px-3 text-callout font-medium transition-colors duration-fast ${opt.on ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
-                          onClick={() => setAttention(opt.set)}
-                        >
-                          {opt.on ? <motion.span layoutId="today-order" className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
-                          <span className="relative">{opt.label}</span>
-                        </button>
-                      ))}
-                    </div>
+                    <ViewSwitch
+                      label="Order"
+                      value={attention ? "attention" : "ranked"}
+                      onChange={(next) => setAttention(next === "attention")}
+                      options={[["ranked", "Ranked"], ["attention", "Attention"]]}
+                    />
                   )}
                 </div>
                 {matches.length === 0 ? (
