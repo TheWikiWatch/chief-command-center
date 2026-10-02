@@ -149,6 +149,18 @@ def main() -> int:
         call("/send", {"text": "ENVCHECK please", "client_id": "c-env"})
         # The first terminal command starts the agent's shell cold: on a CI runner that took over 90 seconds.
         env_reply = wait(lambda: assistant_after(start, "Env check"), 240)
+        if env_reply is None:
+            # Say what happened instead (a CI runner never answered here): the turn's last messages and the gateway's
+            # log tail, with anything token-like left out.
+            for m in messages()[start:][-6:]:
+                print(f"      {m.get('role')}: {str(m.get('content'))[:300]!r} tools={m.get('tools')}")
+            try:
+                tail = (work / "gateway.log").read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
+                for line in tail:
+                    if "token" not in line.lower():
+                        print(f"      log: {line[:300]}")
+            except OSError:
+                pass
         check(
             "the agent's terminal doesn't see the bridge token",
             env_reply is not None and "TOKEN-ABSENT" in str(env_reply.get("content")),
