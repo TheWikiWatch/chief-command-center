@@ -37,6 +37,7 @@ import { dropReplays, sameText } from "@/lib/replay-guard";
 import { useAssistantName, assistantName } from "@/lib/identity";
 import { createDraftStore, useDraft, type DraftStore } from "@/lib/draft-store";
 import { speechFailureReason, useReplySpeech } from "@/components/chat/use-reply-speech";
+import { focusComposer, OPEN_VOICE_MODE_EVENT, SET_DRAFT_EVENT } from "@/lib/app-events";
 
 // Voice mode loads the first time it is opened.
 const VoiceMode = dynamic(() => import("@/components/chat/voice-mode").then((m) => m.VoiceMode), { ssr: false });
@@ -175,6 +176,22 @@ export function ChiefChat({
   // Mounted from the first open on (it keeps its exit animation); before that, not even loaded.
   const [voiceMounted, setVoiceMounted] = useState(false);
   if (voiceOpen && !voiceMounted) setVoiceMounted(true);
+  // The command palette and shortcuts open voice mode, and put text in the message box (never sending it).
+  useEffect(() => {
+    const openVoice = () => setVoiceOpen(true);
+    const fill = (e: Event) => {
+      const text = String((e as CustomEvent<{ text?: string }>).detail?.text || "");
+      if (!text) return;
+      draft.set(text);
+      window.setTimeout(focusComposer, 0);
+    };
+    window.addEventListener(OPEN_VOICE_MODE_EVENT, openVoice);
+    window.addEventListener(SET_DRAFT_EVENT, fill);
+    return () => {
+      window.removeEventListener(OPEN_VOICE_MODE_EVENT, openVoice);
+      window.removeEventListener(SET_DRAFT_EVENT, fill);
+    };
+  }, [draft]);
   const [voiceLabel, setVoiceLabel] = useState("");
   // Until the first transcript arrives, the thread shows it is loading, not "no messages yet".
   const [loadedOnce, setLoadedOnce] = useState(false);

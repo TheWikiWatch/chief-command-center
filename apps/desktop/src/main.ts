@@ -438,8 +438,13 @@ function createWindow() {
     minWidth: 380,
     minHeight: 560,
     show: !hiddenLaunch(),
-    backgroundColor: "#0c0d10",
+    backgroundColor: "#09090b",
     title: "Chief Command Center",
+    // No grey Windows title bar: minimize, maximize and close are drawn over the top-right of the app's own
+    // header (Window Controls Overlay), which is a drag region and keeps clear of them (globals.css --wco).
+    // Snap layouts and the window shadow stay, as with a normal frame.
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "#00000000", symbolColor: "#a1a1aa", height: 60 },
     // Electron 44 remembers the window's size, position and maximized state between starts (by this name).
     name: "chief-main",
     windowStatePersistence: true,

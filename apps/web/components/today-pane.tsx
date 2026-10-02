@@ -249,7 +249,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
 
   return (
     <div className="relative flex h-full min-h-0 flex-col bg-pane">
-      <header className="flex items-center gap-2 border-b border-line px-4 py-2">
+      <header className="app-drag titlebar-clear-phone flex items-center gap-2 border-b border-line px-4 py-2">
         {hideTabs ? (
           <>
             <div className="min-w-0 flex-1">

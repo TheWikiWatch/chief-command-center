@@ -9,6 +9,7 @@ import { ArrowUpIcon, ClockIcon, FileIcon, FilmIcon, ImageIcon, PaperclipIcon, P
 import { MicButton, type MicStatus } from "@/components/mic-button";
 import { useAssistantName } from "@/lib/identity";
 import { SPRING } from "@/lib/motion";
+import { FOCUS_COMPOSER_EVENT } from "@/lib/app-events";
 
 export type PendingFile = { id: string; name: string; mime: string; previewUrl?: string; file: File };
 
@@ -61,6 +62,12 @@ export function Composer({
 }) {
   const assistant = useAssistantName();
   const field = useRef<HTMLTextAreaElement>(null);
+  // "/" and the command palette put the cursor here (lib/app-events.ts).
+  useEffect(() => {
+    const focus = () => field.current?.focus();
+    window.addEventListener(FOCUS_COMPOSER_EVENT, focus);
+    return () => window.removeEventListener(FOCUS_COMPOSER_EVENT, focus);
+  }, []);
   const fileInput = useRef<HTMLInputElement>(null);
   const mediaInput = useRef<HTMLInputElement>(null);
   const [menu, setMenu] = useState(false);

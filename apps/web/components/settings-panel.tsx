@@ -1,8 +1,8 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useRef, useState, type ReactNode, type UIEvent } from "react";
-import { AudioLinesIcon, BellIcon, SlidersHorizontalIcon, BookOpenIcon, HardDriveDownloadIcon, KeyRoundIcon, ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon, InfoIcon, SmartphoneIcon, XIcon } from "@/components/icons";
+import { useRef, useState, type UIEvent } from "react";
+import { ChevronLeftIcon, ChevronRightIcon, XIcon } from "@/components/icons";
 import { PhoneSettings } from "@/components/phone/phone-settings";
 import { Sheet } from "@/components/ui/sheet";
 import { EASE, SPRING } from "@/lib/motion";
@@ -16,6 +16,7 @@ import { ConnectionGroup, ModelsKeysGroup } from "@/components/settings/models";
 import { HapticsGroup, NotificationsGroup, SoundGroup } from "@/components/settings/notifications";
 import { SecondBrainGroup } from "@/components/settings/second-brain";
 import { VoiceGroup } from "@/components/settings/voice";
+import { SETTINGS_PAGES } from "@/components/settings/pages";
 
 export type ApplyBody = {
   stt?: { provider?: string; model?: string; api_key?: string };
@@ -24,17 +25,7 @@ export type ApplyBody = {
 };
 
 /** App and Hermes voice settings in a sheet (bottom on the phone, side panel on desktop). */
-const CATEGORIES: { id: SettingsCategory; label: string; blurb: string; Icon: (p: { className?: string }) => ReactNode }[] = [
-  { id: "general", label: "General", blurb: "Names, identity and how this app looks.", Icon: ({ className }) => <SlidersHorizontalIcon className={className} /> },
-  { id: "models", label: "Models & keys", blurb: "The model the chief thinks with, and the providers your bots can use.", Icon: ({ className }) => <KeyRoundIcon className={className} /> },
-  { id: "voice", label: "Voice", blurb: "How the chief speaks and listens.", Icon: ({ className }) => <AudioLinesIcon className={className} /> },
-  { id: "second-brain", label: "Second Brain", blurb: "Your notes folder and its routines.", Icon: ({ className }) => <BookOpenIcon className={className} /> },
-  { id: "notifications", label: "Notifications", blurb: "Alerts, sounds and vibration on this device.", Icon: ({ className }) => <BellIcon className={className} /> },
-  { id: "phone", label: "Phone", blurb: "Use the app on your phone, privately, with alerts.", Icon: ({ className }) => <SmartphoneIcon className={className} /> },
-  { id: "usage", label: "Usage", blurb: "Tokens and cost for the chief and every bot, and your budget.", Icon: ({ className }) => <ChartColumnIcon className={className} /> },
-  { id: "backup", label: "Backup & updates", blurb: "Copies of your setup, and new versions of the app.", Icon: ({ className }) => <HardDriveDownloadIcon className={className} /> },
-  { id: "about", label: "About", blurb: "Versions, licences and credits.", Icon: ({ className }) => <InfoIcon className={className} /> },
-];
+const CATEGORIES = SETTINGS_PAGES;
 const CATEGORY_KEY = "chief-settings-category";
 
 function rememberedCategory(): SettingsCategory {

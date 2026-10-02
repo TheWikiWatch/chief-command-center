@@ -70,7 +70,7 @@ module.exports = {
     displayName: "Chief Command Center",
     publisher,
     publisherDisplayName: "Chief Command Center contributors",
-    backgroundColor: "#0c0d10",
+    backgroundColor: "#09090b",
     languages: ["en-US"],
     minVersion: "10.0.19041.0",
     addAutoLaunchExtension: false,

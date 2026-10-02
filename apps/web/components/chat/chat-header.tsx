@@ -91,7 +91,7 @@ export function ChatHeader({
                 : { text: voiceLabel || "Online", tone: "text-fg-3" });
 
   return (
-    <header className="chat-header relative z-20 flex items-center gap-3 border-b border-line px-3 py-2">
+    <header className="chat-header app-drag titlebar-clear relative z-20 flex items-center gap-2 border-b border-line px-3 py-2">
       <div className="shrink-0 pl-2 pr-1">
         {face ??
           (chief ? (
@@ -175,7 +175,9 @@ export function ChatHeader({
           <AudioLinesIcon size={19} />
         </button>
       ) : null}
-      <HeaderStatus connected={connected} authFailed={authFailed} onOpenStatus={onOpenStatus} onOpenSettings={onOpenSettings} quiet={compact} fullscreen={!compact} />
+      {/* Full screen isn't a header button: F11, Settings → This app and the command palette have it, and the
+          header must leave room for the window's own buttons in the desktop app. */}
+      <HeaderStatus connected={connected} authFailed={authFailed} onOpenStatus={onOpenStatus} onOpenSettings={onOpenSettings} quiet={compact} />
     </header>
   );
 }

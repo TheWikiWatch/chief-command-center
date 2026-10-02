@@ -176,7 +176,7 @@ function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
 
   return (
     <div ref={root} className="relative flex h-full min-h-0 flex-col bg-pane">
-      <header className="relative z-20 flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
+      <header className="app-drag titlebar-clear-phone relative z-20 flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
         {phone ? (
           <>
             <div className="min-w-0 flex-1">

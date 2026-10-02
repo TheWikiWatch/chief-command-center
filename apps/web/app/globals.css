@@ -203,15 +203,18 @@ body {
   background: transparent;
 }
 
-/* One focus language for every control (§8). */
-:focus-visible {
-  outline: 2px solid rgb(var(--c-accent));
-  outline-offset: 2px;
-  border-radius: 6px;
-}
-/* A scroll area that takes focus on click (so the keyboard scrolls it) is never a Tab stop: no ring. */
-[data-scroll-region]:focus-visible {
-  outline: none;
+/* One focus language for every control (§8). In the base layer, so a component can replace it with its own
+   ring (`outline-hidden` plus a ring, as text fields do): unlayered, it would win over every utility. */
+@layer base {
+  :focus-visible {
+    outline: 2px solid rgb(var(--c-accent));
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  /* A scroll area that takes focus on click (so the keyboard scrolls it) is never a Tab stop: no ring. */
+  [data-scroll-region]:focus-visible {
+    outline: none;
+  }
 }
 
 .glass {
@@ -525,6 +528,36 @@ body {
   }
   to {
     background-position: -110% 0;
+  }
+}
+
+/*
+ * Windows title bar integration (the desktop app draws the native window buttons over the top-right corner,
+ * Window Controls Overlay). --wco is the width they take, 0 everywhere else (browsers, phones). Headers are
+ * drag regions; anything you can click in them isn't.
+ */
+:root {
+  --wco: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+
+.app-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.app-drag :where(button, a, input, select, textarea, label, summary, [role="button"], [role="radio"], [role="tab"], [role="menuitem"], [role="combobox"], [contenteditable="true"]) {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* The header that reaches the window's top-right corner keeps clear of the buttons. */
+.titlebar-clear {
+  padding-right: calc(0.75rem + var(--wco));
+}
+
+@media (max-width: 767px) {
+  .titlebar-clear-phone {
+    padding-right: calc(1rem + var(--wco));
   }
 }
 

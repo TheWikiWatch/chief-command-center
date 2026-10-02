@@ -50,6 +50,15 @@ import type { ExecApproval, Person, Snapshot } from "@/lib/types";
 import { FleetViewSwitch } from "@/components/shell/fleet-view-switch";
 import { useOpenedOnce, usePrefetchLater } from "@/components/shell/loading";
 import { FLEET_VIEW_KEY, FleetView, PHONE_TAB_KEY, STORAGE_KEY, SURFACE_KEY, loadChief, loadPhoneTab, loadSplit, loadSurface, rememberChief } from "@/components/shell/persisted";
+import { CommandPalette, ShortcutList, type PaletteCommand } from "@/components/command-palette";
+import { Sheet } from "@/components/ui/sheet";
+import { AudioLinesIcon, BookOpenIcon, HashIcon, ListChecksIcon, MessageCircleIcon, OrbitIcon, PlusIcon, SettingsIcon, UsersIcon, WifiIcon, ZapIcon } from "@/components/icons";
+import { focusComposer, isTyping, openVoiceMode, setDraft } from "@/lib/app-events";
+import { matchShortcut } from "@/lib/shortcuts";
+import { openSettings as openSettingsAt, openTeam } from "@/lib/settings-nav";
+import { threadsApi } from "@/lib/threads-client";
+import { toggleFullscreen } from "@/lib/use-fullscreen";
+import { SETTINGS_PAGES } from "@/components/settings/pages";
 
 // Loaded the first time they are needed, not with the first screen (each is its own chunk).
 const SettingsPanel = dynamic(() => import("@/components/settings-panel").then((m) => m.SettingsPanel), { ssr: false });
@@ -383,6 +392,58 @@ export function CommandShell() {
   const specialists = people.filter((p) => !p.isChief);
   const workingCount = specialists.filter((p) => p.ring === "working").length;
   const openStatus = () => setStatusOpen(true);
+
+  // The command palette (Ctrl+K) and the keyboard map (lib/shortcuts.ts).
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const goToPlace = (target: Surface | "chat") => {
+    if (phone) changePhoneTab(target);
+    else if (target !== "chat") changeSurface(target);
+    if (target === "chat") window.setTimeout(focusComposer, 0);
+  };
+  const newThread = async () => {
+    const res = await threadsApi.create().catch(() => null);
+    if (res?.ok && res.thread) {
+      changeThread(res.thread.id);
+      if (phone) changePhoneTab("chat");
+      window.setTimeout(focusComposer, 50);
+    } else showToast({ id: "thread", title: "Couldn't start a thread", body: res?.error || `${assistantName()} isn't answering.`, tone: "warn", icon: "alert" });
+  };
+  const commands: PaletteCommand[] = [
+    { id: "chat", label: `Chat with ${assistant}`, group: "Go to", icon: <MessageCircleIcon size={17} />, keywords: "message talk write", shortcut: "composer", run: () => goToPlace("chat") },
+    { id: "fleet", label: "Fleet", group: "Go to", icon: <OrbitIcon size={17} />, keywords: "bots team orbit", shortcut: phone ? undefined : "surface1", run: () => { goToPlace("fleet"); changeFleetView("crew"); } },
+    { id: "today", label: "Today", group: "Go to", icon: <ListChecksIcon size={17} />, keywords: "tasks todo", shortcut: phone ? undefined : "surface2", run: () => goToPlace("today") },
+    { id: "vault", label: "Vault", group: "Go to", icon: <BookOpenIcon size={17} />, keywords: "notes second brain files", shortcut: phone ? undefined : "surface3", run: () => goToPlace("vault") },
+    ...(fleetHealthOn ? [{ id: "health", label: "Fleet Health", group: "Go to" as const, icon: <ChartColumnIcon size={17} />, keywords: "skills learning flags", run: () => { goToPlace("fleet"); changeFleetView("health"); } }] : []),
+    { id: "team", label: "Team & Routines", group: "Go to", icon: <UsersIcon size={17} />, keywords: "bots routines schedule cron", run: () => openTeam("team") },
+    { id: "new-thread", label: "New thread", group: "Chat", icon: <PlusIcon size={17} />, keywords: "conversation", shortcut: "newThread", run: () => void newThread() },
+    { id: "voice", label: "Voice mode", group: "Chat", icon: <AudioLinesIcon size={17} />, keywords: "talk speak microphone", shortcut: "voice", run: () => { goToPlace("chat"); window.setTimeout(openVoiceMode, 50); } },
+    { id: "status", label: "Connection status", group: "App", icon: <WifiIcon size={17} />, keywords: "health gateway online", run: openStatus },
+    { id: "fullscreen", label: "Full screen", group: "App", icon: <ZapIcon size={17} />, keywords: "maximize f11", run: () => void toggleFullscreen() },
+    { id: "shortcuts", label: "Keyboard shortcuts", group: "App", icon: <HashIcon size={17} />, keywords: "keys help", shortcut: "help", run: () => setHelpOpen(true) },
+    { id: "settings", label: "Settings", group: "Settings", icon: <SettingsIcon size={17} />, keywords: "preferences options", shortcut: "settings", run: () => openSettingsAt() },
+    ...SETTINGS_PAGES.map((page) => ({ id: `settings-${page.id}`, label: `Settings: ${page.label}`, group: "Settings" as const, icon: page.icon, keywords: page.keywords, run: () => openSettingsAt(page.id) })),
+  ];
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (onboarding.needed) return;
+      const id = matchShortcut(e, isTyping(e.target));
+      if (!id) return;
+      e.preventDefault();
+      if (id === "palette") setPaletteOpen((v) => !v);
+      else if (id === "settings") openSettingsAt();
+      else if (id === "composer") goToPlace("chat");
+      else if (id === "help") setHelpOpen(true);
+      else if (id === "newThread") void newThread();
+      else if (id === "voice") { goToPlace("chat"); window.setTimeout(openVoiceMode, 50); }
+      else if (id === "surface1") phone ? changePhoneTab("chat") : goToPlace("fleet");
+      else if (id === "surface2") goToPlace(phone ? "today" : "today");
+      else if (id === "surface3") goToPlace(phone ? "fleet" : "vault");
+      else if (id === "surface4") goToPlace("vault");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
   const openSettings = () => {
     setSettingsCategory(null);
     setSettingsOpen(true);
@@ -440,7 +501,7 @@ export function CommandShell() {
   const fleet = (
     <>
       {phone ? (
-        <header className="relative z-20 flex shrink-0 items-center gap-3 border-b border-line px-4 py-2">
+        <header className="app-drag titlebar-clear-phone relative z-20 flex shrink-0 items-center gap-3 border-b border-line px-4 py-2">
           {/* The tab bar already says Fleet; the header keeps its controls on one line at phone width. */}
           <h1 className="sr-only">
             Fleet: {specialists.length} {specialists.length === 1 ? "specialist" : "specialists"}
@@ -454,6 +515,8 @@ export function CommandShell() {
         </header>
       ) : (
         <>
+          {/* No header over the orbit: this strip is where the window is dragged from. */}
+          <div className="app-drag absolute inset-x-0 top-0 z-10 h-15" aria-hidden />
           <div className="absolute left-3 top-3 z-20">
             <SurfaceTabs surface={surface} onChange={changeSurface} />
           </div>
@@ -529,6 +592,16 @@ export function CommandShell() {
         </div>
       )}
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={(text) => { goToPlace("chat"); window.setTimeout(() => setDraft(text), 50); }} />
+      <AnimatePresence>
+        {helpOpen ? (
+          <Sheet open={helpOpen} onClose={() => setHelpOpen(false)} side={phone ? "bottom" : "right"} title="Keyboard shortcuts" subtitle="Single keys work when you're not typing in a box.">
+            <div className="px-4 pb-6">
+              <ShortcutList phone={phone} />
+            </div>
+          </Sheet>
+        ) : null}
+      </AnimatePresence>
       <ToastViewport />
     </>
   );
