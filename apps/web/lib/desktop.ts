@@ -98,6 +98,8 @@ export type ChiefDesktop = {
   onEngine?: (fn: (state: EngineState) => void) => () => void;
   /** Start Chief again now (the banner's "Try now"). */
   retryChief?: () => Promise<EngineState>;
+  /** Opens the third-party notices shipped with the app ("missing" in a build without them). */
+  openNotices?: () => Promise<string>;
   /** Opens the app's logs folder in Explorer; older shells lack it. */
   openLogs?: () => Promise<string>;
   /** Taskbar jump-list and tray shortcuts ("new-thread", "voice", "today"); returns an unsubscribe. */

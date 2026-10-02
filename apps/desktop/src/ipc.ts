@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import path from "node:path";
 
 import { app, dialog, ipcMain, safeStorage, shell } from "electron";
@@ -143,6 +144,8 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
     { boot: true },
   );
   handle("desktop:openLogs", () => shell.openPath(ctx.paths.logs));
+  // Settings → About: the third-party notices shipped in the package (empty string when this build has none).
+  handle("desktop:openNotices", async () => (existsSync(ctx.paths.notices) ? shell.openPath(ctx.paths.notices) : "missing"));
   handle("desktop:diagnostics", () => makeDiagnostics());
   handle("desktop:engine", () => engineState());
   // The banner's "Try now": start Chief (and the dashboard server) again at once.

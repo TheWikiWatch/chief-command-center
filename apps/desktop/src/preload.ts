@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
   pickFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => ipcRenderer.invoke("desktop:pickFile", options),
   applyRestore: () => ipcRenderer.invoke("desktop:applyRestore"),
   openLogs: () => ipcRenderer.invoke("desktop:openLogs"),
+  openNotices: () => ipcRenderer.invoke("desktop:openNotices"),
   /** Settings → About: logs, crash dumps and versions in a zip the owner saves and sends themselves. */
   diagnostics: () => ipcRenderer.invoke("desktop:diagnostics"),
   /** Chief's engine and the dashboard server (the banner when Chief restarts or stops), and "Try now". */

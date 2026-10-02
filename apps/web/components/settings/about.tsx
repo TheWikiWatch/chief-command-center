@@ -28,6 +28,7 @@ export function AboutGroup() {
           hint="Hermes is built into the app and never updates itself. A newer Hermes reaches you as an app update, once it passes the app's compatibility checks; the app backs up your data before Hermes first starts on it."
         />
         <Row label="Licence" hint="MIT. Your data stays on this computer unless you send it somewhere." />
+        <NoticesRow />
         <DiagnosticsRow />
       </Group>
       <Group icon={<BookOpenIcon className="size-4" />} title="Bundled with credit">
@@ -37,6 +38,20 @@ export function AboutGroup() {
         />
       </Group>
     </>
+  );
+}
+
+/** Desktop app only: the licences of everything the app bundles (npm and Python packages, ffmpeg, Git…). */
+function NoticesRow() {
+  const [note, setNote] = useState("");
+  const open = desktop()?.openNotices;
+  if (!open) return null;
+  return (
+    <Row label="Third-party licences" hint={note || "The open-source software inside the app, with each licence, and where to get the source of the GPL programs (ffmpeg, Git)."}>
+      <div className="mt-2">
+        <PillButton onClick={() => void open().then((r) => setNote(r === "missing" ? "This build doesn't include them (a development build)." : ""))}>Open</PillButton>
+      </div>
+    </Row>
   );
 }
 

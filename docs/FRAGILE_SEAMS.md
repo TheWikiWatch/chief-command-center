@@ -208,3 +208,13 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **A new Hermes import** in the plugin goes in `hermes_api.CAPABILITIES` under the feature that needs it, or `test_hermes_api.py` fails. Code that must not fail quietly reads the name with `hermes_api.get()` (approvals do): a missing name is logged once and shows in Status.
 - **The legacy Discord paths** stay until an install's diagnostics show it doesn't use them: `/health` lists any used since the gateway started (`legacy`), and the bridge log has a warning the first time.
 - **Python style** is `ruff format` (line length 160, each file keeps its line endings) and `ruff check`; types are checked with pyright (basic). All three run in `npm run check`.
+
+## Releases, keys and the payload record
+
+`scripts/release.mjs`, `packaging/release/release-tool.mjs`, `packaging/payload/provenance.py`, `apps/desktop/src/release-key.ts`, `apps/desktop/src/updater.ts` (`prune`, `rollback`), `scripts/licenses.mjs`. Test map: `apps/desktop/tests/updater*.test.ts`, `hermes/tests/test_payload_provenance.py`.
+
+- **A release is a draft until the version is pushed.** A failure before the push deletes the draft and restores the version files; after the push the draft is kept and the error says how to finish (`release-tool undraft`). `drop-draft` refuses to delete a published release.
+- **The payload must have a provenance record** or the release stops. `stage.py` writes it; a payload built before it existed gets one with `python packaging/payload/provenance.py --payload <dir> --write` (check first that its source has the current patches: `git apply --check -R` each patch in the prepared source). Editing a file inside the payload after the build fails the check on purpose.
+- **Release keys rotate through `RELEASE_KEYS`.** `release.mjs` reads the list from `release-key.ts` by pattern (`{ id: "…", publicKey: "…" }` on one line), so keep that shape. An installed app trusts only the keys of its own version: a new key must ship in a release signed with an old one before anything is signed with it.
+- **`updates\` keeps two packages:** the newest download and the installed version's own. "Go back" needs the latter; never prune at start-up (that would delete it).
+- **Licences:** a new dependency whose licence isn't on the allow-list (or that has no licence metadata) fails the release; add a reviewed entry to `REVIEWED` in `scripts/licenses.mjs` only after reading its licence.

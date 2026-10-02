@@ -155,6 +155,12 @@ writeFileSync(desktopLock, JSON.stringify(lock, null, 2) + "\n");
 const pluginYaml = path.join(repo, "hermes", "plugins", "chief-dashboard-bridge", "plugin.yaml");
 writeFileSync(pluginYaml, readFileSync(pluginYaml, "utf8").replace(/^version:.*$/m, `version: ${version}`));
 
+step("Licences: checking what ships, and writing the third-party notices…");
+run("node", ["scripts/licenses.mjs", "--check", "--payload", local.payloadDir], { what: "the licence check" });
+run("node", ["scripts/licenses.mjs", "--notices", "apps/desktop/build/THIRD_PARTY_NOTICES.md", "--sbom", path.join(local.releasesDir, `sbom-${version}.cdx.json`), "--payload", local.payloadDir], {
+  what: "the third-party notices and the bill of materials",
+});
+
 step("Building the dashboard…");
 run("npm", ["--prefix", "apps/web", "run", "build:standalone"], { shell: true, what: "the dashboard build" });
 
@@ -204,7 +210,7 @@ step("Writing and checking the signed release description…");
 const pinnedKeys = [...readFileSync(path.join(repo, "apps", "desktop", "src", "release-key.ts"), "utf8").matchAll(/\{\s*id:\s*"([^"]+)",\s*publicKey:\s*"([^"]+)"/g)].map((m) => ({ id: m[1], publicKey: m[2] }));
 const signer = pinnedKeys.find((k) => k.id === (local.releaseKeyId || pinnedKeys[0]?.id));
 if (!signer) fail(`No pinned release key with id "${local.releaseKeyId}" in apps/desktop/src/release-key.ts.`);
-run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--payload-tree", provenance.tree, "--out", out, "--notes", notesFile]);
+run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--payload-tree", provenance.tree, "--sbom", path.join(local.releasesDir, `sbom-${version}.cdx.json`), "--out", out, "--notes", notesFile]);
 // The app checks it against the pinned key it names: so does this (a private key that isn't the pinned one fails here).
 run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pub", signer.publicKey]);
 rmSync(feedPkg, { force: true });
