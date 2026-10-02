@@ -765,3 +765,7 @@
 
 - The app now reads a public releases repository without a key (a saved key is still sent, for a private one), and the release history works the same way. Settings → Backup & updates marks the key as needed only for a private repository. Once the releases repository is public, new testers install from the zip and get updates with nothing to set up; they still check the certificate fingerprint, sent by message.
 - Versions before 0.1.21 still need their key to reach 0.1.21, so the old keys stay valid until everyone has updated.
+
+**Both repositories are public.**
+
+- The source repository's history was rewritten to remove the owner's chief name from about 45 early commits (it was in names in code, identifiers and one file name), with today's files unchanged; the full-history privacy scan is clean. The releases repository is public too, so updates need no key (0.1.21). The privacy scan's history mode now skips submodule entries, which it couldn't read in a fresh clone.

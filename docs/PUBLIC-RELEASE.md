@@ -1,15 +1,16 @@
 # Before the first public release
 
-The app ships to testers today: a self-signed package their PC trusts by hand, and updates from a private
+The app ships to testers today: a self-signed package their PC trusts by hand, and updates from a public
 releases repository. This list is what's left before anyone can install it from a public link. Items marked
 **decide** are the owner's call; the rest is ready or needs one command.
 
 ## Must do
 
-1. **Rewrite the repository's first commit** (**decide**, then do it once). The initial import (2026-09-30) has a
-   personal name in a code comment, which the privacy scan finds in the history (`npm run privacy:history`); today's
-   files are clean. Squash or filter that commit before the repository is made public. CI's privacy scan only checks
-   new commits, so it won't catch this on its own.
+1. ~~**Rewrite the repository's history.**~~ Done on 2026-10-02: the owner's chief name was in about 45 early
+   commits (names in code and identifiers, and a file name), replaced with `git filter-repo` across all history
+   (today's files were already clean and stayed byte-for-byte the same). A stray worktree pointer was removed too.
+   `npm run privacy:history` is clean. Both repositories are public. Never push from a copy made before the rewrite
+   (a backup is kept outside the repository): it would bring the old history back.
 2. **A release signing key kept offline.** `apps/desktop/src/release-key.ts` pins the closed-phase key. Make a new
    one (`node packaging/release/release-tool.mjs keygen <file outside the repo>`), add it to `RELEASE_KEYS`, ship
    one release signed with the old key, then sign with the new one (`releaseKeyId` in `release.local.json`) and give
@@ -26,8 +27,8 @@ releases repository. This list is what's left before anyone can install it from 
 
    Recommendation: Azure Artifact Signing if the owner qualifies (the least change to how releases are made);
    otherwise the Microsoft Store.
-4. **A public releases feed.** Testers read releases with a personal read-only key. A public build needs a
-   public feed (a public releases repository, or the Store), and `CHIEF_UPDATE_FEED` set to it at build time.
+4. ~~**A public releases feed.**~~ Done: the releases repository is public and 0.1.21 reads it without a key.
+   Testers' old keys can be deleted once everyone is on 0.1.21 or later.
 
 ## Ready, nothing to do
 
