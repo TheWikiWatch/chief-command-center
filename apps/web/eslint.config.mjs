@@ -35,6 +35,6 @@ export default tseslint.config(
   {
     // Tests and scripts: hooks and accessibility rules don't apply to fixtures and Node tooling.
     files: ["tests/**", "scripts/**", "*.config.*"],
-    rules: { "react-hooks/rules-of-hooks": "off" },
+    rules: { "react-hooks/rules-of-hooks": "off", "jsx-a11y/no-noninteractive-element-interactions": "off" },
   },
 );

@@ -20,8 +20,8 @@ function radioKeys<T extends string>(keys: readonly T[], value: T, onChange: (ne
     if (next < 0) return;
     e.preventDefault();
     onChange(keys[next]);
-    const radios = e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]');
-    radios[next]?.focus();
+    const radios = e.currentTarget.closest('[role="radiogroup"]')?.querySelectorAll<HTMLElement>('[role="radio"]');
+    radios?.[next]?.focus();
   };
 }
 
@@ -73,7 +73,7 @@ export function Segmented<T extends string>({
 }) {
   const id = useId();
   return (
-    <div role="radiogroup" aria-label={label} className="flex rounded-full bg-well p-1" onKeyDown={radioKeys(options.map(([k]) => k), value, onChange)}>
+    <div role="radiogroup" aria-label={label} className="flex rounded-full bg-well p-1">
       {options.map(([key, text]) => {
         const active = key === value;
         return (
@@ -83,6 +83,7 @@ export function Segmented<T extends string>({
             role="radio"
             aria-checked={active}
             tabIndex={radioTabIndex(active)}
+            onKeyDown={radioKeys(options.map(([k]) => k), value, onChange)}
             onClick={() => onChange(key)}
             className={`relative min-h-9 flex-1 rounded-full px-2 text-callout font-medium transition-colors duration-fast ${
               active ? "text-fg" : "text-fg-3 hover:text-fg-2"
@@ -126,7 +127,6 @@ export function ViewSwitch<T extends string>({
       role="radiogroup"
       aria-label={label}
       className={`flex shrink-0 rounded-full p-0.5 ${glass ? "glass" : "border border-line-2 bg-canvas/60"}`}
-      onKeyDown={radioKeys(options.map(([k]) => k), value, onChange)}
     >
       {options.map(([key, text]) => {
         const active = key === value;
@@ -137,6 +137,7 @@ export function ViewSwitch<T extends string>({
             role="radio"
             aria-checked={active}
             tabIndex={radioTabIndex(active)}
+            onKeyDown={radioKeys(options.map(([k]) => k), value, onChange)}
             onClick={() => onChange(key)}
             className={`relative min-h-9 rounded-full px-3 text-callout font-medium transition-colors duration-fast ${active ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
           >
