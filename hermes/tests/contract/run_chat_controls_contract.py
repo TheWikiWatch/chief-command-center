@@ -147,8 +147,13 @@ def main() -> int:
         # gateway reports whether CHIEF_DASHBOARD_TOKEN is set.
         start = len(messages())
         call("/send", {"text": "ENVCHECK please", "client_id": "c-env"})
-        env_reply = wait(lambda: assistant_after(start, "Env check"), 90)
-        check("the agent's terminal doesn't see the bridge token", env_reply is not None and "TOKEN-ABSENT" in str(env_reply.get("content")), env_reply)
+        # The first terminal command starts the agent's shell cold: on a CI runner that took over 90 seconds.
+        env_reply = wait(lambda: assistant_after(start, "Env check"), 240)
+        check(
+            "the agent's terminal doesn't see the bridge token",
+            env_reply is not None and "TOKEN-ABSENT" in str(env_reply.get("content")),
+            env_reply or "no answer within 240 s (the terminal didn't finish; not a sign the token was seen)",
+        )
 
         # Steer: context reaches the running turn.
         start = len(messages())
