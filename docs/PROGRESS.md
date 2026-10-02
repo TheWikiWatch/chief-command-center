@@ -575,3 +575,20 @@
   - The bridge plugin is versioned with the app (the release script bumps it).
 - **The tester installer checks the certificate's fingerprint.** It sent and checked the certificate in the same zip, so a tampered folder could vouch for itself. It now requires an intact signature, asks for the first 8 characters of the fingerprint sent with each update key (`npm run tester-kit` prints it), and checks the signature again once the certificate is trusted.
 - Tests: web 350 (3 new), desktop 58 (9 new guards, failed-install restart), Python 103 (6 new: token leaves the environment, Hermes folders, profile names) + 21; chat controls contract on the real payload: every check passes, the new one included.
+
+**Architecture review, Phase 1: hardening in depth.**
+
+- **Other programs on the PC can no longer use Chief through its dashboard.** Loopback is shared by every process and every signed-in Windows user, so "came from 127.0.0.1" proved nothing: any local program could send messages or approve commands through the dashboard. The desktop app now generates a secret at each start, gives it to the dashboard server and sets it as a cookie on its own window; the dashboard refuses loopback requests without it. To use Chief in a browser on the PC, right-click the tray icon → **Open in browser** (a 60-second signed link that the dashboard swaps for the cookie). Phones are unchanged (Tailscale identity). Development servers, which have no secret, are unchanged too.
+- **The dashboard can't be framed** (over Tailscale, a site open on the phone could have framed it and tricked a tap on Allow), and a content security policy limits the page to its own server for connections, pictures, media, fonts and frames, so even injected markup in a reply can't send anything elsewhere. External links carry no referrer.
+- **Electron fuses:** no RunAsNode, `NODE_OPTIONS` or `--inspect`; ASAR integrity on; the app loads only from `app.asar`; cookies are encrypted; `file://` pages get no extra privileges. Booting an unpacked build with the fuses showed that the boot page could no longer load from inside `app.asar`, so the main process now serves it under its own scheme (`chief-boot://`). That build was then checked end to end on a throwaway data folder: boot page, Try again, the dashboard, permissions, and 401 for requests without the cookie.
+- **Permissions are denied by default.** The dashboard may use the microphone (audio only), notifications, clipboard writes and full screen; everything else (camera, location, devices, screen capture) is refused, as is any request from another page.
+- **From a phone,** backups can be seen, started and scheduled, but choosing a folder, inspecting or staging a backup file and finishing a restore need Chief on the PC. Settings → Phone says plainly what "Anyone on your Tailscale network" allows.
+- **Secrets stay where they are needed:** the backup engine, the learning ledger, provisioning and scoped stops no longer receive the bridge token or the session secret.
+- **Smaller fixes:**
+  - The window remembers its size and position between starts.
+  - A sealed bridge token the app can no longer decrypt (a lost key store) is replaced instead of stopping the start at "Runtime".
+  - The package leaves out the payload builder's leftover `.build-*` folders.
+  - Chat no longer repeats a day separator when a row is dated out of order (a React key warning that could drop rows).
+  - `adopt.py` quotes scheduled-task names as PowerShell literals.
+- **Not changed:** the signtool password still goes on signtool's command line (signtool has no other way to take it). It is never logged, and the release script checks the build log for it.
+- Tests: web 359 (new: loopback session and tickets, the desktop's tickets accepted by the dashboard, phone limits on backup routes, day separators), desktop 61 (new: permissions, the boot scheme, an unreadable token).
