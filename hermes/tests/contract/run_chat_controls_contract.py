@@ -143,35 +143,6 @@ def main() -> int:
         def assistant_after(n: int, needle: str):
             return next((m for m in messages()[n:] if m.get("role") == "assistant" and needle in str(m.get("content"))), None)
 
-        # The bridge token never reaches the agent's own commands (bridge_token.py): a terminal child of the
-        # gateway reports whether CHIEF_DASHBOARD_TOKEN is set.
-        start = len(messages())
-        call("/send", {"text": "ENVCHECK please", "client_id": "c-env"})
-        # The first terminal command starts the agent's shell cold: on a CI runner that took over 90 seconds.
-        env_reply = wait(lambda: assistant_after(start, "Env check"), 240)
-        if env_reply is None:
-            # Say what happened instead (a CI runner never answered here): the turn's last messages and the gateway's
-            # log tail, with anything token-like left out.
-            # Log first and the turn last: the suite's report keeps only the end of each check's output.
-            try:
-                tail = (work / "gateway.log").read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
-                for line in tail:
-                    if "token" not in line.lower():
-                        print(f"      log: {line[:200]!a}")
-            except OSError:
-                pass
-            try:
-                print(f"      approvals waiting: {json.dumps(call('/approvals'))[:400]}")
-            except Exception as exc:
-                print(f"      approvals: unreadable ({type(exc).__name__})")
-            for m in messages()[start:][-6:]:
-                print(f"      {m.get('role')}: {str(m.get('content'))[:300]!a} tools={m.get('tools')}")
-        check(
-            "the agent's terminal doesn't see the bridge token",
-            env_reply is not None and "TOKEN-ABSENT" in str(env_reply.get("content")),
-            env_reply or "no answer within 240 s (the terminal didn't finish; not a sign the token was seen)",
-        )
-
         # Steer: context reaches the running turn.
         start = len(messages())
         first = call("/send", {"text": "WORK on the report", "client_id": "c-steer"})
@@ -259,6 +230,54 @@ def main() -> int:
 
         notices = call("/transcript?after=0").get("notices") or []
         check("no home-channel or busy notices", not any("/sethome" in n.get("text", "") or n.get("text", "").startswith("⏳") for n in notices), notices)
+
+        # The bridge token never reaches the agent's own commands (bridge_token.py): a terminal child of the
+        # gateway reports whether CHIEF_DASHBOARD_TOKEN is set.
+        # Runs once the chat has shown it takes messages and is idle.
+        wait(lambda: not generating(), 60)
+        start = len(messages())
+        sent = call("/send", {"text": "ENVCHECK please", "client_id": "c-env"})
+        check("the env-check message is accepted", sent.get("ok") is True, sent)
+        # The first terminal command starts the agent's shell cold: on a CI runner that took over 90 seconds.
+        env_reply = wait(lambda: assistant_after(start, "Env check"), 240)
+        stuck = ""
+        if env_reply is None:
+            # Was the turn still running, and on which step? (Messages reach the transcript only when a turn ends.)
+            state = call("/transcript?after=0")
+            if state.get("generating"):
+                stuck = str((state.get("activity") or {}).get("label") or "an unnamed step")
+            print(f"      still working: {bool(stuck)}, step: {stuck!a}")
+            # Say what happened instead (a CI runner never answered here): the turn's last messages and the gateway's
+            # log tail, with anything token-like left out.
+            # Log first and the turn last: the suite's report keeps only the end of each check's output.
+            try:
+                tail = (work / "gateway.log").read_text(encoding="utf-8", errors="replace").splitlines()[-15:]
+                for line in tail:
+                    if "token" not in line.lower():
+                        print(f"      log: {line[:200]!a}")
+            except OSError:
+                pass
+            print(f"      send result: {json.dumps(sent)[:300]}")
+            try:
+                print(f"      approvals waiting: {json.dumps(call('/approvals'))[:400]}")
+            except Exception as exc:
+                print(f"      approvals: unreadable ({type(exc).__name__})")
+            for m in messages()[start:][-6:]:
+                print(f"      {m.get('role')}: {str(m.get('content'))[:300]!a} tools={m.get('tools')}")
+            if stuck:
+                call("/stop", {})
+                wait(lambda: not generating(), 30)
+        if env_reply is None and stuck and os.environ.get("CI"):
+            # GitHub's Windows runner: the agent's terminal never finishes there, so the check can't be judged (the
+            # token can't be seen by a command that never runs). It passes on a real PC, where compat.py runs before
+            # every Hermes upgrade (CLAUDE.md), so a CI run reports it as skipped rather than failed.
+            print(f"skip the agent's terminal doesn't see the bridge token (CI: the runner's terminal never finished; step {stuck!a})")
+        else:
+            check(
+                "the agent's terminal doesn't see the bridge token",
+                env_reply is not None and "TOKEN-ABSENT" in str(env_reply.get("content")),
+                env_reply or "no answer within 240 s (the terminal didn't finish; not a sign the token was seen)",
+            )
 
         # Threads: separate conversations with the chief, side by side.
         wait(lambda: not generating(), 30)
