@@ -779,3 +779,10 @@
 - The installer (`Install Chief.cmd`, in the setup zip) asks which drive to install on when a PC has more than one fixed NTFS drive with at least 6 GB free, suggesting the Windows drive if it has room. Only the program (about 3 GB) goes there; chats, notes and settings stay in the user's folders (the app writes its data unvirtualized). A drive Windows doesn't keep apps on yet is set up in the same single administrator prompt that trusts the certificate. An update, from the installer or the in-app update card, stays on the drive Chief is on.
 - `-Drive <letter>` answers the question ahead; `-Plan` says what the installer would do and changes nothing.
 - `release.local.json` can name an `afterRelease` command, run on this PC after each published release (for kits kept outside the repository).
+
+## 2026-10-03
+
+**Fixed: the chief's own `python` failed on every PC but the release PC (exit 103).**
+
+- The bundled Python's venv is built on the release PC, and its `pyvenv.cfg` names that PC's folder. The app put that venv's `Scripts` folder on the chief's PATH, so any `python …` the chief ran (and every command launcher in that folder) failed elsewhere with exit 103. The app's own processes were never affected (they start the base Python directly). A tester's chief reported it.
+- The app now writes a twin of the venv in its data folder at each start: the same launchers, a `pyvenv.cfg` naming the installed Python, and a `.pth` that adds the bundled packages. It replaces the payload's `venv\Scripts` on the chief's PATH and is rebuilt when an update moves the install. Checked against the real payload mapped to another drive letter: `python` imports Hermes's packages and the launchers run, with nothing pointing at the build folder.
