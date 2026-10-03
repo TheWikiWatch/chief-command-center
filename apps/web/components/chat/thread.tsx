@@ -363,7 +363,9 @@ export function Thread({
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
         ref={scroller}
-        className="h-full overflow-y-auto overscroll-contain px-4 pb-4 pt-3"
+        // Up and down only: one too-wide thing in a message (an image, a table, a long link) must never let the
+        // whole conversation slide sideways on a phone.
+        className="h-full overflow-y-auto overflow-x-hidden overscroll-contain px-4 pb-4 pt-3"
         onWheel={markUser}
         onTouchMove={markUser}
         onPointerDown={markUser}
