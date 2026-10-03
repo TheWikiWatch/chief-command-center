@@ -428,6 +428,8 @@ export function ChiefChat({
       ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg }
       : undefined;
     const started = Date.now();
+    // An open long-poll is the chat connected and waiting for news, not a chat gone quiet.
+    if (live) transcriptHealth.pending();
     try {
       const data = await fetchTranscript(after, signal, live, after ? noticeSince.current : 0);
       if (signal.aborted) return;

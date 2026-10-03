@@ -106,7 +106,11 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
             {entries.length === 0 ? <li className="px-4 py-3 text-callout text-fg-3">Waiting for the first update…</li> : null}
             {entries.map((entry) => (
               <li key={entry.label} className="px-4 py-3 text-callout">
-                <ResourceStatus label={entry.label} health={{ updatedAt: entry.updatedAt, error: entry.error }} staleAfter={entry.staleAfter} />
+                <ResourceStatus
+                  label={entry.label}
+                  health={{ updatedAt: entry.updatedAt, error: entry.error, pendingSince: entry.pendingSince, failures: entry.failures }}
+                  staleAfter={entry.staleAfter}
+                />
                 {entry.error ? <p className="mt-0.5 truncate text-caption text-fg-3">{entry.error}</p> : null}
               </li>
             ))}

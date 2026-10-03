@@ -6,7 +6,36 @@ import { useSyncExternalStore } from "react";
  * Freshness of each polled resource (Fleet, Approvals, Chat, Today), shared so the header
  * connection dot can summarize them honestly while the detail lives in the status sheet.
  */
-export type HealthEntry = { label: string; updatedAt: number | null; error: string | null; staleAfter: number };
+export type HealthEntry = {
+  label: string;
+  updatedAt: number | null;
+  error: string | null;
+  staleAfter: number;
+  /** A request is open right now (a long-poll waiting for news): connected, not stale, while younger than staleAfter. */
+  pendingSince?: number | null;
+  /** Failures in a row; one alone is a blip (a dropped request on a phone), two are a problem. */
+  failures?: number;
+};
+
+/** After coming back to the app (or back online), this long to catch up before anything is called stale. */
+export const RESUME_GRACE_MS = 15_000;
+let resumedAt = 0;
+
+/** The app came back to the foreground or the network came back: requests restart (lib/poll.ts), give them a moment. */
+export function noteResume(at = Date.now()) {
+  resumedAt = at;
+  emit();
+}
+
+if (typeof window !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") noteResume();
+  });
+  window.addEventListener("online", () => noteResume());
+  window.addEventListener("pageshow", (e) => {
+    if ((e as PageTransitionEvent).persisted) noteResume();
+  });
+}
 
 const entries = new Map<string, HealthEntry>();
 const listeners = new Set<() => void>();
@@ -19,7 +48,15 @@ function emit() {
 
 export function reportHealth(entry: HealthEntry) {
   const prev = entries.get(entry.label);
-  if (prev && prev.updatedAt === entry.updatedAt && prev.error === entry.error && prev.staleAfter === entry.staleAfter) return;
+  if (
+    prev &&
+    prev.updatedAt === entry.updatedAt &&
+    prev.error === entry.error &&
+    prev.staleAfter === entry.staleAfter &&
+    (prev.pendingSince ?? null) === (entry.pendingSince ?? null) &&
+    (prev.failures ?? 0) === (entry.failures ?? 0)
+  )
+    return;
   entries.set(entry.label, entry);
   emit();
 }
@@ -43,13 +80,21 @@ export function useHealthEntries(): HealthEntry[] {
 
 export type HealthVerdict = { state: "ok" | "degraded"; worst: HealthEntry | null; ageMs: number };
 
-/** Degraded when any resource errored or went stale. Entries that never reported count once they pass their window. */
-export function summarizeHealth(list: HealthEntry[], now: number, startedAt: number): HealthVerdict {
+/**
+ * Degraded only when something is really wrong: a resource failed twice in a row, or has had neither an answer nor an
+ * open request for longer than its window. Just after returning to the app (RESUME_GRACE_MS) nothing is stale yet:
+ * the requests a phone froze in the background are being replaced. Entries that never reported count once they pass
+ * their window.
+ */
+export function summarizeHealth(list: HealthEntry[], now: number, startedAt: number, resumed = resumedAt): HealthVerdict {
   let worst: HealthEntry | null = null;
   let worstAge = 0;
+  const settling = resumed > 0 && now - resumed < RESUME_GRACE_MS;
   for (const entry of list) {
     const age = Math.max(0, now - (entry.updatedAt ?? startedAt));
-    const stale = !!entry.error || age >= entry.staleAfter;
+    const errored = !!entry.error && (entry.failures ?? 2) >= 2;
+    const open = !!entry.pendingSince && now - entry.pendingSince < entry.staleAfter;
+    const stale = errored || (!open && !settling && now - Math.max(entry.updatedAt ?? startedAt, resumed) >= entry.staleAfter);
     if (stale && age >= worstAge) {
       worst = entry;
       worstAge = age;
