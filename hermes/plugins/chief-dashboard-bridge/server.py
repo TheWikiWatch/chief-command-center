@@ -250,6 +250,7 @@ class BridgeServer:
         notice_since: float = 0.0,
         thread: str = threads.MAIN,
         session: str = "",
+        background: str | None = None,
     ) -> dict[str, Any]:
         """The transcript with the chief's state: generating, the pending approval, its open question
         (`clarify`), notices that aren't replies, and the current step (`activity`). With `wait` (seconds)
@@ -283,6 +284,8 @@ class BridgeServer:
                     break
                 if notice is not None and chat_state.notice_head() != notice:
                     break
+                if background is not None and chat_state.background_signature(chat_state.background(sk)) != background:
+                    break
                 seen = changes.wait(seen, min(_LONGPOLL_STEP, max(0.0, deadline - time.monotonic())))
                 if thread in ("", threads.MAIN):
                     bind = self.binding()
@@ -294,6 +297,8 @@ class BridgeServer:
         payload["approval"] = data.pending_approval(sk)
         payload["clarify"] = chat_state.pending_clarify(sk)
         payload["activity"] = chat_state.activity(sk, payload["generating"], chat_state.vault_path(), chat_id=chat or identity.owner_id())
+        payload["background"] = chat_state.background(sk)
+        payload["backgroundSig"] = chat_state.background_signature(payload["background"])
         if not before:
             since = notice_since
             if not since:

@@ -793,3 +793,8 @@
 - A file new to the ledger whose exact content is already recorded for another file is stored as `copied`, never counted. An unedited copy going away (a retired bot) is `dropped`, not an edit either, and a bot minted again under the same name is still a copy. Rows already miscounted are relabelled on the next ledger run, so testers' false warnings clear by themselves (her chief's own relabelled rows use the same `copied` label). A genuinely new or changed skill file still counts.
 
 **Fixed: the phone chat could slide sideways.** The chat's scroll area only said how to scroll up and down, which lets it scroll sideways too, so anything slightly too wide in a message let the whole conversation slide. It now scrolls up and down only; wide images, tables and long links stay inside their message (checked at phone width).
+
+**Background work shows in the chat.**
+
+- When the chief hands work to helpers (four research lanes, say), Hermes runs it in the background: the chief's turn ends at once and the results come back later as a message, so the chat used to look idle the whole time. Now the header says "Working in the background · 4 tasks", the chief's face shows it's busy, and a card above the message box lists each task's goal and current step in plain words ("Searching the web", "Reading a web page"), with how long it has been running. It updates as the steps change and goes away when the work is done. Tasks quiet for a long time show in amber.
+- The bridge reads Hermes's own list of running delegations for the conversation (`list_async_delegations`), and the chat's long-poll wakes when a task starts, finishes or changes step. Checked against the real Hermes with the scripted model handing two tasks to helpers.

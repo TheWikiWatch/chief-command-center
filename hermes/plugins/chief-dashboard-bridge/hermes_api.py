@@ -95,6 +95,9 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "hermes_cli.tools_config_providers": ("STT_MODEL_CATALOG", "_STT_MODEL_CONFIG_KEY", "_visible_providers", "provider_readiness_status"),
         "tools.tool_backend_helpers": ("resolve_provider_secret",),
     },
+    "background work": {
+        "tools.async_delegation": ("list_async_delegations",),
+    },
     "images and web search": {
         "hermes_cli.tools_config": (
             "TOOL_CATEGORIES",

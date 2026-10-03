@@ -164,6 +164,7 @@ def build(bridge) -> list[Route]:
                 notice_since=_float_param(req.qs, "nsince"),
                 thread=_thread_param(req.qs),
                 session=req.q("session")[:64],
+                background=(req.qs.get("bg") or [None])[0],
             )
         )
 

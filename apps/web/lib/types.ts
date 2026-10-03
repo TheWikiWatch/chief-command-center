@@ -106,6 +106,10 @@ export type ChatNotice = {
 /** What the running turn is doing: since when (epoch seconds), how many steps, and the current one. */
 export type TurnActivity = { since: number; steps: number; label: string };
 
+/** Work the chief handed to helpers that is still running after its turn ended (Hermes's background delegations). */
+export type BackgroundTask = { goal: string; step: string };
+export type BackgroundUnit = { id: string; status: "running" | "stalling" | "finalizing" | string; since: number; tasks: BackgroundTask[] };
+
 /** A thread's earlier conversation (before a fresh start). Times are epoch seconds. */
 export type PreviousConversation = { id: string; title: string; started: number; ended: number; messages: number };
 
@@ -120,6 +124,9 @@ export type Transcript = {
   /** The chief's open question, its current step, and notices since `nsince` (newer bridges). */
   clarify?: PendingQuestion | null;
   activity?: TurnActivity | null;
+  /** Background tasks still running for this conversation, and their signature for the long-poll (newer bridges). */
+  background?: BackgroundUnit[];
+  backgroundSig?: string;
   notices?: ChatNotice[];
   noticeHead?: string;
   /** The thread's earlier conversations (first load only). */

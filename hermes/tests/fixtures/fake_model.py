@@ -15,6 +15,8 @@ Behaviour, from the latest user message of a turn:
   agent's own environment, then answers "Env check: <the command's output>." (the token must never be seen).
 - contains "APPROVEME": runs `rm -r ./chief-smoke-absent` (a folder that doesn't exist), which Hermes asks the
   owner to approve as a recursive delete; once approved and run, answers "Approved and ran." (the Electron smoke test).
+- contains "LANES": hands two tasks to helpers with `delegate_task` ("WORK on lane one", "WORK on lane two", each a
+  long turn as above, so they run for a while in the background), then answers "Lanes started.".
 - anything else: "Hello from the local test model. You said: …".
 Streaming and non-streaming are both supported.
 """
@@ -148,6 +150,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
                 return
             self._reply({"role": "assistant", "content": "Approved and ran."}, "stop", stream)
+            return
+        if "LANES" in opener:
+            answered = [m for m in turn if m.get("role") == "tool"]
+            if not answered:
+                args = {"tasks": [{"goal": "WORK on lane one"}, {"goal": "WORK on lane two"}]}
+                call = {"id": "call_lanes", "type": "function", "function": {"name": "delegate_task", "arguments": json.dumps(args)}}
+                self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
+                return
+            self._reply({"role": "assistant", "content": "Lanes started."}, "stop", stream)
             return
         if "WORK" not in opener:
             self._reply({"role": "assistant", "content": f"Hello from the local test model. You said: {opener[-80:]}"}, "stop", stream)

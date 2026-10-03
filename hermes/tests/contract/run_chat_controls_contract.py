@@ -300,6 +300,26 @@ def main() -> int:
                 env_reply or "no answer within 240 s (the terminal didn't finish; not a sign the token was seen)",
             )
 
+        # Background work: delegated tasks keep running after the turn that started them has ended (Hermes always runs
+        # them asynchronously), and the chat shows them instead of looking idle.
+        wait(lambda: not generating(), 60)
+        start = len(messages())
+        call("/send", {"text": "LANES please", "client_id": "c-lanes"})
+        started = wait(lambda: assistant_after(start, "Lanes started"), 90)
+        check("the chief hands two tasks to helpers", started is not None, messages()[start:])
+        units = wait(lambda: call("/transcript?after=0").get("background") or None, 30) or []
+        tasks = [t for u in units for t in u.get("tasks", [])]
+        check(
+            "the background tasks show, with their goals and a step in plain words",
+            sorted(t.get("goal") for t in tasks) == ["WORK on lane one", "WORK on lane two"] and all(t.get("step") for t in tasks),
+            units,
+        )
+        state = call("/transcript?after=0")
+        t0 = time.time()
+        woke = call(f"/transcript?after={state.get('lastId', 0)}&wait=10&gen={'1' if state.get('generating') else '0'}&bg=stale", timeout=20)
+        check("a stale background view wakes the long-poll at once", time.time() - t0 < 4 and bool(woke.get("background")), round(time.time() - t0, 1))
+        check("the list empties once the work is done", bool(wait(lambda: not call("/transcript?after=0").get("background"), 180)))
+
         # Threads: separate conversations with the chief, side by side.
         wait(lambda: not generating(), 30)
         made = call("/threads", {"title": "Side project"})

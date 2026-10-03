@@ -243,6 +243,57 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
     return out[-limit:]
 
 
+# ----------------------------------------------------------------------------- background work
+
+_LIVE = ("running", "stalling", "finalizing")
+
+
+def background(session_key: str) -> list[dict[str, Any]]:
+    """The chief's work still running in the background for this conversation: delegated tasks, which Hermes always
+    runs asynchronously (the turn that started them ends at once and their results come back later as a new
+    message). One entry per unit, with each task's goal, its current step in plain words and when it started."""
+    if not session_key:
+        return []
+    try:
+        from tools.async_delegation import list_async_delegations
+
+        units = list_async_delegations()
+    except Exception:
+        logger.debug("background work unreadable", exc_info=True)
+        return []
+    out: list[dict[str, Any]] = []
+    for unit in units:
+        status = str(unit.get("status") or "")
+        if status not in _LIVE or str(unit.get("session_key") or "") != session_key:
+            continue
+        goals = unit.get("goals") if isinstance(unit.get("goals"), list) else [unit.get("goal")]
+        indexes = unit.get("task_indexes")
+        if isinstance(indexes, list):
+            goals = [goals[i] for i in indexes if isinstance(i, int) and 0 <= i < len(goals)] or goals
+        activity = unit.get("children_activity") if isinstance(unit.get("children_activity"), list) else []
+        tasks = []
+        for i, goal in enumerate(goals):
+            act = activity[i] if i < len(activity) and isinstance(activity[i], dict) else {}
+            tool = str(act.get("current_tool") or "")
+            step = "Wrapping up" if status == "finalizing" else step_label(tool, {}) if tool else "Thinking it over"
+            if status == "stalling":
+                step = "Quiet for a while"
+            tasks.append({"goal": _goal_line(goal), "step": step})
+        out.append({"id": str(unit.get("delegation_id") or ""), "status": status, "since": float(unit.get("dispatched_at") or 0), "tasks": tasks})
+    out.sort(key=lambda u: u["since"])
+    return out
+
+
+def _goal_line(goal: Any) -> str:
+    text = " ".join(str(goal or "").split())
+    return text if len(text) <= 160 else text[:157].rstrip() + "…"
+
+
+def background_signature(units: list[dict[str, Any]]) -> str:
+    """What the dashboard last saw (it sends this back): a task starting, finishing or changing step wakes it."""
+    return "|".join(f"{u['id']}:{u['status']}:" + ",".join(t["step"] for t in u["tasks"]) for u in units)
+
+
 def notice_head() -> str:
     """The newest outbox id (a cheap "anything new?" for the long-poll: the outbox is read incrementally)."""
     from .outbox import head_id

@@ -203,6 +203,43 @@ class ChatStateTests(unittest.TestCase):
         self.assertEqual([[a["name"] for a in n["attachments"]] for n in found], [["sketch.png"], ["sketch.png"]])
         self.assertEqual(found[0]["attachments"][0]["kind"], "image")
 
+    def test_background_work_lists_this_conversations_running_tasks_in_plain_words(self):
+        units = [
+            {
+                "delegation_id": "d2",
+                "status": "running",
+                "session_key": "session",
+                "dispatched_at": 200.0,
+                "goals": ["Research lane A", "Research lane B", "Research lane C"],
+                "task_indexes": [1, 2],
+                "children_activity": [{"api_calls": 3, "current_tool": "web_search"}, None],
+            },
+            {"delegation_id": "d1", "status": "finalizing", "session_key": "session", "dispatched_at": 100.0, "goal": "Summarise   the\nfindings"},
+            {"delegation_id": "d3", "status": "completed", "session_key": "session", "dispatched_at": 50.0, "goal": "done already"},
+            {"delegation_id": "d4", "status": "running", "session_key": "another", "dispatched_at": 60.0, "goal": "someone else's"},
+        ]
+        mod = types.ModuleType("tools.async_delegation")
+        mod.list_async_delegations = lambda: units
+        with patch.dict(sys.modules, {"tools.async_delegation": mod}):
+            work = chat_state.background("session")
+            self.assertEqual(
+                work,
+                [
+                    {"id": "d1", "status": "finalizing", "since": 100.0, "tasks": [{"goal": "Summarise the findings", "step": "Wrapping up"}]},
+                    {
+                        "id": "d2",
+                        "status": "running",
+                        "since": 200.0,
+                        "tasks": [{"goal": "Research lane B", "step": "Searching the web"}, {"goal": "Research lane C", "step": "Thinking it over"}],
+                    },
+                ],
+            )
+            self.assertEqual(chat_state.background_signature(work), "d1:finalizing:Wrapping up|d2:running:Searching the web,Thinking it over")
+            self.assertEqual(chat_state.background(""), [])
+        broken = types.ModuleType("tools.async_delegation")
+        with patch.dict(sys.modules, {"tools.async_delegation": broken}):
+            self.assertEqual(chat_state.background("session"), [])  # an older Hermes: nothing, never an error
+
     def test_no_outbox_means_no_notices(self):
         self.assertEqual(chat_state.notices("session"), [])
         self.assertEqual(chat_state.notice_head(), "")

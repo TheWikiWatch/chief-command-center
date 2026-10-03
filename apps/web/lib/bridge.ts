@@ -89,7 +89,7 @@ export async function fetchSnapshot(signal?: AbortSignal): Promise<Snapshot> {
  * What the chat already knows, for a long-poll: the bridge holds the request (up to `wait` seconds)
  * until a row lands after `after`, generating differs from `gen`, or the approval differs.
  */
-export type TranscriptWait = { wait: number; gen: boolean; approval: string; clarify: string; notice: string };
+export type TranscriptWait = { wait: number; gen: boolean; approval: string; clarify: string; notice: string; bg?: string };
 
 /** `noticeSince`: the newest notice the chat has (epoch seconds), so only newer ones come back. */
 export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: TranscriptWait, noticeSince = 0): Promise<Transcript> {
@@ -101,6 +101,7 @@ export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: Tr
     q.set("approval", live.approval);
     q.set("clarify", live.clarify);
     q.set("notice", live.notice);
+    if (live.bg !== undefined) q.set("bg", live.bg);
   }
   if (noticeSince) q.set("nsince", String(noticeSince));
   if (currentChatThread() !== "main") q.set("thread", currentChatThread());

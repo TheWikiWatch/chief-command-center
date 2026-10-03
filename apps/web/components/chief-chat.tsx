@@ -27,7 +27,8 @@ import { computeThinkingChrome, shouldClearPendingReply } from "@/lib/thinking-c
 import { visibleMessages } from "@/lib/compact-filter";
 import { fullPhotosOn, useDashboardPrefs, VOICE_EVENT } from "@/lib/dashboard-prefs";
 import { getSpeechPhase, blobToDataUrl, stopSpeech, subscribeSpeaking, toggleSpeechPause } from "@/lib/voice-client";
-import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, PreviousConversation, Transcript, TurnActivity } from "@/lib/types";
+import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, PreviousConversation, Transcript, TurnActivity, BackgroundUnit } from "@/lib/types";
+import { BackgroundWork, backgroundTaskCount } from "@/components/chat/background-work";
 import { admitFiles } from "@/lib/upload-limits";
 import { shrinkImage } from "@/lib/image-shrink";
 import { retryable, type QueuedSend } from "@/lib/outbox";
@@ -142,7 +143,7 @@ export function ChiefChat({
   // lands, and an idle chat makes one request every 25s instead of one every 2.5s.
   const [longpoll, setLongpoll] = useState(false);
   const longpollRef = useRef(false);
-  const bridgeState = useRef({ generating: false, approval: "", clarify: "", notice: "" });
+  const bridgeState = useRef<{ generating: boolean; approval: string; clarify: string; notice: string; bg?: string }>({ generating: false, approval: "", clarify: "", notice: "" });
   // The chief's open question (its turn waits for the answer), notices that aren't replies, and its current step.
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
   const questionRef = useRef<PendingQuestion | null>(null);
@@ -150,6 +151,7 @@ export function ChiefChat({
   const [notices, setNotices] = useState<ChatNotice[]>([]);
   const noticeSince = useRef(0);
   const [activity, setActivity] = useState<TurnActivity | null>(null);
+  const [background, setBackground] = useState<BackgroundUnit[]>([]);
   const [previous, setPrevious] = useState<PreviousConversation[]>([]);
   const quickReturns = useRef(0);
   const approvalUpdate = useRef(onApprovalUpdate);
@@ -423,7 +425,7 @@ export function ChiefChat({
     // What the bridge last told us, not local guesses: a difference would return the long-poll at once.
     const state = bridgeState.current;
     const live = longpollRef.current && after
-      ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice }
+      ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg }
       : undefined;
     const started = Date.now();
     try {
@@ -436,7 +438,10 @@ export function ChiefChat({
         approval: data.approval?.requestId || "",
         clarify: data.clarify?.id || "",
         notice: data.noticeHead || "",
+        // Only a bridge that reports background work is asked to wake on it.
+        ...(typeof data.backgroundSig === "string" ? { bg: data.backgroundSig } : {}),
       };
+      setBackground(Array.isArray(data.background) ? data.background : []);
       if ("clarify" in data) setQuestion(data.clarify ?? null);
       if (Array.isArray(data.previous)) setPrevious(data.previous);
       setActivity(data.activity ?? null);
@@ -764,7 +769,9 @@ export function ChiefChat({
             : !connected || authFailed
               ? "offline"
               : "online";
-  const chiefFace = chief ? <ChiefPresence chief={chief} size={36} mood={mood} gazeRef={ref} /> : null;
+  // Background work: the chat stays usable ("online"), but the face shows the chief is busy and the header says so.
+  const backgroundTasks = backgroundTaskCount(background);
+  const chiefFace = chief ? <ChiefPresence chief={chief} size={36} mood={backgroundTasks && mood === "online" ? "thinking" : mood} gazeRef={ref} /> : null;
   const followups = useFollowupWatch(messages, { primed: historyPrimed.current && messages.length > 0, busy: awaiting || busy });
 
   const onMicStatus = (next: MicStatus) => {
@@ -831,7 +838,13 @@ export function ChiefChat({
       <ChatHeader
         chief={chief}
         mood={mood}
-        status={question && !approval ? { text: "Has a question for you", tone: "text-warn" } : null}
+        status={
+          question && !approval
+            ? { text: "Has a question for you", tone: "text-warn" }
+            : backgroundTasks && mood === "online"
+              ? { text: `Working in the background · ${backgroundTasks} task${backgroundTasks === 1 ? "" : "s"}`, tone: "text-fg-2" }
+              : null
+        }
         voiceLabel={voiceLabel}
         connected={connected}
         authFailed={authFailed}
@@ -869,6 +882,11 @@ export function ChiefChat({
         header={previous.length ? <PreviousConversations items={previous} chief={chief} phone={!!compact} /> : null}
       />
       <form onSubmit={onSubmit} className="shrink-0">
+        {backgroundTasks ? (
+          <div className="px-4">
+            <BackgroundWork units={background} assistant={assistant} color={chief ? chiefColor(chief) : undefined} />
+          </div>
+        ) : null}
         <div className="px-4 pb-2 empty:hidden">
           <FollowupCards
             items={followups}
