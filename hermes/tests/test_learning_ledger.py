@@ -122,6 +122,80 @@ class LedgerTests(unittest.TestCase):
         self.assertTrue(churn[0]["id"].startswith("churn:ada/devops/review:"))
         self.assertEqual(report["thresholds"]["churn48h"], L.CHURN_48H)
 
+    def _library(self, profile: str) -> list[Path]:
+        """A bundled skill as a new bot gets it: SKILL.md and 18 references, written the same for every profile."""
+        base = self.hermes / "profiles" / profile / "skills" / "autonomous-ai-agents" / "hermes-agent"
+        files = [base / "SKILL.md"] + [base / "references" / f"ref-{i:02d}.md" for i in range(18)]
+        for i, f in enumerate(files):
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(f"bundled hermes-agent file {i}\n", encoding="utf-8")
+        return files
+
+    def test_a_new_bots_copied_skill_library_is_not_churn(self):
+        # A tester saw "19 edits in 7 days (19 in the last 48 hours)" on two new bots: nothing had been edited.
+        L = self.ledger
+        self._library("ada")
+        L.snapshot()
+        for bot in ("researcher", "writer"):
+            (self.hermes / "profiles" / bot).mkdir(parents=True, exist_ok=True)
+            self._library(bot)
+        self.assertEqual(L.snapshot(), 0)
+        conn = L.connect()
+        kinds = {r[0] for r in conn.execute("SELECT change FROM versions WHERE scope IN ('researcher', 'writer')")}
+        conn.close()
+        self.assertEqual(kinds, {"copied"})
+        report = L.report()
+        self.assertEqual([f for f in report["flags"] if f["kind"] == "churn"], [])
+        self.assertEqual(report["changes"], [])
+
+    def test_a_genuinely_new_skill_file_still_counts(self):
+        L = self.ledger
+        L.snapshot()
+        mine = self.hermes / "profiles" / "ada" / "skills" / "devops" / "deploy" / "SKILL.md"
+        mine.parent.mkdir(parents=True)
+        mine.write_text("a rule nobody else has\n", encoding="utf-8")
+        self.assertEqual(L.snapshot(), 1)
+        self.assertEqual([c["change"] for c in L.report()["changes"]], ["added"])
+
+    def test_copies_recorded_as_edits_before_the_fix_are_relabelled(self):
+        L = self.ledger
+        self._library("ada")
+        L.snapshot()
+        (self.hermes / "profiles" / "writer").mkdir(parents=True, exist_ok=True)
+        self._library("writer")
+        with patch.object(L, "known_content", lambda *a: False), patch.object(L, "reclassify_copies", lambda conn: 0):
+            self.assertEqual(L.snapshot(), 19)  # what the earlier ledger recorded: one "edit" per copied file
+        self.assertTrue(L.report()["changes"])
+        L.snapshot()  # the next run relabels them
+        conn = L.connect()
+        rows = conn.execute("SELECT change, source FROM versions WHERE scope = 'writer'").fetchall()
+        conn.close()
+        self.assertEqual({r[0] for r in rows}, {"copied"})
+        self.assertTrue(all("relabelled" in r[1] for r in rows))
+        self.assertEqual(L.report()["changes"], [])
+
+    def test_a_retired_bots_untouched_copies_going_away_is_not_churn(self):
+        L = self.ledger
+        self._library("ada")
+        L.snapshot()
+        writer = self.hermes / "profiles" / "writer"
+        writer.mkdir(parents=True, exist_ok=True)
+        self._library("writer")
+        L.snapshot()
+        import shutil
+
+        shutil.rmtree(writer / "skills")
+        self.assertEqual(L.snapshot(), 0)
+        conn = L.connect()
+        kinds = {r[0] for r in conn.execute("SELECT change FROM versions WHERE scope = 'writer'")}
+        conn.close()
+        self.assertEqual(kinds, {"copied", "dropped"})
+        self.assertEqual(L.report()["changes"], [])
+        self.assertEqual([f for f in L.report()["flags"] if f["kind"] == "churn"], [])
+        self._library("writer")  # minted again under the same name: still copies
+        self.assertEqual(L.snapshot(), 0)
+        self.assertEqual(L.report()["changes"], [])
+
     def test_bloat_and_full_memory_are_flagged(self):
         L = self.ledger
         L.snapshot()

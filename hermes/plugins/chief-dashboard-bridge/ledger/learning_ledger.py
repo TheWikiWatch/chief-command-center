@@ -4,7 +4,9 @@
 Hermes' background review patches skills automatically after conversations, with no record of whether
 they helped. This tool keeps that record without touching how Hermes works:
 
-  snapshot   record every skill file whose content changed since the last run (read-only on skills)
+  snapshot   record every skill file whose content changed since the last run (read-only on skills); a file
+             new to us whose exact content is already recorded for another file was copied in (a new bot gets
+             the bundled skill library) and is stored as 'copied', never counted as an edit
   report     write report.json / report.md: desk scorecards, skills grouped with churn, size and
              episodes judged before/after, flags for the owner, runtime health, proposals with the
              owner's decisions (decisions.json, written by the dashboard)
@@ -105,6 +107,7 @@ def connect() -> sqlite3.Connection:
           content TEXT, change TEXT NOT NULL, source TEXT
         );
         CREATE INDEX IF NOT EXISTS versions_file ON versions(file, id);
+        CREATE INDEX IF NOT EXISTS versions_sha ON versions(sha);
         """
     )
     cols = {r[1] for r in conn.execute("PRAGMA table_info(versions)")}
@@ -178,8 +181,13 @@ def _snapshot(conn: sqlite3.Connection) -> int:
                 continue
             if first_run:
                 kind, source = "baseline", "first snapshot"
+            elif (prev is None or prev["change"] in ("removed", "dropped")) and known_content(conn, sha, key):
+                # New to us, but the same bytes are already recorded for another file: a copy, not authorship.
+                # Minting a bot replicates the whole bundled skill library (one row per file), and counting
+                # those as edits invented churn that never happened.
+                kind, source = "copied", COPIED_SOURCE
             else:
-                kind = "changed" if prev and prev["change"] != "removed" else "added"
+                kind = "changed" if prev and prev["change"] not in ("removed", "dropped") else "added"
                 if events is None:
                     events = review_events()
                 source = attribute(scope, st.st_mtime, events)
@@ -189,13 +197,46 @@ def _snapshot(conn: sqlite3.Connection) -> int:
                 (scope, skill, key, sha, len(data), st.st_mtime, now, data.decode("utf-8", "replace"), kind, source),
             )
         for row in conn.execute("SELECT file, scope, skill, change FROM versions v WHERE id = (SELECT MAX(id) FROM versions WHERE file = v.file)").fetchall():
-            if row["file"] not in seen and row["change"] != "removed":
+            if row["file"] not in seen and row["change"] not in ("removed", "dropped"):
+                # An untouched copy going away (a retired bot's bundled skills) is no more an edit than its arrival.
+                copy = row["change"] == "copied"
                 conn.execute(
                     "INSERT INTO versions (scope, skill, file, sha, size, mtime, seen_at, content, change, source) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (row["scope"], row["skill"], row["file"], None, 0, now, now, None, "removed", "file gone (archived by the curator or deleted)"),
+                    (
+                        row["scope"],
+                        row["skill"],
+                        row["file"],
+                        None,
+                        0,
+                        now,
+                        now,
+                        None,
+                        "dropped" if copy else "removed",
+                        "an unedited copy went away (a retired bot, or a skill removed)" if copy else "file gone (archived by the curator or deleted)",
+                    ),
                 )
-                changes += 1
+                if not copy:
+                    changes += 1
+        reclassify_copies(conn)
     return changes
+
+
+COPIED_SOURCE = "copied in (the same content is already recorded for another file)"
+
+
+def known_content(conn: sqlite3.Connection, sha: str, file: str) -> bool:
+    return conn.execute("SELECT 1 FROM versions WHERE sha = ? AND file != ? LIMIT 1", (sha, file)).fetchone() is not None
+
+
+def reclassify_copies(conn: sqlite3.Connection) -> int:
+    """Rows recorded as 'added' before copies were recognised, whose content was already recorded for another
+    file: relabel them 'copied' so their churn flags clear. Idempotent; returns how many were relabelled."""
+    cur = conn.execute(
+        "UPDATE versions SET change = 'copied', source = ? WHERE change = 'added' AND sha IS NOT NULL AND EXISTS "
+        "(SELECT 1 FROM versions o WHERE o.sha = versions.sha AND o.file != versions.file AND o.id < versions.id)",
+        (COPIED_SOURCE + "; relabelled",),
+    )
+    return cur.rowcount or 0
 
 
 def previous_version(conn: sqlite3.Connection, row) -> sqlite3.Row | None:
