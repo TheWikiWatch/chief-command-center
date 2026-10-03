@@ -14,7 +14,8 @@ export function visibleMessages(messages: ChatMessage[], compactChat: boolean): 
   if (!compactChat) return base;
   return base.filter((m) => {
     const tone = chatTone(m);
-    if (tone === "error") return true;
+    // Errors and the results of background work stay: they are outcomes, not scaffolding.
+    if (tone === "error" || tone === "background") return true;
     return !isMachineNote(tone);
   });
 }

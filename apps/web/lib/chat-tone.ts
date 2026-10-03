@@ -1,6 +1,7 @@
+import { isBackgroundReport } from "@/lib/background-report";
 import type { ChatMessage } from "@/lib/types";
 
-export type ChatTone = "reply" | "kanban" | "system" | "compaction" | "origin" | "tool" | "error";
+export type ChatTone = "reply" | "kanban" | "system" | "compaction" | "origin" | "tool" | "error" | "background";
 
 export function chatTone(message: ChatMessage): ChatTone {
   const body = String(message.content || "").trim();
@@ -12,6 +13,8 @@ export function chatTone(message: ChatMessage): ChatTone {
   if (/^\[System note/i.test(t)) return "system";
   if (/^\[CONTEXT COMPACTION/i.test(t)) return "compaction";
   if (/^Gateway message origin/i.test(t)) return "origin";
+  // Hermes hands the chief its background work's results as a message in the chief's conversation (lib/background-report.ts).
+  if (message.role === "user" && isBackgroundReport(t)) return "background";
   return "reply";
 }
 

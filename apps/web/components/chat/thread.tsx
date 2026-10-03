@@ -22,6 +22,7 @@ import {
   type IconProps,
 } from "@/components/icons";
 import { MessageMedia } from "@/components/message-media";
+import { BackgroundReportCard } from "@/components/chat/background-report-card";
 import { StickState } from "@/lib/stick-to-bottom";
 import { linkifyVaultRefs, openInVault, parseVaultHref } from "@/lib/vault-client";
 import { chatTone, isMachineNote, notePreview, type ChatTone } from "@/lib/chat-tone";
@@ -521,6 +522,15 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
     );
   }
 
+  if (tone === "background") {
+    // The results of background work Hermes handed the chief: one collapsed line, not a wall of text.
+    return (
+      <motion.div {...motionProps} className={`${first ? "mt-3" : "mt-1.5"} min-w-0 pl-9`}>
+        <BackgroundReportCard text={m.content || ""} />
+      </motion.div>
+    );
+  }
+
   if (isMachineNote(tone)) {
     return (
       <motion.div {...motionProps} className={`${first ? "mt-3" : "mt-1.5"} pl-9`}>
@@ -533,7 +543,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
     return (
       <motion.div {...motionProps} style={{ originX: 1, originY: 1 }} className={`flex flex-col items-end ${first ? "mt-4" : "mt-1"}`}>
         <div
-          className={`max-w-[82%] rounded-sheet bg-well px-3.5 py-2 text-fg shadow-[inset_0_0_0_1px_rgb(255_255_255/0.04)] ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
+          className={`max-w-[82%] rounded-sheet bg-well px-3.5 py-2 text-fg shadow-[inset_0_0_0_1px_rgb(255_255_255/0.04)] [overflow-wrap:anywhere] ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
         >
           {text ? <EmojiText text={text} /> : null}
           <MessageMedia attachments={m.attachments} />
@@ -656,6 +666,7 @@ const NOTE: Record<Exclude<ChatTone, "reply">, { name: string; Icon: (p: IconPro
   compaction: { name: "Context compacted", Icon: SparklesIcon, tone: "text-fg-3" },
   origin: { name: "Origin", Icon: BotIcon, tone: "text-fg-3" },
   error: { name: "Error", Icon: CircleAlertIcon, tone: "text-danger" },
+  background: { name: "Background work", Icon: ListChecksIcon, tone: "text-fg-3" },
 };
 
 function NoteChip({ tone, text, tools, attachments }: { tone: ChatTone; text: string; tools?: string[]; attachments?: ChatMessage["attachments"] }) {
