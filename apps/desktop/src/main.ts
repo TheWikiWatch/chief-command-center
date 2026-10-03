@@ -15,7 +15,7 @@ import { missing, resolvePaths } from "./paths";
 import { isFree, pickPort } from "./ports";
 import { cacheRelease, readReleases, recordInstall } from "./release-history";
 import { RELEASE_KEYS } from "./release-key";
-import { builtInFeed, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
+import { builtInFeed, builtInReportEmail, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
 import { engine, envFor, hermesCommit, hermesUpstream, logLine, preUpdateBackup, provisionKey, runPython, toolEnv } from "./runtime";
 import { bridgeToken, readUpdateKey } from "./secrets";
 import { ctx, hiddenLaunch, log, setStep, STEPS, uiOrigin, uiUrl } from "./state";
@@ -220,6 +220,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     log.info("app.start", { version: app.getVersion(), packaged: app.isPackaged, hidden: hiddenLaunch() });
     serveBootPage(protocol, ctx.paths.staticDir);
     ctx.shippedFeed = builtInFeed(app.getAppPath());
+    ctx.reportEmail = builtInReportEmail(app.getAppPath());
     const last = ctx.store.value.lastVersion;
     ctx.updatedFrom = last && compareVersions(app.getVersion(), last) > 0 ? last : "";
     // A graphics process that dies leaves a blank window behind: note it, so an empty window after an update can be told apart.

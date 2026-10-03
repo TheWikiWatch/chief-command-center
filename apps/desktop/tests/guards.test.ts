@@ -39,6 +39,15 @@ describe("origins are compared exactly, never by prefix", () => {
     expect(navigateDecision("chrome://settings", ORIGIN, BOOT)).toBe("deny");
   });
 
+  it("hands an e-mail draft (Report a problem) to the mail app, and nothing that only looks like one", () => {
+    const draft = "mailto:dev@example.com?subject=Chief%20problem&body=It%20broke";
+    expect(navigateDecision(draft, ORIGIN, BOOT)).toBe("external");
+    expect(windowOpenDecision(draft, ORIGIN)).toBe("external");
+    for (const bad of ["mailto:", "mailto:nobody", "mailto:a@b", "mailto:dev@example.com/../x", "mailto:dev@example.com?x=1 2"]) {
+      expect(navigateDecision(bad, ORIGIN, BOOT)).toBe("deny");
+    }
+  });
+
   it("recognises only the boot page under its scheme, never a file", () => {
     expect(isBootPage(BOOT)).toBe(true);
     expect(isBootPage(`${BOOT}#steps`)).toBe(true);

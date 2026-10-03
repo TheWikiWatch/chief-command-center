@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { builtInFeed, effectiveFeed, githubSource, parseGithub } from "../src/release-source";
+import { builtInFeed, builtInReportEmail, effectiveFeed, githubSource, parseGithub } from "../src/release-source";
 import { Updater } from "../src/updater";
 
 describe("the update source a build carries", () => {
@@ -134,4 +134,17 @@ it("a public release repository is read without a key, and no Authorization head
 it("without a key, a private or missing repository and the rate limit are explained", async () => {
   await expect(githubSource("me", "r", "", fakeGithub({}, { status: 404 }).impl).refresh()).rejects.toThrow(/or is private \(then it needs an update key/);
   await expect(githubSource("me", "r", "", fakeGithub({}, { status: 403 }).impl).refresh()).rejects.toThrow(/limit for checks without a key/);
+});
+
+describe("the report address a build carries", () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "chief-report-"));
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it("reads chiefReportEmail from the packaged package.json, and ignores anything that isn't an address", () => {
+    expect(builtInReportEmail(dir)).toBe("");
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ chiefReportEmail: " dev@example.com " }));
+    expect(builtInReportEmail(dir)).toBe("dev@example.com");
+    writeFileSync(path.join(dir, "package.json"), JSON.stringify({ chiefReportEmail: "not an address" }));
+    expect(builtInReportEmail(dir)).toBe("");
+  });
 });

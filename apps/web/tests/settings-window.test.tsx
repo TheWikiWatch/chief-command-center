@@ -36,7 +36,7 @@ it("desktop: a sidebar of categories; choosing one shows its page and is remembe
   expect(screen.getByRole("button", { name: "General" })).toHaveAttribute("aria-current", "page");
   fireEvent.click(screen.getByRole("button", { name: "About" }));
   await waitFor(() => expect(screen.getByRole("button", { name: "About" })).toHaveAttribute("aria-current", "page"));
-  expect(screen.getByText("Versions, licences and credits.")).toBeInTheDocument();
+  expect(screen.getByText("Versions, licences and credits, and reporting a problem.")).toBeInTheDocument();
   expect(localStorage.getItem("chief-settings-category")).toBe("about");
 
   cleanup();

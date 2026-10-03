@@ -118,6 +118,7 @@ export function envFor(kind: "gateway" | "web"): Record<string, string> {
       CHIEF_PYTHONPATH: layout.pythonPath.join(";"),
       CHIEF_BACKUP_ENGINE: paths.backupEngine,
       CHIEF_APP_VERSION: app.getVersion(),
+      ...(ctx.reportEmail ? { CHIEF_REPORT_EMAIL: ctx.reportEmail } : {}),
       CHIEF_HERMES_VERSION: hermesVersion(),
     },
   });

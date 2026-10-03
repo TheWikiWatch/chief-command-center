@@ -94,6 +94,7 @@ export type ChiefDesktop = {
    */
   /** Logs, crash dumps and versions in a zip the owner saves (a save dialog); older shells lack it. */
   diagnostics?: () => Promise<{ ok: boolean; path?: string; error?: string }>;
+  reportDiagnostics?: () => Promise<{ ok: boolean; path?: string; name?: string; error?: string }>;
   engine?: () => Promise<EngineState>;
   onEngine?: (fn: (state: EngineState) => void) => () => void;
   /** Start Chief again now (the banner's "Try now"). */

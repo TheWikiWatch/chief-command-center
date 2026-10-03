@@ -23,6 +23,8 @@ export type PublicAppConfig = {
   secondBrain: SecondBrainInfo;
   /** The app's and the bundled Hermes's versions (Settings → About); empty when not set. */
   versions: { app: string; hermes: string };
+  /** Where "Report a problem" e-mails go (built into a release); "" hides the button. */
+  reportEmail: string;
 };
 
 const env = (name: string) => (process.env[name] || "").trim();
@@ -67,5 +69,6 @@ export async function publicAppConfig(): Promise<PublicAppConfig> {
     features: { fleetHealth: !!ledgerConfig(), today: ops || !!brain.path, vault: !!(brain.path || ops) },
     secondBrain: { source: brain.source, today: ops ? "ops" : brain.path ? "vault" : null },
     versions: { app: env("CHIEF_APP_VERSION"), hermes: env("CHIEF_HERMES_VERSION") },
+    reportEmail: /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(env("CHIEF_REPORT_EMAIL")) ? env("CHIEF_REPORT_EMAIL") : "",
   };
 }

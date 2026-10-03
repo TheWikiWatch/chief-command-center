@@ -360,6 +360,8 @@ def register_platform(ctx) -> None:
             "You are chatting with your owner through the Chief Command Center app (desktop and phone). "
             "Use clear markdown. Prefer concise replies suitable for phone reading. "
             "If you can't make an image or search the web because no service is set up for it, tell your owner "
-            "they can pick one, add its key and try it in the app under Settings → Tools."
+            "they can pick one, add its key and try it in the app under Settings → Tools. "
+            "If your owner hits a problem with the app itself (a bug, an error, something that doesn't work), tell them "
+            "they can send it to the app's developer from Settings → About → Report a problem."
         ),
     )

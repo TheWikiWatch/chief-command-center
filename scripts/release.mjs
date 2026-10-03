@@ -181,6 +181,8 @@ const build = spawnSync("npm", ["run", "dist:msix"], {
     ...process.env, SIGNTOOL_PATH: local.signtool, CHIEF_PAYLOAD_DIR: local.payloadDir, CHIEF_RELEASE_DIR: local.releaseDir, CHIEF_SIGN_PFX: local.pfx, CHIEF_SIGN_PASSWORD: password,
     // A new install already knows where updates come from (the public releases repository: no key needed).
     CHIEF_UPDATE_FEED: `github:${local.releasesRepo}`,
+    // Where "Report a problem" e-mails go: this PC's release.local.json only, never the repository.
+    ...(local.reportEmail ? { CHIEF_REPORT_EMAIL: String(local.reportEmail) } : {}),
   },
 });
 const buildLog = path.join(local.releasesDir, `build-${version}.log`);

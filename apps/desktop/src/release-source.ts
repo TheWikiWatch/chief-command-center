@@ -57,6 +57,20 @@ export function builtInFeed(appPath: string): string {
   }
 }
 
+/**
+ * Where "Report a problem" e-mails go (`chiefReportEmail`, set at release time from the maintainer's
+ * release.local.json; never in the repository). "" when a build has none, and the button stays hidden.
+ */
+export function builtInReportEmail(appPath: string): string {
+  try {
+    const pkg = JSON.parse(readFileSync(path.join(appPath, "package.json"), "utf8")) as { chiefReportEmail?: unknown };
+    const email = typeof pkg.chiefReportEmail === "string" ? pkg.chiefReportEmail.trim() : "";
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+  } catch {
+    return "";
+  }
+}
+
 /** The source the owner saved in Settings wins; otherwise the one built in. */
 export function effectiveFeed(saved: string, builtIn: string): string {
   return saved.trim() || builtIn.trim();

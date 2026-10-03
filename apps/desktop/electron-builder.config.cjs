@@ -40,7 +40,15 @@ module.exports = {
     grantFileProtocolExtraPrivileges: false,
   },
   // Read by src/release-source.ts builtInFeed().
-  ...(process.env.CHIEF_UPDATE_FEED ? { extraMetadata: { chiefUpdateFeed: process.env.CHIEF_UPDATE_FEED } } : {}),
+  // Read by src/release-source.ts builtInReportEmail(): where "Report a problem" e-mails go (release.local.json).
+  ...(process.env.CHIEF_UPDATE_FEED || process.env.CHIEF_REPORT_EMAIL
+    ? {
+        extraMetadata: {
+          ...(process.env.CHIEF_UPDATE_FEED ? { chiefUpdateFeed: process.env.CHIEF_UPDATE_FEED } : {}),
+          ...(process.env.CHIEF_REPORT_EMAIL ? { chiefReportEmail: process.env.CHIEF_REPORT_EMAIL } : {}),
+        },
+      }
+    : {}),
   extraResources: [
     // Left out: the offline uv cache, bytecode caches, the builder's lock and its leftover .build-* work folders, and
     // from ffmpeg its player (ffplay, 158 MB: only Hermes's command-line voice mode falls back to it; the app plays

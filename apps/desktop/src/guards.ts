@@ -43,10 +43,16 @@ export function isBootPage(url: string, boot: string = BOOT_URL): boolean {
 
 export type OpenDecision = "allow" | "external" | "deny";
 
+/** An e-mail draft (Report a problem): the system's mail app opens it; the address must look like one. */
+export function isMailto(url: string): boolean {
+  return /^mailto:[^\s@/?#]+@[^\s@/?#]+\.[^\s@/?#]+(\?[^\s]*)?$/i.test(url);
+}
+
 /** A link that asks for a new window: the dashboard's own pages open in-app; web links go to the browser. */
 export function windowOpenDecision(url: string, origin: string): OpenDecision {
   if (sameOrigin(url, origin)) return "allow";
   if (/^https?:\/\//i.test(url) && originOf(url)) return "external";
+  if (isMailto(url)) return "external";
   return "deny";
 }
 
@@ -56,6 +62,7 @@ export type NavigateDecision = "allow" | "external" | "deny";
 export function navigateDecision(url: string, origin: string, boot: string): NavigateDecision {
   if (sameOrigin(url, origin) || isBootPage(url, boot)) return "allow";
   if (/^https?:\/\//i.test(url) && originOf(url)) return "external";
+  if (isMailto(url)) return "external";
   return "deny";
 }
 

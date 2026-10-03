@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
   openNotices: () => ipcRenderer.invoke("desktop:openNotices"),
   /** Settings → About: logs, crash dumps and versions in a zip the owner saves and sends themselves. */
   diagnostics: () => ipcRenderer.invoke("desktop:diagnostics"),
+  /** Report a problem: the same zip, saved straight to Downloads with Explorer opened on it. */
+  reportDiagnostics: () => ipcRenderer.invoke("desktop:reportDiagnostics"),
   /** Chief's engine and the dashboard server (the banner when Chief restarts or stops), and "Try now". */
   engine: () => ipcRenderer.invoke("desktop:engine"),
   retryChief: () => ipcRenderer.invoke("desktop:retryChief"),

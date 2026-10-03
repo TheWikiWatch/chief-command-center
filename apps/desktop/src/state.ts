@@ -36,6 +36,8 @@ export const ctx = {
   updater: undefined as unknown as Updater,
   /** The update source this build carries (a tester's install knows its releases repository from the start). */
   shippedFeed: "",
+  /** Where "Report a problem" e-mails go, built in at release time ("" hides the button). */
+  reportEmail: "",
   /** The version this start replaced, when it is the first start after an update ("" otherwise). */
   updatedFrom: "",
   /** The earlier version the boot page offers to go back to, after this version failed to start twice. */

@@ -59,16 +59,28 @@ export function sendEngineState() {
   ctx.window?.webContents.send("desktop:engine", engineState());
 }
 
+const diagnosticsName = () => `chief-diagnostics-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-")}.zip`;
+
 async function makeDiagnostics(): Promise<{ ok: boolean; path?: string; error?: string }> {
-  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
   const choice = await dialog.showSaveDialog(ctx.window!, {
     title: "Save diagnostics",
-    defaultPath: path.join(app.getPath("downloads"), `chief-diagnostics-${stamp}.zip`),
+    defaultPath: path.join(app.getPath("downloads"), diagnosticsName()),
     filters: [{ name: "Zip", extensions: ["zip"] }],
   });
   if (choice.canceled || !choice.filePath) return { ok: false, error: "cancelled" };
+  return buildDiagnostics(choice.filePath);
+}
+
+/** Report a problem: the diagnostics go straight to Downloads and Explorer opens on them, ready to attach. */
+async function reportDiagnostics(): Promise<{ ok: boolean; path?: string; name?: string; error?: string }> {
+  const out = path.join(app.getPath("downloads"), diagnosticsName());
+  const result = await buildDiagnostics(out);
+  return result.ok ? { ...result, name: path.basename(out) } : result;
+}
+
+async function buildDiagnostics(out: string): Promise<{ ok: boolean; path?: string; error?: string }> {
   const result = createDiagnostics({
-    out: choice.filePath,
+    out,
     redact: (text) => log.redact(text),
     sources: [
       { dir: ctx.paths.logs, prefix: "logs", pattern: /\.(log|jsonl)(\.\d+)?$/, text: true },
@@ -91,8 +103,8 @@ async function makeDiagnostics(): Promise<{ ok: boolean; path?: string; error?: 
     },
   });
   log.info("diagnostics.created", { ok: result.ok, files: result.files?.length, error: result.error });
-  if (result.ok) shell.showItemInFolder(choice.filePath);
-  return result.ok ? { ok: true, path: choice.filePath } : { ok: false, error: result.error };
+  if (result.ok) shell.showItemInFolder(out);
+  return result.ok ? { ok: true, path: out } : { ok: false, error: result.error };
 }
 
 export function registerIpc(boot: { run: () => Promise<unknown> }) {
@@ -147,6 +159,7 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
   // Settings → About: the third-party notices shipped in the package (empty string when this build has none).
   handle("desktop:openNotices", async () => (existsSync(ctx.paths.notices) ? shell.openPath(ctx.paths.notices) : "missing"));
   handle("desktop:diagnostics", () => makeDiagnostics());
+  handle("desktop:reportDiagnostics", () => reportDiagnostics());
   handle("desktop:engine", () => engineState());
   // The banner's "Try now": start Chief (and the dashboard server) again at once.
   handle("desktop:retryChief", async () => {

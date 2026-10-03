@@ -7,6 +7,7 @@ import { Group, PillButton, Row } from "@/components/ui/settings-group";
 import { desktop } from "@/lib/desktop";
 import { fetchAbout, type AboutInfo } from "@/lib/about-client";
 import { LoadingLine } from "@/components/ui/surface";
+import { ReportProblemGroup } from "@/components/settings/report-problem";
 
 /* Settings → About. */
 
@@ -20,6 +21,7 @@ export function AboutGroup() {
   }, []);
   return (
     <>
+      {about ? <ReportProblemGroup email={about.reportEmail} versions={{ app: about.app, hermes: about.hermes }} /> : null}
       <Group icon={<InfoIcon className="size-4" />} title="Chief Command Center" action={<UpdateHistoryButton />}>
         <Row label="Version" hint={about ? about.app || "unknown" : <LoadingLine className="w-16" />} />
         <Row label="Hermes Agent" hint={about ? `${about.hermes || "version unknown"}, by Nous Research (MIT)` : <LoadingLine className="w-40" />} />

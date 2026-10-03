@@ -15,5 +15,6 @@
     "D:/ChiefBuild/after-release.mjs",
     "--version",
     "{version}"
-  ]
+  ],
+  "reportEmail": "you@example.com"
 }

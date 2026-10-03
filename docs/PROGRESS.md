@@ -798,3 +798,9 @@
 
 - When the chief hands work to helpers (four research lanes, say), Hermes runs it in the background: the chief's turn ends at once and the results come back later as a message, so the chat used to look idle the whole time. Now the header says "Working in the background · 4 tasks", the chief's face shows it's busy, and a card above the message box lists each task's goal and current step in plain words ("Searching the web", "Reading a web page"), with how long it has been running. It updates as the steps change and goes away when the work is done. Tasks quiet for a long time show in amber.
 - The bridge reads Hermes's own list of running delegations for the conversation (`list_async_delegations`), and the chat's long-poll wakes when a task starts, finishes or changes step. Checked against the real Hermes with the scripted model handing two tasks to helpers.
+
+**Report a problem.**
+
+- Settings → About → Report a problem (the palette finds it under "report", "bug" or "feedback"): the tester writes what happened and, optionally, what they expected. In the desktop app the diagnostics zip (logs, crash reports and versions, with keys and passwords blanked out) is saved straight to Downloads and Explorer opens on it; then their own e-mail app opens, addressed to the developer, with their words, the versions and the file name to attach. Nothing is sent by the app; they check it and send. On the phone the e-mail opens with the text only.
+- The address comes from `reportEmail` in this PC's `release.local.json` and is built into each release (`chiefReportEmail`), never into the repository; without one, the section is hidden. The desktop shell now hands `mailto:` links to the system's mail app, and only ones with a real-looking address.
+- The chief tells its owner about it when they mention a problem with the app.
