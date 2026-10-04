@@ -27,7 +27,7 @@ export type BootDeps = {
   saveProvisionKey: (key: string) => void;
   /** A first start of a newer version with a different Hermes: the backup message, or null when none is needed. */
   backupNeeded: () => string | null;
-  backup: () => Promise<{ ok: boolean; error?: string }>;
+  backup: (onProgress?: (fraction: number) => void) => Promise<{ ok: boolean; error?: string }>;
   recordStart: () => void;
   /** Another launcher's gateway: take it over, use it as is, or quit. Resolves "own" when there was none. */
   claimGateway: () => Promise<"own" | "external" | "quit">;
@@ -88,7 +88,13 @@ export function createBoot(deps: BootDeps) {
     const backupMessage = deps.backupNeeded();
     if (backupMessage) {
       step("prepare", "working", backupMessage);
-      const saved = await deps.backup();
+      // A large setup takes minutes: the step shows how far it is, so a long backup visibly moves.
+      let shown = -1;
+      const saved = await deps.backup((fraction) => {
+        const pct = Math.floor(fraction * 100);
+        if (pct !== shown) deps.setStep("prepare", "working", `${backupMessage} ${pct}%`);
+        shown = pct;
+      });
       if (!saved.ok) return fail("prepare", `The backup before this version's first start failed: ${saved.error}. Chief wasn't started, so nothing changed.`);
     }
     deps.recordStart();

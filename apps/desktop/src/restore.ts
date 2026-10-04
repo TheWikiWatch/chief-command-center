@@ -6,11 +6,21 @@ import { runJsonTool } from "./python";
  * for health, then `finish` through the dashboard (which also merges the restored app settings). If Chief
  * doesn't come back healthy, `rollback` puts the previous data back and Chief is started again.
  */
-export type EngineRunner = (args: string[]) => Promise<{ ok: boolean; error?: string; [key: string]: unknown }>;
+/** `onProgress` gets the engine's progress (0 to 1) when it reports one ({"progress": [done, total]} on stderr). */
+export type EngineRunner = (args: string[], onProgress?: (fraction: number) => void) => Promise<{ ok: boolean; error?: string; [key: string]: unknown }>;
 
 export function engineRunner(python: string, engineDir: string, env: Record<string, string>, pythonPath: string[] = []): EngineRunner {
-  return (args) =>
+  return (args, onProgress) =>
     runJsonTool(python, ["-m", "chief_backup", ...args], {
+      onLine: (line) => {
+        if (!onProgress) return;
+        try {
+          const p = (JSON.parse(line) as { progress?: [number, number] }).progress;
+          if (p && p[1] > 0) onProgress(Math.min(1, p[0] / p[1]));
+        } catch {
+          /* not a progress line */
+        }
+      },
       cwd: engineDir,
       env: { ...env, PYTHONPATH: [engineDir, ...pythonPath].join(";"), PYTHONIOENCODING: "utf-8" },
       startError: "The backup tool couldn't start.",
