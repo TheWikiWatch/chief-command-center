@@ -137,11 +137,11 @@ export function engine() {
   return engineRunner(layout.python, ctx.paths.backupEngine, toolEnv("web"), layout.pythonPath);
 }
 
-export function preUpdateBackup(): Promise<{ ok: boolean; error?: string }> {
+export function preUpdateBackup(onProgress?: (fraction: number) => void): Promise<{ ok: boolean; error?: string }> {
   return engine()([
     "backup", "--dest", backupsDir(), "--parts", "setup", "--kind", "pre-update", "--local", "--keep", "2",
     "--hermes-root", ctx.hermesRoot, "--app-dir", path.join(ctx.paths.appDir, "settings-backup"), "--app-version", app.getVersion(),
-  ]).then((r) => ({ ok: !!r.ok, error: r.error }));
+  ], onProgress).then((r) => ({ ok: !!r.ok, error: r.error }));
 }
 
 /**

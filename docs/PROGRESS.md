@@ -833,3 +833,11 @@
 
 - The 0.1.22 fix didn't work in an installed app, as a tester's chief showed with every route traced. Hermes itself puts the payload venv's `Scripts` first on PATH in every Hermes process (the chief, each bot, scheduled jobs), ahead of what the app set, so bare `python` still started the broken launcher. And the app's copy of the launchers couldn't start the installed app's Python either: Windows refuses ("Access is denied", exit 101) inside an MSIX install. The earlier check had mapped the payload to another drive, which can't show that.
 - Hermes now gets a small patch (0004): when the venv's launchers can't work (the folder its `pyvenv.cfg` names is gone), the interpreter's own folder goes first on PATH instead, with the bundled packages on PYTHONPATH as before. Every Hermes process does this itself, bots included. The app no longer puts the venv's `Scripts` on any PATH, and the launcher copy (`python-env` in the data folder) is gone and cleaned up.
+
+**Fixed: the first start after an update could hang at "Backing up" on a large setup.**
+
+- The backup before a new Hermes's first start reports its progress four times a second on its error channel, which the app never read. Once Windows' pipe buffer filled (about ten minutes of progress), the backup stopped dead on its next write, and the app waited for it forever without starting Chief. The owner's 2.7 GB setup hit it on 0.1.25; smaller setups finish long before. The app now reads that channel as it comes, and the start-up screen shows the backup's percentage, so a long one visibly moves.
+
+**Fixed: "Chat error" under the chief when nothing was wrong.**
+
+- Two quick failures (the PC locking, a request cut off) left an error that only a reply cleared, while the bridge held a healthy request open for up to 25 seconds; sending a message fixed it at once. A request the bridge has held for a few seconds now counts as connected, a failure waits before retrying (1 s, 2 s, 4 s, up to 10 s) so "two in a row" means two separate ones, and the header says "error" only after two. An empty conversation now waits for news too, instead of asking again every 150 ms.

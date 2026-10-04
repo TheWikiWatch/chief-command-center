@@ -120,7 +120,7 @@ const boot = createBoot({
       ? `Backing up before the first start of ${app.getVersion()}…`
       : null;
   },
-  backup: () => preUpdateBackup(),
+  backup: (onProgress) => preUpdateBackup(onProgress),
   recordStart: () => {
     recordInstall(ctx.paths.appDir, app.getVersion(), ctx.store.value.lastVersion);
     ctx.store.save({ lastVersion: app.getVersion(), dataSchema: DATA_SCHEMA, lastHermes: hermesCommit() });
