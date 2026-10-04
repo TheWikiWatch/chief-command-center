@@ -144,10 +144,21 @@ async function main() {
   } finally {
     // The app's own Quit path: Chief stops and the app exits.
     const closed = new Promise((resolve) => app.process().once("exit", (code) => resolve(code)));
-    await app.evaluate(({ app: electronApp }) => electronApp.quit()).catch(() => undefined);
+    // The chief's words show before its turn has ended, so Quit can find it still busy and ask "Wait for Chief /
+    // Quit now", a native dialog nobody is here to click (the 0.1.24 run timed out on it). Answer "Wait for Chief"
+    // as a person would: the app's own wait-then-stop path runs, whatever the timing.
+    await app.evaluate(({ app: electronApp, dialog }) => {
+      dialog.showMessageBox = async () => ({ response: 0, checkboxChecked: false });
+      electronApp.quit();
+    }).catch(() => undefined);
     const code = await Promise.race([closed, new Promise((r) => setTimeout(() => r("timeout"), 90_000))]);
     ok = check("the app quits cleanly", code === 0, `exit ${code}`) && ok;
-    if (code === "timeout") app.process().kill();
+    // The whole tree: killing only the main process left the throwaway gateway running and its folder locked.
+    if (code === "timeout") {
+      const pid = app.process().pid;
+      if (process.platform === "win32" && pid) spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], { stdio: "ignore" });
+      else app.process().kill();
+    }
     fake.kill();
   }
 

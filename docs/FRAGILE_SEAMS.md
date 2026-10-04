@@ -42,6 +42,8 @@ Live checks need `CHIEF_BRIDGE_SMOKE=1` and `CHIEF_BRIDGE_TOKEN` (same secret as
 
 This app never calls it. To stop its own gateway, it writes Hermes's own planned-stop marker in its own profile home for its own gateway pid; the gateway drains and exits. Only then, if needed, does it end its own process tree. The code is `requestScopedStop` in `apps/desktop/src/gateway.ts`, and `gateway_smoke` in `packaging/upstream/compat.py`.
 
+Quit asks "Chief is busy: Wait / Quit now" (a native dialog) while a turn is still ending, and the chief's words show before its turn ends. The Electron smoke test (`scripts/smoke-electron.mjs`) answers that dialog "Wait for Chief" before quitting; without it, the quit timed out whenever the timing landed in that moment. On a timeout it ends the whole process tree, or the throwaway gateway keeps running and its folder stays locked.
+
 The gateway's `gateway.pid` appears a few seconds after `/health` answers, so a stop right after start must wait for it. A test that stops its own gateway should check that a live install on the same PC is unaffected: its `gateway-starts.log` line count doesn't change.
 
 
