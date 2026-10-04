@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { RESUME_GRACE_MS, summarizeHealth, type HealthEntry } from "@/lib/health-store";
+import { RESUME_GRACE_MS, staleWindow, summarizeHealth, type HealthEntry } from "@/lib/health-store";
 import { poll } from "@/lib/poll";
 
 // A tester saw the phone's dot turn yellow ("Chat stale 45s") almost every time they opened the app, with nothing
@@ -35,6 +35,30 @@ describe("the connection dot", () => {
     const two = summarizeHealth([chat({ updatedAt: t - 1_000, error: "dropped", failures: 2 })], t, 0, 0);
     expect(two.state).toBe("degraded");
     expect(two.worst?.label).toBe("Chat");
+  });
+});
+
+// The same tester then saw "Today stale 48s" on the phone, again with nothing wrong: the Today tab, while another
+// tab is showing, checks the vault once a minute, but was called stale after 16 seconds.
+describe("a stale window follows the schedule in use", () => {
+  const t = 1_000_000;
+  const today = (over: Partial<HealthEntry>): HealthEntry => ({ label: "Today", updatedAt: 0, error: null, staleAfter: staleWindow(60_000), ...over });
+
+  it("is two missed polls plus time for a slow answer", () => {
+    expect([staleWindow(2500), staleWindow(8000), staleWindow(30_000), staleWindow(60_000)]).toEqual([15_000, 26_000, 70_000, 130_000]);
+  });
+
+  it("leaves a tab that checks once a minute alone between its checks, and flags it when checks stop", () => {
+    expect(summarizeHealth([today({ updatedAt: t - 48_000 })], t, 0, 0).state).toBe("ok");
+    expect(summarizeHealth([today({ updatedAt: t - 59_000 })], t, 0, 0).state).toBe("ok");
+    expect(summarizeHealth([today({ updatedAt: t - 140_000 })], t, 0, 0).state).toBe("degraded");
+  });
+
+  it("is not stale the moment the tab is shown: the tighter window starts with the refresh it sends", () => {
+    const shown = { staleAfter: staleWindow(8000), updatedAt: t - 50_000 };
+    expect(summarizeHealth([today({ ...shown, pendingSince: t })], t, 0, 0).state).toBe("ok");
+    expect(summarizeHealth([today({ ...shown, pendingSince: t })], t + 20_000, 0, 0).state).toBe("ok"); // a slow vault read
+    expect(summarizeHealth([today({ ...shown, pendingSince: t })], t + 30_000, 0, 0).state).toBe("degraded"); // hung
   });
 });
 

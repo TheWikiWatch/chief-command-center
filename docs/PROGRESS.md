@@ -813,3 +813,7 @@
 **The connection dot turns yellow only when something is wrong.**
 
 - On the phone the dot often turned yellow ("Chat stale 45s") right after opening the app. While the app is in the background the phone freezes or drops the chat's open request; on return the app waited out that dead request's timeout, and the chat's 40-second window ran out first. Now coming back to the app (or back online) gives up a request left open meanwhile and sends a fresh one at once, the dot allows 15 seconds after returning to catch up, an open long-poll counts as connected (it is waiting for news), and it takes two failures in a row to call a section an error. The status sheet uses the same rules and says "connected, waiting for news" for an open request. The dot still turns yellow, and red, when the PC really stops answering.
+
+**No more "Today stale 48s" with nothing wrong.**
+
+- The dot also turned yellow for Today ("Today stale 48s") with nothing wrong. On the phone the Today tab, while another tab is showing, checks the vault once a minute, but was called stale after 16 seconds. Fleet and Approvals had milder versions of the same mismatch (a 2.5-second poll given 5 seconds, a slow answer counted against it). Every section's window now follows the schedule it really uses: two missed checks plus 10 seconds for a slow answer (once a minute: 2 min 10 s; every 8 s: 26 s). A Today refresh on its way counts as connected, so a slow vault read, or the moment the tab is shown again, isn't stale either. A section that stops answering is still flagged.

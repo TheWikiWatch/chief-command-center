@@ -17,6 +17,15 @@ export type HealthEntry = {
   failures?: number;
 };
 
+/**
+ * How long a resource polled every `intervalMs` may go without an answer before it is stale: two missed polls plus
+ * time for a slow answer. Every window comes from the schedule the resource really uses (a phone tab that isn't
+ * showing checks once a minute), so a quiet resource on a slow schedule never reads as a problem.
+ */
+export function staleWindow(intervalMs: number): number {
+  return intervalMs * 2 + 10_000;
+}
+
 /** After coming back to the app (or back online), this long to catch up before anything is called stale. */
 export const RESUME_GRACE_MS = 15_000;
 let resumedAt = 0;

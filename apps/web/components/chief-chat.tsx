@@ -7,6 +7,7 @@ import "blobatar/gaze.css";
 
 import { poll } from "@/lib/poll";
 import { useResourceHealth } from "@/components/resource-status";
+import { staleWindow } from "@/lib/health-store";
 import { ChiefPresence } from "@/components/presence";
 import { ApprovalSheet } from "@/components/chat/approval-sheet";
 import { chiefColor } from "@/lib/bot-identity";
@@ -156,7 +157,7 @@ export function ChiefChat({
   const quickReturns = useRef(0);
   const approvalUpdate = useRef(onApprovalUpdate);
   approvalUpdate.current = onApprovalUpdate;
-  const transcriptHealth = useResourceHealth("Chat", longpoll ? 40_000 : 5_000);
+  const transcriptHealth = useResourceHealth("Chat", longpoll ? 40_000 : staleWindow(2500));
   const [earlier, setEarlier] = useState<{ more: boolean; loading: boolean; error: string }>({ more: true, loading: false, error: "" });
   const awaitingRef = useRef(false);
   useEffect(() => { setApprovalError(""); }, [approval?.requestId]);

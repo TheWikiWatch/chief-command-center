@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { poll } from "@/lib/poll";
 import { useResourceHealth } from "@/components/resource-status";
+import { staleWindow } from "@/lib/health-store";
 import { share } from "@/lib/share";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
 import { SearchIcon, SlidersHorizontalIcon, XIcon } from "@/components/icons";
@@ -21,6 +22,9 @@ import { ViewSwitch } from "@/components/ui/controls";
 import { TodaySide } from "@/components/today/side-column";
 import { StateFace } from "@/components/state-face";
 import { EmptyState, SkeletonRows } from "@/components/ui/surface";
+
+/** How often a phone tab that isn't showing checks the vault. */
+const HIDDEN_TAB_MS = 60_000;
 
 export const TASK_INTENTS: { id: Intent; label: string }[] = [
   { id: "task.discuss", label: "Discuss" },
@@ -77,10 +81,16 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
   const [launch, setLaunch] = useState<LaunchTarget | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [tick, setTick] = useState(0);
-  const resourceHealth = useResourceHealth("Today", Math.max(2, meta?.poll_seconds || 8) * 2000);
+  // A phone tab that isn't showing checks once a minute, and refreshes the moment it is shown again; the stale
+  // window follows whichever schedule is in use, so a tab polled once a minute isn't called stale after 16 seconds.
+  const visible = useScopeVisible();
+  const resourceHealth = useResourceHealth("Today", staleWindow(visible ? Math.max(1, meta?.poll_seconds || 8) * 1000 : HIDDEN_TAB_MS));
   const pollSeconds = useRef(8);
 
   const refresh = useCallback(async (signal: AbortSignal) => {
+    // Reading the vault can take a while: a refresh on its way is connected, not stale (and when the tab is shown
+    // again, the tighter window starts from this request, not from the last answer a minute ago).
+    resourceHealth.pending();
     try {
     const health = await fetchOpsHealth(signal);
     if (!health.ok) {
@@ -111,9 +121,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
     }
   }, [builtin, resourceHealth]);
 
-  // A phone tab that isn't showing checks once a minute, and refreshes the moment it is shown again.
-  const visible = useScopeVisible();
-  useEffect(() => poll(refresh, () => (visible ? pollSeconds.current * 1000 : 60_000)), [refresh, tick, visible]);
+  useEffect(() => poll(refresh, () => (visible ? pollSeconds.current * 1000 : HIDDEN_TAB_MS)), [refresh, tick, visible]);
 
   useEffect(() => {
     // Escape is handled by whichever sheet is on top (lib/overlay-stack.ts).

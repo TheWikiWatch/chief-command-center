@@ -8,6 +8,7 @@ import { FxRoot } from "@/components/fx-root";
 import { HeaderStatus, StatusSheet } from "@/components/connection-status";
 import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { useResourceHealth } from "@/components/resource-status";
+import { staleWindow } from "@/lib/health-store";
 import { share } from "@/lib/share";
 import { ToastViewport } from "@/components/ui/toasts";
 import { EngineBanner } from "@/components/engine-banner";
@@ -90,13 +91,14 @@ export function CommandShell() {
   usePrefetchLater();
   const prefs = useDashboardPrefs(phone);
   useFullscreenShortcut(!phone);
-  // With the live channel up, the snapshot refreshes on changes and every 30 s: "stale" means something else then.
+  // With the live channel up, the snapshot refreshes on changes and every 30 s, otherwise every 2.5 s; each stale
+  // window follows the schedule in use (lib/health-store.ts staleWindow), so a quiet fleet never reads as a problem.
   const live = useLiveConnected();
-  const snapshotHealth = useResourceHealth("Fleet", live ? 45_000 : 5_000);
+  const snapshotHealth = useResourceHealth("Fleet", staleWindow(live ? 30_000 : 2500));
   // Approvals arrive with the chat's transcript on bridges that long-poll; the own poll is then a slow fallback.
   const [approvalsViaChat, setApprovalsViaChat] = useState(false);
   const approvalsViaChatAt = useRef(0);
-  const approvalHealth = useResourceHealth("Approvals", approvalsViaChat || live ? 60_000 : 8_000);
+  const approvalHealth = useResourceHealth("Approvals", staleWindow(approvalsViaChat || live ? 30_000 : 4000));
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [connected, setConnected] = useState(true);
   const onboarding = useNeedsOnboarding(connected);
