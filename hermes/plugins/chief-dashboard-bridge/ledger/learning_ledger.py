@@ -6,7 +6,9 @@ they helped. This tool keeps that record without touching how Hermes works:
 
   snapshot   record every skill file whose content changed since the last run (read-only on skills); a file
              new to us whose exact content is already recorded for another file was copied in (a new bot gets
-             the bundled skill library) and is stored as 'copied', never counted as an edit
+             the bundled skill library) and is stored as 'copied', never counted as an edit; a file holding
+             exactly what the app recorded writing there (.chief-bundled.json, .chief-generated.json), or
+             changed only in the app's versioned install folder, is the app's own write: 'installed', not counted
   report     write report.json / report.md: desk scorecards, skills grouped with churn, size and
              episodes judged before/after, flags for the owner, runtime health, proposals with the
              owner's decisions (decisions.json, written by the dashboard)
@@ -163,6 +165,7 @@ def snapshot() -> int:
 def _snapshot(conn: sqlite3.Connection) -> int:
     first_run = conn.execute("SELECT COUNT(*) FROM versions").fetchone()[0] == 0
     events = None
+    apps = None
     seen = set()
     changes = 0
     now = time.time()
@@ -179,8 +182,17 @@ def _snapshot(conn: sqlite3.Connection) -> int:
             prev = latest(conn, key)
             if prev and prev["sha"] == sha:
                 continue
+            if apps is None:
+                apps = app_records()
+            text = data.decode("utf-8", "replace")
             if first_run:
                 kind, source = "baseline", "first snapshot"
+            elif sha in apps.get(key, ()):
+                # Exactly what the app says it wrote there (an update's skills, its Second Brain skills): the app's
+                # own write, not an edit. Counting these cried wolf after every update.
+                kind, source = "installed", APP_SOURCE
+            elif prev is not None and prev["change"] not in ("removed", "dropped") and only_install_folder_changed(prev["content"], text):
+                kind, source = "installed", MOVED_SOURCE
             elif (prev is None or prev["change"] in ("removed", "dropped")) and known_content(conn, sha, key):
                 # New to us, but the same bytes are already recorded for another file: a copy, not authorship.
                 # Minting a bot replicates the whole bundled skill library (one row per file), and counting
@@ -194,7 +206,7 @@ def _snapshot(conn: sqlite3.Connection) -> int:
                 changes += 1
             conn.execute(
                 "INSERT INTO versions (scope, skill, file, sha, size, mtime, seen_at, content, change, source) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                (scope, skill, key, sha, len(data), st.st_mtime, now, data.decode("utf-8", "replace"), kind, source),
+                (scope, skill, key, sha, len(data), st.st_mtime, now, text, kind, source),
             )
         for row in conn.execute("SELECT file, scope, skill, change FROM versions v WHERE id = (SELECT MAX(id) FROM versions WHERE file = v.file)").fetchall():
             if row["file"] not in seen and row["change"] not in ("removed", "dropped"):
@@ -218,6 +230,7 @@ def _snapshot(conn: sqlite3.Connection) -> int:
                 if not copy:
                     changes += 1
         reclassify_copies(conn)
+        reclassify_app_writes(conn, apps if apps is not None else app_records())
     return changes
 
 
@@ -237,6 +250,59 @@ def reclassify_copies(conn: sqlite3.Connection) -> int:
         (COPIED_SOURCE + "; relabelled",),
     )
     return cur.rowcount or 0
+
+
+APP_SOURCE = "installed by the app (an update, or its Second Brain skills)"
+MOVED_SOURCE = "the app moved to a new version's folder; nothing else changed"
+# The records the app keeps beside the skills it writes: {path under the record's folder: sha256 of what it wrote}.
+# .chief-bundled.json: its bundled skills and the Second Brain toolkit (provision.py); .chief-generated.json: the
+# skills it renders for the Second Brain (second_brain.py).
+APP_RECORDS = (".chief-bundled.json", ".chief-generated.json")
+# An installed app's folder is named for its version (ChiefCommandCenter_0.1.24.0_x64__<publisher>), and older
+# toolkit skills named that folder, so every update rewrote them.
+_INSTALL_FOLDER = re.compile(r"ChiefCommandCenter_\d+(?:\.\d+){3}_[A-Za-z0-9]+__[A-Za-z0-9]+")
+
+
+def app_records() -> dict[str, set[str]]:
+    """file -> the contents (sha256) the app says it wrote there, from its records in every skills folder."""
+    out: dict[str, set[str]] = {}
+    for _scope, root in skill_roots():
+        for name in APP_RECORDS:
+            for record in root.rglob(name):
+                if any(part in SKIP_PARTS for part in record.relative_to(root).parts):
+                    continue
+                try:
+                    data = json.loads(record.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    continue
+                for rel, digest in data.items() if isinstance(data, dict) else []:
+                    if isinstance(digest, str):
+                        out.setdefault(str(record.parent / rel), set()).add(digest)
+    return out
+
+
+def only_install_folder_changed(old: str | None, new: str) -> bool:
+    return old is not None and old != new and _INSTALL_FOLDER.sub("", old) == _INSTALL_FOLDER.sub("", new)
+
+
+def reclassify_app_writes(conn: sqlite3.Connection, apps: dict[str, set[str]]) -> int:
+    """Rows recorded as edits before the app's own writes were recognised: a file now holding exactly what the app
+    wrote there, or a change that only moved the install folder. Relabelled 'installed' so their churn flags clear.
+    Idempotent; returns how many were relabelled."""
+    count = 0
+    for file, digests in apps.items():
+        marks = ",".join("?" * len(digests))
+        cur = conn.execute(
+            f"UPDATE versions SET change = 'installed', source = ? WHERE file = ? AND change IN ('added','changed') AND sha IN ({marks})",
+            (APP_SOURCE + "; relabelled", file, *sorted(digests)),
+        )
+        count += cur.rowcount or 0
+    for row in conn.execute("SELECT * FROM versions WHERE change = 'changed' AND content LIKE '%ChiefCommandCenter\\_%' ESCAPE '\\'").fetchall():
+        before = previous_version(conn, row)
+        if before is not None and only_install_folder_changed(before["content"], row["content"]):
+            conn.execute("UPDATE versions SET change = 'installed', source = ? WHERE id = ?", (MOVED_SOURCE + "; relabelled", row["id"]))
+            count += 1
+    return count
 
 
 def previous_version(conn: sqlite3.Connection, row) -> sqlite3.Row | None:
@@ -506,6 +572,22 @@ def _episodes(rows: list) -> list[list]:
     return out
 
 
+def _sources(edits: list) -> dict[str, int]:
+    review = sum(1 for r in edits if str(r["source"] or "").startswith("background review"))
+    return {"review": review, "outside": len(edits) - review}
+
+
+def _who(sources: dict[str, int]) -> str:
+    """Who made a skill's recent edits, for the churn flag: the fix differs (a skill the background review keeps
+    rewriting wants consolidating; edits outside it are someone's work in progress)."""
+    review, outside = sources.get("review", 0), sources.get("outside", 0)
+    if review and not outside:
+        return "all by the background review after conversations"
+    if outside and not review:
+        return "none by the background review (edited by hand, by the chief, or by another tool)"
+    return f"{review} by the background review after conversations, {outside} outside it"
+
+
 def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, now: float) -> list[dict]:
     """Every skill edited in the last 30 days: churn, size trend, episodes with verdicts, recent changes."""
     since = now - 30 * DAY
@@ -578,10 +660,8 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
                 "size14d": size_then if known_then else None,
                 "skillMdSize": max((int((latest(conn, f) or {"size": 0})["size"] or 0) for f in files if f.endswith("SKILL.md")), default=0),
                 "lastAt": max((r["mtime"] or r["seen_at"]) for r in items),
-                "sources": {
-                    "review": sum(1 for r in edits if str(r["source"] or "").startswith("background review")),
-                    "outside": sum(1 for r in edits if not str(r["source"] or "").startswith("background review")),
-                },
+                "sources": _sources(edits),
+                "sources7d": _sources([r for r in edits if r["seen_at"] >= now - 7 * DAY]),
                 "episodes": episodes[:SKILL_EPISODES_SHOWN],
                 "changes": changes,
             }
@@ -657,7 +737,7 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
                     "severity": "warn",
                     "skill": s["key"],
                     "title": f"{label} keeps being rewritten",
-                    "detail": f"{s['edits7d']} edits in 7 days ({s['edits48h']} in the last 48 hours). Rewrites this often usually mean the skill is fighting itself.",
+                    "detail": f"{s['edits7d']} edits in 7 days ({s['edits48h']} in the last 48 hours), {_who(s['sources7d'])}. Rewrites this often usually mean the skill is fighting itself.",
                 }
             )
         if s["skillMdSize"] >= BLOAT_BYTES:

@@ -120,6 +120,9 @@ class LedgerTests(unittest.TestCase):
         churn = [f for f in report["flags"] if f["kind"] == "churn"]
         self.assertEqual(len(churn), 1)
         self.assertTrue(churn[0]["id"].startswith("churn:ada/devops/review:"))
+        self.assertIn("none by the background review", churn[0]["detail"])  # says who, since the fix differs
+        self.assertEqual(L._who({"review": 5, "outside": 0}), "all by the background review after conversations")
+        self.assertEqual(L._who({"review": 3, "outside": 2}), "3 by the background review after conversations, 2 outside it")
         self.assertEqual(report["thresholds"]["churn48h"], L.CHURN_48H)
 
     def _library(self, profile: str) -> list[Path]:
@@ -195,6 +198,63 @@ class LedgerTests(unittest.TestCase):
         self._library("writer")  # minted again under the same name: still copies
         self.assertEqual(L.snapshot(), 0)
         self.assertEqual(L.report()["changes"], [])
+
+    def _app_write(self, text: str):
+        """Write the skill as the app does: the file, and the app's record of what it wrote there."""
+        import hashlib
+
+        self.skill.write_text(text, encoding="utf-8")
+        skills = self.hermes / "profiles" / "ada" / "skills"
+        record = {self.skill.relative_to(skills).as_posix(): hashlib.sha256(self.skill.read_bytes()).hexdigest()}
+        (skills / ".chief-generated.json").write_text(json.dumps(record), encoding="utf-8")
+
+    def test_the_apps_own_writes_are_not_edits(self):
+        # A tester's Fleet Health said "5 edits in 7 days" on skills nobody had edited: the app had rewritten them
+        # (each update, and the Second Brain skill re-rendered with the owner's facts).
+        L = self.ledger
+        L.snapshot()
+        for i in range(6):
+            self._app_write(f"rendered {i}\n")
+            self.assertEqual(L.snapshot(), 0)
+        report = L.report()
+        self.assertEqual(report["changes"], [])
+        self.assertEqual([f for f in report["flags"] if f["kind"] == "churn"], [])
+        self.skill.write_text("rendered 5\nmy own rule\n", encoding="utf-8")  # an edit after the app's write counts
+        self.assertEqual(L.snapshot(), 1)
+        self.assertEqual([c["change"] for c in L.report()["changes"]], ["changed"])
+
+    def test_an_update_that_only_moves_the_install_folder_is_not_an_edit(self):
+        L = self.ledger
+        old = 'run "C:/Program Files/WindowsApps/ChiefCommandCenter_0.1.22.0_x64__abc123def/python.exe" health\n'
+        self.skill.write_text(old, encoding="utf-8")
+        L.snapshot()
+        self.skill.write_text(old.replace("0.1.22.0", "0.1.23.0"), encoding="utf-8")
+        self.assertEqual(L.snapshot(), 0)
+        self.assertEqual(L.report()["changes"], [])
+
+    def test_app_writes_recorded_as_edits_before_the_fix_are_relabelled(self):
+        L = self.ledger
+        L.snapshot()
+        old = 'run "C:/WindowsApps/ChiefCommandCenter_0.1.22.0_x64__abc123def/python.exe"\n'
+        with (
+            patch.object(L, "app_records", lambda: {}),
+            patch.object(L, "only_install_folder_changed", lambda *a: False),
+            patch.object(L, "reclassify_app_writes", lambda conn, apps: 0),
+        ):
+            self.skill.write_text(old, encoding="utf-8")
+            L.snapshot()  # a real edit
+            self.skill.write_text(old.replace("0.1.22.0", "0.1.23.0"), encoding="utf-8")
+            L.snapshot()  # an update moving the folder, recorded as an edit by the earlier ledger
+            self._app_write("rendered by the app\n")
+            L.snapshot()  # the app's own write, likewise
+        self.assertEqual(len(L.report()["changes"]), 3)
+        L.snapshot()  # the next run relabels them
+        changes = L.report()["changes"]
+        self.assertEqual(len(changes), 1)
+        conn = L.connect()
+        content = conn.execute("SELECT content FROM versions WHERE id = ?", (changes[0]["id"],)).fetchone()[0]
+        conn.close()
+        self.assertIn("0.1.22.0", content)  # the real edit is the one left
 
     def test_bloat_and_full_memory_are_flagged(self):
         L = self.ledger

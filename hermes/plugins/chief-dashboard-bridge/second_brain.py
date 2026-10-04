@@ -4,12 +4,16 @@
   exactly what each setup choice would create there, so the app can show it before anything is written.
 - `setup(path, mode)`: writes the template once, create-only (an existing file is never overwritten), then
   points Chief at the folder: `OBSIDIAN_VAULT_PATH` and `WIKI_PATH` in the profile `.env` (the upstream
-  `obsidian` and `llm-wiki` skills read them), the `second-brain` skill (the folder's path and its
-  `CRITICAL_FACTS.md`, auto-loaded into every conversation) and the `second-brain-writes` write gate, and the
-  scheduled routines (morning, nightly, weekly, health check) from the bundled toolkit.
+  `obsidian` and `llm-wiki` skills read them), the `second-brain` skill (the folder's path and rules,
+  auto-loaded into every conversation) and the `second-brain-writes` write gate, and the scheduled routines
+  (morning, nightly, weekly, health check) from the bundled toolkit.
+- `facts_prompt()`: the folder's `CRITICAL_FACTS.md`, read when each of the chief's conversations starts (the
+  bridge registers it as a system prompt section). The facts live only in that file: they used to be copied into
+  the skill, which was then rewritten whenever they changed and read as churn in Fleet Health.
+- The skills the app writes here are recorded (`skills/.chief-generated.json`): one the owner or the chief has
+  edited since is kept as it is, and Fleet Health's ledger knows the rest as the app's own writes.
 - `upgrade()`: a Second Brain set up by an earlier version gets what is new (create-only files, the skills,
   auto-load and the routines). Run by the bridge at start.
-- `sync_critical_facts()`: re-renders the `second-brain` skill when `CRITICAL_FACTS.md` changes.
 - `routines()` / `set_routine()`: the scheduled routines, on or off and at what time.
   Formats: `para` (Organized: PARA folders, a small wiki in `40 Knowledge`, `📅` tasks in notes, rules in
   `AGENTS.md`) and `wiki` (Agent-first wiki, the toolkit's wiki-style layout: `raw/` sources, `wiki/`, Kanban
@@ -485,6 +489,48 @@ def _atomic_write(dest: Path, text: str) -> bool:
     return True
 
 
+GENERATED_RECORD = ".chief-generated.json"
+_GENERATED_NOTE = (
+    "<!-- Written by Chief Command Center for this Second Brain. Edit it and the app stops updating it; "
+    "the owner's facts live in CRITICAL_FACTS.md, not here. -->"
+)
+
+
+def _mark_generated(text: str) -> str:
+    """Say in the file that the app wrote it (after its properties, where a skill's text begins)."""
+    m = re.match(r"\A---\n.*?\n---\n", text, flags=re.S)
+    at = m.end() if m else 0
+    return f"{text[:at]}{_GENERATED_NOTE}\n{text[at:]}"
+
+
+def _write_generated(home: Path, target: Path, text: str) -> bool:
+    """Write a skill the app renders, unless someone edited the copy the app wrote last (then it is theirs and
+    stays as it is, like the app's other skills). Records what was written in `skills/.chief-generated.json`,
+    which Fleet Health's ledger reads to tell the app's writes from edits. True when the file changed."""
+    import hashlib
+
+    skills = home / "skills"
+    record_path = skills / GENERATED_RECORD
+    try:
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        record = record if isinstance(record, dict) else {}
+    except (OSError, ValueError):
+        record = {}
+    rel = target.relative_to(skills).as_posix()
+    try:
+        current = hashlib.sha256(target.read_bytes()).hexdigest()
+    except OSError:
+        current = None
+    if current is not None and rel in record and record[rel] != current:
+        return False  # edited since the app wrote it: kept
+    changed = _atomic_write(target, text)
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    if record.get(rel) != digest:
+        record[rel] = digest
+        _atomic_write(record_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+    return changed
+
+
 def _layout_of(home: Path, vault: Path) -> tuple[str, str]:
     """(format, rules file) for the profile's Second Brain: what setup recorded, else what the folder shows."""
     state = _read_state(home)
@@ -548,17 +594,11 @@ def install_skill(home: Path, vault: Path, fmt: str | None = None, rules: str | 
     toolkit = toolkit_dir(home).as_posix()
 
     def render(source: Path) -> str:
-        return (
-            source.read_text(encoding="utf-8")
-            .replace("{{vault}}", str(vault))
-            .replace("{{rules}}", rules)
-            .replace("{{toolkit}}", toolkit)
-            .replace("{{critical_facts}}", critical_facts(vault))
-        )
+        return source.read_text(encoding="utf-8").replace("{{vault}}", str(vault)).replace("{{rules}}", rules).replace("{{toolkit}}", toolkit)
 
     def put(target: Path, source: Path) -> None:
         if not _owner_skill(home, target.parent.name, target):
-            _atomic_write(target, render(source))
+            _write_generated(home, target, _mark_generated(render(source)))
 
     skill, writes = SKILL_SOURCES[fmt]
     dest = _skill_path(home)
@@ -657,15 +697,23 @@ def _share_with_team(profile: str = "chief") -> list[str]:
     return shared
 
 
-def sync_critical_facts(profile: str = "chief") -> bool:
-    """Re-render the `second-brain` skill when `CRITICAL_FACTS.md` changed. True when it was rewritten."""
-    home = _profile_home(profile)
-    vault = _env_paths(home).get("OBSIDIAN_VAULT_PATH") or ""
+FACTS_PROMPT_MAX = 2_000
+
+
+def facts_prompt(profile: str = "chief") -> str:
+    """The chief's critical facts for a new conversation: the Second Brain's `CRITICAL_FACTS.md` as it is now
+    (capped), or "" without a Second Brain. Read once per conversation, so an edit shows in the next one."""
+    try:
+        vault = _env_paths(_profile_home(profile)).get("OBSIDIAN_VAULT_PATH") or ""
+    except Exception:
+        return ""
     if not vault or not Path(vault).is_dir():
-        return False
-    before = _skill_path(home).read_text(encoding="utf-8") if _skill_path(home).is_file() else ""
-    install_skill(home, Path(vault))
-    return _skill_path(home).read_text(encoding="utf-8") != before
+        return ""
+    head = (
+        "The owner's critical facts, from `CRITICAL_FACTS.md` in their Second Brain (read when this conversation "
+        "started; that file is the only copy, so update it there, following the Second Brain's write rules):"
+    )
+    return f"{head}\n\n{critical_facts(Path(vault))}"[:FACTS_PROMPT_MAX]
 
 
 # ---------------------------------------------------------------- scheduled routines

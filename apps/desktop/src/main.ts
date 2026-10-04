@@ -16,7 +16,7 @@ import { isFree, pickPort } from "./ports";
 import { cacheRelease, readReleases, recordInstall } from "./release-history";
 import { RELEASE_KEYS } from "./release-key";
 import { builtInFeed, builtInReportEmail, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
-import { engine, envFor, hermesCommit, hermesUpstream, logLine, preUpdateBackup, provisionKey, runPython, toolEnv } from "./runtime";
+import { agentScriptsDir, engine, envFor, hermesCommit, hermesUpstream, logLine, preUpdateBackup, provisionKey, runPython, toolEnv } from "./runtime";
 import { bridgeToken, readUpdateKey } from "./secrets";
 import { ctx, hiddenLaunch, log, setStep, STEPS, uiOrigin, uiUrl } from "./state";
 import { Store } from "./store";
@@ -102,12 +102,24 @@ const boot = createBoot({
   recover: () => engine()(["recover", "--state-dir", path.join(ctx.paths.appDir, "restore")]) as Promise<{ ok: boolean; action?: string }>,
   provisionKey,
   lastProvisionKey: () => ctx.store.value.provisionKey || "",
-  provision: () =>
-    runPython(ctx.paths.provision, ["--plugins-src", ctx.paths.plugins, "--bridge-port", String(ctx.store.value.ports.bridge), ...(ctx.store.value.adopted ? ["--adopted"] : [])], {
-      ...toolEnv("gateway"),
-      HERMES_HOME: profileHome(ctx.hermesRoot),
-      PYTHONPATH: payloadLayout(ctx.paths.payload).pythonPath.join(";"),
-    }),
+  provision: () => {
+    // The skills name a Python that stays put across updates (the agent's, in the data folder), not the install's.
+    const agent = agentScriptsDir();
+    return runPython(
+      ctx.paths.provision,
+      [
+        "--plugins-src", ctx.paths.plugins,
+        "--bridge-port", String(ctx.store.value.ports.bridge),
+        ...(agent ? ["--agent-python", path.join(agent, "python.exe")] : []),
+        ...(ctx.store.value.adopted ? ["--adopted"] : []),
+      ],
+      {
+        ...toolEnv("gateway"),
+        HERMES_HOME: profileHome(ctx.hermesRoot),
+        PYTHONPATH: payloadLayout(ctx.paths.payload).pythonPath.join(";"),
+      },
+    );
+  },
   saveProvisionKey: (key) => ctx.store.save({ provisionKey: key }),
   // First launch of a new version that brings a different Hermes: a local backup before Hermes starts and
   // migrates anything. An update that keeps the same Hermes build can't migrate the data, so it skips the

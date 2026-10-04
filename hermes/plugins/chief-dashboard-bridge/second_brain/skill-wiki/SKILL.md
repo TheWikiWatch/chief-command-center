@@ -1,7 +1,7 @@
 ---
 name: second-brain
 description: "The owner's Second Brain (an agent-first wiki): the first place to look for context about them, and the rules every write follows."
-version: 2.1.0
+version: 2.2.0
 author: Chief Command Center
 license: MIT
 platforms: [windows, macos, linux]
@@ -25,9 +25,7 @@ The owner's Second Brain is the folder `{{vault}}`: an agent-first wiki. It is t
 
 ## Critical facts
 
-From `CRITICAL_FACTS.md` (kept short; it is loaded into every conversation):
-
-{{critical_facts}}
+The owner's most important facts (who they are, where, their work, current focus, key people) live in `CRITICAL_FACTS.md` at the top of the Second Brain, kept short. That file is the only copy: the chief is given it at the start of every conversation, and anyone else reads it when a task is about the owner. Don't copy the facts into a skill or another note.
 
 When you learn a fact that belongs there and the line is blank or out of date, update `CRITICAL_FACTS.md`, following the write rules below.
 

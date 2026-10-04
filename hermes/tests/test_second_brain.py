@@ -255,6 +255,38 @@ class SetupTests(SecondBrainTestCase):
         self.assertEqual((self.vault / "CRITICAL_FACTS.md").read_text(encoding="utf-8"), "- **Owner:** Ada\n", "an existing file is never overwritten")
         self.assertEqual(self.config_writes.count(("skills.auto_load", ["second-brain"])), 1, "auto-load is added once")
 
+    def test_the_facts_stay_in_their_file_and_reach_each_conversation(self):
+        # A tester's Fleet Health flagged the second-brain skill as churning: the facts were copied into it, so it
+        # was rewritten whenever they changed, and a hand edit was undone within a minute.
+        second_brain.setup(str(self.vault), "new", today=date(2026, 3, 1))
+        (self.vault / "CRITICAL_FACTS.md").write_text("- **Owner:** Ada\n- **Where:** UTC\n", encoding="utf-8")
+        path = second_brain._skill_path(self.chief)
+        before = path.read_text(encoding="utf-8")
+        second_brain.install_skill(self.chief, self.vault)
+        skill = path.read_text(encoding="utf-8")
+        self.assertEqual(skill, before, "new facts don't rewrite the skill")
+        self.assertNotIn("Ada", skill)
+        self.assertIn("CRITICAL_FACTS.md", skill)
+        self.assertIn(second_brain._GENERATED_NOTE, skill)
+        self.assertTrue(skill.startswith("---\nname: second-brain\n"), "the note comes after the skill's properties")
+        prompt = second_brain.facts_prompt()
+        self.assertIn("- **Owner:** Ada\n- **Where:** UTC", prompt)
+        self.assertLessEqual(len(prompt), second_brain.FACTS_PROMPT_MAX)
+        self.env.pop("OBSIDIAN_VAULT_PATH")
+        self.assertEqual(second_brain.facts_prompt(), "", "no Second Brain, no section")
+
+    def test_a_skill_the_app_wrote_is_recorded_and_an_edited_one_kept(self):
+        second_brain.setup(str(self.vault), "new", today=date(2026, 3, 1))
+        record = json.loads((self.chief / "skills" / second_brain.GENERATED_RECORD).read_text(encoding="utf-8"))
+        self.assertIn("note-taking/second-brain/SKILL.md", record)
+        self.assertIn("note-taking/second-brain-writes/SKILL.md", record)
+        path = second_brain._skill_path(self.chief)
+        path.write_text(path.read_text(encoding="utf-8") + "\nMy own rule.\n", encoding="utf-8")
+        second_brain.install_skill(self.chief, self.vault, rules="RULES.md")
+        self.assertIn("My own rule.", path.read_text(encoding="utf-8"), "an edited skill is the editor's now")
+        writes = self.chief / "skills" / "note-taking" / "second-brain-writes" / "SKILL.md"
+        self.assertIn("RULES.md", writes.read_text(encoding="utf-8"), "an unedited one still follows the folder")
+
     def test_a_folder_with_its_own_rules_is_used_as_it_is(self):
         self.vault.mkdir()
         (self.vault / "AGENTS.md").write_text("# How I file things\n", encoding="utf-8")

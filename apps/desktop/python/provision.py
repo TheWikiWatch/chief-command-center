@@ -160,7 +160,7 @@ def _toolkit_text(text: str, root: str, python: str, pythonpath: str) -> str:
     import re
 
     head = r'uv run --directory "?' + re.escape(_UPSTREAM_ROOT) + r'"?'
-    env = f'PYTHONPATH="{pythonpath}" "{python}"'
+    env = f'PYTHONPATH="{pythonpath}" "{python}"' if pythonpath else f'"{python}"'
     text = re.sub(head + r'(?: python)? scripts/([\w./-]+\.py)', lambda m: f'{env} "{root}/scripts/{m.group(1)}"', text)
     text = re.sub(head + r' python -c ', lambda m: f'{env} -c ', text)
     return text.replace(_UPSTREAM_ROOT, root).replace(_TILDE_ROOT, root)
@@ -208,6 +208,8 @@ def main() -> int:
     parser.add_argument("--plugin", action="append", default=[])
     parser.add_argument("--skills-src", default="", help="bundled skills (default: <plugins-src>/chief-dashboard-bridge/skills)")
     parser.add_argument("--vendor-src", default="", help="the vendored Second Brain toolkit (default: <plugins-src>/../vendor/obsidian-second-brain)")
+    parser.add_argument("--agent-python", default="",
+                        help="a Python that stays at the same path across updates, for the toolkit's skills to name")
     parser.add_argument("--adopted", action="store_true",
                         help="an existing install the app took over: its own copy of the toolkit is kept, not shadowed")
     args = parser.parse_args()
@@ -224,9 +226,15 @@ def main() -> int:
     changed += install_bundled_skills(skills_src, home / "skills", external_skill_dirs(home))
     vendor = Path(args.vendor_src) if args.vendor_src else Path(args.plugins_src).parent / "vendor" / TOOLKIT
     pythonpath = os.environ.get("PYTHONPATH") or os.pathsep.join(p for p in sys.path if p.endswith("site-packages"))
+    python = sys.executable
+    if args.agent_python and Path(args.agent_python).is_file():
+        # The app's own Python lives in a folder named for its version, so naming it here rewrote every toolkit
+        # file at each update (and Fleet Health counted those as edits). The agent's Python in the app's data
+        # folder stays put and already finds the bundled packages.
+        python, pythonpath = args.agent_python, ""
     own_toolkit = owner_toolkit(home) if args.adopted else None
     if own_toolkit is None:
-        changed += install_toolkit(vendor, home / "skills" / TOOLKIT, sys.executable, pythonpath.replace("\\", "/"))
+        changed += install_toolkit(vendor, home / "skills" / TOOLKIT, python, pythonpath.replace("\\", "/"))
 
     from cli import save_config_value
     from hermes_cli.config import load_config, load_env, save_env_value

@@ -817,3 +817,14 @@
 **No more "Today stale 48s" with nothing wrong.**
 
 - The dot also turned yellow for Today ("Today stale 48s") with nothing wrong. On the phone the Today tab, while another tab is showing, checks the vault once a minute, but was called stale after 16 seconds. Fleet and Approvals had milder versions of the same mismatch (a 2.5-second poll given 5 seconds, a slow answer counted against it). Every section's window now follows the schedule it really uses: two missed checks plus 10 seconds for a slow answer (once a minute: 2 min 10 s; every 8 s: 26 s). A Today refresh on its way counts as connected, so a slow vault read, or the moment the tab is shown again, isn't stale either. A section that stops answering is still flagged.
+
+## 2026-10-04
+
+**Fixed: Fleet Health reported skills "being rewritten" that only the app had written.**
+
+- A tester's Fleet Health said "5 edits in 7 days" on Second Brain skills nobody had touched; their chief traced it to two causes. The Second Brain toolkit's skills named the app's Python by its full path, and the installed app's folder is named for its version, so every update rewrote them (nine files per update) and the ledger counted each as an edit. And the owner's critical facts were copied into the `second-brain` skill, so the skill was rewritten whenever the facts changed (in every bot too), and a hand edit to it was undone within a minute.
+- The toolkit now names the agent's Python in the app's data folder, which doesn't move between versions. The facts stay in `CRITICAL_FACTS.md` only: the chief is given the file at the start of every conversation (a prompt section the bridge adds, read live), and bots read it when a task is about the owner. The skill no longer changes when the facts do, and the once-a-minute re-render is gone.
+- The ledger now reads the app's record of what it wrote, so the app's own writes are labelled "installed by the app", never counted; so is an update that only changed the install folder. Rows already miscounted are relabelled on the next ledger run, so testers' false warnings clear by themselves.
+- A skill the app writes says so at the top. If the owner or the chief edits one, it's theirs: the app no longer overwrites it, as with every other skill it installs.
+- The churn warning now says who made the edits ("all by the background review after conversations"), since the fix differs. The tester's other flagged skill was genuine: the background review had doubled it in a day with rules stated twice, which is what the warning is for.
+- Checked against the real Hermes: a provisioned profile's prompt carries the facts from the file, and a second start with the new path rewrites nothing.

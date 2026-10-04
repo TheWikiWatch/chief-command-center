@@ -51,8 +51,6 @@ _BINDING_TTL = 2.0
 _WATCH_SECONDS = 2.5
 _FLAG_EVERY = 24
 _SIG_EVERY = 2
-# The Second Brain: brought up to date once at start, its critical facts re-checked about once a minute.
-_FACTS_EVERY = 24
 # The usage budget is checked about every five minutes (one notification a month at most).
 _BUDGET_EVERY = 120
 # A bot's routine runs are relayed into the chief's chat every few seconds (routines.relay).
@@ -447,11 +445,6 @@ class BridgeServer:
                     routines.relay()
                 except Exception:
                     logger.debug("routine relay failed", exc_info=True)
-            if tick % _FACTS_EVERY == 0:
-                try:
-                    second_brain.sync_critical_facts()
-                except Exception:
-                    logger.debug("critical facts sync failed", exc_info=True)
             try:
                 self._push_new_approval()
             except Exception:

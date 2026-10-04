@@ -76,8 +76,26 @@ def attach_log_file(home) -> logging.Handler | None:
     return handler
 
 
+def _register_facts(ctx) -> None:
+    """The owner's `CRITICAL_FACTS.md`, read when each of the chief's conversations starts (every process: the
+    gateway, scheduled jobs and the terminal). The file is the only copy (second_brain.facts_prompt)."""
+    add = getattr(ctx, "register_system_prompt_section", None)
+    if add is None:
+        logger.warning("chief-dashboard-bridge: this Hermes can't add prompt sections; the critical facts aren't given")
+        return
+    try:
+        from . import second_brain
+
+        add("chief-critical-facts", lambda _info: second_brain.facts_prompt(), max_chars=second_brain.FACTS_PROMPT_MAX)
+    except ValueError:
+        pass  # already registered in this process
+    except Exception:
+        logger.warning("chief-dashboard-bridge: critical facts section unavailable", exc_info=True)
+
+
 def register(ctx):
     global _server
+    _register_facts(ctx)
     if not _running_in_gateway():
         logger.info("chief-dashboard-bridge: skip bind outside gateway (pid=%s)", os.getpid())
         return

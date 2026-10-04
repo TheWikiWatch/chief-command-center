@@ -24,5 +24,6 @@ it("badges Chat, floats an approval pill on Today and Fleet, and the pill opens 
   }
   fireEvent.click(await pill());
   expect(screen.getByText("Chat contents")).toBeVisible();
-  await waitFor(()=>expect(screen.queryByRole("button",{name:"Nova needs your approval — open Chat"})).toBeNull());
+  // The pill leaves with an exit animation, which can outlast waitFor's 1 s default while the whole suite runs.
+  await waitFor(()=>expect(screen.queryByRole("button",{name:"Nova needs your approval — open Chat"})).toBeNull(),{timeout:5000});
 });

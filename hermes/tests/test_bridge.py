@@ -894,5 +894,26 @@ class BridgeLogFileTests(unittest.TestCase):
                 first.close()
 
 
+class CriticalFactsSectionTests(unittest.TestCase):
+    def test_every_chief_process_gives_the_facts_once_and_an_older_hermes_is_tolerated(self):
+        plugin = importlib.import_module("test_bridge_plugin.__init__")
+        second_brain = importlib.import_module("test_bridge_plugin.second_brain")
+        sections = {}
+
+        def add(id, content, max_chars):
+            if id in sections:
+                raise ValueError("already registered")
+            sections[id] = (content, max_chars)
+
+        ctx = types.SimpleNamespace(register_system_prompt_section=add)
+        with patch.object(second_brain, "facts_prompt", lambda: "- **Owner:** Ada"):
+            plugin._register_facts(ctx)
+            plugin._register_facts(ctx)  # a second register() in the same process
+            content, limit = sections["chief-critical-facts"]
+            self.assertEqual(content({}), "- **Owner:** Ada")
+        self.assertEqual(limit, second_brain.FACTS_PROMPT_MAX)
+        plugin._register_facts(types.SimpleNamespace())  # no such API: a warning, never a failure
+
+
 if __name__ == "__main__":
     unittest.main()

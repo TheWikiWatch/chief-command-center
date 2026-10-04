@@ -98,6 +98,10 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
     "background work": {
         "tools.async_delegation": ("list_async_delegations",),
     },
+    "critical facts": {
+        # The plugin API behind ctx.register_system_prompt_section (the owner's facts in each conversation).
+        "hermes_cli.plugins_dispatch": ("PluginSystemPromptSection",),
+    },
     "images and web search": {
         "hermes_cli.tools_config": (
             "TOOL_CATEGORIES",
