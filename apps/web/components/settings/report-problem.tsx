@@ -21,14 +21,24 @@ export function reportMail(opts: {
   device: string;
   diagnostics?: string;
   when?: Date;
+  /** From a reply's report flag: the chief's summary, the reply itself and the recent errors in its logs. */
+  summary?: string;
+  summaryBy?: string;
+  reply?: string;
+  errors?: string[];
 }): string {
-  const clip = (text: string) => (text.length > LIMIT ? `${text.slice(0, LIMIT)}… (cut short)` : text);
+  const clip = (text: string, limit = LIMIT) => (text.length > limit ? `${text.slice(0, limit)}… (cut short)` : text);
   const what = opts.what.trim();
-  const first = what.split(/\r?\n/)[0].slice(0, 60);
+  const summary = opts.summary?.trim() || "";
+  const headline = what || summary || "a reply that went wrong";
+  const first = headline.split(/\r?\n/)[0].slice(0, 60);
   const body = [
     "What happened:",
-    clip(what),
+    what ? clip(what) : summary ? "(see the summary below)" : "(no note)",
     ...(opts.expected?.trim() ? ["", "What I expected:", clip(opts.expected.trim())] : []),
+    ...(summary ? ["", `Summary by ${opts.summaryBy || "the assistant"}:`, clip(summary, 700)] : []),
+    ...(opts.reply?.trim() ? ["", "The reply:", clip(opts.reply.trim(), 500)] : []),
+    ...(opts.errors?.length ? ["", "Recent errors in the app's logs:", ...opts.errors.slice(-5).map((e) => `- ${clip(e, 160)}`)] : []),
     "",
     "----",
     `App ${opts.versions.app || "unknown"} · Hermes ${opts.versions.hermes || "unknown"}`,
@@ -36,10 +46,10 @@ export function reportMail(opts: {
     opts.diagnostics ? `Diagnostics: ${opts.diagnostics} (in the Downloads folder; attach it to this e-mail)` : "Diagnostics: not attached",
   ].join("\n");
   const q = (s: string) => encodeURIComponent(s);
-  return `mailto:${opts.to}?subject=${q(`Chief Command Center problem: ${first}${what.length > first.length ? "…" : ""}`)}&body=${q(body)}`;
+  return `mailto:${opts.to}?subject=${q(`Chief Command Center problem: ${first}${headline.length > first.length ? "…" : ""}`)}&body=${q(body)}`;
 }
 
-function deviceLine(): string {
+export function deviceLine(): string {
   const phone = typeof window !== "undefined" && window.matchMedia?.("(max-width: 767px)").matches;
   const where = desktop() ? "Desktop app" : phone ? "Phone" : "Browser";
   const ua = typeof navigator !== "undefined" ? navigator.userAgent : "";

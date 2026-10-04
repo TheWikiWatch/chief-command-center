@@ -13,6 +13,7 @@ import {
   Volume2Icon,
   CheckIcon,
   CopyIcon,
+  MessageSquareWarningIcon,
   ChevronRightIcon,
   CircleAlertIcon,
   ListChecksIcon,
@@ -229,6 +230,7 @@ export function Thread({
   question,
   onAnswer,
   onQuickReply,
+  onReport,
   loading = false,
 }: {
   messages: ChatMessage[];
@@ -259,6 +261,8 @@ export function Thread({
   onAnswer?: (id: string, answer: string | string[]) => Promise<void>;
   /** Sends a gateway prompt's answer (e.g. "/approve") from the buttons on the newest notice. */
   onQuickReply?: (text: string) => Promise<void>;
+  /** The flag under a reply: report it as a problem to the developer (shown only when reports are set up). */
+  onReport?: (m: ChatMessage) => void;
 }) {
   const scroller = useRef<HTMLDivElement>(null);
   // Pinned / idle rules live in lib/stick-to-bottom.ts.
@@ -407,6 +411,7 @@ export function Thread({
                   onCancelQueued={onCancelQueued}
                   onRetryQueued={onRetryQueued}
                   onQuickReply={row.m.notice && row === lastMsgRow ? onQuickReply : undefined}
+                  onReport={onReport}
                 />
               );
             })}
@@ -494,9 +499,10 @@ type RowProps = {
   onCancelQueued?: (queueId: string) => void;
   onRetryQueued?: () => void;
   onQuickReply?: (text: string) => Promise<void>;
+  onReport?: (m: ChatMessage) => void;
 };
 
-const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueued, onRetryQueued, onQuickReply }: RowProps) {
+const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueued, onRetryQueued, onQuickReply, onReport }: RowProps) {
   const { m, first, last, mine } = row;
   const tone = chatTone(m);
   const text = stripMediaTags(m.content || "");
@@ -572,7 +578,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
         {(last && time) || text ? (
           <div className="mt-1 flex min-h-7 items-center gap-1">
             {last && time ? <span className="text-caption text-fg-3">{time}</span> : null}
-            {text ? <ReplyActions text={text} /> : null}
+            {text ? <ReplyActions text={text} onReport={onReport ? () => onReport(m) : undefined} /> : null}
           </div>
         ) : null}
       </div>
@@ -589,6 +595,7 @@ function sameRow(a: RowProps, b: RowProps) {
     a.onCancelQueued === b.onCancelQueued &&
     a.onRetryQueued === b.onRetryQueued &&
     a.onQuickReply === b.onQuickReply &&
+    a.onReport === b.onReport &&
     a.row.m === b.row.m &&
     a.row.first === b.row.first &&
     a.row.last === b.row.last &&
@@ -629,7 +636,7 @@ const ACTION =
  * A reply's actions: copy its text (as written, markdown included) and read it aloud. They show on hover and
  * keyboard focus, and always (dimmed) on touch screens, so the phone needs no long-press to find them.
  */
-function ReplyActions({ text }: { text: string }) {
+function ReplyActions({ text, onReport }: { text: string; onReport?: () => void }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -655,6 +662,13 @@ function ReplyActions({ text }: { text: string }) {
           <Volume2Icon size={14} />
         </button>
       </Tip>
+      {onReport ? (
+        <Tip label="Report a problem" side="top">
+          <button type="button" aria-label="Report a problem with this reply" className={`${ACTION} opacity-0`} onClick={onReport}>
+            <MessageSquareWarningIcon size={14} />
+          </button>
+        </Tip>
+      ) : null}
     </>
   );
 }

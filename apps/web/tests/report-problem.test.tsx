@@ -47,3 +47,24 @@ it("is hidden without a built-in address, and asks for what happened before it o
   expect(write.disabled).toBe(false);
   expect(screen.getByText("To dev@example.com")).toBeTruthy();
 });
+
+it("a reply's report flag: the chief's summary, the reply and recent errors, with or without a note", () => {
+  const url = reportMail({
+    to: "dev@example.com",
+    what: "",
+    versions: { app: "0.1.27", hermes: "2026.9.24" },
+    device: "Phone on iOS",
+    summary: "The user asked for the weather and the reply was cut off after a timeout.",
+    summaryBy: "Nova",
+    reply: "The weather today is",
+    errors: ["2026-10-04 11:55:00,1 ERROR transcript: timed out [hidden]"],
+  });
+  expect(params(url).get("subject")).toBe("Chief Command Center problem: The user asked for the weather and the reply was cut off aft…");
+  const body = params(url).get("body") || "";
+  expect(body).toContain("What happened:\n(see the summary below)");
+  expect(body).toContain("Summary by Nova:\nThe user asked for the weather");
+  expect(body).toContain("The reply:\nThe weather today is");
+  expect(body).toContain("Recent errors in the app's logs:\n- 2026-10-04 11:55:00,1 ERROR transcript: timed out [hidden]");
+  const noted = params(reportMail({ to: "d@example.com", what: "It stopped mid-sentence", versions: { app: "", hermes: "" }, device: "Phone", summary: "s" })).get("body") || "";
+  expect(noted).toContain("What happened:\nIt stopped mid-sentence");
+});

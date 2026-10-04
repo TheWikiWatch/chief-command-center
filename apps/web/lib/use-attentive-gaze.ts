@@ -3,6 +3,7 @@
 import { useGaze } from "@blobatar/react/gaze";
 import { useCallback, useRef } from "react";
 
+import { scanGaze, type BusyMood } from "@/lib/eye-scan";
 import { useFaceClock } from "@/lib/face-clock";
 import { attentionWeight, pointerReactive, readPointer } from "@/lib/pointer";
 
@@ -16,13 +17,14 @@ const RELEASE = 0.12;
  *  1. straight out at you while the cursor is on it;
  *  2. the bot it is working with, while one is working (re-aimed as its seat moves);
  *  3. your cursor while it is near and has moved recently;
- *  4. otherwise nothing: its eyes come home and its own idle glances return.
+ *  4. while it is working or thinking (`busy`), the scanning eyes of lib/eye-scan.ts: holds and quick jumps;
+ *  5. otherwise nothing: its eyes come home and its own idle glances return.
  */
-export function useAttentiveGaze(task: () => HTMLElement | null) {
+export function useAttentiveGaze(task: () => HTMLElement | null, busy?: () => BusyMood | null) {
   const { ref: gazeRef, lookAt } = useGaze({ travel: 3, lookAt: null });
   const node = useRef<Element | null>(null);
-  const taskRef = useRef(task);
-  taskRef.current = task;
+  const taskRef = useRef({ task, busy });
+  taskRef.current = { task, busy };
   const s = useRef({ kind: "", at: -1, engaged: false, px: NaN, py: NaN, box: null as { cx: number; cy: number; size: number } | null });
 
   const ref = useCallback(
@@ -52,7 +54,7 @@ export function useAttentiveGaze(task: () => HTMLElement | null) {
         if (st.kind !== "rest") aim("rest", t, "rest");
         return;
       }
-      const taskEl = taskRef.current();
+      const taskEl = taskRef.current.task();
       if (taskEl) {
         st.engaged = false;
         if (st.kind !== "task" || t - st.at > 0.4 || t < st.at) aim("task", t, taskEl);
@@ -70,12 +72,26 @@ export function useAttentiveGaze(task: () => HTMLElement | null) {
           return;
         }
       }
+      const mood = taskRef.current.busy?.();
+      if (mood && box) {
+        // The driver glides short moves and snaps long ones, so a line of holds reads as eyes jumping along it.
+        const g = scanGaze(mood, t);
+        const x = box.cx + g.x * box.size * 1.6;
+        const y = box.cy + g.y * box.size * 1.2;
+        if (st.kind !== "scan" || Math.abs(x - st.px) + Math.abs(y - st.py) > 1) {
+          st.px = x;
+          st.py = y;
+          aim("scan", t, { x, y });
+        }
+        return;
+      }
       if (st.kind !== "idle") aim("idle", t, null);
     },
     true,
     () => {
       const el = node.current;
-      if (!el || !pointerReactive() || !readPointer()) {
+      // Measured for the cursor, and for scanning while busy (a phone has no cursor but still works).
+      if (!el || (!(pointerReactive() && readPointer()) && !taskRef.current.busy?.())) {
         s.current.box = null;
         return;
       }

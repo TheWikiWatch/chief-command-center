@@ -58,7 +58,7 @@ def find(routes: list[Route], method: str, path: str) -> Route | None:
 
 def build(bridge) -> list[Route]:
     """The table, bound to one BridgeServer."""
-    from . import data, fleet, hermes_api, identity, media, persona, providers, push, routines, second_brain, speech_model, threads, usage, voice
+    from . import data, fleet, hermes_api, identity, media, persona, providers, push, report, routines, second_brain, speech_model, threads, usage, voice
     from . import settings as hermes_settings
     from . import tools_settings
     from .server import _about, _cc_push, _flag, _float_param, _guarded, _thread_body, _thread_param, byte_range, legacy_in_use
@@ -313,6 +313,7 @@ def build(bridge) -> list[Route]:
             **A,
         ),
         Route(P, "/setup/test", lambda r: _guarded(providers.test_message), **A),
+        Route(P, "/report/draft", lambda r: _guarded(lambda: report.draft(r.b("message"), r.b("previous"), r.b("note"))), **A),
         Route(G, "/setup/second-brain", lambda r: _guarded(second_brain.status)),
         Route(
             P,

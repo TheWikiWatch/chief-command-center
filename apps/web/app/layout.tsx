@@ -28,8 +28,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${sans.variable} ${mono.variable}`}>
-      <body className="h-full overflow-hidden bg-canvas font-sans text-fg antialiased">{children}</body>
+    // The canvas colour inline too: a phone reloading the app over a slow link paints before the stylesheet arrives,
+    // and without it that first frame is white.
+    <html lang="en" className={`${sans.variable} ${mono.variable}`} style={{ backgroundColor: "#09090B" }}>
+      <body className="h-full overflow-hidden bg-canvas font-sans text-fg antialiased" style={{ backgroundColor: "#09090B" }}>
+        {children}
+      </body>
     </html>
   );
 }

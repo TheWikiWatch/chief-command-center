@@ -11,6 +11,7 @@ import { botIdentity, type BotIdentity } from "@/lib/bot-identity";
 import { kickFaceClock, useFaceClock } from "@/lib/face-clock";
 import { BLOB_KIND_TRAIT, cn, isBlobShape, parseBlobShape } from "@/lib/faces";
 import { CLOSED, mouthPath, mouthStroke, mouthTarget, stepMouth, voiceFromBands, type Mouth, type MouthMood } from "@/lib/mouth";
+import { gazeSeed, scanGaze } from "@/lib/eye-scan";
 import { lookState, measureLook, stepLook, type Look } from "@/lib/pointer";
 import type { Person, Ring } from "@/lib/types";
 
@@ -143,16 +144,19 @@ function moodPose(mood: FaceMood, t: number, id: BotIdentity, level = 0): Pose {
   switch (mood) {
     case "working":
     case "thinking": {
+      // Busy eyes hold and jump (lib/eye-scan.ts): reading along a line while working, up and to one side while
+      // thinking. They used to drift on a slow sine and blink every 1.45 s, which read as dazed. The head leans a
+      // little toward where the eyes look instead of rocking, and blinks keep the face's own rhythm.
       const rate = mood === "working" ? 2.6 : 2.4;
-      const big = mood === "thinking";
+      const g = scanGaze(mood, t, gazeSeed(id.seed));
       return {
         ...base,
-        tx: (big ? -1.4 : -0.9) + sin(t * 0.55) * (big ? 1.1 : 0.6),
-        ty: base.ty - 0.4,
-        roll: sin(t * (big ? 0.95 : 0.75)) * (big ? 8 : 4),
-        gazeX: sin(t * 0.7) * 3.4,
-        gazeY: -2.1 + sin(t * 0.4) * 1.6,
-        lid: t % 1.45 > 1.28 ? 0.35 : 2.6,
+        tx: g.x * 0.7,
+        ty: base.ty - 0.3 + g.y * 0.25,
+        roll: g.x * (mood === "thinking" ? 5 : 2.5),
+        gazeX: g.x * 3.3,
+        gazeY: g.y * 2.2,
+        lid: blinking ? 0.35 : mood === "working" ? 2.1 : 2.35,
         dots: [0.2 + 0.8 * Math.max(0, sin(t * rate)), 0.2 + 0.8 * Math.max(0, sin(t * rate - 0.7)), 0.2 + 0.8 * Math.max(0, sin(t * rate - 1.4))],
       };
     }
@@ -398,6 +402,15 @@ function PhotoFace({
   );
 }
 
+/**
+ * Busy: both eyes level and a little narrowed in focus, still. The library's `thinking` raises one eye and lowers
+ * the other and rocks between them, which read as eyes bouncing; where a busy face looks is lib/eye-scan.ts.
+ */
+const FOCUSED: typeof thinking = {
+  ...thinking,
+  p: { ...thinking.p, esx: 1.08, esy: 0.8, tilt: 0, edy: 0, edx: 0, esx2: 0, esy2: 0, tilt2: 0, edy2: 0, rock: 0, bdy: -0.3 },
+};
+
 function BlobFace({
   name,
   shape,
@@ -422,7 +435,7 @@ function BlobFace({
   const traitValue = parsed.kind ? BLOB_KIND_TRAIT[parsed.kind] : undefined;
   const traits = traitValue === undefined ? undefined : { shape: traitValue };
   const expression =
-    mood === "working" || mood === "thinking" ? thinking : mood === "failed" ? sad : mood === "asleep" ? sleepy : mood === "celebrating" ? happy : undefined;
+    mood === "working" || mood === "thinking" ? FOCUSED : mood === "failed" ? sad : mood === "asleep" ? sleepy : mood === "celebrating" ? happy : undefined;
   const frame = useMemo(() => blobMouthFrame(parsed.seed, traitValue), [parsed.seed, traitValue]);
   const showMouth = size >= MOUTH_MIN_PX && !!frame;
   const stroke = frame ? mouthStroke(frame.stroke, 100, size).toFixed(2) : "0";

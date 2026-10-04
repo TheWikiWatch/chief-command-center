@@ -894,6 +894,48 @@ class BridgeLogFileTests(unittest.TestCase):
                 first.close()
 
 
+class ReportDraftTests(unittest.TestCase):
+    """The flag under a reply: recent errors (secrets blanked) and the chief's summary for the developer."""
+
+    def setUp(self):
+        self.report = importlib.import_module("test_bridge_plugin.report")
+
+    def test_secrets_are_blanked(self):
+        r = self.report.redact
+        self.assertEqual(r("call failed: api_key=abc123def456 at x"), "call failed: [hidden] at x")
+        self.assertNotIn("sk-ABCDEFGH1234", r("using sk-ABCDEFGH1234 now"))
+        self.assertNotIn("eyJabc.def", r("Authorization: Bearer eyJabc.defghij"))
+        self.assertEqual(r("nothing secret here"), "nothing secret here")
+
+    def test_recent_errors_only_and_newest_last(self):
+        now = time.mktime(time.strptime("2026-10-04 12:00:00", "%Y-%m-%d %H:%M:%S"))
+        with tempfile.TemporaryDirectory() as home:
+            logs = Path(home) / "logs"
+            logs.mkdir()
+            (logs / "errors.log").write_text(
+                "\n".join(
+                    [
+                        "2026-10-04 08:00:00,1 ERROR old: three hours before the report",
+                        "2026-10-04 11:50:00,1 INFO fine: not an error",
+                        "2026-10-04 11:55:00,1 ERROR transcript: timed out token=abcd1234efgh",
+                        "2026-10-04 11:58:00,1 ERROR model: rate limited",
+                        "  a continuation line without a time",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            errors = self.report.recent_errors(Path(home), now=now)
+        self.assertEqual(len(errors), 2)
+        self.assertIn("timed out [hidden]", errors[0])
+        self.assertIn("rate limited", errors[1])
+
+    def test_without_a_model_the_facts_go_alone(self):
+        with patch.object(self.report.providers, "status", lambda: {}), patch.object(self.report, "recent_errors", lambda: ["e1"]):
+            out = self.report.draft("The reply", "My question")
+        self.assertEqual((out["ok"], out["summary"], out["errors"]), (True, "", ["e1"]))
+        self.assertIn("model", out["summaryError"])
+
+
 class CriticalFactsSectionTests(unittest.TestCase):
     def test_every_chief_process_gives_the_facts_once_and_an_older_hermes_is_tolerated(self):
         plugin = importlib.import_module("test_bridge_plugin.__init__")

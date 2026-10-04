@@ -64,8 +64,13 @@ it("stepLook eases toward the cursor, notices hover, and blinks on a long jump",
 
 it("moods decide how much the cursor pulls: idle follows, working only glances, asleep ignores", () => {
   const toward = look({ x: 1, y: 0, w: 1 });
-  const idle = facePose("idle", 2, id, 0, toward).gazeX - facePose("idle", 2, id, 0).gazeX;
-  const working = facePose("working", 2, id, 0, toward).gazeX - facePose("working", 2, id, 0).gazeX;
+  // How much of the way toward the cursor the eyes go (busy eyes may start anywhere along their scan).
+  const share = (mood: "idle" | "working") => {
+    const plain = facePose(mood, 2, id, 0).gazeX;
+    return (facePose(mood, 2, id, 0, toward).gazeX - plain) / (5.2 - plain);
+  };
+  const idle = share("idle");
+  const working = share("working");
   expect(idle).toBeGreaterThan(working);
   expect(working).toBeGreaterThan(0);
   expect(facePose("asleep", 2, id, 0, toward)).toEqual(facePose("asleep", 2, id, 0));

@@ -205,6 +205,10 @@ export async function patchTools(body: { tool: ToolName; provider?: string; mode
 /** Runs the real tool once (one image can take a minute or two on the slower models). */
 export const testTool = (tool: ToolName) => write<ToolTestResult>("tools/test", { tool }, 190_000);
 
+/** A reply flagged as a problem: recent errors from the chief's logs and its short summary for the developer. */
+export type ReportDraft = { ok: boolean; error?: string; summary?: string; summaryError?: string; errors?: string[] };
+export const draftReport = (body: { message: string; previous?: string; note?: string }) => write<ReportDraft>("report/draft", body, 45_000);
+
 /** Stop what the chief is doing now (Hermes's own /stop for this chat). */
 export const stopTurn = () => write<{ ok: boolean; error?: string; generating?: boolean }>("stop", withThread({}), 15_000);
 /** Queue a message for after the current turn (Hermes's /queue). */

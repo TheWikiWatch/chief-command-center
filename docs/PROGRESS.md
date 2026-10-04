@@ -841,3 +841,20 @@
 **Fixed: "Chat error" under the chief when nothing was wrong.**
 
 - Two quick failures (the PC locking, a request cut off) left an error that only a reply cleared, while the bridge held a healthy request open for up to 25 seconds; sending a message fixed it at once. A request the bridge has held for a few seconds now counts as connected, a failure waits before retrying (1 s, 2 s, 4 s, up to 10 s) so "two in a row" means two separate ones, and the header says "error" only after two. An empty conversation now waits for news too, instead of asking again every 150 ms.
+
+**Phone: no more black, white or cut-out flashes.**
+
+- A tester's phone view went black or white for a moment and "cut out". The likeliest cause: while the PC seemed unreachable, the app dimmed itself with a filter over the whole view (the starfield canvas, the glass composer and all), and switching that on and off is a known cause of blank frames on phone browsers. It also switched far too often: a failure count that only one kind of answer reset, failures counted while the phone was in the background, and no grace period on coming back. Now the phone dims with a plain overlay, any answer resets the count, background failures don't count, and returning to the app gets 15 seconds to catch up.
+- A reloaded page is dark from its first frame (it used to be white until the stylesheet arrived), and a phone no longer shows the desktop layout for a moment before its own.
+- The chat no longer goes blank when the conversation's session changes for a moment; what's on screen stays until the new history arrives.
+- A screen that breaks shows a dark "Something went wrong on this screen" with Try again, instead of a blank page; after an update, a page still holding the old build reloads itself once.
+
+**The chief's eyes while it thinks or works: focused, not bouncing.**
+
+- They used to bounce: on blob faces, the face library's "thinking" pose raised one eye and lowered the other and rocked between them; on the other faces, the eyes drifted on a slow wave and blinked every 1.45 seconds. Eyes that drift read as dazed; real attention is holds and quick jumps.
+- Now both eyes stay level and a little narrowed in focus, and they move the way eyes do: holding, then jumping. Working, they read along a line in short jumps, sweep back, and now and then glance up as if weighing what they read; thinking, they look up to one side, hold, shift a little, sometimes switch sides. The head leans slightly toward where the eyes look instead of rocking, and blinking keeps its normal rhythm. The chief's own face aims its eyes this way through the same gaze driver that follows your cursor (the cursor and a working bot still come first).
+
+**Report a problem from the reply itself.**
+
+- Each of the chief's replies now has a small flag beside Copy and Read aloud (only where a report address is built into the release). It opens a short sheet: the chief writes a two-to-four sentence summary for the developer from the reply, the message before it and the recent errors in its own logs (keys, tokens and passwords blanked out); the tester can add a note; "Write the e-mail" opens their e-mail app with all of it, plus the diagnostics file on the desktop. Nothing is sent by the app. If the model can't be reached, the report goes with the facts alone.
+- The bridge's `report/draft` (contract `chief.report.v1`, `report.py`) gathers the errors and asks the chief's own model for the summary.

@@ -8,7 +8,7 @@ import { FxRoot } from "@/components/fx-root";
 import { HeaderStatus, StatusSheet } from "@/components/connection-status";
 import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { useResourceHealth } from "@/components/resource-status";
-import { staleWindow } from "@/lib/health-store";
+import { RESUME_GRACE_MS, staleWindow } from "@/lib/health-store";
 import { share } from "@/lib/share";
 import { ToastViewport } from "@/components/ui/toasts";
 import { EngineBanner } from "@/components/engine-banner";
@@ -231,6 +231,8 @@ export function CommandShell() {
         setConnected(true);
         return;
       }
+      // A phone freezes or drops requests while the app is in the background: those aren't the PC going away.
+      if (document.visibilityState === "hidden") return;
       failStreak.current += 1;
       applyDisconnect();
     } finally {
@@ -245,6 +247,7 @@ export function CommandShell() {
       if (signal.aborted) return;
       snapshotHealth.success();
       lastSnapAt.current = Date.now();
+      failStreak.current = 0; // an answer is an answer: only failures in a row since the last one count
       markFresh.current(data.roster);
       setSnapshot((prev) => share(prev, data));
       const chief = data.roster.find((p) => p.isChief);
@@ -264,6 +267,20 @@ export function CommandShell() {
 
   useEffect(() => {
     readyAt.current = Date.now() + 4000;
+    // Back in the app (or back online): requests left open meanwhile are being replaced (lib/poll.ts), so give the
+    // link the same grace as the status dot before calling the chief unreachable. The dim flapping on and off as a
+    // phone came back made its screen flash.
+    const resume = () => {
+      if (document.visibilityState === "hidden") return;
+      failStreak.current = 0;
+      readyAt.current = Date.now() + RESUME_GRACE_MS;
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
+    return () => {
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
+    };
   }, []);
 
   // Outage signature (VISUAL-OVERHAUL §3.2): the shell dims while the chief is unreachable; recovery says so.
@@ -666,7 +683,13 @@ export function CommandShell() {
     return (
       <FxRoot>
         <div className="flex h-app flex-col bg-canvas pt-[env(safe-area-inset-top)]">
-          <div className={`relative min-h-0 flex-1 overflow-hidden ${dim}`}>
+          <div className="relative min-h-0 flex-1 overflow-hidden">
+            {/* The phone dims with a plain overlay, not a filter: a filter over the whole view (a canvas, masks, a
+                glass composer) switched on and off is a known cause of black or blank frames on phone browsers. */}
+            <div
+              aria-hidden
+              className={`pointer-events-none absolute inset-0 z-20 bg-black transition-opacity duration-600 ease-enter ${offline ? "opacity-20" : "opacity-0"}`}
+            />
             <div className={panel("chat")}>
               <LayerScope visible={phoneTab === "chat"}>{chat}</LayerScope>
             </div>

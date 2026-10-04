@@ -40,6 +40,8 @@ import { useAssistantName, assistantName } from "@/lib/identity";
 import { createDraftStore, useDraft, type DraftStore } from "@/lib/draft-store";
 import { speechFailureReason, useReplySpeech } from "@/components/chat/use-reply-speech";
 import { focusComposer, OPEN_VOICE_MODE_EVENT, SET_DRAFT_EVENT } from "@/lib/app-events";
+import { ReportReplySheet } from "@/components/chat/report-reply-sheet";
+import { fetchAbout } from "@/lib/about-client";
 
 // Voice mode loads the first time it is opened.
 const VoiceMode = dynamic(() => import("@/components/chat/voice-mode").then((m) => m.VoiceMode), { ssr: false });
@@ -87,9 +89,32 @@ export function ChiefChat({
   const assistant = useAssistantName();
   const lookAtRef = useRef(lookAtEl);
   lookAtRef.current = lookAtEl;
-  const { ref } = useAttentiveGaze(() => lookAtRef.current);
+  const faceBusyRef = useRef<"thinking" | null>(null);
+  const { ref } = useAttentiveGaze(() => lookAtRef.current, () => faceBusyRef.current);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const lastIdRef = useRef(0);
+  // The flag under a reply (components/chat/report-reply-sheet.tsx): only where a report address is built in.
+  const [reportSetup, setReportSetup] = useState<{ email: string; versions: { app: string; hermes: string } } | null>(null);
+  const [reporting, setReporting] = useState<{ reply: string; previous: string } | null>(null);
+  const [reportKey, setReportKey] = useState(0);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
+  useEffect(() => {
+    let live = true;
+    fetchAbout()
+      .then((a) => live && a.reportEmail && setReportSetup({ email: a.reportEmail, versions: { app: a.app, hermes: a.hermes } }))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, []);
+  const reportReply = useCallback((m: ChatMessage) => {
+    const list = messagesRef.current;
+    const at = list.findIndex((x) => x.id === m.id);
+    const before = list.slice(0, at < 0 ? list.length : at).reverse().find((x) => x.role === "user" && chatTone(x) === "reply");
+    setReporting({ reply: m.content || "", previous: before?.content || "" });
+    setReportKey((k) => k + 1); // a fresh sheet per report; closing keeps it, so it animates out
+  }, []);
   // The draft lives in a store only the message box subscribes to (lib/draft-store.ts): typing doesn't
   // re-render the chat. Sends read it with draft.get().
   const [draft] = useState(() => createDraftStore(""));
@@ -371,10 +396,12 @@ export function ChiefChat({
     (data: Transcript, after: number) => {
       setGenerating(!!data.generating);
       if (historyPrimed.current && data.sessionKey !== sessionKeyRef.current) {
+        // An answer without a session (a gateway restarting) is a blip, not a new conversation: keep what's shown.
+        if (!data.sessionKey) return;
+        // A real new conversation: what's on screen stays until its history arrives (the full fetch below
+        // replaces it), so the chat never flashes empty.
         historyPrimed.current = false;
         lastIdRef.current = 0;
-        setMessages([]);
-        setNotices([]);
         noticeSince.current = 0;
         setEarlier({ more: true, loading: false, error: "" });
         earlierCursor.current = null;
@@ -781,7 +808,9 @@ export function ChiefChat({
               : "online";
   // Background work: the chat stays usable ("online"), but the face shows the chief is busy and the header says so.
   const backgroundTasks = backgroundTaskCount(background);
-  const chiefFace = chief ? <ChiefPresence chief={chief} size={36} mood={backgroundTasks && mood === "online" ? "thinking" : mood} gazeRef={ref} /> : null;
+  const faceMood = backgroundTasks && mood === "online" ? "thinking" : mood;
+  faceBusyRef.current = faceMood === "thinking" || faceMood === "preparing" ? "thinking" : null;
+  const chiefFace = chief ? <ChiefPresence chief={chief} size={36} mood={faceMood} gazeRef={ref} /> : null;
   const followups = useFollowupWatch(messages, { primed: historyPrimed.current && messages.length > 0, busy: awaiting || busy });
 
   const onMicStatus = (next: MicStatus) => {
@@ -871,6 +900,17 @@ export function ChiefChat({
         face={chiefFace}
       />
       <ChatAurora mood={mood} color={chief ? chiefColor(chief) : undefined} />
+      {reportSetup ? (
+        <ReportReplySheet
+          key={reportKey}
+          open={!!reporting}
+          reply={reporting?.reply || ""}
+          previous={reporting?.previous || ""}
+          email={reportSetup.email}
+          versions={reportSetup.versions}
+          onClose={() => setReporting(null)}
+        />
+      ) : null}
       <Thread
         messages={threadMessages}
         loading={!loadedOnce && connected && !authFailed}
@@ -889,6 +929,7 @@ export function ChiefChat({
         question={question}
         onAnswer={answerOpenQuestion}
         onQuickReply={sendBody}
+        onReport={reportSetup ? reportReply : undefined}
         header={previous.length ? <PreviousConversations items={previous} chief={chief} phone={!!compact} /> : null}
       />
       <form onSubmit={onSubmit} className="shrink-0">

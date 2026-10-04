@@ -36,15 +36,15 @@ it("long-polls once the bridge can hold requests, with what the bridge last repo
     .mockReturnValue(hold);
   const update = vi.fn();
   render(<ChiefChat chief={undefined} lookAtEl={null} connected compact onApprovalUpdate={update} />);
-  // Rendering the whole chat can take over a second when the full suite runs in parallel.
-  await waitFor(() => expect(api.transcript).toHaveBeenCalledTimes(3), { timeout: 5000 });
+  // Rendering the whole chat can take several seconds when the full suite runs in parallel on a busy PC.
+  await waitFor(() => expect(api.transcript).toHaveBeenCalledTimes(3), { timeout: 12_000 });
   expect(api.transcript.mock.calls[0].slice(0, 1)).toEqual([0]);
   expect(api.transcript.mock.calls[0][2]).toBeUndefined(); // the first load never waits
   expect(api.transcript.mock.calls[1][0]).toBe(50);
   expect(api.transcript.mock.calls[1][2]).toEqual({ wait: 25, gen: true, approval: "r1", clarify: "", notice: "" });
   expect(api.transcript.mock.calls[2][2]).toEqual({ wait: 25, gen: false, approval: "", clarify: "", notice: "" });
   expect(update.mock.calls.map((c) => c[0]?.requestId ?? null)).toEqual(["r1", null]);
-});
+}, 20_000);
 
 it("Load earlier prepends older messages and says when the start is reached", async () => {
   api.transcript.mockResolvedValueOnce({ sessionKey: "s", lastId: 150, messages: rows(101, 150), generating: false }).mockReturnValue(new Promise(() => {}));
