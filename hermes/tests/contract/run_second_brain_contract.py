@@ -119,8 +119,8 @@ meta, _ = parse_frontmatter(skill.read_text(encoding="utf-8"))
 check("the skill's frontmatter parses", meta.get("name") == "second-brain", meta)
 text = skill.read_text(encoding="utf-8")
 check(
-    "the skill carries the critical facts",
-    "**Owner:**" in text and "{{critical_facts}}" not in text and "{{toolkit}}" not in text and "## For future agent" not in text,
+    "the skill points at the critical facts without copying them",
+    "CRITICAL_FACTS.md" in text and "**Owner:**" not in text and "{{" not in text and second_brain._GENERATED_NOTE in text,
 )
 writes = home / "skills" / "note-taking" / "second-brain-writes" / "SKILL.md"
 check(
@@ -170,8 +170,9 @@ facts = fresh / "CRITICAL_FACTS.md"
 facts.write_text(
     facts.read_text(encoding="utf-8").replace("- **Owner:** (name, and how they like to be addressed)", "- **Owner:** Sam, call me Sam"), encoding="utf-8"
 )
-check("a changed CRITICAL_FACTS.md re-renders the skill", second_brain.sync_critical_facts() and "Sam, call me Sam" in skill.read_text(encoding="utf-8"))
-check("an unchanged one doesn't", second_brain.sync_critical_facts() is False)
+check("the chief's next conversation gets the changed facts", "- **Owner:** Sam, call me Sam" in second_brain.facts_prompt())
+check("the facts reach a conversation within Hermes's section limit", 0 < len(second_brain.facts_prompt()) <= second_brain.FACTS_PROMPT_MAX)
+check("changed facts don't rewrite the skill", skill.read_text(encoding="utf-8") == text)
 
 # Upgrade from a version-1 Second Brain
 state_path = home / "second_brain.json"

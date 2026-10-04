@@ -1,10 +1,9 @@
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { app } from "electron";
 
 import { curatedEnv, payloadLayout } from "./env";
-import { preparePythonEnv } from "./python-env";
 import { runJsonTool, type ToolResult } from "./python";
 import { engineRunner } from "./restore";
 import { sessionCookieName } from "./session";
@@ -68,20 +67,17 @@ export function pycacheDir(): string {
   return path.join(ctx.paths.data, "pycache");
 }
 
-/** The agent's `python` and the payload's other launchers, from a twin of the venv that works on this PC (python-env.ts). */
-export function agentScriptsDir(): string {
-  const layout = payloadLayout(ctx.paths.payload);
-  return preparePythonEnv(ctx.paths.payload, layout.python, path.join(ctx.paths.data, "python-env"));
-}
-
 export function envFor(kind: "gateway" | "web"): Record<string, string> {
   const { paths, store, hermesRoot, token, sessionSecret } = ctx;
   const layout = payloadLayout(paths.payload, toolDirs(paths.payload));
   if (kind === "gateway") {
-    // The payload's own venv\Scripts names the release PC's folder (exit 103 elsewhere): the twin takes its place.
-    const twin = agentScriptsDir();
-    const original = path.join(paths.payload, "venv", "Scripts");
-    if (twin) layout.toolDirs = layout.toolDirs.map((d) => (d === original ? twin : d));
+    // 0.1.22 to 0.1.24 kept a copy of the venv's launchers here; inside an installed app they couldn't start its
+    // Python (Access is denied), and the agent's `python` is the interpreter itself now (env.ts).
+    try {
+      rmSync(path.join(paths.data, "python-env"), { recursive: true, force: true });
+    } catch {
+      /* in use: gone at a later start */
+    }
   }
   const common = { PYTHONIOENCODING: "utf-8", PYTHONPYCACHEPREFIX: pycacheDir() };
   if (kind === "gateway") {

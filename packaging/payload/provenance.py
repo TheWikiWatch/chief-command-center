@@ -28,7 +28,9 @@ REPO = HERE.parents[1]
 STAMP = Path("hermes-agent") / "install-stamp.json"
 
 # Left out of the tree digest: things Python or the builder write after the build, and the stamp itself.
-_SKIP_DIRS = {"__pycache__", "uv-cache"}
+# `.hermes` (under hermes-agent): the command shims Hermes writes for itself when it runs from the folder (the
+# compatibility suite, the smoke test), naming wherever it ran.
+_SKIP_DIRS = {"__pycache__", "uv-cache", ".hermes"}
 _SKIP_SUFFIXES = (".pyc", ".pyo")
 _SKIP_FILES = {"payload.prepare.lock"}
 

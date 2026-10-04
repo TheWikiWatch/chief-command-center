@@ -48,7 +48,9 @@ export function payloadLayout(root: string, toolNames: string[] = [], manifest?:
     launcher: rel(runtime?.commands?.hermes, "bin/hermes.exe"),
     python: rel(runtime?.storePython, "venv/Scripts/python.exe"),
     pythonPath: [rel(runtime?.sitePackages, "venv/Lib/site-packages"), rel(runtime?.repoDir, "hermes-agent")],
-    toolDirs: [path.join(root, "bin"), path.join(root, "venv", "Scripts"), ...toolNames.map((t) => path.join(root, "tools", t))],
+    // Not the venv's Scripts: built on the release PC, its launchers name that PC's folder and exit 103 anywhere
+    // else. The interpreter's own folder (among the tools) gives the agent `python`, with PYTHONPATH from Hermes.
+    toolDirs: [path.join(root, "bin"), ...toolNames.map((t) => path.join(root, "tools", t))],
   };
 }
 

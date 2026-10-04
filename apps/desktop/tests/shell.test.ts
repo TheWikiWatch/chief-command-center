@@ -195,6 +195,12 @@ describe("curatedEnv", () => {
     HTTPS_PROXY: "http://proxy:8080",
   };
 
+  it("never puts the payload venv's launchers on PATH (they name the release PC's folder: exit 103 elsewhere)", () => {
+    const env = curatedEnv(ambient, { payload, set: {} });
+    expect(env.PATH.split(";")).not.toContain("C:\\App\\payload\\venv\\Scripts");
+    expect(env.PATH.split(";").slice(0, 2)).toEqual(["C:\\App\\payload\\bin", "C:\\App\\payload\\tools\\git\\cmd"]);
+  });
+
   it("passes Windows basics and proxies, drops ambient credentials and Hermes settings, and sets its own", () => {
     const env = curatedEnv(ambient, { payload, set: { HERMES_HOME: "C:\\App\\data\\hermes", CHIEF_DASHBOARD_TOKEN: "app-token" } });
     expect(env.HERMES_HOME).toBe("C:\\App\\data\\hermes");

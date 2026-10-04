@@ -62,6 +62,9 @@ class ProvenanceTests(unittest.TestCase):
     def test_compiled_python_and_the_stamp_itself_dont_count(self):
         provenance.record(self.payload, self.repo)
         (self.payload / "hermes-agent" / "tools" / "__pycache__" / "other.cpython-314.pyc").write_bytes(b"new")
+        # The command shims Hermes writes for itself when the suite or the smoke test runs it from the folder.
+        (self.payload / "hermes-agent" / ".hermes" / "bin").mkdir(parents=True)
+        (self.payload / "hermes-agent" / ".hermes" / "bin" / "hermes.cmd").write_text("@echo off\n", encoding="utf-8")
         self.assertEqual(provenance.check(self.payload, self.repo), [])
 
     def test_a_changed_file_a_changed_patch_or_selection_is_named(self):

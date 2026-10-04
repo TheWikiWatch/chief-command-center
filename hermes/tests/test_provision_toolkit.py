@@ -59,15 +59,15 @@ class ToolkitInstallTests(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn('"total_notes": 1', out.stdout)
 
-    def test_a_python_that_stays_put_is_named_alone_and_updates_change_nothing(self):
+    def test_the_agents_own_python_is_named_without_a_path_so_updates_change_nothing(self):
         # The app's own Python lives in a folder named for its version, so naming it rewrote every toolkit file at
-        # each update (and Fleet Health counted those as edits). The agent's Python finds its packages itself.
-        agent = "D:/AppData/ChiefCommandCenter/python-env/Scripts/python.exe"
-        self.assertTrue(provision.install_toolkit(VENDOR, self.dest, agent, ""))
+        # each update (and Fleet Health counted those as edits). The agent's `python` finds its packages itself.
+        self.assertTrue(provision.install_toolkit(VENDOR, self.dest, "python", ""))
         text = (self.dest / "meta/obsidian-health/SKILL.md").read_text(encoding="utf-8")
-        self.assertIn(f'"{agent}" "', text)
+        self.assertRegex(text, r'"python" "[^"]+/scripts/vault_health\.py"')
         self.assertNotIn("PYTHONPATH", text)
-        self.assertEqual(provision.install_toolkit(VENDOR, self.dest, agent, ""), [], "the next version's start rewrites nothing")
+        self.assertNotIn("WindowsApps", text)
+        self.assertEqual(provision.install_toolkit(VENDOR, self.dest, "python", ""), [], "the next version's start rewrites nothing")
 
     def test_owner_edits_are_kept_and_unedited_files_update(self):
         self.install()

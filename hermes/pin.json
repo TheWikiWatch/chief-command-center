@@ -18,6 +18,11 @@
       "file": "0003-hermes-bin-and-faulthandler.patch",
       "why": "Under the PM layout, restarts and cron bot-chat delivery honor HERMES_BIN (the bare store Python cannot import Hermes once the child env drops its path); native-crash stacks go to logs/faulthandler.log.",
       "upstream": "not upstream"
+    },
+    {
+      "file": "0004-payload-venv-launchers-on-another-pc.patch",
+      "why": "The payload's venv is built on the release PC and its pyvenv.cfg names that PC's folder, so its launchers (venv\\Scripts\\python.exe, which Hermes puts first on PATH) exit 103 on every other PC. When that folder is gone, children get the interpreter itself first on PATH instead.",
+      "upstream": "not upstream; drop when upstream payloads ship relocatable launchers"
     }
   ]
 }

@@ -1,0 +1,32 @@
+diff --git a/pm/environments.py b/pm/environments.py
+index 95e874f7c3..555500539d 100644
+--- a/pm/environments.py
++++ b/pm/environments.py
+@@ -343,8 +343,26 @@ def activate_dependencies(project_root: Path) -> None:
+     os.environ["PYTHONPATH"] = os.pathsep.join([str(project_root.resolve()), str(selected)])
+     os.environ.pop("VIRTUAL_ENV", None)
+     executable_dir = venv_bin_dir(environment)
+-    if executable_dir.is_dir():
++    if executable_dir.is_dir() and _venv_launchers_work(environment):
+         os.environ["PATH"] = os.pathsep.join([str(executable_dir), os.environ.get("PATH", "")])
++    elif Path(sys.executable).is_file():
++        # Chief patch 2026-10-04: a payload built on another machine names that machine's folder as its venv's
++        # `home`, so every launcher in the venv's Scripts exits 103 there. Children get the interpreter itself,
++        # which runs with the PYTHONPATH set above.
++        os.environ["PATH"] = os.pathsep.join([str(Path(sys.executable).parent), os.environ.get("PATH", "")])
++
++
++def _venv_launchers_work(environment: Path) -> bool:
++    """A venv's launchers start the interpreter its pyvenv.cfg names as ``home``; False when that is gone."""
++    try:
++        lines = (environment / "pyvenv.cfg").read_text(encoding="utf-8-sig").splitlines()
++    except OSError:
++        return False
++    for line in lines:
++        key, sep, value = line.partition("=")
++        if sep and key.strip().lower() == "home":
++            return Path(value.strip()).is_dir()
++    return True
+ 
+ 
+ def activation_environment(project_root: Path) -> dict[str, str]:
