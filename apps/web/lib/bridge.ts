@@ -94,7 +94,8 @@ export type TranscriptWait = { wait: number; gen: boolean; approval: string; cla
 /** `noticeSince`: the newest notice the chat has (epoch seconds), so only newer ones come back. */
 export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: TranscriptWait, noticeSince = 0): Promise<Transcript> {
   const q = new URLSearchParams({ after: String(after) });
-  const hold = !!(live && after);
+  // A conversation with no rows yet (after 0) is held too: the bridge waits for its first one.
+  const hold = !!live;
   if (hold && live) {
     q.set("wait", String(live.wait));
     q.set("gen", live.gen ? "1" : "0");

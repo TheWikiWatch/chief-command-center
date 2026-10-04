@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { RESUME_GRACE_MS, staleWindow, summarizeHealth, type HealthEntry } from "@/lib/health-store";
+import { HELD_MS, RESUME_GRACE_MS, staleWindow, summarizeHealth, type HealthEntry } from "@/lib/health-store";
 import { poll } from "@/lib/poll";
 
 // A tester saw the phone's dot turn yellow ("Chat stale 45s") almost every time they opened the app, with nothing
@@ -35,6 +35,15 @@ describe("the connection dot", () => {
     const two = summarizeHealth([chat({ updatedAt: t - 1_000, error: "dropped", failures: 2 })], t, 0, 0);
     expect(two.state).toBe("degraded");
     expect(two.worst?.label).toBe("Chat");
+  });
+
+  // The owner saw "Chat error" under the chief for minutes with nothing wrong, and sending a message fixed it: two
+  // quick failures (the PC locking) left an error that only a reply cleared, while a healthy long-poll waited 25 s.
+  it("lets a request the bridge is holding outrank earlier failures", () => {
+    const failed = { updatedAt: t - 60_000, error: "dropped", failures: 2 };
+    expect(summarizeHealth([chat({ ...failed, pendingSince: t - 500 })], t, 0, 0).state).toBe("degraded"); // just sent: not proof yet
+    expect(summarizeHealth([chat({ ...failed, pendingSince: t - HELD_MS })], t, 0, 0).state).toBe("ok"); // held: the bridge is there
+    expect(summarizeHealth([chat({ ...failed, pendingSince: t - 45_000 })], t, 0, 0).state).toBe("degraded"); // hung past its window
   });
 });
 

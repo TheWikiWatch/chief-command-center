@@ -155,6 +155,7 @@ export function ChiefChat({
   const [background, setBackground] = useState<BackgroundUnit[]>([]);
   const [previous, setPrevious] = useState<PreviousConversation[]>([]);
   const quickReturns = useRef(0);
+  const failStreak = useRef(0);
   const approvalUpdate = useRef(onApprovalUpdate);
   approvalUpdate.current = onApprovalUpdate;
   const transcriptHealth = useResourceHealth("Chat", longpoll ? 40_000 : staleWindow(2500));
@@ -425,7 +426,7 @@ export function ChiefChat({
     const after = historyPrimed.current ? lastIdRef.current || 0 : 0;
     // What the bridge last told us, not local guesses: a difference would return the long-poll at once.
     const state = bridgeState.current;
-    const live = longpollRef.current && after
+    const live = longpollRef.current && historyPrimed.current
       ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg }
       : undefined;
     const started = Date.now();
@@ -466,10 +467,16 @@ export function ChiefChat({
       // A long-poll that keeps coming straight back (a bridge that can't hold) must not spin.
       quickReturns.current = live && Date.now() - started < 300 && !data.messages.length ? quickReturns.current + 1 : 0;
       transcriptHealth.success();
+      failStreak.current = 0;
     } catch (error) {
-      if (!signal.aborted) transcriptHealth.failure(error);
+      if (!signal.aborted) {
+        transcriptHealth.failure(error);
+        failStreak.current += 1;
+      }
     }
-  }, () => (longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript, transcriptHealth, historyPrimed]);
+    // After a failure, wait before the next try (1 s, 2 s, 4 s … 10 s): two tries 150 ms apart fail for the same
+    // reason, and "two failures in a row" (a real error) needs them to be separate.
+  }, () => (failStreak.current ? Math.min(1000 * 2 ** (failStreak.current - 1), 10_000) : longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript, transcriptHealth, historyPrimed]);
 
   // Load earlier: pages of older rows before the oldest one shown.
   // Where the next page starts: the bridge's cursor, so rows skipped here are never asked for again.

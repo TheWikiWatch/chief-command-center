@@ -40,7 +40,7 @@ export function useLinkLabel({ connected, authFailed }: LinkState) {
       : state === "down"
         ? "Reconnecting…"
         : state === "degraded" && verdict.worst
-          ? `${verdict.worst.label} ${verdict.worst.error ? "error" : `stale ${Math.floor(verdict.ageMs / 1000)}s`}`
+          ? `${verdict.worst.label} ${verdict.worst.error && (verdict.worst.failures ?? 2) >= 2 ? "error" : `stale ${Math.floor(verdict.ageMs / 1000)}s`}`
           : "";
   const text = state === "degraded" ? "text-warn" : "text-danger";
   return { state, label, text };

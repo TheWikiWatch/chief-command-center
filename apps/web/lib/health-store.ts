@@ -26,6 +26,9 @@ export function staleWindow(intervalMs: number): number {
   return intervalMs * 2 + 10_000;
 }
 
+/** A request open this long is being held by the bridge, so the bridge is reachable. */
+export const HELD_MS = 3_000;
+
 /** After coming back to the app (or back online), this long to catch up before anything is called stale. */
 export const RESUME_GRACE_MS = 15_000;
 let resumedAt = 0;
@@ -101,8 +104,11 @@ export function summarizeHealth(list: HealthEntry[], now: number, startedAt: num
   const settling = resumed > 0 && now - resumed < RESUME_GRACE_MS;
   for (const entry of list) {
     const age = Math.max(0, now - (entry.updatedAt ?? startedAt));
-    const errored = !!entry.error && (entry.failures ?? 2) >= 2;
     const open = !!entry.pendingSince && now - entry.pendingSince < entry.staleAfter;
+    // A request held open for a few seconds is the bridge answering (one that's down fails at once): it outranks
+    // earlier failures, which only a reply used to clear, so a quiet chat read "Chat error" until someone wrote.
+    const held = open && now - (entry.pendingSince ?? now) >= HELD_MS;
+    const errored = !!entry.error && (entry.failures ?? 2) >= 2 && !held;
     const stale = errored || (!open && !settling && now - Math.max(entry.updatedAt ?? startedAt, resumed) >= entry.staleAfter);
     if (stale && age >= worstAge) {
       worst = entry;
