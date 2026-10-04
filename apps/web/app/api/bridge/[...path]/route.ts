@@ -63,6 +63,8 @@ async function proxy(req: NextRequest, path: string[]) {
       ? 60000
     : rel === "tools/test"
       ? 180000
+    : rel === "report/draft"
+      ? 60000
     : path[0] === "tools"
       ? 30000
     : path[0] === "file" || path[0] === "preview" || path[0] === "thumb" || path[0] === "transcribe" || path[0] === "speak"
@@ -77,6 +79,19 @@ async function proxy(req: NextRequest, path: string[]) {
           ? 120000
                 : 8000;
 
+  // The time limit is for the bridge to start answering. Once it has, the answer streams to the browser for as long
+  // as that takes: a limit over the whole body cut big answers off half-way to a phone ("failed to pipe response"),
+  // and the page then asked again from the start. A body that stalls is still ended, after BODY_GRACE_MS.
+  const controller = new AbortController();
+  const stop = (reason: unknown) => controller.abort(reason);
+  let timer = setTimeout(() => stop(new DOMException("The bridge didn't answer in time", "TimeoutError")), timeoutMs);
+  // A long-poll the browser gave up on (tab closed, app backgrounded) is not waited out here.
+  const onGone = () => stop(req.signal.reason);
+  if (wait) req.signal.addEventListener("abort", onGone, { once: true });
+  const finish = () => {
+    clearTimeout(timer);
+    req.signal.removeEventListener("abort", onGone);
+  };
   let upstream: Response;
   try {
     upstream = await fetch(target, {
@@ -86,12 +101,14 @@ async function proxy(req: NextRequest, path: string[]) {
       // Required by Node's fetch for a streamed request body.
       ...(body ? { duplex: "half" as const } : {}),
       cache: "no-store",
-      // A long-poll the browser gave up on (tab closed, app backgrounded) is not waited out here.
-      signal: wait ? AbortSignal.any([AbortSignal.timeout(timeoutMs), req.signal]) : AbortSignal.timeout(timeoutMs),
+      signal: controller.signal,
     });
   } catch {
+    finish();
     return Response.json({ ok: false, error: "bridge unreachable" }, { status: 502 });
   }
+  clearTimeout(timer);
+  timer = setTimeout(() => stop(new DOMException("The answer stalled", "TimeoutError")), Math.max(timeoutMs, BODY_GRACE_MS));
   // A new Second Brain folder takes effect in Today and Vault on the next request.
   if (req.method === "POST" && rel === "setup/second-brain") invalidateSecondBrain();
 
@@ -109,7 +126,36 @@ async function proxy(req: NextRequest, path: string[]) {
     if (v) out.set(key, v);
   }
   if (path[0] === "file" || path[0] === "preview" || path[0] === "thumb") protectFileHeaders(out, upstream.ok ? path[0] : "file");
-  return new Response(upstream.body, { status: upstream.status, headers: out });
+  return new Response(upstream.body ? passThrough(upstream.body, rel, finish) : null, { status: upstream.status, headers: out });
+}
+
+/** How long an answer that has started may take to finish streaming. */
+const BODY_GRACE_MS = 5 * 60_000;
+
+/** The bridge's answer streamed on, with its timers cleared when it ends, and a cut-off logged with its route. */
+function passThrough(body: ReadableStream<Uint8Array>, route: string, done: () => void): ReadableStream<Uint8Array> {
+  // Taken on the first read, not now: the body stays unlocked until the answer is actually sent.
+  let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+  return new ReadableStream<Uint8Array>({
+    async pull(ctrl) {
+      reader ??= body.getReader();
+      try {
+        const { value, done: end } = await reader.read();
+        if (end) {
+          done();
+          ctrl.close();
+        } else ctrl.enqueue(value);
+      } catch (error) {
+        done();
+        console.warn(`bridge proxy: the answer to ${route} was cut off (${(error as Error)?.name || "error"})`);
+        ctrl.error(error);
+      }
+    },
+    cancel(reason) {
+      done();
+      void (reader ?? body).cancel(reason).catch(() => undefined);
+    },
+  });
 }
 
 type Ctx = { params: Promise<{ path: string[] }> };
