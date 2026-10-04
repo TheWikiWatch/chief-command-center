@@ -11,6 +11,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { fetchHealth, type HermesCompat } from "@/lib/bridge";
 import { summarizeHealth, useHealthEntries } from "@/lib/health-store";
 import { rateLink, useLinkQuality } from "@/lib/link-quality";
+import { START_PARTS, startSeconds, useStartTiming, type StartPart } from "@/lib/startup-timing";
 import { SPRING } from "@/lib/motion";
 import { shortcutText } from "@/lib/shortcuts";
 import { useSpeechLog, type SpeechLogEntry } from "@/lib/speech-log";
@@ -101,6 +102,7 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
             </div>
           </div>
           <LinkLine />
+          <StartLine />
         </section>
         <section>
           <h3 className="mb-2 px-1 text-callout font-medium text-fg-2">Live data</h3>
@@ -130,6 +132,22 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
         ) : null}
       </div>
     </Sheet>
+  );
+}
+
+/** "Opened in 3.1 s: app 1.2 s · team 1.6 s · chat 3.1 s": this start, part by part (lib/startup-timing.ts). */
+function StartLine() {
+  const { marks } = useStartTiming();
+  const done = START_PARTS.filter((p) => marks[p] !== undefined);
+  if (!marks.app) return null;
+  const total = Math.max(...done.map((p) => marks[p] ?? 0));
+  const name: Record<StartPart, string> = { app: "app", team: "team", chat: "chat", today: "Today" };
+  return (
+    <p className="mt-1.5 text-callout">
+      <span className="text-fg-2">This start: </span>
+      <span className={`font-mono tabular-nums ${total > 8000 ? "text-warn" : "text-fg-2"}`}>{startSeconds(total)}</span>
+      <span className="text-caption text-fg-3"> ({done.map((p) => `${name[p]} ${startSeconds(marks[p] ?? 0)}`).join(" · ")})</span>
+    </p>
   );
 }
 

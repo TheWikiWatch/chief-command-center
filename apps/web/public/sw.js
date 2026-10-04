@@ -1,4 +1,42 @@
-/* Chief Command Center service worker: Web Push only (no offline cache). */
+/* Chief Command Center service worker: Web Push, and the app's own code kept on the device.
+ *
+ * A phone discards the app in the background, and every return downloaded its code again (1.6 MB in 19 requests).
+ * The build's code files (/_next/static/) are named for their content, so a kept copy can never be stale: they are
+ * served from this device's cache first. Pages, the API and everything else always go to the network. */
+
+const CODE_CACHE = 'chief-code-v1';
+const CODE_KEPT = 300;
+
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    for (const name of await caches.keys()) if (name.startsWith('chief-code-') && name !== CODE_CACHE) await caches.delete(name);
+    await self.clients.claim();
+  })());
+});
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+  if (req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if (url.origin !== self.location.origin || !url.pathname.startsWith('/_next/static/')) return;
+  event.respondWith((async () => {
+    const cache = await caches.open(CODE_CACHE);
+    const kept = await cache.match(req);
+    if (kept) return kept;
+    const res = await fetch(req);
+    if (res.ok && res.type === 'basic') {
+      const copy = res.clone();
+      event.waitUntil((async () => {
+        await cache.put(req, copy);
+        // Old builds' files pile up across updates: keep the newest few hundred.
+        const keys = await cache.keys();
+        for (const old of keys.slice(0, Math.max(0, keys.length - CODE_KEPT))) await cache.delete(old);
+      })());
+    }
+    return res;
+  })());
+});
 
 /** Where a notification leads: a tab, and optionally an approval or the Fleet Health view. */
 function openTarget(data) {

@@ -41,6 +41,12 @@ import { createDraftStore, useDraft, type DraftStore } from "@/lib/draft-store";
 import { speechFailureReason, useReplySpeech } from "@/components/chat/use-reply-speech";
 import { focusComposer, OPEN_VOICE_MODE_EVENT, SET_DRAFT_EVENT } from "@/lib/app-events";
 import { ReportReplySheet } from "@/components/chat/report-reply-sheet";
+import { readStart, writeStart } from "@/lib/start-cache";
+import { markStart } from "@/lib/startup-timing";
+import { currentChatThread } from "@/lib/chat-thread";
+
+/** How many of the chat's latest rows this device keeps for an instant start. */
+const KEPT_ON_DEVICE = 40;
 import { fetchAbout } from "@/lib/about-client";
 
 // Voice mode loads the first time it is opened.
@@ -91,7 +97,9 @@ export function ChiefChat({
   lookAtRef.current = lookAtEl;
   const faceBusyRef = useRef<"thinking" | null>(null);
   const { ref } = useAttentiveGaze(() => lookAtRef.current, () => faceBusyRef.current);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // A cold start (a phone discarded the page) shows the chat as it was, then the first answer replaces it.
+  const [cachedChat] = useState(() => readStart<ChatMessage[]>("chat", currentChatThread()) ?? []);
+  const [messages, setMessages] = useState<ChatMessage[]>(cachedChat);
   const lastIdRef = useRef(0);
   // The flag under a reply (components/chat/report-reply-sheet.tsx): only where a report address is built in.
   const [reportSetup, setReportSetup] = useState<{ email: string; versions: { app: string; hermes: string } } | null>(null);
@@ -223,7 +231,7 @@ export function ChiefChat({
   }, [draft]);
   const [voiceLabel, setVoiceLabel] = useState("");
   // Until the first transcript arrives, the thread shows it is loading, not "no messages yet".
-  const [loadedOnce, setLoadedOnce] = useState(false);
+  const [loadedOnce, setLoadedOnce] = useState(cachedChat.length > 0);
   const [micStatus, setMicStatus] = useState<MicStatus>({ state: "idle", cancelling: false });
   const micPrev = useRef<MicStatus>({ state: "idle", cancelling: false });
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
@@ -303,6 +311,10 @@ export function ChiefChat({
     approval,
     question,
   });
+  useEffect(() => {
+    // The conversation as the PC last sent it, for the next start: its last rows, never local drafts or queued sends.
+    if (historyPrimed.current) writeStart("chat", messages.filter((m) => m.id > 0 && m.id < 1e12 && !m.queueId).slice(-KEPT_ON_DEVICE), currentChatThread());
+  }, [messages, historyPrimed]);
   // Messages waiting in the outbox show after the thread, with Cancel.
   const threadMessages = useMemo(() => {
     const tagged = steeredTexts.current.size
@@ -464,6 +476,7 @@ export function ChiefChat({
       if (signal.aborted) return;
       applyTranscript(data, after);
       setLoadedOnce(true);
+      markStart("chat");
       bridgeState.current = {
         generating: !!data.generating,
         approval: data.approval?.requestId || "",

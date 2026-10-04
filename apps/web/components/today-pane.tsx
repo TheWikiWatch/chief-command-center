@@ -5,6 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { poll } from "@/lib/poll";
 import { useResourceHealth } from "@/components/resource-status";
 import { staleWindow } from "@/lib/health-store";
+import { readStart, writeStart } from "@/lib/start-cache";
+import { markStart } from "@/lib/startup-timing";
 import { share } from "@/lib/share";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
 import { SearchIcon, SlidersHorizontalIcon, XIcon } from "@/components/icons";
@@ -22,6 +24,8 @@ import { ViewSwitch } from "@/components/ui/controls";
 import { TodaySide } from "@/components/today/side-column";
 import { StateFace } from "@/components/state-face";
 import { EmptyState, SkeletonRows } from "@/components/ui/surface";
+
+type TodayCache = { meta: Meta; boards: Board[]; focus: FocusCard[]; stale: boolean; today: TodayItem[]; pulse: Pulse };
 
 /** How often a phone tab that isn't showing checks the vault. */
 const HIDDEN_TAB_MS = 60_000;
@@ -67,12 +71,14 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
     if (builtin && onSetUpSecondBrain) onSetUpSecondBrain();
     else setSettingsOpen(true);
   };
-  const [meta, setMeta] = useState<Meta | null>(null);
-  const [boards, setBoards] = useState<Board[]>([]);
-  const [focusCards, setFocusCards] = useState<FocusCard[]>([]);
-  const [today, setToday] = useState<TodayItem[]>([]);
-  const [pulse, setPulse] = useState<Pulse | null>(null);
-  const [stale, setStale] = useState(false);
+  // Today as last seen, so a cold start shows it at once (lib/start-cache.ts); the first refresh replaces it.
+  const [cached] = useState(() => readStart<TodayCache>("today"));
+  const [meta, setMeta] = useState<Meta | null>(cached?.meta ?? null);
+  const [boards, setBoards] = useState<Board[]>(cached?.boards ?? []);
+  const [focusCards, setFocusCards] = useState<FocusCard[]>(cached?.focus ?? []);
+  const [today, setToday] = useState<TodayItem[]>(cached?.today ?? []);
+  const [pulse, setPulse] = useState<Pulse | null>(cached?.pulse ?? null);
+  const [stale, setStale] = useState(cached?.stale ?? false);
   const [error, setError] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
   const [query, setQuery] = useState("");
@@ -112,6 +118,8 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
       setStale(f.stale);
       setToday((prev) => share(prev, t.items));
       setPulse((prev) => share(prev, p));
+      markStart("today");
+      writeStart("today", { meta: m, boards: b.boards, focus: f.cards, stale: f.stale, today: t.items, pulse: p } satisfies TodayCache);
       setError(null);
     } catch (e) {
       if (signal.aborted) return;

@@ -10,6 +10,8 @@ import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components
 import { useResourceHealth } from "@/components/resource-status";
 import { RESUME_GRACE_MS, staleWindow } from "@/lib/health-store";
 import { noteRoundTrip } from "@/lib/link-quality";
+import { readStart, writeStart } from "@/lib/start-cache";
+import { markStart } from "@/lib/startup-timing";
 import { share } from "@/lib/share";
 import { ToastViewport } from "@/components/ui/toasts";
 import { EngineBanner } from "@/components/engine-banner";
@@ -100,7 +102,8 @@ export function CommandShell() {
   const [approvalsViaChat, setApprovalsViaChat] = useState(false);
   const approvalsViaChatAt = useRef(0);
   const approvalHealth = useResourceHealth("Approvals", staleWindow(approvalsViaChat || live ? 30_000 : 4000));
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  // The team as last seen, so a cold start shows it at once (lib/start-cache.ts); the first snapshot replaces it.
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(() => readStart<Snapshot>("snapshot"));
   const [connected, setConnected] = useState(true);
   const onboarding = useNeedsOnboarding(connected);
   const [authFailed, setAuthFailed] = useState(false);
@@ -186,6 +189,7 @@ export function CommandShell() {
   const [lastChief, setLastChief] = useState<Person | null>(null);
   useEffect(() => setLastChief(loadChief()), []);
   useEffect(() => void refreshServiceWorker(), []);
+  useEffect(() => markStart("app"), []);
   const [tabDir, setTabDir] = useState(0);
   const groupRef = useRef<ImperativePanelGroupHandle>(null);
   const persistLayout = useRef(false);
@@ -250,6 +254,8 @@ export function CommandShell() {
       const data = await fetchSnapshot(signal);
       if (signal.aborted) return;
       snapshotHealth.success();
+      markStart("team");
+      writeStart("snapshot", data);
       lastSnapAt.current = Date.now();
       failStreak.current = 0; // an answer is an answer: only failures in a row since the last one count
       markFresh.current(data.roster);

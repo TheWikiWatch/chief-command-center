@@ -862,3 +862,10 @@
 **The status sheet says how fast the link to the PC is.**
 
 - A tester's phone was "very up and down" while the PC app was fine. The PC app talks to the chief on the same machine; the phone goes through Tailscale, and when Tailscale can't connect directly it relays, which can take seconds per request. The status sheet now shows "Link to the PC: 850 ms, slow" (the median round trip of the app's own health checks, timed only while the app is on screen), and when it's slow, what to check in the Tailscale app. On the PC itself it reads "Link (on this PC)".
+
+**The phone comes back instantly after Android closes it.**
+
+- A tester's Android phone redrew the whole app from scratch every time she returned to it, and it took up to 30 seconds. Her link was fine (direct over her home Wi-Fi, 12 ms): Android discards a page in the background, so every return was a cold start. It downloaded the app's code again (1.6 MB in 19 requests), then waited for the team, the chat and Today. Meanwhile the PC's dashboard logged "failed to pipe response" 18 times an hour: its time limit covered whole answers, so a big answer to a phone was cut off half-way and asked for again.
+- Now the phone keeps the chat's last 40 messages, the team and Today, and shows them the moment the app opens; the PC's answers then replace them quietly. The app's code stays on the phone (the service worker keeps the build's content-named files), so a cold start doesn't download it again. The dashboard's time limit is for an answer to start; once it's flowing it isn't cut off.
+- The status sheet shows how long this start took, part by part ("This start: 2.1 s (app 1.0 s · team 1.9 s · chat 1.6 s · Today 2.1 s)"), so a slow start says which part.
+- Kept on the device in the browser's local storage, like the app's other preferences: the phone's copy of the recent chat is what the app shows anyway, and it's replaced on every start.

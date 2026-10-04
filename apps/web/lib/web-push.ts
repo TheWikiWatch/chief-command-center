@@ -16,11 +16,19 @@ export async function ensureServiceWorker(): Promise<ServiceWorkerRegistration |
   return navigator.serviceWorker.register("/sw.js");
 }
 
-/** A device that already enabled push picks up a changed sw.js on the next app load, not days later. */
+/**
+ * At every app load: a device reaching this PC from elsewhere (the phone) registers the worker, which keeps the
+ * app's code on it (public/sw.js), and one that has it picks up a changed sw.js now, not days later. The desktop
+ * app loads from this PC and doesn't need it.
+ */
 export async function refreshServiceWorker(): Promise<void> {
   try {
     if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
     const reg = await navigator.serviceWorker.getRegistration("/");
+    if (!reg && !/^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname)) {
+      await navigator.serviceWorker.register("/sw.js");
+      return;
+    }
     await reg?.update();
   } catch {
     /* offline or unsupported: the browser checks again later */
