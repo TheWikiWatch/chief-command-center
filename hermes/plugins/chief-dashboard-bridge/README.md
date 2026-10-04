@@ -4,7 +4,8 @@ The Hermes plugin behind Chief Command Center. It runs inside the chief profile'
 
 - registers the **Command Center** messaging platform, the app's chat, as a first-class Hermes platform (session identity, typing, outbox, cron delivery with `deliver: command_center`);
 - serves a **loopback HTTP API** for the app's server: roster, kanban work, transcript, approvals, voice, settings, files and phone alerts;
-- sends **phone alerts** (Web Push) for replies, approvals and optional fleet flags.
+- sends **phone alerts** (Web Push) for replies, approvals and optional fleet flags;
+- gives each of the chief's new conversations the owner's `CRITICAL_FACTS.md` from the Second Brain (a system prompt section, `chief-critical-facts`, read when the conversation starts). This one runs in every chief process (gateway, scheduled jobs, terminal), not only where the API binds.
 
 It has no tools, no model and no SOUL. It binds **127.0.0.1 only**; never expose its port.
 

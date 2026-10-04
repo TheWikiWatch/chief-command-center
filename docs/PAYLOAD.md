@@ -1,6 +1,6 @@
 # The Hermes payload: what ships, and what could go
 
-Measured 2026-10-02 on the payload built from `hermes/pin.json` (Hermes 2026.9.24, upstream 41cd311, 3 patches).
+Measured 2026-10-02 on the payload built from `hermes/pin.json` (Hermes 2026.9.24, upstream 41cd311, then 3 patches; the 2026-10-04 build with patch 0004 is the same size).
 
 ## Size
 

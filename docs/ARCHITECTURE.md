@@ -28,6 +28,8 @@ Nothing personal is ever in this repository or the installer.
 
 `hermes/pin.json` names the upstream commit; `hermes/patches` holds the few local patches, each with its reason and upstream status. `packaging/payload` builds the runtime with upstream's own native bundle builder, selecting only the tools and Python extras the app needs, and writes an install stamp that makes the app the payload's steward: `hermes update` refuses to modify it. Updates reach users only through app releases, after the compatibility suite passes on the new pin.
 
+The payload is built on the release PC, so anything in it that names a folder names that PC's. Its venv's launchers (`venv\Scripts`) do, and fail elsewhere: the app never puts them on a PATH, and patch 0004 has Hermes put the interpreter itself first instead, with the bundled packages on PYTHONPATH. Nothing the app writes into a profile names the installed app's folder either, since it changes with every version.
+
 Isolation from other Hermes installs on the same PC:
 
 - `HERMES_HOME` is always set explicitly for app processes (a machine-wide `HERMES_HOME` from an older installer is never inherited).

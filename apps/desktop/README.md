@@ -10,6 +10,7 @@ The Windows app around the dashboard. It is the only supervisor of the chief's H
 
 **Preparing Hermes** (`python/provision.py`, run with the payload's Python through Hermes's own config code)
 - Copies the bundled bridge plugin into the profile when it has changed.
+- Installs the app's skills and the Second Brain toolkit, recording what it wrote (`.chief-bundled.json`): a file someone has edited since is kept, and Fleet Health's ledger knows the rest as the app's own writes. Toolkit commands call plain `python`, never a path into the installed app (its folder changes with every version).
 - Enables it in `config.yaml` and sets the bridge port in the profile `.env`.
 - Before that, an interrupted restore is rolled back (`chief_backup recover`).
 
@@ -23,6 +24,7 @@ The Windows app around the dashboard. It is the only supervisor of the chief's H
 
 **Environment**
 - Children get a short allow-list of Windows variables and a PATH made of the payload's tools plus the system folders. No ambient API keys, tokens or `HERMES_*` from the user's session.
+- Never the payload venv's `Scripts` on that PATH: built on the release PC, its launchers name that PC's folder and exit 103 anywhere else. The agent's `python` is the interpreter itself (Hermes puts it first, patch 0004).
 
 **Ports**
 - The defaults are 3000 and 7790; if something else holds one, the next free port. The choice is saved, and a port held by something else is never taken over.

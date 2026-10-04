@@ -72,7 +72,8 @@ ordinary app release, made the same way as above, after it passes the compatibil
 
    `prepare_source.py` reads `hermes/pin.json` and applies `hermes/patches/` (a failing patch exits 3 and is named:
    refresh that patch). `stage.py` takes a while and downloads Python, Node, Git and packages; it needs Python 3.14 (the
-   payload's own version) with pyyaml, cryptography and requests, and refuses an older one. `compat.py` must pass.
+   payload's own version) with pyyaml, cryptography and requests, and refuses an older one. Without a 3.14 installed, an
+   existing payload's own interpreter makes that venv: `uv venv --python <payload>	ools\python-3.14…\python.exe <venv>`. `compat.py` must pass.
 4. Point `payloadDir` in `release.local.json` at the new payload, then **release as above**, with notes that say
    Hermes moved to <tag>. The release script refuses to ship if the payload and `hermes/pin.json` disagree.
 5. Try it first on the owner's own install (Settings → Backup & updates → Check now) before telling testers.
