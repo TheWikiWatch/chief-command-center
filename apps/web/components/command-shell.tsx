@@ -9,6 +9,7 @@ import { HeaderStatus, StatusSheet } from "@/components/connection-status";
 import { ChartColumnIcon, ChevronLeftIcon, ChevronRightIcon } from "@/components/icons";
 import { useResourceHealth } from "@/components/resource-status";
 import { RESUME_GRACE_MS, staleWindow } from "@/lib/health-store";
+import { noteRoundTrip } from "@/lib/link-quality";
 import { share } from "@/lib/share";
 import { ToastViewport } from "@/components/ui/toasts";
 import { EngineBanner } from "@/components/engine-banner";
@@ -216,9 +217,12 @@ export function CommandShell() {
     if (pingInFlight.current) return;
     pingInFlight.current = true;
     try {
+      const started = performance.now();
       const health = await fetchHealth(signal);
       if (signal.aborted) return;
       if (health.ok) {
+        // Only while visible: a phone in the background holds requests, which isn't the link being slow.
+        if (document.visibilityState === "visible") noteRoundTrip(performance.now() - started);
         failStreak.current = 0;
         authFailedRef.current = false;
         setAuthFailed(false);

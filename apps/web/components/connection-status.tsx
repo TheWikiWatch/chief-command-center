@@ -10,6 +10,7 @@ import { Tip } from "@/components/ui/popovers";
 import { Sheet } from "@/components/ui/sheet";
 import { fetchHealth, type HermesCompat } from "@/lib/bridge";
 import { summarizeHealth, useHealthEntries } from "@/lib/health-store";
+import { rateLink, useLinkQuality } from "@/lib/link-quality";
 import { SPRING } from "@/lib/motion";
 import { shortcutText } from "@/lib/shortcuts";
 import { useSpeechLog, type SpeechLogEntry } from "@/lib/speech-log";
@@ -99,6 +100,7 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
               </p>
             </div>
           </div>
+          <LinkLine />
         </section>
         <section>
           <h3 className="mb-2 px-1 text-callout font-medium text-fg-2">Live data</h3>
@@ -128,6 +130,33 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
         ) : null}
       </div>
     </Sheet>
+  );
+}
+
+/**
+ * "Link to the PC: 850 ms, slow": the round trip of the app's own health checks. On a phone that is the Tailscale
+ * path, so a slow (relayed) link shows here as the cause, rather than as the chief misbehaving.
+ */
+function LinkLine() {
+  const { ms } = useLinkQuality();
+  const local = typeof window !== "undefined" && /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+  if (ms === null) return null;
+  const rating = rateLink(ms);
+  const tone = rating === "fast" ? "text-ok" : rating === "ok" ? "text-fg-2" : "text-warn";
+  const word = rating === "fast" ? "fast" : rating === "ok" ? "fine" : "slow";
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      <p className="text-callout">
+        <span className="text-fg-2">{local ? "Link (on this PC)" : "Link to the PC"}: </span>
+        <span className={`font-mono tabular-nums ${tone}`}>{ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`}</span>
+        <span className={tone}>, {word}</span>
+      </p>
+      {rating === "slow" && !local ? (
+        <p className="mt-0.5 text-caption text-fg-3">
+          Every tap waits this long. Usually Tailscale is relaying instead of connecting directly: in the Tailscale app, tap the PC and check for &quot;Relay&quot;.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

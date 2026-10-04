@@ -858,3 +858,7 @@
 
 - Each of the chief's replies now has a small flag beside Copy and Read aloud (only where a report address is built into the release). It opens a short sheet: the chief writes a two-to-four sentence summary for the developer from the reply, the message before it and the recent errors in its own logs (keys, tokens and passwords blanked out); the tester can add a note; "Write the e-mail" opens their e-mail app with all of it, plus the diagnostics file on the desktop. Nothing is sent by the app. If the model can't be reached, the report goes with the facts alone.
 - The bridge's `report/draft` (contract `chief.report.v1`, `report.py`) gathers the errors and asks the chief's own model for the summary.
+
+**The status sheet says how fast the link to the PC is.**
+
+- A tester's phone was "very up and down" while the PC app was fine. The PC app talks to the chief on the same machine; the phone goes through Tailscale, and when Tailscale can't connect directly it relays, which can take seconds per request. The status sheet now shows "Link to the PC: 850 ms, slow" (the median round trip of the app's own health checks, timed only while the app is on screen), and when it's slow, what to check in the Tailscale app. On the PC itself it reads "Link (on this PC)".
