@@ -256,6 +256,33 @@ class LedgerTests(unittest.TestCase):
         conn.close()
         self.assertIn("0.1.22.0", content)  # the real edit is the one left
 
+    def test_the_old_second_brain_renders_are_relabelled_and_real_edits_stay(self):
+        # A tester's rows: the second-brain skill re-rendered with new facts (chief and two bots), counted as edits.
+        L = self.ledger
+        L.snapshot()
+
+        def render(facts: str) -> str:
+            return f"---\nname: second-brain\nauthor: Chief Command Center\n---\n## Critical facts\n\n{L.OLD_FACTS_HEADING}\n\n{facts}\n"
+
+        renders = []
+        for profile in ("ada", "gift-desk", "research-desk"):
+            f = self.hermes / "profiles" / profile / "skills" / "note-taking" / "second-brain" / "SKILL.md"
+            f.parent.mkdir(parents=True, exist_ok=True)
+            renders.append(f)
+        for i in range(5):
+            for f in renders:
+                f.write_text(render(f"- **Focus:** week {i}"), encoding="utf-8")
+            with patch.object(L, "reclassify_app_writes", lambda conn, apps: 0):
+                L.snapshot()
+        self.skill.write_text("v1\nmy own rule\n", encoding="utf-8")  # a real edit elsewhere
+        with patch.object(L, "reclassify_app_writes", lambda conn, apps: 0):
+            L.snapshot()
+        self.assertGreater(len(L.report()["changes"]), 10)
+        L.snapshot()  # the next run relabels the renders
+        changes = L.report()["changes"]
+        self.assertEqual([(c["skill"], c["change"]) for c in changes], [("devops/review", "changed")])
+        self.assertEqual([f for f in L.report()["flags"] if f["kind"] == "churn"], [])
+
     def test_bloat_and_full_memory_are_flagged(self):
         L = self.ledger
         L.snapshot()

@@ -254,6 +254,8 @@ def reclassify_copies(conn: sqlite3.Connection) -> int:
 
 APP_SOURCE = "installed by the app (an update, or its Second Brain skills)"
 MOVED_SOURCE = "the app moved to a new version's folder; nothing else changed"
+RENDER_SOURCE = "re-rendered by the app with the owner's facts (before 0.1.25); relabelled"
+OLD_FACTS_HEADING = "From `CRITICAL_FACTS.md` (kept short; it is loaded into every conversation):"
 # The records the app keeps beside the skills it writes: {path under the record's folder: sha256 of what it wrote}.
 # .chief-bundled.json: its bundled skills and the Second Brain toolkit (provision.py); .chief-generated.json: the
 # skills it renders for the Second Brain (second_brain.py).
@@ -302,7 +304,15 @@ def reclassify_app_writes(conn: sqlite3.Connection, apps: dict[str, set[str]]) -
         if before is not None and only_install_folder_changed(before["content"], row["content"]):
             conn.execute("UPDATE versions SET change = 'installed', source = ? WHERE id = ?", (MOVED_SOURCE + "; relabelled", row["id"]))
             count += 1
-    return count
+    # The Second Brain skill as the app rendered it before 0.1.25, with the owner's facts copied in: re-rendered
+    # whenever they changed (in every bot too), and a hand edit was undone within a minute, so the ledger only ever
+    # saw the app's renders. They carry the old template's facts heading, which nothing writes any more.
+    cur = conn.execute(
+        "UPDATE versions SET change = 'installed', source = ? WHERE change IN ('added','changed') "
+        "AND source = 'edited outside background review' AND content LIKE ? AND content LIKE '%author: Chief Command Center%'",
+        (RENDER_SOURCE, f"%{OLD_FACTS_HEADING}%"),
+    )
+    return count + (cur.rowcount or 0)
 
 
 def previous_version(conn: sqlite3.Connection, row) -> sqlite3.Row | None:
