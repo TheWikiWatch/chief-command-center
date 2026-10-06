@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRightIcon, RotateCcwIcon, SparklesIcon } from "@/components/icons";
 import { HoldButton } from "@/components/ui/hold-button";
-import { fetchSkillDiff, kb, revertSkillChange, type Episode, type SkillChange, type SkillSummary, type Verdict } from "@/lib/fleet-health";
+import { fetchSkillDiff, kb, revertSkillChange, type Episode, type SkillChange, type SkillRework, type SkillSummary, type Verdict } from "@/lib/fleet-health";
 import { SPRING } from "@/lib/motion";
 import { showToast } from "@/lib/toast-store";
 import { useAssistantName } from "@/lib/identity";
@@ -52,7 +52,7 @@ export function Skills({ skills, open, onOpen, onReverted }: { skills: SkillSumm
 
 export function SkillRow({ skill: s, open, onToggle, onReverted }: { skill: SkillSummary; open: boolean; onToggle: () => void; onReverted: () => void }) {
   const latest = s.episodes[0];
-  const churn = s.edits48h >= 5 || s.edits7d >= 10;
+  const rework = s.rework?.reworkSaves.length || 0;
   const growth = s.size14d ? Math.round((s.size / s.size14d - 1) * 100) : null;
   return (
     <li id={skillAnchor(s.key)} className="scroll-mt-16 overflow-hidden rounded-card border border-line bg-card">
@@ -63,8 +63,9 @@ export function SkillRow({ skill: s, open, onToggle, onReverted }: { skill: Skil
             {latest ? <VerdictBadge verdict={latest.verdict} /> : null}
           </span>
           <span className="block truncate text-caption text-fg-3">
-            {s.scope === "shared" ? "shared" : s.scope} · <span className={churn ? "font-medium text-warn" : undefined}>{s.edits7d} {s.edits7d === 1 ? "edit" : "edits"} in 7d</span>
-            {s.edits48h ? ` (${s.edits48h} in 48h)` : ""} · {kb(s.size)}
+            {s.scope === "shared" ? "shared" : s.scope} · {s.edits7d} {s.edits7d === 1 ? "edit" : "edits"} in 7d
+            {s.edits48h ? ` (${s.edits48h} in 48h)` : ""}
+            {rework ? <span className={s.rework?.flagged ? "font-medium text-warn" : undefined}>, {rework} rewrote earlier lines</span> : null} · {kb(s.size)}
             {growth != null && growth !== 0 ? <span className={growth >= 50 ? "text-warn" : undefined}> ({growth > 0 ? "+" : ""}{growth}% in 14d)</span> : null} · {agoAt(s.lastAt)}
           </span>
         </span>
@@ -79,6 +80,7 @@ export function SkillRow({ skill: s, open, onToggle, onReverted }: { skill: Skil
               <p className="text-caption text-fg-3">
                 {s.sources.review} by background review · {s.sources.outside} edited outside it · {s.edits30d} in 30 days
               </p>
+              {rework ? <ReworkNote rework={s.rework!} /> : null}
               <ul className="mt-2 space-y-2">
                 {s.episodes.map((ep) => (
                   <EpisodeRow key={ep.id} episode={ep} changes={s.changes.filter((c) => c.episode === ep.id)} onReverted={onReverted} />
@@ -89,6 +91,20 @@ export function SkillRow({ skill: s, open, onToggle, onReverted }: { skill: Skil
         ) : null}
       </AnimatePresence>
     </li>
+  );
+}
+
+/** The saves that rewrote lines an earlier save had added: the evidence behind a "rewriting its own rules" flag. */
+function ReworkNote({ rework }: { rework: SkillRework }) {
+  const latest = rework.reworkSaves[0];
+  return (
+    <div className={`mt-2 rounded-ctl border px-2.5 py-2 ${rework.flagged ? "border-warn/30 bg-warn/5" : "border-line bg-canvas/40"}`}>
+      <p className="text-caption text-fg-2">
+        {rework.reworkSaves.length} of {rework.saves7d} {rework.saves7d === 1 ? "edit" : "edits"} in 7 days rewrote lines an earlier edit had added
+        {rework.flagged ? "" : " (not enough, or not recent enough, to flag)"}.
+      </p>
+      {latest?.example ? <p className="mt-1 line-clamp-2 text-caption text-fg-3">Latest: “{latest.example}”</p> : null}
+    </div>
   );
 }
 
@@ -172,6 +188,7 @@ export function ChangeRow({ change: c, title, compact = false, onReverted }: { c
           <span className={`block truncate ${compact ? "text-callout text-fg-2" : "text-body font-medium text-fg"}`}>{title}</span>
           <span className="block truncate text-caption text-fg-3">
             #{c.id} · {agoAt(c.at)} · <span className="text-ok">+{c.added}</span> <span className="text-danger">−{c.removed}</span>
+            {c.rewrote ? <span className="text-warn"> · rewrote {c.rewrote} earlier {c.rewrote === 1 ? "line" : "lines"}</span> : null}
           </span>
         </span>
         <motion.span animate={{ rotate: open ? 90 : 0 }} transition={SPRING.snappy} className="shrink-0 text-fg-4">
@@ -182,7 +199,10 @@ export function ChangeRow({ change: c, title, compact = false, onReverted }: { c
         {open ? (
           <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1, transition: SPRING.gentle }} exit={{ height: 0, opacity: 0, transition: { duration: 0.16 } }} className="overflow-hidden">
             <div className="border-t border-line px-3 pb-3 pt-2">
-              <p className="text-caption text-fg-3">{c.source}</p>
+              <p className="text-caption text-fg-3">
+                {c.requested ? <span className="font-medium text-fg-2">The tidy-up you asked for · </span> : null}
+                {c.source}
+              </p>
               <LazyDiff id={c.id} />
               {c.canRevert ? (
                 <div className="mt-3 flex flex-wrap items-center justify-end gap-x-3 gap-y-2">

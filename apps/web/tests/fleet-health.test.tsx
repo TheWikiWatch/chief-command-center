@@ -47,12 +47,26 @@ type Call = { url: string; body?: unknown };
 let calls: Call[] = [];
 function serve(data: Health = report) {
   calls = [];
+  // Like the server: flag acknowledgements move flags between `flags` and `hiddenFlags` (withFlagAcks).
+  const acks: Record<string, { action: "fine" | "asked"; at: number }> = Object.fromEntries((data.hiddenFlags || []).map((f) => [f.subject || f.id, f.ack!]));
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
-    calls.push({ url: String(url), body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ url: String(url), body });
     if (String(url).startsWith("/api/fleet/diff")) return Response.json({ ok: true, diff: "@@ -1 +1 @@\n-old rule\n+new rule" });
     if (String(url).startsWith("/api/fleet/revert")) return Response.json({ ok: true, message: "reverted #7" });
     if (String(url).startsWith("/api/fleet/decide")) return Response.json({ ok: true });
-    return Response.json(data);
+    if (String(url).startsWith("/api/fleet/flag")) {
+      if (body.action === "clear") delete acks[body.subject];
+      else acks[body.subject] = { action: body.action, at: Date.now() / 1000 };
+      return Response.json({ ok: true });
+    }
+    const all = [...(data.flags || []), ...(data.hiddenFlags || [])].map(({ ack: _ack, ...f }) => f);
+    const subject = (f: { id: string; subject?: string }) => f.subject || f.id;
+    return Response.json({
+      ...data,
+      flags: all.filter((f) => !acks[subject(f)]),
+      hiddenFlags: all.filter((f) => acks[subject(f)]).map((f) => ({ ...f, ack: acks[subject(f)] })),
+    });
   }));
 }
 
@@ -75,16 +89,62 @@ it("shows flags first, scorecards, runtime, and marks the flags seen", async () 
   await waitFor(() => expect(unseenFlags(report.flags!, loadSeenFlags())).toEqual([]));
 });
 
-it("Ask Nova sends the flag's request; Show changes opens that skill", async () => {
+it("Ask Nova sends a review-first request, records it, and folds the flag under Looked at", async () => {
   const send = vi.fn(async () => undefined);
   render(<FleetHealth people={people} onSendToChief={send} />);
   const memory = (await screen.findByText("ada's memory is 98% full")).closest("li")!;
   fireEvent.click(within(memory).getByRole("button", { name: "Ask Nova" }));
   await waitFor(() => expect(send).toHaveBeenCalledWith(flagMessage(report.flags![1])));
-  expect(await within(memory).findByRole("button", { name: /Sent to Nova/ })).toBeDisabled();
+  expect(flagMessage(report.flags![1])).toContain("Please review ada's memory");
+  expect(flagMessage(report.flags![1])).toContain("If it's fine as it is, say so and change nothing.");
+  await waitFor(() => expect(calls.find((c) => c.url === "/api/fleet/flag")?.body).toEqual({ subject: "memory:ada:memory:2026-W40", action: "asked" }));
+  await waitFor(() => expect(screen.queryByText("ada's memory is 98% full")).not.toBeInTheDocument());
+  expect(await screen.findByRole("button", { name: /Looked at · 1/ })).toBeInTheDocument();
   const worse = screen.getByText("sdlc-review (ada) got worse after 2 edits").closest("li")!;
   fireEvent.click(within(worse).getByRole("button", { name: "Show changes" }));
   expect(await screen.findByText(/by background review/)).toBeInTheDocument();
+});
+
+it("Looks fine hides a flag on every device; Show again brings it back", async () => {
+  render(<FleetHealth people={people} />);
+  const worse = (await screen.findByText("sdlc-review (ada) got worse after 2 edits")).closest("li")!;
+  fireEvent.click(within(worse).getByRole("button", { name: "Looks fine" }));
+  await waitFor(() =>
+    expect(calls.find((c) => c.url === "/api/fleet/flag")?.body).toEqual({ subject: "worse:ada/devops/sdlc-review:ep7", action: "fine", skill: "ada/devops/sdlc-review" }),
+  );
+  await waitFor(() => expect(screen.queryByText("sdlc-review (ada) got worse after 2 edits")).not.toBeInTheDocument());
+  fireEvent.click(await screen.findByRole("button", { name: /Looked at · 1/ }));
+  expect(await screen.findByText("Marked fine · just now")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Show again" }));
+  await waitFor(() => expect(calls.filter((c) => c.url === "/api/fleet/flag").map((c) => (c.body as { action: string }).action)).toEqual(["fine", "clear"]));
+  expect(await screen.findByText("sdlc-review (ada) got worse after 2 edits")).toBeInTheDocument();
+});
+
+it("with every flag looked at, it says nothing needs a look", async () => {
+  serve({ ...report, flags: [], hiddenFlags: [{ ...report.flags![1], ack: { action: "fine", at: now - 3600 } }] });
+  render(<FleetHealth people={people} />);
+  expect(await screen.findByText("Nothing needs a look right now.")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /Looked at · 1/ })).toBeInTheDocument();
+});
+
+it("a skill that rewrites its own rules shows the evidence and the tidy-up the owner asked for", async () => {
+  const skill = report.skills![0];
+  serve({
+    ...report,
+    skills: [
+      {
+        ...skill,
+        rework: { saves7d: 5, flagged: true, lastAt: now - 3600, reworkSaves: [{ id: 8, at: now - 3600, lines: 3, example: "Never overwrite a daily note" }] },
+        changes: [change(8, { requested: true }), change(7, { newer: 1 })],
+      },
+    ],
+  });
+  render(<FleetHealth people={people} />);
+  fireEvent.click(await screen.findByRole("button", { name: /sdlc-review/ }));
+  expect(await screen.findByText(/1 of 5 edits in 7 days rewrote lines an earlier edit had added/)).toBeInTheDocument();
+  expect(screen.getByText("Latest: “Never overwrite a daily note”")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: /#8 ·/ }));
+  expect(await screen.findByText(/The tidy-up you asked for/)).toBeInTheDocument();
 });
 
 it("a skill lists its episode and changes; diffs load when opened", async () => {

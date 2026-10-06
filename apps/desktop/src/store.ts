@@ -18,6 +18,9 @@ export type DesktopSettings = {
   /** Fleet Health's report folder and ledger, when the install already has them; empty = the app's own. */
   learningDir: string;
   learningTool: string;
+  /** Run `learningTool` instead of the app's ledger. Off: an adopted install keeps its report folder and history,
+   * but its ledger job runs the app's ledger, so ledger fixes arrive with updates (the bridge switches the job). */
+  ownLedger: boolean;
   /** Where the app's own backups go (the pre-update one included); empty = beside the app's data. */
   backupDir: string;
   ports: { ui: number; bridge: number };
@@ -49,6 +52,7 @@ export const DEFAULTS: DesktopSettings = {
   adopted: false,
   learningDir: "",
   learningTool: "",
+  ownLedger: false,
   backupDir: "",
   ports: { ui: 3000, bridge: 7790 },
   webEnv: {},

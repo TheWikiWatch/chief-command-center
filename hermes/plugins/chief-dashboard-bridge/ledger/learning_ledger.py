@@ -497,8 +497,15 @@ def recent_changes(conn: sqlite3.Connection, now: float, limit: int = 40) -> lis
 # --------------------------------------------------------------------------- oversight (PLAN-2026-09-29)
 
 # Flag thresholds, in one place so they are easy to tune.
-CHURN_48H = 5  # edits to one skill in 48 hours
-CHURN_7D = 10  # ... or in 7 days
+HOUR = 3600.0
+SAVE_GAP = 10 * 60  # a skill's file changes this close together are one save (one edit)
+REWORK_MEMORY = 14 * DAY  # a line an earlier save added this recently, rewritten again, is rework
+REWORK_MIN_LINES = 2  # reworked lines that make a save a rework save
+REWORK_SAVES = 3  # rework saves in 7 days that flag a skill ...
+REWORK_QUIET = 2 * DAY  # ... while the latest is this recent; a run of rework saves breaks after this gap
+NEW_SKILL_GRACE = 3 * DAY  # a new skill is still being written: its first days are never rework
+ASKED_GRACE = 6 * HOUR  # saves this soon after the owner asked the chief about a skill are the tidy-up they asked for
+ACK_EXPIRY = 7 * DAY  # "Looks fine" on a flag with no per-event evidence (a full memory) lasts this long
 BLOAT_BYTES = 32_000  # a SKILL.md this large costs every prompt that loads it
 GROWTH_RATIO = 1.5  # a skill 50% larger than 14 days ago
 GROWTH_MIN_BYTES = 8_000
@@ -508,10 +515,6 @@ EPISODE_GAP = 2 * DAY  # edits closer than this are one episode
 EDIT_KINDS = ("added", "changed", "removed")
 SKILL_CHANGES_SHOWN = 25
 SKILL_EPISODES_SHOWN = 6
-
-
-def _week(t: float) -> str:
-    return time.strftime("%G-W%V", time.localtime(t))
 
 
 def line_counts(conn: sqlite3.Connection, row) -> tuple[int, int]:
@@ -570,6 +573,122 @@ def episode_verdict(events: list, desks_for: list[str], start: float, end: float
     return {"label": label, "why": why, **base}
 
 
+def _saves(rows: list) -> list[list]:
+    """Group one skill's edits into saves (oldest first): file changes less than SAVE_GAP apart. One review pass or
+    one hand edit that touches SKILL.md and two references is one edit, not three."""
+    out: list[list] = []
+    for r in sorted(rows, key=lambda r: r["seen_at"]):
+        if out and r["seen_at"] - out[-1][-1]["seen_at"] <= SAVE_GAP:
+            out[-1].append(r)
+        else:
+            out.append([r])
+    return out
+
+
+def _body(text: str) -> str:
+    """A skill file without its YAML front matter: version bumps and metadata aren't rules."""
+    if text.startswith("---"):
+        end = text.find("\n---", 3)
+        if end != -1:
+            return text[end + 4 :]
+    return text
+
+
+def _norm(line: str) -> str:
+    return " ".join(line.split())
+
+
+def _quote(line: str, limit: int = 140) -> str:
+    """One rewritten line as plain words for a flag: no list marker or bold, cut at a word, and never inside a
+    bracket it opened ("… lines (a…" reads as a typo)."""
+    text = re.sub(r"^\s*(?:[-*+]|\d+\.)\s+", "", line).replace("**", "").replace("`", "").strip()
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0]
+    opened = max(cut.rfind("("), cut.rfind("["))
+    if opened > limit // 2 and opened > max(cut.rfind(")"), cut.rfind("]")):
+        cut = cut[:opened]
+    return cut.rstrip(" ,;:—-") + "…"
+
+
+def _rewritten(conn: sqlite3.Connection, files: list[str], save_of: dict[int, float]) -> dict[int, tuple[list[str], set[str]]]:
+    """For every edit to these files: the lines it removed or rewrote that an earlier save had added within
+    REWORK_MEMORY, and the lines it added ({version id: (rewritten, added)}). `save_of` maps an edit to the start
+    of its save, so lines added earlier in the same save never count. Lines the app, a copy or a revert put there
+    are old, never someone's recent work. Front matter is left out."""
+    out: dict[int, tuple[list[str], set[str]]] = {}
+    for f in files:
+        prev: list[str] = []
+        born: dict[str, float] = {}
+        for v in conn.execute("SELECT id, change, content, seen_at FROM versions WHERE file = ? ORDER BY id", (f,)):
+            cur = [] if v["change"] in ("removed", "dropped") or v["content"] is None else _body(v["content"]).splitlines()
+            removed: list[str] = []
+            added: list[str] = []
+            for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, prev, cur, autojunk=False).get_opcodes():
+                if tag in ("replace", "delete"):
+                    removed += prev[i1:i2]
+                if tag in ("replace", "insert"):
+                    added += cur[j1:j2]
+            t = float(v["seen_at"])
+            authored = v["change"] in EDIT_KINDS
+            if authored:
+                start = save_of.get(v["id"], t)
+                recent = [ln for ln in removed if _norm(ln) and start > born.get(_norm(ln), -1e18) >= start - REWORK_MEMORY]
+                out[v["id"]] = (recent, {_norm(a) for a in added if _norm(a)})
+            for a in added:
+                key = _norm(a)
+                if key and key not in born:
+                    born[key] = save_of.get(v["id"], t) if authored else 0.0
+            prev = cur
+    return out
+
+
+def skill_rework(conn: sqlite3.Connection, edits: list, asked_at: list[float], now: float) -> dict:
+    """Rework for one skill: saves that rewrote lines an earlier save added within two weeks. Growth isn't rework,
+    nor is a line moved to another file of the skill in the same save, a new skill's first days, or the tidy-up
+    the owner asked for. Flagged at REWORK_SAVES in 7 days while the latest is within REWORK_QUIET."""
+    groups = _saves(edits)
+    save_of = {r["id"]: float(g[0]["seen_at"]) for g in groups for r in g}
+    files = sorted({r["file"] for r in edits})
+    first = edits and conn.execute(f"SELECT MIN(seen_at) FROM versions WHERE file IN ({','.join('?' * len(files))})", files).fetchone()[0]
+    lines = _rewritten(conn, files, save_of) if edits else {}
+    saves = []
+    for group in groups:
+        at = float(group[0]["seen_at"])
+        added = set().union(*(lines.get(r["id"], ([], set()))[1] for r in group))
+        rewritten = [ln for r in group for ln in lines.get(r["id"], ([], set()))[0] if _norm(ln) not in added]
+        requested = any(a <= at <= a + ASKED_GRACE for a in asked_at)
+        telling = [_quote(ln) for ln in rewritten if len(_norm(ln)) >= 12] or [_quote(ln) for ln in rewritten]
+        saves.append(
+            {
+                "id": group[0]["id"],
+                "ids": [r["id"] for r in group],
+                "at": at,
+                "lines": len(rewritten),
+                "example": telling[0] if telling else "",
+                "requested": requested,
+                "rework": len(rewritten) >= REWORK_MIN_LINES and not requested and at >= float(first or at) + NEW_SKILL_GRACE,
+            }
+        )
+    rework = [s for s in saves if s["rework"]]
+    # The current run: rework saves with no gap longer than REWORK_QUIET. Its first save names the flag, so a run
+    # that goes on keeps one id (the phone hears about it once, not once a week).
+    run: list[dict] = []
+    for s in rework:
+        run = run + [s] if run and s["at"] - run[-1]["at"] <= REWORK_QUIET else [s]
+    week = [s for s in rework if s["at"] >= now - 7 * DAY]
+    return {
+        "saves7d": sum(1 for s in saves if s["at"] >= now - 7 * DAY),
+        "saves": len(saves),
+        "reworkSaves": [{k: s[k] for k in ("id", "at", "lines", "example")} for s in reversed(week)],
+        "requestedIds": [i for s in saves if s["requested"] for i in s["ids"]],
+        "reworkIds": {s["ids"][0]: s["lines"] for s in rework},
+        "flagged": len(week) >= REWORK_SAVES and bool(run) and now - run[-1]["at"] <= REWORK_QUIET,
+        "runId": run[0]["id"] if run else None,
+        "lastAt": rework[-1]["at"] if rework else None,
+    }
+
+
 def _episodes(rows: list) -> list[list]:
     """Group a skill's edits into episodes (oldest first): runs with gaps shorter than EPISODE_GAP."""
     out: list[list] = []
@@ -583,23 +702,16 @@ def _episodes(rows: list) -> list[list]:
 
 
 def _sources(edits: list) -> dict[str, int]:
-    review = sum(1 for r in edits if str(r["source"] or "").startswith("background review"))
-    return {"review": review, "outside": len(edits) - review}
+    """Saves by the background review, and saves outside it (by hand, by the chief, by another tool)."""
+    saves = _saves(edits)
+    review = sum(1 for g in saves if any(str(r["source"] or "").startswith("background review") for r in g))
+    return {"review": review, "outside": len(saves) - review}
 
 
-def _who(sources: dict[str, int]) -> str:
-    """Who made a skill's recent edits, for the churn flag: the fix differs (a skill the background review keeps
-    rewriting wants consolidating; edits outside it are someone's work in progress)."""
-    review, outside = sources.get("review", 0), sources.get("outside", 0)
-    if review and not outside:
-        return "all by the background review after conversations"
-    if outside and not review:
-        return "none by the background review (edited by hand, by the chief, or by another tool)"
-    return f"{review} by the background review after conversations, {outside} outside it"
-
-
-def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, now: float) -> list[dict]:
-    """Every skill edited in the last 30 days: churn, size trend, episodes with verdicts, recent changes."""
+def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, now: float, asked: dict[str, list[float]] | None = None) -> list[dict]:
+    """Every skill edited in the last 30 days: edits (saves), rework, size trend, episodes with verdicts, recent
+    changes. `asked` holds when the owner asked the chief about each skill (its tidy-up isn't rework)."""
+    asked = asked or {}
     since = now - 30 * DAY
     rows = conn.execute("SELECT * FROM versions WHERE change IN ('added','changed','removed','reverted') AND seen_at >= ? ORDER BY id ASC", (since,)).fetchall()
     events = kanban_events(kconn, since - 2 * IMPACT_WINDOW) if kconn else []
@@ -610,6 +722,9 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
     out = []
     for (scope, skill), items in by_skill.items():
         edits = [r for r in items if r["change"] in EDIT_KINDS]
+        rework = skill_rework(conn, edits, asked.get(f"{scope}/{skill}", []), now)
+        requested = set(rework.pop("requestedIds"))
+        rewrote = rework.pop("reworkIds")
         files = sorted({r["file"] for r in items})
         size_now = size_then = 0
         known_then = True
@@ -630,7 +745,7 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
                     "id": f"ep{group[0]['id']}",
                     "start": start,
                     "end": end,
-                    "edits": len(group),
+                    "edits": len(_saves(group)),
                     "firstId": group[0]["id"],
                     "lastId": group[-1]["id"],
                     "verdict": episode_verdict(events, desks_for, start, end, now),
@@ -653,9 +768,11 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
                     "canRevert": bool(before and before["content"] is not None and r["change"] != "reverted"),
                     "newer": later_versions(conn, r),
                     "episode": episode_of.get(r["id"]),
+                    **({"requested": True} if r["id"] in requested else {}),
+                    **({"rewrote": rewrote[r["id"]]} if r["id"] in rewrote else {}),
                 }
             )
-        seen = [r["seen_at"] for r in edits]
+        seen = [float(g[0]["seen_at"]) for g in _saves(edits)]  # one per save
         out.append(
             {
                 "key": f"{scope}/{skill}",
@@ -674,6 +791,7 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
                 "sources7d": _sources([r for r in edits if r["seen_at"] >= now - 7 * DAY]),
                 "episodes": episodes[:SKILL_EPISODES_SHOWN],
                 "changes": changes,
+                "rework": rework,
             }
         )
     out.sort(key=lambda s: (-s["edits7d"], -s["lastAt"]))
@@ -733,27 +851,82 @@ def decided_proposals(conn: sqlite3.Connection, now: float) -> list[dict]:
     return out
 
 
-def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: float) -> list[dict]:
-    """What needs the owner's eyes. Ids are stable so the bridge pushes each one once."""
-    week = _week(now)
+def flag_acks() -> dict:
+    """What the owner did about flags, written by the dashboard (/api/fleet/flag) to flag-acks.json:
+    `items` {subject: {action: "fine" | "asked", at}} hides a flag until something new happens; `asked`
+    {skill key: [times]} is when the owner asked the chief about a skill (its tidy-up isn't rework)."""
+    try:
+        data = json.loads((OUT / "flag-acks.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"items": {}, "asked": {}}
+    items = data.get("items") if isinstance(data, dict) else None
+    asked = data.get("asked") if isinstance(data, dict) else None
+    return {
+        "items": {str(k): v for k, v in (items or {}).items() if isinstance(v, dict) and v.get("action") in ("fine", "asked")},
+        "asked": {str(k): [float(t) for t in v if isinstance(t, (int, float))] for k, v in (asked or {}).items() if isinstance(v, list)},
+    }
+
+
+def acknowledged(flag: dict, ack: dict | None, now: float) -> bool:
+    """A flag the owner looked at stays hidden until something new happens: evidence newer than the
+    acknowledgement, or ACK_EXPIRY for a flag without per-event evidence."""
+    if not ack:
+        return False
+    at = float(ack.get("at") or 0)
+    evidence = flag.get("evidenceAt")
+    return now - at < ACK_EXPIRY if evidence is None else float(evidence) <= at
+
+
+def _label(s: dict) -> str:
+    return f"{s['name']} ({'shared' if s['scope'] == 'shared' else s['scope']})"
+
+
+def _ago(seconds: float) -> str:
+    hours = seconds / HOUR
+    if hours < 1:
+        return "within the hour"
+    if hours < 36:
+        return f"{int(hours)} {'hour' if int(hours) == 1 else 'hours'} ago"
+    return f"{int(round(hours / 24))} days ago"
+
+
+def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: float, acks: dict | None = None) -> tuple[list[dict], list[dict]]:
+    """What needs the owner's eyes, and what they already looked at: (shown, hidden).
+
+    Each flag has a stable id (the bridge pushes each id to the phone once), a `subject` the owner's
+    acknowledgement is filed under, and `evidenceAt`, the newest event behind it: a flag the owner marked
+    fine or asked the chief about stays hidden until newer evidence arrives."""
+    items = (acks or {}).get("items") or {}
     out = []
     for s in skills:
-        label = f"{s['name']} ({'shared' if s['scope'] == 'shared' else s['scope']})"
-        if s["edits48h"] >= CHURN_48H or s["edits7d"] >= CHURN_7D:
+        label = _label(s)
+        rw = s.get("rework") or {}
+        if rw.get("flagged"):
+            saves = rw["reworkSaves"]
+            example = next((x["example"] for x in saves if x.get("example")), "")
+            count = f"All {len(saves)} of its edits" if len(saves) >= rw["saves7d"] else f"{len(saves)} of its {rw['saves7d']} edits"
             out.append(
                 {
-                    "id": f"churn:{s['key']}:{week}",
+                    "id": f"churn:{s['key']}:{rw['runId']}",
+                    "subject": f"churn:{s['key']}",
+                    "evidenceAt": rw["lastAt"],
                     "kind": "churn",
                     "severity": "warn",
                     "skill": s["key"],
-                    "title": f"{label} keeps being rewritten",
-                    "detail": f"{s['edits7d']} edits in 7 days ({s['edits48h']} in the last 48 hours), {_who(s['sources7d'])}. Rewrites this often usually mean the skill is fighting itself.",
+                    "title": f"{label} keeps rewriting its own rules",
+                    "detail": (
+                        f"{count} in 7 days rewrote lines an earlier edit had added, the latest {_ago(now - rw['lastAt'])}"
+                        + (f". One of them: “{example}”" if example else "")
+                        + ". Rework like this usually means two versions of a rule are competing."
+                    ),
                 }
             )
         if s["skillMdSize"] >= BLOAT_BYTES:
             out.append(
                 {
                     "id": f"bloat:{s['key']}:{s['skillMdSize'] // 16_000}",
+                    "subject": f"bloat:{s['key']}",
+                    "evidenceAt": s["lastAt"],
                     "kind": "bloat",
                     "severity": "warn",
                     "skill": s["key"],
@@ -764,7 +937,9 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
         elif s["size14d"] and s["size"] >= GROWTH_MIN_BYTES and s["size"] >= s["size14d"] * GROWTH_RATIO:
             out.append(
                 {
-                    "id": f"growth:{s['key']}:{week}",
+                    "id": f"growth:{s['key']}:{s['size'] // 8_000}",
+                    "subject": f"growth:{s['key']}",
+                    "evidenceAt": s["lastAt"],
                     "kind": "bloat",
                     "severity": "warn",
                     "skill": s["key"],
@@ -777,6 +952,8 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
                 out.append(
                     {
                         "id": f"worse:{s['key']}:{ep['id']}",
+                        "subject": f"worse:{s['key']}:{ep['id']}",
+                        "evidenceAt": ep["end"],
                         "kind": "worse",
                         "severity": "danger",
                         "skill": s["key"],
@@ -790,7 +967,9 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
             if limit and used / limit >= MEMORY_FULL:
                 out.append(
                     {
-                        "id": f"memory:{d['desk']}:{which}:{week}",
+                        "id": f"memory:{d['desk']}:{which}",
+                        "subject": f"memory:{d['desk']}:{which}",
+                        "evidenceAt": None,
                         "kind": "memory",
                         "severity": "warn",
                         "desk": d["desk"],
@@ -803,6 +982,8 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
             out.append(
                 {
                     "id": f"proposal:{p['id']}",
+                    "subject": f"proposal:{p['id']}",
+                    "evidenceAt": None,
                     "kind": "proposal",
                     "severity": "info",
                     "proposal": p["id"],
@@ -812,7 +993,14 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
             )
     rank = {"danger": 0, "warn": 1, "info": 2}
     out.sort(key=lambda f: rank.get(f["severity"], 3))
-    return out
+    shown, hidden = [], []
+    for f in out:
+        ack = items.get(f["subject"])
+        if acknowledged(f, ack, now):
+            hidden.append({**f, "ack": {"action": ack["action"], "at": float(ack.get("at") or 0)}})
+        else:
+            shown.append(f)
+    return shown, hidden
 
 
 # --------------------------------------------------------------------------- runtime
@@ -942,8 +1130,10 @@ def report() -> dict:
 
 def _collect(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, now: float) -> dict:
     desk_cards = scorecards(kconn, now)
-    skills = skills_summary(conn, kconn, now)
+    acks = flag_acks()
+    skills = skills_summary(conn, kconn, now, acks["asked"])
     props = decided_proposals(conn, now)
+    shown, hidden = flags(skills, desk_cards, props, now, acks)
     return {
         "generatedAt": now,
         "desks": desk_cards,
@@ -952,10 +1142,16 @@ def _collect(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, now: fl
         "changes7d": conn.execute("SELECT COUNT(*) FROM versions WHERE change IN ('added','changed') AND seen_at >= ?", (now - 7 * DAY,)).fetchone()[0],
         "runtime": runtime(now),
         "proposals": props,
-        "flags": flags(skills, desk_cards, props, now),
+        "flags": shown,
+        "hiddenFlags": hidden,
         "thresholds": {
-            "churn48h": CHURN_48H,
-            "churn7d": CHURN_7D,
+            "saveGapMinutes": int(SAVE_GAP / 60),
+            "reworkSaves": REWORK_SAVES,
+            "reworkMinLines": REWORK_MIN_LINES,
+            "reworkMemoryDays": int(REWORK_MEMORY / DAY),
+            "reworkQuietHours": int(REWORK_QUIET / HOUR),
+            "newSkillGraceDays": int(NEW_SKILL_GRACE / DAY),
+            "askedGraceHours": int(ASKED_GRACE / HOUR),
             "bloatBytes": BLOAT_BYTES,
             "growthRatio": GROWTH_RATIO,
             "memoryFull": MEMORY_FULL,
@@ -981,13 +1177,16 @@ def markdown(data: dict) -> str:
     lines += ["", f"## Flags ({len(data['flags'])})"]
     for f in data["flags"]:
         lines.append(f"- [{f['severity']}] {f['title']} — {f['detail']}")
-    lines += ["", f"## Skills changed ({data['changes7d']} edits in the last 7 days; most active first)"]
-    lines.append("| Skill | 48h | 7d | 30d | Size | Latest episode |")
-    lines.append("|---|---|---|---|---|---|")
+    for f in data.get("hiddenFlags") or []:
+        lines.append(f"- [hidden: {'asked the chief' if f['ack']['action'] == 'asked' else 'marked fine'}] {f['title']}")
+    lines += ["", f"## Skills changed ({data['changes7d']} file changes in the last 7 days; edits are saves; most active first)"]
+    lines.append("| Skill | 48h | 7d | 30d | Rework 7d | Size | Latest episode |")
+    lines.append("|---|---|---|---|---|---|---|")
     for s in data["skills"][:20]:
         ep = s["episodes"][0] if s["episodes"] else None
         verdict = f"{ep['edits']} edits: {ep['verdict']['label']}" if ep else "–"
-        lines.append(f"| {s['key']} | {s['edits48h']} | {s['edits7d']} | {s['edits30d']} | {round(s['size'] / 1000, 1)} KB | {verdict} |")
+        rework = len((s.get("rework") or {}).get("reworkSaves") or [])
+        lines.append(f"| {s['key']} | {s['edits48h']} | {s['edits7d']} | {s['edits30d']} | {rework} | {round(s['size'] / 1000, 1)} KB | {verdict} |")
     rt = data["runtime"]
     lines += ["", "## Runtime", f"- Native crashes: {rt['crashes24h']} in 24h, {rt['crashes7d']} in 7d"]
     for g in rt["crashGroups"]:

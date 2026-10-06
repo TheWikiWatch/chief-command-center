@@ -52,6 +52,10 @@ export type SkillChange = {
   newer?: number;
   /** The episode this edit belongs to. */
   episode?: string | null;
+  /** Made within hours of the owner asking the chief about this skill: the tidy-up they asked for, never rework. */
+  requested?: boolean;
+  /** Lines this save rewrote that an earlier save had added (on the save's first change; rework saves only). */
+  rewrote?: number;
 };
 
 /** Edits to one skill closer together than 48 hours, judged as one before/after. */
@@ -73,7 +77,19 @@ export type SkillSummary = {
   sources: { review: number; outside: number };
   episodes: Episode[];
   changes: SkillChange[];
+  /** Saves that rewrote lines an earlier save added (newest first); `flagged` per the ledger's rework rule. */
+  rework?: SkillRework;
 };
+
+export type SkillRework = {
+  saves7d: number;
+  reworkSaves: { id: number; at: number; lines: number; example: string }[];
+  flagged: boolean;
+  lastAt: number | null;
+};
+
+/** What the owner did about a flag: looked and found it fine, or asked the chief. */
+export type FlagAck = { action: "fine" | "asked"; at: number };
 
 export type Flag = {
   id: string;
@@ -84,6 +100,12 @@ export type Flag = {
   skill?: string;
   desk?: string;
   proposal?: string;
+  /** What an acknowledgement is filed under (older ledgers: the id). */
+  subject?: string;
+  /** The newest event behind the flag; an acknowledgement holds until something newer. Null: it holds a week. */
+  evidenceAt?: number | null;
+  /** Hidden flags: what the owner did. */
+  ack?: FlagAck;
 };
 
 export type RunInfo = { name?: string; lastRunAt?: string | null; lastStatus?: string | null; enabled?: boolean } | null;
@@ -125,6 +147,8 @@ export type FleetHealth = {
   runtime: Runtime;
   proposals: Proposal[];
   flags?: Flag[];
+  /** Flags the owner already looked at, hidden until something new happens. */
+  hiddenFlags?: Flag[];
 };
 
 export const fetchFleetHealth = (signal?: AbortSignal) => requestJson<FleetHealth>("/api/fleet/health", { cache: "no-store", signal }, 10_000);
@@ -160,17 +184,28 @@ export function approvalMessage(p: Proposal) {
   return `Approved from Fleet Health (distill ${p.id}, ${p.kind}): ${p.target} — ${p.change}.${why} Please apply it, following your usual backup and verify rules, and tell me what changed.`;
 }
 
-/** What "Ask the chief" sends for a flag. Proposals have their own Approve; nothing is changed without asking. */
+/** The subject a flag's acknowledgement is filed under. */
+export const flagSubject = (f: Flag) => f.subject || f.id;
+
+/** Mark a flag fine, record that the chief was asked about it, or show it again; for every device. */
+export const ackFlag = (f: Flag, action: "fine" | "asked" | "clear") =>
+  post<{ ok: boolean; error?: string }>("/api/fleet/flag", { subject: flagSubject(f), action, ...(f.skill ? { skill: f.skill } : {}) });
+
+/**
+ * What "Ask the chief" sends for a flag: review first, then at most one tidy-up. Edits the chief makes for it in the
+ * next few hours aren't counted as rework. Proposals have their own Approve; nothing is changed without asking.
+ */
 export function flagMessage(f: Flag): string | null {
   const head = `Fleet Health flag: ${f.title}. ${f.detail}`.trim();
   const skill = f.skill ? ` (${f.skill})` : "";
+  const once = "If a tidy-up is warranted, make one consolidating edit, backing up first, and tell me what changed. If it's fine as it is, say so and change nothing.";
   switch (f.kind) {
     case "churn":
-      return `${head} Please read the recent edits to that skill${skill}, settle the rule into one clear version, and tell me what you changed. Back up first.`;
+      return `${head} Please review the recent edits to that skill${skill} first and tell me whether they refine one rule or contradict each other. ${once} A tidy-up settles each reworked rule into one clear version and leaves the rest alone.`;
     case "bloat":
-      return `${head} Please slim that skill${skill}: keep SKILL.md to the operating rules and move history, case notes and long examples into references/. Back up first and tell me the size before and after.`;
+      return `${head} Please look at that skill${skill} and tell me whether it needs slimming. ${once} Slimming keeps SKILL.md to the operating rules and moves history, case notes and long examples into references/; tell me the size before and after.`;
     case "memory":
-      return `${head} Please consolidate ${f.desk ? `${f.desk}'s` : "that"} memory: merge duplicates and drop stale facts, then tell me what you removed.`;
+      return `${head} Please review ${f.desk ? `${f.desk}'s` : "that"} memory and tell me what's stale or duplicated. ${once} Consolidating merges duplicates and drops stale facts.`;
     case "worse":
       return `${head} Please look at the net change to that skill${skill} and tell me whether you'd revert it. I can revert it from Fleet Health.`;
     default:

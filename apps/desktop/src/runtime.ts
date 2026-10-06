@@ -93,6 +93,7 @@ export function envFor(kind: "gateway" | "web"): Record<string, string> {
         CHIEF_DASHBOARD_PORT: String(store.value.ports.bridge),
         CHIEF_LEARNING_DIR: learningDir(),
         ...(store.value.adopted ? { CHIEF_ADOPTED: "1" } : {}),
+        ...(store.value.adopted && store.value.ownLedger ? { CHIEF_OWN_LEDGER: "1" } : {}),
       },
     });
   }
@@ -109,7 +110,8 @@ export function envFor(kind: "gateway" | "web"): Record<string, string> {
       CHIEF_PYTHON: layout.python,
       // Fleet Health: the bundled learning ledger (its report folder, the program and the Python that runs it).
       CHIEF_LEARNING_DIR: learningDir(),
-      CHIEF_LEARNING_TOOL: store.value.learningTool || path.join(paths.plugins, "chief-dashboard-bridge", "ledger", "learning_ledger.py"),
+      CHIEF_LEARNING_TOOL:
+        store.value.ownLedger && store.value.learningTool ? store.value.learningTool : path.join(paths.plugins, "chief-dashboard-bridge", "ledger", "learning_ledger.py"),
       CHIEF_HERMES_PYTHON: layout.python,
       CHIEF_PYTHONPATH: layout.pythonPath.join(";"),
       CHIEF_BACKUP_ENGINE: paths.backupEngine,

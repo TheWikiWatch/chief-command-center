@@ -115,5 +115,36 @@ check(
 )
 check("the report speaks of the chief, not a name", "(the chief)" in (root / "learning" / "report.md").read_text(encoding="utf-8"))
 
+# An adopted install whose own ledger job runs its own script: the job is pointed at the app's ledger (same report
+# folder), and ownLedger (CHIEF_OWN_LEDGER=1) puts the old script back.
+from cron import jobs as cron_jobs
+
+
+def ledger_job_script() -> str:
+    with cron_jobs.use_cron_store(home):
+        return next(j.get("script") for j in cron_jobs.list_jobs(include_disabled=True) if j.get("name") == "Fleet: learning ledger")
+
+
+(home / "scripts" / "owner_learning_ledger_cron.py").write_text("print('the owner ledger')\n", encoding="utf-8")
+with cron_jobs.use_cron_store(home):
+    job_id = next(j["id"] for j in cron_jobs.list_jobs(include_disabled=True) if j.get("name") == "Fleet: learning ledger")
+    cron_jobs.update_job(job_id, {"script": "owner_learning_ledger_cron.py"})
+(home / "scripts" / "learning_ledger.py").unlink()
+os.environ["CHIEF_ADOPTED"] = "1"
+adopted = learning.ensure(home)
+record = root / "learning" / "ledger-switch.json"
+check(
+    "an adopted install's ledger job runs the app's ledger",
+    ledger_job_script() == "learning_ledger.py" and (home / "scripts" / "learning_ledger.py").is_file() and adopted["ledger"] == "app",
+    adopted,
+)
+check("the old script is recorded", json.loads(record.read_text(encoding="utf-8"))["jobs"][0]["previous"] == "owner_learning_ledger_cron.py")
+check("switching twice changes nothing", learning.ensure(home)["switched"] == [])
+os.environ["CHIEF_OWN_LEDGER"] = "1"
+back = learning.ensure(home)
+check("ownLedger puts the old script back", ledger_job_script() == "owner_learning_ledger_cron.py" and not record.exists() and back["ledger"] == "own", back)
+os.environ.pop("CHIEF_OWN_LEDGER")
+os.environ.pop("CHIEF_ADOPTED")
+
 print(json.dumps({"failures": failures}))
 sys.exit(1 if failures else 0)

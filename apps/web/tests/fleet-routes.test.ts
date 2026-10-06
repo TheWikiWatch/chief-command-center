@@ -118,3 +118,59 @@ it("serves a diff only for change numbers", async () => {
     vi.doUnmock("@/lib/server/fleet");
   }
 });
+
+it("flag acknowledgements are shared through flag-acks.json and apply before the ledger runs again", async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), "fleet-flag-"));
+  try {
+    const now = Date.now() / 1000;
+    writeFileSync(path.join(dir, "report.json"), JSON.stringify({
+      generatedAt: now,
+      flags: [
+        { id: "churn:ada/x:41", subject: "churn:ada/x", evidenceAt: now - 3600, kind: "churn", skill: "ada/x" },
+        { id: "memory:ada:memory", subject: "memory:ada:memory", evidenceAt: null, kind: "memory" },
+      ],
+      hiddenFlags: [{ id: "bloat:ada/y:2", subject: "bloat:ada/y", evidenceAt: now - 7200, kind: "bloat", ack: { action: "fine", at: now - 60 } }],
+    }));
+    writeFileSync(path.join(dir, "flag-acks.json"), JSON.stringify({ items: { "bloat:ada/y": { action: "fine", at: now - 60 } }, asked: {} }));
+    process.env.CHIEF_LEARNING_DIR = dir;
+    vi.resetModules();
+    const { POST } = await import("@/app/api/fleet/flag/route");
+    const { GET } = await import("@/app/api/fleet/health/route");
+    const { NextRequest } = await import("next/server");
+    const req = (body: unknown, origin = "http://127.0.0.1:3000") =>
+      new NextRequest("http://127.0.0.1:3000/api/fleet/flag", { method: "POST", headers: { origin, host: "127.0.0.1:3000" }, body: JSON.stringify(body) });
+    expect((await POST(req({ subject: "churn:ada/x", action: "fine" }, "https://evil.example"))).status).toBe(403);
+    expect((await POST(req({ subject: "churn ada/x; rm", action: "fine" }))).status).toBe(400);
+    expect((await POST(req({ subject: "churn:ada/x", action: "ignore" }))).status).toBe(400);
+
+    expect((await POST(req({ subject: "churn:ada/x", action: "asked", skill: "ada/x" }))).status).toBe(200);
+    expect((await POST(req({ subject: "memory:ada:memory", action: "fine" }))).status).toBe(200);
+    expect((await POST(req({ subject: "bloat:ada/y", action: "clear" }))).status).toBe(200);
+    const saved = JSON.parse(readFileSync(path.join(dir, "flag-acks.json"), "utf8"));
+    expect(saved.items["churn:ada/x"].action).toBe("asked");
+    expect(saved.asked["ada/x"]).toHaveLength(1); // the chief's tidy-up won't count as rework
+    expect(saved.items["bloat:ada/y"]).toBeUndefined();
+
+    const body = await (await GET(new Request("http://127.0.0.1:3000/api/fleet/health"))).json();
+    expect(body.flags.map((f: { id: string }) => f.id)).toEqual(["bloat:ada/y:2"]); // shown again
+    expect(body.hiddenFlags.map((f: { id: string; ack: { action: string } }) => [f.id, f.ack.action])).toEqual([
+      ["churn:ada/x:41", "asked"],
+      ["memory:ada:memory", "fine"],
+    ]);
+  } finally {
+    delete process.env.CHIEF_LEARNING_DIR;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+it("an acknowledgement holds until newer evidence, or a week for a flag without any", async () => {
+  vi.resetModules();
+  const { acknowledged } = await import("@/lib/server/fleet");
+  const now = 1_000_000;
+  const ack = { action: "fine" as const, at: now - 100 };
+  expect(acknowledged({ evidenceAt: now - 200 }, ack, now)).toBe(true);
+  expect(acknowledged({ evidenceAt: now - 50 }, ack, now)).toBe(false); // something new since
+  expect(acknowledged({ evidenceAt: null }, { action: "fine", at: now - 6 * 86400 }, now)).toBe(true);
+  expect(acknowledged({ evidenceAt: null }, { action: "fine", at: now - 8 * 86400 }, now)).toBe(false);
+  expect(acknowledged({ evidenceAt: now - 200 }, undefined, now)).toBe(false);
+});

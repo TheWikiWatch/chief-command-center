@@ -1,4 +1,4 @@
-import { readDecisions, readReport, withDecisions } from "@/lib/server/fleet";
+import { readDecisions, readFlagAcks, readReport, withDecisions, withFlagAcks } from "@/lib/server/fleet";
 
 import { ledgerConfig } from "@/lib/server/app-config";
 
@@ -6,7 +6,8 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * The fleet learning report (read-only), with proposal decisions made since the ledger last ran.
+ * The fleet learning report (read-only), with proposal decisions and flag acknowledgements made since the ledger
+ * last ran.
  * `?only=flags` is the small version the Health badge polls.
  */
 export async function GET(req: Request) {
@@ -18,7 +19,8 @@ export async function GET(req: Request) {
       { status: 404, headers: { "Cache-Control": "no-store" } },
     );
   }
-  const report = withDecisions(raw, await readDecisions());
+  const [decisions, acks] = await Promise.all([readDecisions(), readFlagAcks()]);
+  const report = withFlagAcks(withDecisions(raw, decisions), acks);
   const generatedAt = Number(report.generatedAt) || 0;
   const ageSeconds = Math.max(0, Math.round(Date.now() / 1000 - generatedAt));
   const onlyFlags = new URL(req.url).searchParams.get("only") === "flags";

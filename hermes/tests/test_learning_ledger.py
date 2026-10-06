@@ -104,26 +104,143 @@ class LedgerTests(unittest.TestCase):
         conn.commit()
         conn.close()
 
-    def test_skills_group_edits_into_episodes_and_flag_churn(self):
+    def save(self, files: dict, when: float):
+        """One save touching several files of the skill (SKILL.md is "SKILL.md"), recorded `when` seconds ago."""
+        t = time.time() - when
+        for name, text in files.items():
+            path = self.skill.parent / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if text is None:
+                path.unlink()
+                continue
+            path.write_text(text, encoding="utf-8")
+            os.utime(path, (t, t))
+        conn = sqlite3.connect(os.environ["CHIEF_LEARNING_DIR"] + "/ledger.db")
+        before = conn.execute("SELECT COALESCE(MAX(id), 0) FROM versions").fetchone()[0] if self._has_ledger(conn) else 0
+        conn.close()
+        self.ledger.snapshot()
+        conn = sqlite3.connect(os.environ["CHIEF_LEARNING_DIR"] + "/ledger.db")
+        conn.execute("UPDATE versions SET seen_at = ? WHERE id > ?", (t, before))
+        conn.commit()
+        conn.close()
+
+    @staticmethod
+    def _has_ledger(conn) -> bool:
+        return bool(conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'versions'").fetchone())
+
+    RULES = ("Check the vault index before writing a new note.", "Never overwrite a daily note; append under the last heading.")
+
+    def rework_week(self):
+        """A skill written ten days ago whose two rules are reworded in four saves over the last three days."""
+        self.ledger.snapshot()  # the ledger's first look: a baseline, not an edit
+        self.edit("# Review\n" + "\n".join(self.RULES) + "\n", when=10 * 86400)
+        for n, hours in enumerate((70, 50, 30, 10), start=1):
+            self.edit("# Review\n" + "\n".join(f"{r} (take {n})" for r in self.RULES) + "\n", when=hours * 3600)
+
+    def test_edits_are_saves_and_growth_is_not_rework(self):
         L = self.ledger
         L.snapshot()
         self.edit("older\n", when=5 * 86400)  # its own episode, days before the burst
         for i in range(6):
-            self.edit(f"v{i}\n" + "rule\n" * i, when=3600 * (10 - i))  # six edits in the last 10 hours
+            self.edit(f"v{i}\n" + "rule\n" * i, when=3600 * (10 - i))  # six edits in the last 10 hours, each adding a line
+        self.save({"SKILL.md": "v6\n" + "rule\n" * 6, "references/notes.md": "detail\n"}, when=1800)  # one save, two files
         report = L.report()
         skill = report["skills"][0]
         self.assertEqual(skill["key"], "ada/devops/review")
-        self.assertEqual(skill["edits48h"], 6)
-        self.assertEqual(skill["edits7d"], 7)
-        self.assertEqual([e["edits"] for e in skill["episodes"]], [6, 1])
+        self.assertEqual(skill["edits48h"], 7)  # the two-file save is one edit
+        self.assertEqual(skill["edits7d"], 8)
+        self.assertEqual([e["edits"] for e in skill["episodes"]], [7, 1])
         self.assertEqual({c["episode"] for c in skill["changes"]}, {e["id"] for e in skill["episodes"]})
+        self.assertEqual(skill["rework"]["reworkSaves"], [])
+        self.assertEqual([f for f in report["flags"] if f["kind"] == "churn"], [])  # busy and growing is healthy
+        self.assertEqual(report["thresholds"]["reworkSaves"], L.REWORK_SAVES)
+
+    def test_rules_reworded_again_and_again_are_flagged_once_per_run(self):
+        L = self.ledger
+        self.rework_week()
+        report = L.report()
+        rework = report["skills"][0]["rework"]
+        self.assertEqual(len(rework["reworkSaves"]), 4)
+        self.assertTrue(rework["flagged"])
         churn = [f for f in report["flags"] if f["kind"] == "churn"]
         self.assertEqual(len(churn), 1)
-        self.assertTrue(churn[0]["id"].startswith("churn:ada/devops/review:"))
-        self.assertIn("none by the background review", churn[0]["detail"])  # says who, since the fix differs
-        self.assertEqual(L._who({"review": 5, "outside": 0}), "all by the background review after conversations")
-        self.assertEqual(L._who({"review": 3, "outside": 2}), "3 by the background review after conversations, 2 outside it")
-        self.assertEqual(report["thresholds"]["churn48h"], L.CHURN_48H)
+        flag = churn[0]
+        self.assertEqual(flag["id"], f"churn:ada/devops/review:{rework['runId']}")
+        self.assertEqual(flag["subject"], "churn:ada/devops/review")
+        self.assertAlmostEqual(flag["evidenceAt"], time.time() - 10 * 3600, delta=60)
+        self.assertIn("All 4 of its edits in 7 days rewrote lines", flag["detail"])
+        self.assertIn("“Check the vault index before writing a new note. (take 3)”", flag["detail"])  # quotes a rule being fought over
+        # Another rewrite continues the same run: same id, so the phone isn't told again.
+        self.edit("# Review\n" + "\n".join(f"{r} (take 5)" for r in self.RULES) + "\n", when=3600)
+        self.assertEqual([f["id"] for f in L.report()["flags"] if f["kind"] == "churn"], [flag["id"]])
+
+    def test_a_quiet_two_days_clears_the_flag(self):
+        L = self.ledger
+        L.snapshot()
+        self.edit("# Review\n" + "\n".join(self.RULES) + "\n", when=10 * 86400)
+        for n, hours in enumerate((120, 100, 80), start=1):
+            self.edit("# Review\n" + "\n".join(f"{r} (take {n})" for r in self.RULES) + "\n", when=hours * 3600)
+        report = L.report()
+        self.assertEqual(len(report["skills"][0]["rework"]["reworkSaves"]), 3)
+        self.assertEqual([f for f in report["flags"] if f["kind"] == "churn"], [])
+
+    def test_front_matter_moves_and_a_new_skills_first_days_are_not_rework(self):
+        L = self.ledger
+        rules = "\n".join(self.RULES)
+        L.snapshot()
+        # A new skill, written and rewritten over its first day: still taking shape.
+        for n, hours in enumerate((30, 20, 12, 4), start=1):
+            self.edit("# Review\n" + "\n".join(f"{r} (draft {n})" for r in self.RULES) + "\n", when=hours * 3600)
+        self.assertEqual(L.report()["skills"][0]["rework"]["reworkSaves"], [])
+        # Past its first days (no grace): version bumps in the front matter, then the rules moved into a reference
+        # in one save. Neither rewrites a rule.
+        self.edit(f"---\nversion: 1.0.0\n---\n# Review\n{rules}\n", when=1 * 3600)
+        with patch.object(L, "NEW_SKILL_GRACE", 0):
+            for n, hours in enumerate((50, 40, 30), start=1):
+                self.edit(f"---\nversion: 1.0.{n}\n---\n# Review\n{rules}\n", when=hours * 60)
+            self.save({"SKILL.md": "---\nversion: 1.1.0\n---\n# Review\nSee references/rules.md.\n", "references/rules.md": f"{rules}\n"}, when=600)
+            report = L.report()
+        since = time.time() - 55 * 60
+        self.assertEqual([s for s in report["skills"][0]["rework"]["reworkSaves"] if s["at"] > since], [])
+        self.assertTrue(report["skills"][0]["rework"]["reworkSaves"])  # the drafts do count once the grace is gone
+
+    def write_acks(self, items=None, asked=None):
+        Path(os.environ["CHIEF_LEARNING_DIR"], "flag-acks.json").write_text(json.dumps({"items": items or {}, "asked": asked or {}}), encoding="utf-8")
+
+    def test_the_tidy_up_the_owner_asked_for_is_not_rework(self):
+        L = self.ledger
+        L.snapshot()
+        self.edit("# Review\n" + "\n".join(self.RULES) + "\n", when=10 * 86400)
+        for n, hours in enumerate((70, 50), start=1):
+            self.edit("# Review\n" + "\n".join(f"{r} (take {n})" for r in self.RULES) + "\n", when=hours * 3600)
+        asked = time.time() - 12 * 3600
+        self.write_acks(asked={"ada/devops/review": [asked]})
+        self.edit("# Review\n" + "\n".join(f"{r} (settled)" for r in self.RULES) + "\n", when=11 * 3600)  # an hour after asking
+        report = L.report()
+        skill = report["skills"][0]
+        self.assertEqual(len(skill["rework"]["reworkSaves"]), 2)
+        self.assertFalse(skill["rework"]["flagged"])
+        self.assertTrue(skill["changes"][0].get("requested"))  # labelled in Show changes
+        self.assertNotIn("requested", skill["changes"][1])
+
+    def test_looks_fine_hides_a_flag_until_something_new_happens(self):
+        L = self.ledger
+        self.rework_week()
+        flag = next(f for f in L.report()["flags"] if f["kind"] == "churn")
+        self.write_acks(items={flag["subject"]: {"action": "fine", "at": time.time()}})
+        report = L.report()
+        self.assertEqual([f for f in report["flags"] if f["kind"] == "churn"], [])
+        hidden = [f for f in report["hiddenFlags"] if f["kind"] == "churn"]
+        self.assertEqual(hidden[0]["ack"]["action"], "fine")
+        # New rework after the owner looked: back on screen.
+        self.edit("# Review\n" + "\n".join(f"{r} (take 9)" for r in self.RULES) + "\n", when=-60)
+        self.assertEqual([f["subject"] for f in L.report()["flags"] if f["kind"] == "churn"], [flag["subject"]])
+        # A flag with no per-event evidence (a full memory) stays hidden for a week.
+        now = time.time()
+        memory = {"evidenceAt": None}
+        self.assertTrue(L.acknowledged(memory, {"action": "fine", "at": now - 6 * 86400}, now))
+        self.assertFalse(L.acknowledged(memory, {"action": "fine", "at": now - 8 * 86400}, now))
+        self.assertFalse(L.acknowledged(memory, None, now))
 
     def _library(self, profile: str) -> list[Path]:
         """A bundled skill as a new bot gets it: SKILL.md and 18 references, written the same for every profile."""

@@ -90,3 +90,72 @@ export function withDecisions<T extends { proposals?: unknown; flags?: unknown }
     : report.flags;
   return { ...report, proposals: merged, flags };
 }
+
+// ------------------------------------------------------------------ what the owner did about flags
+
+export type FlagAction = "fine" | "asked";
+export type FlagAck = { action: FlagAction; at: number };
+export type FlagAcks = { items: Record<string, FlagAck>; asked: Record<string, number[]> };
+
+/** "Looks fine" on a flag with no per-event evidence (a full memory) lasts this long; mirrors the ledger. */
+const ACK_EXPIRY_SECONDS = 7 * 86400;
+const ASKED_KEPT = 5;
+const ACKS = () => path.join(ledger().dir, "flag-acks.json");
+
+/** flag-acks.json: per flag subject, the owner's "Looks fine" or "Ask"; per skill, when they asked the chief. */
+export async function readFlagAcks(): Promise<FlagAcks> {
+  try {
+    const data = JSON.parse(await fs.readFile(ACKS(), "utf8")) as Partial<FlagAcks>;
+    const items = data.items && typeof data.items === "object" ? data.items : {};
+    const asked = data.asked && typeof data.asked === "object" ? data.asked : {};
+    return { items, asked };
+  } catch {
+    return { items: {}, asked: {} };
+  }
+}
+
+/**
+ * Record what the owner did about one flag (`null` = "Show again"): every device sees it, and the ledger reads it
+ * on its next run. Asking about a skill also notes the time, so the chief's tidy-up isn't counted as rework.
+ */
+export function recordFlagAck(subject: string, action: FlagAction | null, skill?: string): Promise<FlagAcks> {
+  const run = writing.then(async () => {
+    const acks = await readFlagAcks();
+    const now = Date.now() / 1000;
+    if (action) acks.items[subject] = { action, at: now };
+    else delete acks.items[subject];
+    if (action === "asked" && skill) acks.asked[skill] = [...(acks.asked[skill] || []), now].slice(-ASKED_KEPT);
+    const tmp = `${ACKS()}.${process.pid}.tmp`;
+    await fs.writeFile(tmp, JSON.stringify(acks, null, 1), "utf8");
+    await fs.rename(tmp, ACKS());
+    return acks;
+  });
+  writing = run.catch(() => undefined);
+  return run;
+}
+
+type ReportFlag = { id?: unknown; subject?: unknown; evidenceAt?: unknown; ack?: unknown };
+
+/** The ledger's rule (learning_ledger.acknowledged): hidden until evidence newer than the acknowledgement. */
+export function acknowledged(flag: ReportFlag, ack: FlagAck | undefined, now = Date.now() / 1000): boolean {
+  if (!ack) return false;
+  const evidence = typeof flag.evidenceAt === "number" ? flag.evidenceAt : null;
+  return evidence == null ? now - ack.at < ACK_EXPIRY_SECONDS : evidence <= ack.at;
+}
+
+/**
+ * Acknowledgements made since the ledger last ran apply at once: a flag the owner just marked moves to
+ * `hiddenFlags`, and one they asked to see again comes back. Flags from an older ledger (no subject) use their id.
+ */
+export function withFlagAcks<T extends { flags?: unknown; hiddenFlags?: unknown }>(report: T, acks: FlagAcks, now = Date.now() / 1000): T {
+  const all = [...(Array.isArray(report.flags) ? report.flags : []), ...(Array.isArray(report.hiddenFlags) ? report.hiddenFlags : [])] as ReportFlag[];
+  const flags: ReportFlag[] = [];
+  const hiddenFlags: ReportFlag[] = [];
+  for (const raw of all) {
+    const { ack: _old, ...flag } = raw;
+    const ack = acks.items[String(flag.subject ?? flag.id)];
+    if (acknowledged(flag, ack, now)) hiddenFlags.push({ ...flag, ack });
+    else flags.push(flag);
+  }
+  return { ...report, flags, hiddenFlags };
+}

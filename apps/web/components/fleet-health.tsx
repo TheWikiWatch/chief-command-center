@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { AnimatePresence } from "motion/react";
 import { CircleAlertIcon, ClockIcon, SparklesIcon } from "@/components/icons";
-import { fetchFleetHealth, markFlagsSeen, refreshFleetHealth, type FleetHealth as Health } from "@/lib/fleet-health";
+import { fetchFleetHealth, flagSubject, markFlagsSeen, refreshFleetHealth, type Flag, type FleetHealth as Health } from "@/lib/fleet-health";
 import { splitTitle } from "@/lib/names";
 import { poll } from "@/lib/poll";
 import { share } from "@/lib/share";
@@ -10,7 +11,7 @@ import { showToast } from "@/lib/toast-store";
 import type { Person } from "@/lib/types";
 import { useAssistantName } from "@/lib/identity";
 import { DeskRow } from "@/components/fleet-health/desks";
-import { FlagRow } from "@/components/fleet-health/flags";
+import { AllClear, FlagRow, LookedAt, type FlagMove } from "@/components/fleet-health/flags";
 import { EmptyCard, RefreshButton, RuntimeCard, Section, Tile } from "@/components/fleet-health/parts";
 import { Proposals } from "@/components/fleet-health/proposals";
 import { ChangeRow, Skills } from "@/components/fleet-health/skills";
@@ -50,7 +51,16 @@ export function FleetHealth({
   const [tick, setTick] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [openSkill, setOpenSkill] = useState<string | null>(null);
+  // Flags the owner just marked or brought back, until the next report (which the server already corrected).
+  const [moved, setMoved] = useState<Record<string, FlagMove>>({});
   const reload = useCallback(() => setTick((n) => n + 1), []);
+  const onMoved = useCallback(
+    (f: Flag, move: FlagMove) => {
+      setMoved((m) => ({ ...m, [flagSubject(f)]: move }));
+      reload();
+    },
+    [reload],
+  );
 
   useEffect(
     () =>
@@ -59,6 +69,7 @@ export function FleetHealth({
           const next = await fetchFleetHealth(signal);
           if (signal.aborted) return;
           setData((prev) => share(prev, next));
+          setMoved({});
           setError("");
         } catch (e) {
           if (!signal.aborted) setError(e instanceof Error ? e.message : "Fleet health is unavailable");
@@ -112,7 +123,10 @@ export function FleetHealth({
   const active = data.desks.filter((d) => d.cards30 > 0 || d.last7.done + d.last7.crashed + d.last7.gaveUp > 0 || d.blocked > 0);
   const idle = data.desks.filter((d) => !active.includes(d));
   const done7 = data.desks.reduce((n, d) => n + d.last7.done, 0);
-  const flags = data.flags || [];
+  const all = [...(data.flags || []), ...(data.hiddenFlags || [])];
+  const hidden = (f: Flag) => (moved[flagSubject(f)] ? moved[flagSubject(f)] === "hide" : !!f.ack);
+  const flags = all.filter((f) => !hidden(f));
+  const lookedAt = all.filter(hidden);
   const skills = data.skills;
 
   function showSkill(key: string) {
@@ -137,13 +151,20 @@ export function FleetHealth({
         </span>
       </div>
 
-      {flags.length ? (
-        <Section title="Needs a look" count={flags.length} hint="Nothing changes until you act">
-          <ul className="space-y-2">
-            {flags.map((f) => (
-              <FlagRow key={f.id} flag={f} onShowSkill={showSkill} onSendToChief={onSendToChief} />
-            ))}
-          </ul>
+      {flags.length || lookedAt.length ? (
+        <Section title="Needs a look" count={flags.length || undefined} hint={flags.length ? "Nothing changes until you act" : undefined}>
+          {flags.length ? (
+            <ul className="space-y-2">
+              <AnimatePresence initial={false}>
+                {flags.map((f) => (
+                  <FlagRow key={f.id} flag={f} onShowSkill={showSkill} onSendToChief={onSendToChief} onMoved={onMoved} />
+                ))}
+              </AnimatePresence>
+            </ul>
+          ) : (
+            <AllClear />
+          )}
+          <LookedAt flags={lookedAt} onMoved={onMoved} />
         </Section>
       ) : null}
 
