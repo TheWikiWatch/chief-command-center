@@ -91,6 +91,34 @@ Not needed while the releases repository is public. For a private one, on GitHub
 
 Send the key privately. To cut someone off, delete their token; nobody else is affected. You can have up to 50 fine-grained tokens. When a key expires, the tester's app says so ("the update key was refused: it may have expired"), and you send a new one.
 
+## Maintainer: the Chief Google app (once, for "Google on this PC")
+
+Settings → Connections offers two ways to connect Gmail, Google Calendar and Drive: **Quick** (through Nous, nothing to
+set up) and **On this PC** (the sign-in stays between the tester's PC and Google). On this PC needs one Google Cloud
+project for the whole app, made once, here. Without it, the app simply doesn't offer that choice.
+
+1. At console.cloud.google.com, create a project named **Chief Command Center**.
+2. **APIs & Services → Library:** enable the Gmail API, Google Calendar API, Google Drive API, Google Docs API and Google
+   Sheets API.
+3. **Google Auth Platform → Branding:** app name *Chief Command Center*, a support e-mail, and optionally the app icon
+   (`apps/web/public/icons/icon-512.png`).
+4. **Audience:** user type **External**, then **Publish app** so the status reads **In production**. Never leave it in
+   *Testing*: Google then expires every sign-in after 7 days and the bots lose Gmail each week.
+5. **Data access:** add `gmail.modify`, `gmail.send`, `calendar`, `drive`, `documents`, `spreadsheets`, `openid` and
+   `userinfo.email`. Don't submit for verification yet.
+6. **Clients → Create client:** application type **Desktop app**, name it *Chief desktop*, create, and **download the
+   JSON**.
+7. Save it beside the signing files, outside the repository (e.g. `D:\ChiefBuild\signing\chief-google-client.json`), and add
+   `"googleClient": "<that path>"` to `release.local.json`. `npm run release:plan` shows it; the next release carries it.
+
+What testers see the first time: Google's "Google hasn't verified this app" page. They choose **Advanced → Go to Chief
+Command Center**, then tick every box. That's once per tester.
+
+Limits until Google verifies the app: **100 people over the project's whole life** (it never resets), so don't spend
+them on tests; use one test account. For a public release, either submit the app for Google's verification (reading
+Gmail needs a yearly paid security assessment) or keep Quick as the only Google path. Plan:
+`docs/PLAN-2026-10-07-connections.md` §8.
+
 ## Maintainer: sharing with a new tester
 
 1. **The setup zip.** Every release also writes `<releasesDir>\Chief-Command-Center-setup-<version>.zip` (needs `testerCert` in `release.local.json`: the public `.cer`). To make one for an existing build: `npm run tester-kit` (newest) or `npm run tester-kit -- --version X.Y.Z`. It holds `Install Chief.cmd`, `install-chief.ps1`, a README, the certificate and the signed package (about 850 MB).

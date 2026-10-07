@@ -92,12 +92,26 @@ _MEDIA_INLINE_RE = re.compile(rf"(?P<path>[^\n]+?\.(?:{_EXT_GROUP}))(?=[\s,;)\]]
 # What follows "MEDIA:" must look like a path or URL; otherwise it is prose that mentions the word
 # (a sentence fragment used to become a fake file chip).
 _PATHLIKE_RE = re.compile(r"""^[ \t]*[`"']?(?:[A-Za-z]:[\\/]|\\\\|/|~[\\/]|\.{1,2}[\\/]|https?://)""")
-_DENIED_NAMES = {".env", "auth.json", "state.db", "credentials.json", ".netrc", ".token", "id_rsa", "id_ed25519"}
+_DENIED_NAMES = {
+    ".env",
+    "auth.json",
+    "state.db",
+    "credentials.json",
+    ".netrc",
+    ".token",
+    "id_rsa",
+    "id_ed25519",
+    # Connections (connections.py): Google on this PC, Nous's shared sign-in.
+    "google_token.json",
+    "google_client_secret.json",
+    "google_account.json",
+    "nous_auth.json",
+}
 _DENIED_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".kdbx")
 # Never served back: Hermes SQLite databases and side files (state.db-wal holds recent chat).
 _SERVE_DENIED_SUFFIXES = (".db", ".db-wal", ".db-shm", ".db-journal", ".sqlite", ".sqlite3", ".sqlite-wal", ".sqlite-shm")
 # Under Hermes's own folders: logs, session records, memory, pairing and config are never files to show.
-_HERMES_DENIED_DIRS = {"logs", "sessions", "memories", "pairing", "locks", "secrets"}
+_HERMES_DENIED_DIRS = {"logs", "sessions", "memories", "pairing", "locks", "secrets", "mcp-tokens", "shared"}
 _HERMES_DENIED_SUFFIXES = (".yaml", ".yml", ".log", ".jsonl", ".lock", ".json")
 # Hermes's own profile id rule (hermes_constants.PROFILE_ID_RE): no path separators, no "..".
 PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -871,7 +885,7 @@ def _denied_file(path: Path) -> bool:
         return True
     for part in path.parts:
         low = part.lower()
-        if low in {".ssh", ".gnupg"}:
+        if low in {".ssh", ".gnupg", "mcp-tokens"}:
             return True
     return False
 
@@ -1114,6 +1128,15 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                 if asked:
                     messages.append(
                         {"id": row["id"], "role": "assistant", "content": "", "timestamp": row["timestamp"], "tools": [], "attachments": [], "asked": asked}
+                    )
+                    continue
+                # A bot asking for a connection (Connect card), or a sign-in link from Hermes's own connectors.
+                from .connections import connect_from_tool_row
+
+                connect = connect_from_tool_row(row["content"])
+                if connect:
+                    messages.append(
+                        {"id": row["id"], "role": "assistant", "content": "", "timestamp": row["timestamp"], "tools": [], "attachments": [], "connect": connect}
                     )
                 continue
             content = ""

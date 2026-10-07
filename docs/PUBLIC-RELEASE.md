@@ -46,6 +46,6 @@ releases repository. This list is what's left before anyone can install it from 
 
 - **Smaller downloads:** the Hermes payload as its own package, so app-only updates are about 120 MB instead of
   850 MB (`docs/PAYLOAD.md`, "Smaller updates").
-- **Python extras the app doesn't use** (about 130 MB: Google Workspace, Bedrock, trace upload; `docs/PAYLOAD.md`).
+- **Python extras the app doesn't use** (about 30 MB: Bedrock, trace upload; `docs/PAYLOAD.md`. Google Workspace now stays for Google on this PC).
 - **The legacy Discord paths:** remove them once no tester's diagnostics list them (`/health` → `legacy`).
 - **CI for Hermes upgrade PRs:** a GitHub App, so those PRs run CI (`docs/DISTRIBUTION.md`).

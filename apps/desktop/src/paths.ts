@@ -30,6 +30,9 @@ export type DesktopPaths = {
   icon: string;
   /** The face alone, for the 16px tray (a whole tile doesn't read that small). */
   trayIcon: string;
+  /** The Chief Google app's Desktop OAuth client ("Google on this PC", connections.py): put in by the release from
+   * this PC's release.local.json, never in the repository. Absent in a dev checkout unless CHIEF_GOOGLE_CLIENT_FILE. */
+  googleClient: string;
 };
 
 export function resolvePaths(opts: { packaged: boolean; resourcesPath: string; appPath: string; env: NodeJS.ProcessEnv }): DesktopPaths {
@@ -57,6 +60,7 @@ export function resolvePaths(opts: { packaged: boolean; resourcesPath: string; a
     notices: packaged ? path.join(res, "THIRD_PARTY_NOTICES.md") : path.join(opts.appPath, "build", "THIRD_PARTY_NOTICES.md"),
     icon: packaged ? path.join(res, "icon.png") : path.join(repo, "apps", "web", "public", "icons", "icon-192.png"),
     trayIcon: packaged ? path.join(res, "tray.png") : path.join(repo, "apps", "web", "public", "icons", "tray-32.png"),
+    googleClient: env.CHIEF_GOOGLE_CLIENT_FILE ? path.resolve(env.CHIEF_GOOGLE_CLIENT_FILE) : packaged ? path.join(res, "google-client.json") : "",
   };
 }
 

@@ -16,5 +16,6 @@
     "--version",
     "{version}"
   ],
-  "reportEmail": "you@example.com"
+  "reportEmail": "you@example.com",
+  "googleClient": "D:\\ChiefBuild\\signing\\chief-google-client.json"
 }

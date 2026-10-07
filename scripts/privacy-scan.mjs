@@ -42,6 +42,8 @@ const checks = [
     allow: (_m, user) => PLACEHOLDER_USERS.test(user),
   },
   { name: "secret-looking token", re: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9_-]{24,}|xox[abp]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16})\b/g },
+  // The Chief Google app's OAuth client ("Google on this PC") lives in release.local.json's file, never in the repo.
+  { name: "Google OAuth client", re: /\b(?:\d{8,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com|GOCSPX-[A-Za-z0-9_-]{20,})\b/g },
   ...(words.length ? [{ name: "personal word", re: new RegExp(`(?<![A-Za-z0-9])(?:${words.map(escape).join("|")})(?![A-Za-z0-9])`, "gi") }] : []),
 ];
 

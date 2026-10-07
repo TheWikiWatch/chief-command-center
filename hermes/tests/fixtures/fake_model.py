@@ -17,6 +17,10 @@ Behaviour, from the latest user message of a turn:
   owner to approve as a recursive delete; once approved and run, answers "Approved and ran." (the Electron smoke test).
 - contains "LANES": hands two tasks to helpers with `delegate_task` ("WORK on lane one", "WORK on lane two", each a
   long turn as above, so they run for a while in the background), then answers "Lanes started.".
+- contains "MAILME": "sends" an email through the Google Workspace skill (a harmless `echo google_api.py gmail send …`),
+  which the bridge's mail guard asks the owner to approve; once approved, answers "Mail step done.".
+- contains "CONNECTME": asks for Gmail with the bridge's `connections` tool (a Connect card), then answers
+  "Asked for Gmail.".
 - anything else: "Hello from the local test model. You said: …".
 Streaming and non-streaming are both supported.
 """
@@ -160,6 +164,25 @@ class Handler(BaseHTTPRequestHandler):
                 self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
                 return
             self._reply({"role": "assistant", "content": "Approved and ran."}, "stop", stream)
+            return
+        if "MAILME" in opener:
+            answered = [m for m in turn if m.get("role") == "tool"]
+            if not answered:
+                args = {"command": 'echo google_api.py gmail send --to friend@example.com --subject "Thursday plan" --body "See you at noon"'}
+                call = {"id": "call_mail", "type": "function", "function": {"name": "terminal", "arguments": json.dumps(args)}}
+                self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
+                return
+            self._reply({"role": "assistant", "content": "Mail step done."}, "stop", stream)
+            return
+        if "CONNECTME" in opener:
+            answered = [m for m in turn if m.get("role") == "tool"]
+            if not answered:
+                # Plugin tools are deferred behind Hermes's tool search: a model reaches them through tool_call.
+                args = {"calls": [{"name": "connections", "arguments": {"action": "request", "service": "gmail", "why": "to sort your inbox"}}]}
+                call = {"id": "call_connect", "type": "function", "function": {"name": "tool_call", "arguments": json.dumps(args)}}
+                self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
+                return
+            self._reply({"role": "assistant", "content": "Asked for Gmail."}, "stop", stream)
             return
         if "LANES" in opener:
             answered = [m for m in turn if m.get("role") == "tool"]

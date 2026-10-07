@@ -92,6 +92,8 @@ export function envFor(kind: "gateway" | "web"): Record<string, string> {
         CHIEF_DASHBOARD_TOKEN: token,
         CHIEF_DASHBOARD_PORT: String(store.value.ports.bridge),
         CHIEF_LEARNING_DIR: learningDir(),
+        // Google on this PC (connections.py): only when this build carries the Chief Google app's client.
+        ...(paths.googleClient && existsSync(paths.googleClient) ? { CHIEF_GOOGLE_CLIENT_FILE: paths.googleClient } : {}),
         ...(store.value.adopted ? { CHIEF_ADOPTED: "1" } : {}),
         ...(store.value.adopted && store.value.ownLedger ? { CHIEF_OWN_LEDGER: "1" } : {}),
       },

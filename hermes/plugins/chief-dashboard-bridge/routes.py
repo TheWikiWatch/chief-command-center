@@ -75,7 +75,25 @@ def find(routes: list[Route], method: str, path: str) -> Route | None:
 
 def build(bridge) -> list[Route]:
     """The table, bound to one BridgeServer."""
-    from . import data, fleet, hermes_api, identity, looks, media, persona, providers, push, report, routines, second_brain, speech_model, threads, usage, voice
+    from . import (
+        connections,
+        data,
+        fleet,
+        hermes_api,
+        identity,
+        looks,
+        media,
+        persona,
+        providers,
+        push,
+        report,
+        routines,
+        second_brain,
+        speech_model,
+        threads,
+        usage,
+        voice,
+    )
     from . import settings as hermes_settings
     from . import tools_settings
     from .server import _about, _cc_push, _flag, _float_param, _guarded, _thread_body, _thread_param, byte_range, legacy_in_use
@@ -425,6 +443,24 @@ def build(bridge) -> list[Route]:
         Route(G, "/pet/{id}/sheet", pet_sheet),
         Route(G, "/pets/catalog", lambda r: looks.call(looks.catalog)),
         Route(G, "/pets/thumb/{id}", pet_thumb),
+        # Connections: email, calendars, documents and work tools (connections.py)
+        Route(G, "/connections", lambda r: connections.call(lambda: connections.overview(refresh=_flag(r.qs, "refresh")))),
+        Route(
+            P,
+            "/connections/connect",
+            lambda r: connections.call(
+                lambda: connections.connect(r.b("service"), r.b("backend"), r.body.get("env") if isinstance(r.body.get("env"), dict) else None)
+            ),
+            limit=16 * KB,
+            **A,
+        ),
+        Route(G, "/connections/op/{id}", lambda r: connections.call(lambda: connections.op_status(r.seg(3)))),
+        Route(P, "/connections/cancel", lambda r: connections.call(lambda: connections.op_cancel(r.b("op"))), limit=4 * KB, **A),
+        Route(P, "/connections/disconnect", lambda r: connections.call(lambda: connections.disconnect(r.b("service"))), limit=4 * KB, **A),
+        Route(P, "/connections/nous/start", lambda r: connections.call(connections.nous_start), limit=4 * KB, **A),
+        Route(G, "/connections/nous/{id}", lambda r: connections.call(lambda: connections.nous_poll(r.seg(3)))),
+        Route(P, "/connections/nous/cancel", lambda r: connections.call(lambda: connections.nous_cancel(r.b("session"))), limit=4 * KB, **A),
+        Route(P, "/connections/nous/signout", lambda r: connections.call(connections.nous_sign_out), limit=4 * KB, **A),
         Route(G, "/fleet", lambda r: _guarded(fleet.roster)),
         Route(G, "/fleet/models", lambda r: _guarded(lambda: fleet.models(refresh=_flag(r.qs, "refresh")))),
         Route(

@@ -93,9 +93,32 @@ def _register_facts(ctx) -> None:
         logger.warning("chief-dashboard-bridge: critical facts section unavailable", exc_info=True)
 
 
+def _register_connections(ctx) -> None:
+    """The mail guard (read freely, ask before sending) and the "what's connected" prompt section, in every Chief
+    process: a scheduled job sending mail must meet the same rule as a chat (connections.py, mail_guard.py)."""
+    try:
+        from . import mail_guard
+
+        ctx.register_hook("pre_tool_call", mail_guard.pre_tool_call)
+    except Exception:
+        logger.warning("chief-dashboard-bridge: the mail guard couldn't be registered; mail actions won't ask first", exc_info=True)
+    add = getattr(ctx, "register_system_prompt_section", None)
+    if add is None:
+        return
+    try:
+        from . import connections
+
+        add("chief-connections", connections.prompt_section, max_chars=connections.PROMPT_MAX)
+    except ValueError:
+        pass  # already registered in this process
+    except Exception:
+        logger.warning("chief-dashboard-bridge: connections section unavailable", exc_info=True)
+
+
 def register(ctx):
     global _server
     _register_facts(ctx)
+    _register_connections(ctx)
     if not _running_in_gateway():
         logger.info("chief-dashboard-bridge: skip bind outside gateway (pid=%s)", os.getpid())
         return
@@ -167,6 +190,14 @@ def _register(ctx):
             ctx.register_tool(name=name, toolset="fleet", schema=schema, handler=handler, emoji=emoji, description=schema.get("description", ""))
     except Exception:
         logger.warning("chief-dashboard-bridge: fleet tools unavailable", exc_info=True)
+
+    try:
+        from . import connections
+
+        schema = connections.TOOL_SCHEMA
+        ctx.register_tool(name=schema["name"], toolset="fleet", schema=schema, handler=connections.tool_handler, emoji="🔌", description=schema["description"])
+    except Exception:
+        logger.warning("chief-dashboard-bridge: connections tool unavailable", exc_info=True)
 
     thread = threading.Thread(target=bridge.serve_forever, name="chief-dashboard-bridge", daemon=True)
     thread.start()

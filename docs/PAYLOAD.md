@@ -26,7 +26,7 @@ Sizes are the extra's own packages plus the large dependencies only it brings in
 
 | Extra | Size | What uses it | Recommendation |
 | --- | --- | --- | --- |
-| `google` | ~100 MB (`googleapiclient` keeps every Google API's discovery document) | Hermes's Google Workspace skill and Google Chat platform. Not the Gemini models: Google AI Studio goes through Hermes's own Gemini adapter over plain HTTP (`agent/gemini_native_adapter.py`, httpx). | **Candidate.** The app doesn't expose Google Chat or set up Workspace OAuth. Removing it turns off the Workspace skill for anyone who set it up by hand. |
+| `google` | ~100 MB (`googleapiclient` keeps every Google API's discovery document) | Hermes's Google Workspace skill and Google Chat platform. Not the Gemini models: Google AI Studio goes through Hermes's own Gemini adapter over plain HTTP (`agent/gemini_native_adapter.py`, httpx). | **Keep.** Google on this PC (Settings → Connections, 2026-10-07) runs the Workspace skill's `google_api.py` with the app's own sign-in. |
 | `stt-whisper` | ~200 MB (ctranslate2, av, onnxruntime, tokenizers) | The local speech model (Settings → Voice → on-device transcription). | Keep: the app exposes it. |
 | `audio-io` | ~42 MB (numpy, sounddevice) | Local microphone and speaker in Hermes's command-line voice mode; numpy is also needed by `stt-whisper`. | Keep (numpy is shared). |
 | `bedrock` | ~27 MB (boto3, botocore) | The AWS Bedrock model provider. | Candidate if no tester uses Bedrock. |
@@ -35,7 +35,7 @@ Sizes are the extra's own packages plus the large dependencies only it brings in
 | `trace-upload` | ~3 MB | Hermes's trace upload to Hugging Face. | Small; candidate. |
 | `youtube`, `firecrawl`, `fal`, `tts-premium`, `edge-tts`, `acp`, `web` | under 3 MB each | Web reading, image generation, premium voices, the ACP adapter, Hermes's own web UI. | Keep (small, and some are reachable from the app). |
 
-Removing an extra means editing `selection.json`, rebuilding the payload, running the compatibility suite and checking the provider list in onboarding. Expected saving if `google`, `bedrock` and `trace-upload` go: about 130 MB.
+Removing an extra means editing `selection.json`, rebuilding the payload, running the compatibility suite and checking the provider list in onboarding. Expected saving if `bedrock` and `trace-upload` go: about 30 MB (`google` stays: Google on this PC uses it).
 
 ## Larger options, evaluated
 

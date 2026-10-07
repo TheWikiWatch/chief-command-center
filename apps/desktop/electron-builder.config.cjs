@@ -7,6 +7,8 @@
 //   CHIEF_PUBLISHER       the certificate's subject, e.g. "CN=Chief Command Center Test"
 //   CHIEF_UPDATE_FEED     optional: the update source the build carries (github:owner/repo), so a new install
 //                         checks the releases repository without being told (scripts/release.mjs sets it)
+//   CHIEF_GOOGLE_CLIENT   optional: the Chief Google app's Desktop OAuth client JSON ("Google on this PC"), from
+//                         release.local.json `googleClient`; packaged as resources/google-client.json
 //
 // The payload, the dashboard's standalone server, the bundled plugins and the backup engine go under
 // resources/, where the shell finds them (src/paths.ts).
@@ -75,6 +77,7 @@ module.exports = {
     { from: path.join(repo, "apps", "web", "public", "icons", "icon-512.png"), to: "icon.png" },
     { from: path.join(repo, "apps", "web", "public", "icons", "tray-32.png"), to: "tray.png" },
     { from: path.join(repo, "LICENSE"), to: "LICENSE" },
+    ...(process.env.CHIEF_GOOGLE_CLIENT ? [{ from: process.env.CHIEF_GOOGLE_CLIENT, to: "google-client.json" }] : []),
   ],
   win: {
     target: [{ target: "appx", arch: ["x64"] }],
