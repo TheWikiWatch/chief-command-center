@@ -1,6 +1,17 @@
 # Plan: a calm update, bots you can dress, and Hermes that never falls behind
 
-Status: **proposed** (2026-10-07). Three asks from the owner, researched against the code and upstream.
+Status: **implemented** (2026-10-07; commits 492d6b4 and 7eedc59 on `feat/updates-looks-hermes`). Three asks from the owner,
+researched against the code and upstream. Where the build differs from this plan:
+
+- The "update pill" in the header (§1.3) is the existing floating update card, which now stays quiet while an update
+  prepares and speaks up once it's ready: one surface instead of two.
+- The popup uses Segoe UI Variable and Cascadia Mono (Windows 11's own) instead of embedding Inter and Geist Mono (§1.4),
+  and a dark tint over the acrylic so it matches the dashboard on any desktop.
+- The real end-to-end update in Windows Sandbox (§1.5) is `scripts/sandbox-update-test.mjs`, ready to run; this PC
+  doesn't have Windows Sandbox turned on, so the first real staged update is the owner's own early release.
+- The editor's "update pill" for looks became "Change look" in the bot's details, with the header shrinking to a title
+  while it's open (§2.4).
+- Sending the patches upstream (§3.7) is drafted in `docs/UPSTREAM-PATCHES.md`; opening the PRs is the owner's call.
 
 ## 0. Decisions (interview, 2026-10-07)
 
