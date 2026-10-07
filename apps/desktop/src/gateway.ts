@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
@@ -36,26 +36,57 @@ function logStream(file: string) {
   return createWriteStream(file, { flags: "a" });
 }
 
-export function killTree(pid: number) {
-  if (process.platform === "win32") spawnSync("taskkill", ["/T", "/F", "/PID", String(pid)], { windowsHide: true });
-  else {
-    try {
-      process.kill(pid, "SIGKILL");
-    } catch {
-      /* gone */
-    }
+/** Run a helper process to its end without blocking the main thread; resolves with its exit code (null on a timeout or a launch error). */
+function finished(child: ChildProcess, timeoutMs: number): Promise<number | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve(null);
+    }, timeoutMs);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code);
+    });
+    child.once("error", () => {
+      clearTimeout(timer);
+      resolve(null);
+    });
+  });
+}
+
+/** End a process and everything it started. Never blocks the main thread (a sync wait froze the window for seconds). */
+export async function killTree(pid: number): Promise<void> {
+  if (process.platform === "win32") {
+    await finished(spawn("taskkill", ["/T", "/F", "/PID", String(pid)], { windowsHide: true, stdio: "ignore" }), 15_000);
+    return;
+  }
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    /* gone */
   }
 }
 
 /** Ask one gateway, in one profile home, to drain and exit (Hermes's own marker). Nothing else is touched. */
-export function requestScopedStop(cfg: Pick<GatewayConfig, "python" | "pythonPath" | "hermesRoot" | "profile" | "env">, gatewayPid: number): boolean {
+export async function requestScopedStop(cfg: Pick<GatewayConfig, "python" | "pythonPath" | "hermesRoot" | "profile" | "env">, gatewayPid: number): Promise<boolean> {
   const script = "import sys\nfrom gateway.status import write_planned_stop_marker\nsys.exit(0 if write_planned_stop_marker(int(sys.argv[1])) else 1)";
-  const res = spawnSync(cfg.python, ["-B", "-c", script, String(gatewayPid)], {
+  const child = spawn(cfg.python, ["-B", "-c", script, String(gatewayPid)], {
     env: { ...cfg.env, HERMES_HOME: profileHome(cfg.hermesRoot, cfg.profile), PYTHONPATH: cfg.pythonPath.join(";") },
     windowsHide: true,
-    timeout: 20_000,
+    stdio: "ignore",
   });
-  return res.status === 0;
+  return (await finished(child, 20_000)) === 0;
+}
+
+/**
+ * A gateway launched by this app that no supervisor of this run owns: left behind by a crashed run, and ended before
+ * ours starts. One that this run's supervisor is starting or running is ours and alive: Retry after a failed start used
+ * to find exactly that in the pid file and kill it.
+ */
+export function isOrphan(owner: GatewayOwner, supervisor: { state: string; child: { pid?: number } | null } | undefined): boolean {
+  if (owner.state !== "ours") return false;
+  if (!supervisor) return true;
+  return !(supervisor.child && (supervisor.state === "running" || supervisor.state === "starting"));
 }
 
 /** The gateway's own pid (the Python process), from this profile's pid file. */
@@ -108,10 +139,10 @@ export function launchGateway(cfg: GatewayConfig, onExit: (code: number | null, 
           if (!gatewayPid) await new Promise((r) => setTimeout(r, 1000));
         }
         for (let attempt = 0; attempt < 2 && gatewayPid && child.exitCode === null; attempt++) {
-          if (requestScopedStop(cfg, gatewayPid) && (await waitExit(child, attempt ? 15_000 : 12_000))) return;
+          if ((await requestScopedStop(cfg, gatewayPid)) && (await waitExit(child, attempt ? 15_000 : 12_000))) return;
         }
       }
-      if (pid) killTree(pid);
+      if (pid) await killTree(pid);
       await waitExit(child, 5_000);
     },
   };

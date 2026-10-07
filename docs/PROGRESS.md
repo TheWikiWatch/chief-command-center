@@ -870,6 +870,17 @@
 - The status sheet shows how long this start took, part by part ("This start: 2.1 s (app 1.0 s · team 1.9 s · chat 1.6 s · Today 2.1 s)"), so a slow start says which part.
 - Kept on the device in the browser's local storage, like the app's other preferences: the phone's copy of the recent chat is what the app shows anyway, and it's replaced on every start.
 
+**A start that recovers (2026-10-06).** The "live chat" round, Phase 3: the desktop shell's start and retry seams, found by reading and fixed with a test each.
+
+- **Retry keeps its ports.** After a start that failed at Chief, the dashboard server was still running on its port, and Retry took that as "taken" and moved the window (and the phone's Tailscale Serve entry) to the next port, where nothing listened, until the health check restarted the server about 90 s later. A port this run's own child holds now counts as ours (`decidePorts`).
+- **Retry no longer kills its own gateway.** The pid file names the gateway Hermes started; after a failed start that gateway may well be the one this run's supervisor is running or restarting, and Retry treated it as an orphan of a crashed run and ended it. Only a gateway no supervisor of this run owns is an orphan now (`isOrphan`).
+- **The start screen advances by itself.** When Chief failed to answer in time, the supervisor kept retrying in the background and often succeeded, but the screen stayed on "needs attention" until someone pressed Try again. A supervisor coming back while the screen shows a failure now runs the start again (`recoversBoot`).
+- **Every failure offers Try again.** A throw from inside a step (no free port in the range, a window that wouldn't load, a problem claiming another launcher's gateway) left the spinner on with no buttons; it now lands on that step as an error, logged as `boot.unhandled`.
+- **The window no longer freezes while Chief is stopped or diagnostics are zipped.** Asking a gateway to drain (up to 20 s), ending a process tree and Windows' own zip (up to 2 min) ran synchronously on the main thread. They run as child processes the app waits on.
+- **The start screen says what it's doing.** The line under the title read "This takes a few seconds" through a multi-minute backup; it now says the backup can take minutes, and "Something needs attention below" on a failure.
+- Not changed: the package installer still blocks the main thread for up to 30 s while it hands the package to Windows, in the moment before the app quits for the install.
+- Tests: desktop (a throw lands on its step and the next run is clean; the recovery rule; ports kept on Retry and moved off a stranger's; whose gateway is in the pid file; the diagnostics zip, now asynchronous).
+
 **Replies show as they're written (2026-10-06).** The "live chat" round, Phase 2.
 
 - **What changed for the owner.** While the chief writes, its reply now appears in the chat as it comes, word by word, with a soft cursor at the end; the finished reply then takes its place. On the phone too. Before, a reply arrived whole once the turn ended, after a "thinking" line.

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createBoot, type BootDeps } from "../src/boot";
+import { createBoot, recoversBoot, type BootDeps } from "../src/boot";
 
 function deps(over: Partial<BootDeps> = {}) {
   const calls: string[] = [];
@@ -105,5 +105,39 @@ describe("boot", () => {
     const ext = deps({ claimGateway: async () => "external" });
     expect(await createBoot(ext.d).run()).toBe("ready");
     expect(ext.calls).not.toContain("gateway");
+  });
+});
+
+describe("a start that recovers", () => {
+  it("a throw inside a step shows on that step with Retry, and the next run starts clean", async () => {
+    let fails = true;
+    const { d, steps, calls } = deps({
+      choosePorts: async () => {
+        if (fails) throw new Error("No free port between 3000 and 3049.");
+      },
+    });
+    const boot = createBoot(d);
+    expect(await boot.run()).toBe("error");
+    expect(steps).toContain("prepare:error:No free port between 3000 and 3049.");
+    expect(calls).toContain("log:boot.unhandled");
+    expect(boot.running).toBe(false);
+    fails = false;
+    expect(await boot.run()).toBe("ready");
+  });
+
+  it("a throw while opening the dashboard lands on the web step", async () => {
+    const { d, steps } = deps({ openDashboard: async () => Promise.reject(new Error("The page wouldn't load.")) });
+    expect(await createBoot(d).run()).toBe("error");
+    expect(steps.at(-1)).toBe("web:error:The page wouldn't load.");
+  });
+
+  it("a supervisor coming back on its own restarts the boot only while the start screen shows a failure", () => {
+    const errored = [{ state: "done" }, { state: "error" }];
+    const fine = [{ state: "done" }, { state: "done" }];
+    expect(recoversBoot({ type: "state", state: "running" }, errored, false)).toBe(true);
+    expect(recoversBoot({ type: "state", state: "running" }, errored, true)).toBe(false); // a boot is on it already
+    expect(recoversBoot({ type: "state", state: "running" }, fine, false)).toBe(false); // the dashboard is open
+    expect(recoversBoot({ type: "state", state: "backoff" }, errored, false)).toBe(false);
+    expect(recoversBoot({ type: "unhealthy" }, errored, false)).toBe(false);
   });
 });

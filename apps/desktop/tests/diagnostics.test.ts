@@ -34,9 +34,9 @@ describe("the diagnostics bundle", () => {
   });
 
   // Zipping goes through Windows' own tools, which took 18 s on a GitHub runner (under a second here).
-  it.runIf(process.platform === "win32")("zips them with an about file", () => {
+  it.runIf(process.platform === "win32")("zips them with an about file", async () => {
     const out = path.join(tmp, "diag.zip");
-    const r = createDiagnostics({ sources, info: { app: "1.2.3" }, redact, out });
+    const r = await createDiagnostics({ sources, info: { app: "1.2.3" }, redact, out });
     expect(r.ok).toBe(true);
     expect(existsSync(out)).toBe(true);
   }, 60_000);

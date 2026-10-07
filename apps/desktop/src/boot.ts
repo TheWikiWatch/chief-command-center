@@ -43,18 +43,33 @@ export type BootDeps = {
 
 export type BootResult = "ready" | "error" | "quit";
 
+type StepId = Parameters<BootDeps["setStep"]>[0];
+
+/**
+ * A supervisor that came back on its own (its restart after a crash, or the slow retry) while the start screen shows
+ * a failure: the boot runs again without anyone pressing Retry. Nothing happens once the dashboard is open (no step
+ * is in error then) or while a boot is already under way (it will see the recovery itself).
+ */
+export function recoversBoot(event: { type: string; state?: string }, steps: { state: string }[], bootRunning: boolean): boolean {
+  return event.type === "state" && event.state === "running" && !bootRunning && steps.some((s) => s.state === "error");
+}
+
 export function createBoot(deps: BootDeps) {
   let running: Promise<BootResult> | null = null;
+  // The step under way, so a throw from inside it (a port search that found none, a window that wouldn't load) is
+  // shown on that step with Retry, instead of a spinner that never ends.
+  let current: StepId = "runtime";
 
   async function sequence(): Promise<BootResult> {
     const started = deps.now();
     const timed = new Map<string, number>();
-    const step = (id: Parameters<BootDeps["setStep"]>[0], state: StepState, detail = "") => {
+    const step = (id: StepId, state: StepState, detail = "") => {
+      if (state === "working") current = id;
       if (state === "working" && !timed.has(id)) timed.set(id, deps.now());
       if (state === "done" || state === "error") deps.log(`boot.${id}.${state}`, { ms: deps.now() - (timed.get(id) ?? started), ...(detail ? { detail } : {}) });
       deps.setStep(id, state, detail);
     };
-    const fail = (id: Parameters<BootDeps["setStep"]>[0], detail: string): BootResult => {
+    const fail = (id: StepId, detail: string): BootResult => {
       step(id, "error", detail);
       return "error";
     };
@@ -133,9 +148,16 @@ export function createBoot(deps: BootDeps) {
     /** Start (or retry). A call while a boot is running returns that boot. */
     run(): Promise<BootResult> {
       if (!running) {
-        running = sequence().finally(() => {
-          running = null;
-        });
+        running = sequence()
+          .catch((e): BootResult => {
+            const message = e instanceof Error ? e.message : String(e);
+            deps.log("boot.unhandled", { step: current, error: message });
+            deps.setStep(current, "error", message);
+            return "error";
+          })
+          .finally(() => {
+            running = null;
+          });
       }
       return running;
     },

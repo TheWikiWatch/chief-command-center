@@ -3,16 +3,16 @@ import path from "node:path";
 
 import { app, crashReporter, dialog, protocol, safeStorage, session, utilityProcess } from "electron";
 
-import { createBoot } from "./boot";
+import { createBoot, recoversBoot } from "./boot";
 import { registerBootScheme, serveBootPage } from "./boot-protocol";
 import { payloadLayout } from "./env";
-import { bridgeHealth, gatewayOwner, killTree, launchGateway, profileHome, requestScopedStop, waitFor } from "./gateway";
+import { bridgeHealth, gatewayOwner, isOrphan, killTree, launchGateway, profileHome, requestScopedStop, waitFor } from "./gateway";
 import { actionFromArgv, permissionAllowed, permissionCheckAllowed } from "./guards";
 import { installPackage } from "./install-package";
 import { registerIpc, sendEngineState, syncHistory } from "./ipc";
 import { Notifier } from "./notifier";
 import { missing, resolvePaths } from "./paths";
-import { isFree, pickPort } from "./ports";
+import { decidePorts } from "./ports";
 import { cacheRelease, readReleases, recordInstall } from "./release-history";
 import { RELEASE_KEYS } from "./release-key";
 import { builtInFeed, builtInReportEmail, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
@@ -38,16 +38,16 @@ const DATA_SCHEMA = 1;
  * install-package.ts and runtime.ts (environments and the bundled Python).
  */
 
+const alive = (s: Supervisor | undefined) => !!s && (s.state === "running" || s.state === "starting");
+
 async function choosePorts() {
   const { store, paths, hermesRoot } = ctx;
   const saved = store.value.ports;
   const first = !existsSync(path.join(paths.appDir, "desktop.json"));
   const owner = gatewayOwner(hermesRoot, payloadLayout(paths.payload).launcher);
-  let bridge = saved.bridge;
-  if (owner.state === "none" && !(await isFree(bridge))) bridge = await pickPort(first ? 7790 : bridge + 1);
-  let ui = saved.ui;
-  if (!(await isFree(ui))) ui = await pickPort(first ? 3000 : ui + 1, [bridge]);
-  if (first || ui !== saved.ui || bridge !== saved.bridge) store.save({ ports: { ui, bridge } });
+  // A gateway on the bridge port (ours, or another launcher's) keeps it; so does this run's own dashboard server.
+  const chosen = await decidePorts({ saved, first, bridgeHeld: owner.state !== "none" || alive(ctx.gateway), uiHeld: alive(ctx.web) });
+  if (first || chosen.ui !== saved.ui || chosen.bridge !== saved.bridge) store.save({ ports: chosen });
 }
 
 /** Another launcher runs this profile's gateway: take it over (stop only that one), use it as is, or quit. */
@@ -55,7 +55,8 @@ async function claimGateway(): Promise<"own" | "external" | "quit"> {
   const { paths, hermesRoot } = ctx;
   const owner = gatewayOwner(hermesRoot, payloadLayout(paths.payload).launcher);
   ctx.externalGateway = false;
-  if (owner.state === "ours") killTree(owner.pid); // an orphan from a crashed run of this app
+  // An orphan from a crashed run of this app; never the gateway this run's supervisor is starting or running.
+  if (isOrphan(owner, ctx.gateway)) await killTree((owner as { pid: number }).pid);
   if (owner.state !== "foreign") return "own";
   const choice = await dialog.showMessageBox(ctx.window!, {
     type: "question",
@@ -73,9 +74,9 @@ async function claimGateway(): Promise<"own" | "external" | "quit"> {
   }
   // Only that gateway, in this profile home (never `hermes gateway stop`; see gateway.ts).
   const layout = payloadLayout(paths.payload);
-  requestScopedStop({ python: layout.python, pythonPath: layout.pythonPath, hermesRoot, profile: "chief", env: toolEnv("gateway") }, owner.pid);
+  await requestScopedStop({ python: layout.python, pythonPath: layout.pythonPath, hermesRoot, profile: "chief", env: toolEnv("gateway") }, owner.pid);
   await waitFor(async () => ({ ok: gatewayOwner(hermesRoot, "").state === "none" }), 25_000);
-  if (gatewayOwner(hermesRoot, "").state !== "none") killTree(owner.pid);
+  if (gatewayOwner(hermesRoot, "").state !== "none") await killTree(owner.pid);
   return "own";
 }
 
@@ -188,6 +189,11 @@ function onSupervisorEvent(name: "gateway" | "web", e: SupervisorEvent) {
   }
   if (ctx.quitting) return;
   sendEngineState();
+  // Chief (or the dashboard) came back by itself while the start screen shows a failure: carry on without Retry.
+  if (recoversBoot(e, ctx.steps, boot.running)) {
+    log.info("boot.recovered", { by: name });
+    void runBoot();
+  }
   if (name === "gateway" && e.type === "state" && e.state === "failed") {
     setStep("gateway", "error", `${e.detail} Chief kept stopping; the app tries again every 10 minutes.`);
     if (!ctx.window?.isFocused()) notify("Chief stopped", "It kept stopping, so the app will try again in 10 minutes. Click to open Chief.");

@@ -79,7 +79,7 @@ async function reportDiagnostics(): Promise<{ ok: boolean; path?: string; name?:
 }
 
 async function buildDiagnostics(out: string): Promise<{ ok: boolean; path?: string; error?: string }> {
-  const result = createDiagnostics({
+  const result = await createDiagnostics({
     out,
     redact: (text) => log.redact(text),
     sources: [

@@ -1,7 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 
 /**
  * Settings → About → Create diagnostics: the app's logs, the bridge's log, crash dumps and versions in one zip
@@ -36,23 +36,38 @@ export function collect(sources: DiagnosticsSource[], staging: string, redact: (
   return included;
 }
 
-/** Zip a folder's contents with Windows' own PowerShell (no extra library in the app). */
-export function zipFolder(folder: string, out: string): { ok: boolean; error?: string } {
+/** Zip a folder's contents with Windows' own PowerShell (no extra library in the app), off the main thread. */
+export function zipFolder(folder: string, out: string): Promise<{ ok: boolean; error?: string }> {
   const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
-  const r = spawnSync(
-    "powershell.exe",
-    ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", `Compress-Archive -Path ${q(path.join(folder, "*"))} -DestinationPath ${q(out)} -Force`],
-    { windowsHide: true, timeout: 120_000 },
-  );
-  return r.status === 0 ? { ok: true } : { ok: false, error: (r.stderr?.toString() || "Windows couldn't make the zip.").trim().slice(0, 300) };
+  return new Promise((resolve) => {
+    const child = spawn(
+      "powershell.exe",
+      ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", `Compress-Archive -Path ${q(path.join(folder, "*"))} -DestinationPath ${q(out)} -Force`],
+      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr?.on("data", (chunk) => (stderr += String(chunk)));
+    const timer = setTimeout(() => {
+      child.kill();
+      resolve({ ok: false, error: "Windows took too long to make the zip." });
+    }, 120_000);
+    child.once("exit", (code) => {
+      clearTimeout(timer);
+      resolve(code === 0 ? { ok: true } : { ok: false, error: (stderr || "Windows couldn't make the zip.").trim().slice(0, 300) });
+    });
+    child.once("error", (e) => {
+      clearTimeout(timer);
+      resolve({ ok: false, error: e.message });
+    });
+  });
 }
 
-export function createDiagnostics(opts: {
+export async function createDiagnostics(opts: {
   sources: DiagnosticsSource[];
   info: Record<string, unknown>;
   redact: (text: string) => string;
   out: string;
-}): { ok: boolean; files?: string[]; error?: string } {
+}): Promise<{ ok: boolean; files?: string[]; error?: string }> {
   const staging = mkdtempSync(path.join(tmpdir(), "chief-diagnostics-"));
   try {
     const files = collect(opts.sources, staging, opts.redact);
@@ -61,7 +76,7 @@ export function createDiagnostics(opts: {
       path.join(staging, "README.txt"),
       "Chief Command Center diagnostics.\r\n\r\nLogs, crash dumps and versions from this PC. Tokens and passwords were removed, but logs can mention\r\nfile names and bits of what Chief was doing: look through them before sending.\r\n",
     );
-    const zipped = zipFolder(staging, opts.out);
+    const zipped = await zipFolder(staging, opts.out);
     return zipped.ok ? { ok: true, files } : { ok: false, error: zipped.error };
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };

@@ -34,7 +34,7 @@
 <div class="titlebar">Chief Command Center</div>
 <main>
   <h1>Starting Chief</h1>
-  <p class="sub">This takes a few seconds.</p>
+  <p class="sub" id="sub">This takes a few seconds.</p>
   <ol id="steps" aria-live="polite"></ol>
   <div class="actions" id="actions">
     <button class="primary" id="retry">Try again</button>
@@ -45,7 +45,17 @@
 <script>
   const list = document.getElementById("steps");
   const actions = document.getElementById("actions");
+  const sub = document.getElementById("sub");
+  // The line under the title follows what is happening: a backup before a new version's first start takes
+  // minutes on a large setup, and a failure says so instead of promising "a few seconds".
+  function subtitle(steps) {
+    if (steps.some((s) => s.state === "error")) return "Something needs attention below.";
+    const working = steps.find((s) => s.state === "working");
+    if (working && /Backing up/.test(working.detail || "")) return "Backing up first. This can take a few minutes on a large setup.";
+    return "This takes a few seconds.";
+  }
   function render(steps) {
+    sub.textContent = subtitle(steps);
     list.textContent = "";
     for (const step of steps) {
       const li = document.createElement("li");
