@@ -6,6 +6,7 @@ import { CircleAlertIcon } from "@/components/icons";
 import { useAssistantName } from "@/lib/identity";
 import { money, tokens, usageApi, type UsageDay, type UsagePeriod, type UsageSummary } from "@/lib/usage-client";
 import { btn } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/surface";
 
 const PERIODS: { id: UsagePeriod; label: string }[] = [
   { id: "today", label: "Today" },
@@ -58,7 +59,7 @@ export function UsagePage() {
           <span>{error}</span>
         </p>
       ) : null}
-      {!data && !error ? <p className="text-callout text-fg-3">Reading usage…</p> : null}
+      {!data && !error ? <Skeleton lines={4} label="Reading usage" /> : null}
 
       {data && t ? (
         <>

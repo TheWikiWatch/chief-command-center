@@ -23,6 +23,7 @@ import { threadsApi, type ChatThread } from "@/lib/threads-client";
 import type { Person } from "@/lib/types";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
+import { SkeletonRows } from "@/components/ui/surface";
 
 type View = { mode: "list" } | { mode: "new" } | { mode: "edit"; id: string; profile: string };
 type Note = { tone: "ok" | "error"; text: string };
@@ -108,7 +109,7 @@ export function RoutinesTab({ people }: { people: Person[] }) {
             </button>
           </div>
           {note ? <NoteLine note={note} /> : null}
-          {routines === null ? <p className="text-callout text-fg-3">Reading the routines…</p> : null}
+          {routines === null ? <SkeletonRows rows={3} label="Reading the routines" /> : null}
           {routines !== null ? (
             <section className="space-y-2">
               <h3 className="text-body font-medium text-fg">Your routines</h3>

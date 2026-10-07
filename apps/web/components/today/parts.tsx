@@ -2,7 +2,7 @@
 
 import { animate as animateValue, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
-import { ClockIcon, RefreshCwIcon, TriangleAlertIcon } from "@/components/icons";
+import { RefreshCwIcon } from "@/components/icons";
 import { EASE } from "@/lib/motion";
 import { type TodayItem } from "@/lib/ops";
 import { StateFace } from "@/components/state-face";
@@ -74,17 +74,6 @@ export function StatTiles({ open, overdue, waiting, animate: run }: { open?: num
         </motion.div>
       ))}
     </div>
-  );
-}
-
-export function Banner({ tone, children }: { tone: "danger" | "warn" | "neutral"; children: React.ReactNode }) {
-  const cls = tone === "danger" ? "border-danger/30 bg-danger/8 text-fg" : tone === "warn" ? "border-warn/30 bg-warn/8 text-fg" : "border-line bg-card text-fg-2";
-  const Icon = tone === "neutral" ? ClockIcon : TriangleAlertIcon;
-  return (
-    <p className={`mb-3 flex items-start gap-2.5 rounded-card border px-3.5 py-2.5 text-callout ${cls}`}>
-      <Icon size={16} className={`mt-0.5 shrink-0 ${tone === "danger" ? "text-danger" : tone === "warn" ? "text-warn" : "text-fg-3"}`} />
-      <span>{children}</span>
-    </p>
   );
 }
 

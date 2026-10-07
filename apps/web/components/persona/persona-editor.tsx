@@ -294,7 +294,7 @@ function MemoryEditor({
               aria-label={`Entry ${i + 1}`}
               onChange={(e) => update(row.key, { text: e.target.value })}
               rows={Math.min(6, Math.max(1, Math.ceil(row.text.length / 60)))}
-              className={`min-h-11 min-w-0 flex-1 resize-y rounded-ctl border bg-canvas px-3 py-2 text-callout text-fg outline-hidden focus:border-line-3 ${row.deleted ? "border-line line-through" : "border-line-2"}`}
+              className={field({ extra: `min-w-0 flex-1 resize-y py-2 ${row.deleted ? "line-through" : ""}` })}
             />
             <button
               type="button"

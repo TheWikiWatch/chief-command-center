@@ -9,7 +9,7 @@ import { showToast } from "@/lib/toast-store";
 import { useAssistantName } from "@/lib/identity";
 import { btn } from "@/components/ui/button";
 import { LEGACY_DISMISSED_KEY, STATUS } from "@/components/fleet-health";
-import { EmptyCard } from "@/components/fleet-health/parts";
+import { EmptyState } from "@/components/ui/surface";
 
 /* Fleet Health → the weekly proposals the owner approves or dismisses. */
 
@@ -117,11 +117,9 @@ export function Proposals({ items, onSendToChief, onDecided }: { items: Proposal
           </AnimatePresence>
         </ul>
       ) : (
-        <EmptyCard
-          icon={<CheckIcon size={20} />}
-          title={items.length ? "All proposals handled" : "No proposals yet"}
-          body={items.length ? "Decisions are shared by every device, and the distill won't propose a dismissed one again." : "The weekly distill writes its skill and memory proposals here with the evidence behind each."}
-        />
+        <EmptyState icon={<CheckIcon size={20} />} title={items.length ? "All proposals handled" : "No proposals yet"} className="max-w-none rounded-card border border-dashed border-line-2 py-6">
+          {items.length ? "Decisions are shared by every device, and the distill won't propose a dismissed one again." : "The weekly distill writes its skill and memory proposals here with the evidence behind each."}
+        </EmptyState>
       )}
       {decided.length ? (
         <div className="mt-2">

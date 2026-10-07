@@ -224,7 +224,7 @@ export function Highlight({ text, terms }: { text: string; terms: string[] }) {
     <>
       {text.split(re).map((part, i) =>
         i % 2 ? (
-          <mark key={i} className="rounded-[3px] bg-accent/25 text-fg [box-decoration-break:clone]">
+          <mark key={i} className="rounded-xs bg-accent/25 text-fg [box-decoration-break:clone]">
             {part}
           </mark>
         ) : (

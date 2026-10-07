@@ -296,7 +296,7 @@ function Lightbox({
               <button
                 type="button"
                 aria-label="Previous image"
-                className="glass absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-fg"
+                className="press glass absolute left-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-fg"
                 onClick={() => step(-1)}
               >
                 <ChevronLeftIcon size={20} />
@@ -304,7 +304,7 @@ function Lightbox({
               <button
                 type="button"
                 aria-label="Next image"
-                className="glass absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-fg"
+                className="press glass absolute right-3 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-fg"
                 onClick={() => step(1)}
               >
                 <ChevronRightIcon size={20} />

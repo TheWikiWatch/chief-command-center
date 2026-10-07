@@ -12,7 +12,7 @@ import { loadVoiceCheck, type VoiceCheckResult } from "@/lib/mic-device";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
 import { ApplyBody, previewLine } from "@/components/settings-panel";
-import { Field, Select } from "@/components/settings/shared";
+import { Field, Select } from "@/components/ui/field";
 
 /* Settings → Voice: hearing and speaking engines, keys, the voice preview and Check my system. */
 
@@ -144,17 +144,21 @@ export function VoiceGroup() {
             />
             {(stt?.models?.length || 0) > 0 ? (
               <Field label="Hearing model">
-                <Select
-                  value={stt?.model && stt.models?.includes(stt.model) ? stt.model : stt?.models?.[0] || ""}
-                  disabled={saving}
-                  onChange={(id) => void apply({ stt: { model: id } }).catch(() => undefined)}
-                >
-                  {(stt?.models || []).map((m) => (
-                    <option key={m} value={m}>
-                      {m}
-                    </option>
-                  ))}
-                </Select>
+                {(p) => (
+                  <Select
+                    {...p}
+                    value={stt?.model && stt.models?.includes(stt.model) ? stt.model : stt?.models?.[0] || ""}
+                    disabled={saving}
+                    onChange={(e) => void apply({ stt: { model: e.target.value } }).catch(() => undefined)}
+                    className="w-full"
+                  >
+                    {(stt?.models || []).map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </Select>
+                )}
               </Field>
             ) : null}
             <ProviderList
@@ -169,15 +173,17 @@ export function VoiceGroup() {
               <div className="flex items-end gap-2">
                 <div className="min-w-0 flex-1">
                   <Field label={voiceLabel}>
-                    <Select
-                      value={
-                        tts?.voice && tts.voices?.some((v) => v.id === tts.voice) ? tts.voice : tts?.voices?.[0]?.id || ""
-                      }
-                      disabled={saving}
-                      onChange={(id) => void apply({ tts: { voice: id } }).catch(() => undefined)}
-                    >
-                      <VoiceOptions voices={tts?.voices || []} />
-                    </Select>
+                    {(p) => (
+                      <Select
+                        {...p}
+                        value={tts?.voice && tts.voices?.some((v) => v.id === tts.voice) ? tts.voice : tts?.voices?.[0]?.id || ""}
+                        disabled={saving}
+                        onChange={(e) => void apply({ tts: { voice: e.target.value } }).catch(() => undefined)}
+                        className="w-full"
+                      >
+                        <VoiceOptions voices={tts?.voices || []} />
+                      </Select>
+                    )}
                   </Field>
                 </div>
                 <VoicePreview disabled={saving} />
@@ -336,7 +342,7 @@ export function KeyField({
           }}
           className={field({ mono: true, extra: "min-w-0 flex-1" })}
         />
-        <button type="button" className="chat-type-btn min-h-11 px-3" disabled={saving} onClick={() => setReveal((v) => !v)}>
+        <button type="button" className={btn("secondary")} disabled={saving} onClick={() => setReveal((v) => !v)}>
           {reveal ? "Hide" : "Show"}
         </button>
       </div>

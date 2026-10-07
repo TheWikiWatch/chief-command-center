@@ -104,7 +104,7 @@ function SheetBody({
           bottom
             ? `absolute inset-x-0 bottom-0 flex flex-col rounded-t-sheet border-t border-line-2 bg-raised pb-[env(safe-area-inset-bottom)] shadow-e4 outline-hidden ${tall ? "h-[92%]" : "max-h-[92%]"} ${className}`
             : center
-              ? `absolute inset-0 m-auto flex h-[min(88vh,860px)] w-[min(1000px,calc(100%-48px))] flex-col overflow-hidden rounded-[22px] border border-line-2 bg-raised shadow-e4 outline-hidden ${className}`
+              ? `absolute inset-0 m-auto flex h-[min(88vh,860px)] w-[min(1000px,calc(100%-48px))] flex-col overflow-hidden rounded-pane border border-line-2 bg-raised shadow-e4 outline-hidden ${className}`
               : `absolute inset-y-0 right-0 flex ${wide ? "w-[min(540px,100%)]" : "w-[min(440px,100%)]"} flex-col border-l border-line-2 bg-raised shadow-e4 outline-hidden ${className}`
         }
         initial={bottom ? { y: "100%" } : center ? { opacity: 0, scale: 0.97, y: 8 } : { x: 32, opacity: 0 }}

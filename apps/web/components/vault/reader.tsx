@@ -44,7 +44,7 @@ export function Reader({
         )}
         <div className="min-w-0 flex-1 px-1">
           <h2 className="truncate text-headline text-fg">{displayName(name)}</h2>
-          <button type="button" className="block max-w-full truncate text-left text-caption text-fg-3 hover:text-fg-2" onClick={() => onFolder(folder.join("/"))}>
+          <button type="button" className="press block max-w-full truncate text-left text-caption text-fg-3 hover:text-fg-2" onClick={() => onFolder(folder.join("/"))}>
             {folder.length ? folder.join(" / ") : "Vault"}
           </button>
         </div>

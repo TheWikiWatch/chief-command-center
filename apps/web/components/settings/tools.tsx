@@ -6,7 +6,7 @@ import { Group } from "@/components/ui/settings-group";
 import { Button, btn } from "@/components/ui/button";
 import { field } from "@/components/ui/field";
 import { MessageMedia } from "@/components/message-media";
-import { Field, Select } from "@/components/settings/shared";
+import { Field, Select } from "@/components/ui/field";
 import { fetchTools, patchTools, testTool, type ToolName, type ToolService, type ToolsState, type ToolTestResult } from "@/lib/bridge";
 import { useAssistantName } from "@/lib/identity";
 
@@ -124,13 +124,15 @@ function ImageTool({ data, saving, disabled, apply, action }: { data: ToolsState
         <ServiceList label="Image services" services={data.providers} saving={saving} disabled={disabled} apply={apply} />
         {data.model && data.model.options.length > 1 ? (
           <Field label="Model">
-            <Select value={data.model.current} disabled={disabled} onChange={(id) => void apply({ model: id }).catch(() => undefined)}>
-              {data.model.options.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.detail ? `${m.label} · ${m.detail}` : m.label}
-                </option>
-              ))}
-            </Select>
+            {(p) => (
+              <Select {...p} value={data.model!.current} disabled={disabled} onChange={(e) => void apply({ model: e.target.value }).catch(() => undefined)} className="w-full">
+                {data.model!.options.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.detail ? `${m.label} · ${m.detail}` : m.label}
+                  </option>
+                ))}
+              </Select>
+            )}
           </Field>
         ) : null}
         <TryIt tool="image" enabled={!!active && !disabled} label="Make a test image" busy="Making an image… this can take a minute." note="Uses your service once, so it may cost a few cents." />
@@ -309,7 +311,7 @@ function KeyBox({ service, disabled, onSave }: { service: ToolService; disabled:
               className={field({ mono: true, extra: "min-w-0 flex-1" })}
             />
             {address ? null : (
-              <button type="button" className="chat-type-btn min-h-11 px-3" disabled={disabled} onClick={() => setReveal((v) => !v)}>
+              <button type="button" className={btn("secondary")} disabled={disabled} onClick={() => setReveal((v) => !v)}>
                 {reveal ? "Hide" : "Show"}
               </button>
             )}

@@ -75,6 +75,10 @@
   --radius-ctl: 10px;
   --radius-card: 14px;
   --radius-sheet: 20px;
+  /* A pill inside a dock or a centred window (the phone tab's highlight, the Settings window). */
+  --radius-pane: 22px;
+  /* The composer's capsule. */
+  --radius-capsule: 24px;
   --radius-dock: 28px;
 
   --shadow-e3: 0 8px 32px rgb(0 0 0 / 0.45), 0 1px 0 rgb(255 255 255 / 0.04) inset;
@@ -145,11 +149,12 @@
   --scrim: rgb(0 0 0 / 0.55);
 
 
-  --dur-press: 80ms;
-  --dur-fast: 140ms;
-  --dur-base: 220ms;
-  --dur-medium: 320ms;
-  --dur-sheet: 480ms;
+  /* The same durations as the `duration-*` utilities (defined once, in @theme above). */
+  --dur-press: var(--transition-duration-press);
+  --dur-fast: var(--transition-duration-fast);
+  --dur-base: var(--transition-duration-base);
+  --dur-medium: var(--transition-duration-medium);
+  --dur-sheet: var(--transition-duration-sheet);
 
   --ui-scale: 1;
   font-size: calc(16px * var(--ui-scale));

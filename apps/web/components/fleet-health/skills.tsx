@@ -9,7 +9,8 @@ import { SPRING } from "@/lib/motion";
 import { showToast } from "@/lib/toast-store";
 import { useAssistantName } from "@/lib/identity";
 import { SKILLS_FOLDED, VERDICT, agoAt, day, skillAnchor } from "@/components/fleet-health";
-import { EmptyCard, Section } from "@/components/fleet-health/parts";
+import { Section } from "@/components/fleet-health/parts";
+import { EmptyState } from "@/components/ui/surface";
 
 /* Fleet Health → skills: churn, episodes and verdicts, each change with its diff and revert. */
 
@@ -44,7 +45,7 @@ export function Skills({ skills, open, onOpen, onReverted }: { skills: SkillSumm
           ) : null}
         </>
       ) : (
-        <EmptyCard icon={<SparklesIcon size={20} />} title="No skill changes in 30 days" body={`Changes appear here as background review and ${assistant} edit skills.`} />
+        <EmptyState icon={<SparklesIcon size={20} />} title="No skill changes in 30 days" className="max-w-none rounded-card border border-dashed border-line-2 py-6">{`Changes appear here as background review and ${assistant} edit skills.`}</EmptyState>
       )}
     </Section>
   );

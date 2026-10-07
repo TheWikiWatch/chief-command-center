@@ -409,7 +409,7 @@ export function Thread({
         {messages.length === 0 && loading ? (
           <ThreadSkeleton />
         ) : messages.length === 0 ? (
-          <EmptyState chief={chief} connected={connected} authFailed={authFailed} onSuggestion={onSuggestion} />
+          <ChatEmptyState chief={chief} connected={connected} authFailed={authFailed} onSuggestion={onSuggestion} />
         ) : (
           <div ref={content} className="mx-auto flex max-w-3xl flex-col">
             {header}
@@ -650,7 +650,7 @@ function QueuedFooter({ m, onCancel, onRetry }: { m: ChatMessage; onCancel?: (qu
 }
 
 const ACTION =
-  "press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-fill-2 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 [@media(hover:none)]:opacity-70";
+  "press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-fill-2 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-70";
 
 /**
  * A reply's actions: copy its text (as written, markdown included) and read it aloud. They show on hover and
@@ -890,7 +890,7 @@ function ThinkingRow({ chief, waitingApproval, since, step }: { chief: Person | 
 
 const SUGGESTIONS = ["What's on my plate today?", "Give me a fleet status", "What did you finish since yesterday?"];
 
-function EmptyState({
+function ChatEmptyState({
   chief,
   connected,
   authFailed,

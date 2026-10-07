@@ -9,7 +9,7 @@ import { readStart, writeStart } from "@/lib/start-cache";
 import { markStart } from "@/lib/startup-timing";
 import { share } from "@/lib/share";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
-import { SearchIcon, SlidersHorizontalIcon, XIcon } from "@/components/icons";
+import { ClockIcon, SearchIcon, SlidersHorizontalIcon, TriangleAlertIcon, XIcon } from "@/components/icons";
 import { EASE } from "@/lib/motion";
 import { useScopeVisible } from "@/lib/overlay-stack";
 import { ops, fetchOpsHealth, pulseLine, type Board, type FocusCard, type Intent, type LaunchTarget, type Meta, type Pulse, type TaskCard, type TodayItem } from "@/lib/ops";
@@ -18,7 +18,8 @@ import { useAppConfig } from "@/lib/app-config";
 import { SecondBrainNotSetUp } from "@/components/second-brain/not-set-up";
 import { AreaDrill } from "@/components/today/area-drill";
 import { IntentSheet } from "@/components/today/intent-sheet";
-import { Banner, OpsDown, StatTiles, TaskRow, useMorning } from "@/components/today/parts";
+import { OpsDown, StatTiles, TaskRow, useMorning } from "@/components/today/parts";
+import { Banner } from "@/components/ui/surface";
 import { SettingsSheet } from "@/components/today/vault-settings";
 import { ViewSwitch } from "@/components/ui/controls";
 import { TodaySide } from "@/components/today/side-column";
@@ -317,16 +318,16 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
                 ) : null}
               </label>
 
-              {error ? <Banner tone="danger">{error}</Banner> : null}
+              {error ? <Banner tone="danger" icon={<TriangleAlertIcon size={16} />} className="mb-3">{error}</Banner> : null}
               {meta && !meta.vault_exists ? (
                 <button type="button" className="press mb-3 block w-full text-left" onClick={openFolderSettings}>
-                  <Banner tone="danger">
+                  <Banner tone="danger" icon={<TriangleAlertIcon size={16} />}>
                     {builtin ? "Your Second Brain folder is missing. Choose it again." : "Vault path not found. Open settings and point it at the second brain folder."}
                   </Banner>
                 </button>
               ) : null}
-              {meta?.lock_present ? <Banner tone="warn">Vault write lock is on. Wait before asking {assistant} to update boards.</Banner> : null}
-              {stale ? <Banner tone="neutral">The focus summary looks stale. Trust the board dates.</Banner> : null}
+              {meta?.lock_present ? <Banner tone="warn" icon={<TriangleAlertIcon size={16} />} className="mb-3">Vault write lock is on. Wait before asking {assistant} to update boards.</Banner> : null}
+              {stale ? <Banner tone="neutral" icon={<ClockIcon size={16} />} className="mb-3">The focus summary looks stale. Trust the board dates.</Banner> : null}
 
               {area && activeBoard ? (
                 <AreaDrill

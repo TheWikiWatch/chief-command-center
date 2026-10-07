@@ -45,17 +45,6 @@ export function RefreshButton({ busy, onClick, label, small = false }: { busy: b
   );
 }
 
-export function EmptyCard({ icon, title, body, action }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
-  return (
-    <div className="flex flex-col items-center rounded-card border border-dashed border-line-2 px-5 py-6 text-center">
-      <span className="grid size-10 place-items-center rounded-full bg-fill-2 text-fg-3">{icon}</span>
-      <p className="mt-2.5 text-body font-medium text-fg">{title}</p>
-      <p className="mt-1 max-w-sm text-callout text-fg-3">{body}</p>
-      {action ? <div className="mt-4">{action}</div> : null}
-    </div>
-  );
-}
-
 export function Sparkline({ weeks }: { weeks: number[] }) {
   const max = Math.max(1, ...weeks);
   const w = 6;

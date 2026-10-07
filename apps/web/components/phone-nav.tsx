@@ -42,14 +42,14 @@ export function PhoneNav({
               type="button"
               onClick={() => onChange(id)}
               aria-current={on ? "page" : undefined}
-              className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-[22px] text-caption font-medium transition-colors duration-fast ${
+              className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-pane text-caption font-medium transition-colors duration-fast ${
                 on ? "text-fg" : "text-fg-3"
               }`}
             >
               {on ? (
                 <motion.span
                   layoutId="phone-tab-pill"
-                  className="absolute inset-0 rounded-[22px] bg-fill-3 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]"
+                  className="absolute inset-0 rounded-pane bg-fill-3 shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]"
                   transition={SPRING.snappy}
                 />
               ) : null}

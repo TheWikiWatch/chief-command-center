@@ -188,7 +188,7 @@ export function Composer({
       </AnimatePresence>
 
       <div className="relative flex items-end gap-2">
-        <div className="glass relative flex transition-[border-color] duration-fast focus-within:border-[rgb(255_255_255/0.26)]! min-h-12 min-w-0 flex-1 items-end rounded-[24px] pl-1 pr-1">
+        <div className="glass relative flex transition-[border-color] duration-fast focus-within:border-[rgb(255_255_255/0.26)]! min-h-12 min-w-0 flex-1 items-end rounded-capsule pl-1 pr-1">
           <div ref={menuBox} className="relative shrink-0 self-end pb-1">
             <button
               type="button"

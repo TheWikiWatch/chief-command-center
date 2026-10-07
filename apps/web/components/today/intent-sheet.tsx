@@ -4,6 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { CircleCheckIcon } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
+import { field as fieldClass } from "@/components/ui/field";
 import { SPRING } from "@/lib/motion";
 import { ops, type Intent, type LaunchTarget } from "@/lib/ops";
 import { useAssistantName } from "@/lib/identity";
@@ -91,7 +92,6 @@ export function IntentBody({
     }
   }
 
-  const field = "mt-1.5 min-h-11 w-full rounded-ctl border border-line-2 bg-canvas px-3 py-2 text-body text-fg outline-hidden placeholder:text-fg-3 focus:border-line-3";
   return (
     <div className="px-4 pb-5">
       <div className="mb-4 flex items-start gap-3">
@@ -137,20 +137,20 @@ export function IntentBody({
               value={due}
               min={new Date().toLocaleDateString("en-CA")}
               onChange={(e) => setDue(e.target.value)}
-              className={`${field} scheme-dark`}
+              className={fieldClass({ extra: "mt-1.5 w-full py-2 scheme-dark" })}
             />
           </motion.label>
         ) : null}
         {intent === "task.block" ? (
           <motion.label key="blocker" className="mb-3 block text-callout text-fg-2" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: "auto" }} exit={{ opacity: 0, height: 0 }}>
             Blocker
-            <input value={blocker} onChange={(e) => setBlocker(e.target.value)} placeholder="Waiting on…" className={field} />
+            <input value={blocker} onChange={(e) => setBlocker(e.target.value)} placeholder="Waiting on…" className={fieldClass({ extra: "mt-1.5 w-full py-2" })} />
           </motion.label>
         ) : null}
       </AnimatePresence>
       <label className="mb-4 block text-callout text-fg-2">
         Note for {assistant}
-        <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Optional context" className={`${field} resize-none`} />
+        <textarea rows={2} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Optional context" className={fieldClass({ extra: "mt-1.5 w-full resize-none py-2" })} />
       </label>
       <div className="flex flex-wrap gap-2">
         <button

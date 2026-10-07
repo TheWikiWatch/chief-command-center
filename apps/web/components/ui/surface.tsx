@@ -32,10 +32,12 @@ export function Banner({ tone = "neutral", icon, action, children, className = "
 }
 
 /** Nothing here yet: a picture (the chief's face, an icon), what this place is for, and what to do next. */
-export function EmptyState({ visual, title, children, actions, className = "" }: { visual?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode; className?: string }) {
+/** `icon` is the small round badge of a section-sized empty state; `visual` the bigger picture (a face). */
+export function EmptyState({ visual, icon, title, children, actions, className = "" }: { visual?: ReactNode; icon?: ReactNode; title: ReactNode; children?: ReactNode; actions?: ReactNode; className?: string }) {
   return (
     <div className={`mx-auto flex max-w-sm flex-col items-center px-6 py-10 text-center ${className}`.trim()}>
       {visual ? <div className="mb-4">{visual}</div> : null}
+      {icon ? <span className="mb-2.5 grid size-10 place-items-center rounded-full bg-fill-2 text-fg-3">{icon}</span> : null}
       <h3 className="text-headline text-fg">{title}</h3>
       {children ? <div className="mt-1.5 text-body text-fg-3">{children}</div> : null}
       {actions ? <div className="mt-5 flex flex-wrap justify-center gap-2">{actions}</div> : null}

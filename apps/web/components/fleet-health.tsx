@@ -12,7 +12,8 @@ import type { Person } from "@/lib/types";
 import { useAssistantName } from "@/lib/identity";
 import { DeskRow } from "@/components/fleet-health/desks";
 import { AllClear, FlagRow, LookedAt, type FlagMove } from "@/components/fleet-health/flags";
-import { EmptyCard, RefreshButton, RuntimeCard, Section, Tile } from "@/components/fleet-health/parts";
+import { RefreshButton, RuntimeCard, Section, Tile } from "@/components/fleet-health/parts";
+import { EmptyState } from "@/components/ui/surface";
 import { Proposals } from "@/components/fleet-health/proposals";
 import { ChangeRow, Skills } from "@/components/fleet-health/skills";
 
@@ -103,7 +104,7 @@ export function FleetHealth({
     return (
       <div className="px-4 py-6">
         {error ? (
-          <EmptyCard icon={<CircleAlertIcon size={22} />} title="Fleet health isn't available" body={error} action={<RefreshButton busy={refreshing} onClick={refresh} label="Run the ledger now" />} />
+          <EmptyState icon={<CircleAlertIcon size={22} />} title="Fleet health isn't available" actions={<RefreshButton busy={refreshing} onClick={refresh} label="Run the ledger now" />} className="max-w-none rounded-card border border-dashed border-line-2 py-6">{error}</EmptyState>
         ) : (
           <div className="space-y-3" role="status" aria-label="Loading fleet health">
             <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
@@ -192,7 +193,7 @@ export function FleetHealth({
               ))}
             </ul>
           ) : (
-            <EmptyCard icon={<SparklesIcon size={20} />} title="No skill changes recorded yet" body={`Changes appear here as background review and ${assistant} edit skills.`} />
+            <EmptyState icon={<SparklesIcon size={20} />} title="No skill changes recorded yet" className="max-w-none rounded-card border border-dashed border-line-2 py-6">{`Changes appear here as background review and ${assistant} edit skills.`}</EmptyState>
           )}
         </Section>
       )}

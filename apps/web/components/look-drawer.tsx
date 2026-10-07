@@ -21,6 +21,7 @@ import { splitTitle } from "@/lib/names";
 import type { Peek, Person } from "@/lib/types";
 import { LAYER } from "@/lib/layers";
 import { btn } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/surface";
 
 const TABS = ["Job", "Soul", "Memory", "Tools"] as const;
 type Tab = (typeof TABS)[number];
@@ -190,7 +191,7 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE.enter } }} exit={{ opacity: 0, transition: { duration: 0.1 } }}>
             {!peek ? (
-              <p className="shimmer-text text-body">Reading…</p>
+              <Skeleton lines={5} label="Reading" />
             ) : (
               <DrawerBody tab={tab} person={person} peek={peek} retired={retired} onRetired={onClose} onChanged={() => setReload((n) => n + 1)} />
             )}

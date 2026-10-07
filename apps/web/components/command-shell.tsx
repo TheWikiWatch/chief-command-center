@@ -23,7 +23,8 @@ import { readStripPref, writeStripPref } from "@/lib/usage-client";
 import { ThreadSwitcher } from "@/components/chat/thread-switcher";
 import { setChatThread } from "@/lib/chat-thread";
 import { markSeen, readCurrentThread, writeCurrentThread } from "@/lib/threads-client";
-import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
+import { SurfaceTabs, surfacePanelId, surfaceTabId, type Surface } from "@/components/surface-tabs";
+import { SurfaceErrorBoundary } from "@/components/ui/error-boundary";
 import { useVaultOpenSignal } from "@/lib/vault-client";
 import { TodayPane } from "@/components/today-pane";
 import { WorkforcePane } from "@/components/workforce-pane";
@@ -531,6 +532,7 @@ export function CommandShell() {
     <HeaderStatus connected={connected} authFailed={authFailed} onOpenStatus={openStatus} onOpenSettings={openSettings} />
   );
   const chat = (
+    <SurfaceErrorBoundary name="chat">
     <ChiefChat
       key={`${thread}:${fresh}`}
       threadSwitcher={<ThreadSwitcher current={thread} onChange={changeThread} onFresh={() => setFresh((n) => n + 1)} phone={phone} />}
@@ -548,19 +550,24 @@ export function CommandShell() {
       onOpenSettings={openSettings}
       onOpenStatus={openStatus}
     />
+    </SurfaceErrorBoundary>
   );
   const today = (
-    <TodayPane
-      surface={surface}
-      onSurface={changeSurface}
-      onSendToChief={sendFromToday}
-      hideTabs={phone}
-      trailing={phone ? headerStatus : null}
-      onSetUpSecondBrain={() => setSecondBrainOpen(true)}
-    />
+    <SurfaceErrorBoundary name="today">
+      <TodayPane
+        surface={surface}
+        onSurface={changeSurface}
+        onSendToChief={sendFromToday}
+        hideTabs={phone}
+        trailing={phone ? headerStatus : null}
+        onSetUpSecondBrain={() => setSecondBrainOpen(true)}
+      />
+    </SurfaceErrorBoundary>
   );
   const vault = (
-    <VaultPane phone={phone} surface={surface} onSurface={changeSurface} trailing={phone ? headerStatus : null} onSetUpSecondBrain={() => setSecondBrainOpen(true)} />
+    <SurfaceErrorBoundary name="vault">
+      <VaultPane phone={phone} surface={surface} onSurface={changeSurface} trailing={phone ? headerStatus : null} onSetUpSecondBrain={() => setSecondBrainOpen(true)} />
+    </SurfaceErrorBoundary>
   );
   const viewSwitch = fleetHealthOn ? <FleetViewSwitch view={fleetView} onChange={changeFleetView} flags={fleetView === "health" ? 0 : fleetFlags} /> : null;
   const usageToggle = (
@@ -608,7 +615,9 @@ export function CommandShell() {
       )}
       {fleetView === "health" ? (
         <div className={`app-clickable relative min-h-0 flex-1 overflow-y-auto overscroll-contain bg-pane ${phone ? "" : "pt-14"}`}>
-          <FleetHealth people={people} phone={phone} onSendToChief={sendFromToday} />
+          <SurfaceErrorBoundary name="fleet-health">
+            <FleetHealth people={people} phone={phone} onSendToChief={sendFromToday} />
+          </SurfaceErrorBoundary>
         </div>
       ) : (
       <div className="relative min-h-0 flex-1">
@@ -760,7 +769,9 @@ export function CommandShell() {
         >
           <Panel defaultSize={60} minSize={32} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-pane">
             <ViewTransition key={surface} enter="surface-in" exit="surface-out">
-              <div className="relative flex h-full min-h-0 flex-col">{surface === "today" ? today : surface === "vault" ? vault : fleet}</div>
+              <div id={surfacePanelId(surface)} role="tabpanel" aria-labelledby={surfaceTabId(surface)} className="relative flex h-full min-h-0 flex-col">
+                {surface === "today" ? today : surface === "vault" ? vault : fleet}
+              </div>
             </ViewTransition>
           </Panel>
           <PanelResizeHandle

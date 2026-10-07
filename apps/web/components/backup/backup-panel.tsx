@@ -164,11 +164,7 @@ export function BackupPanel() {
         </label>
         <label className="flex items-center gap-2">
           keep the last
-          <select
-            value={status.settings.keep}
-            onChange={(e) => void save({ keep: Number(e.target.value) })}
-            className="min-h-9 rounded-ctl border border-line-2 bg-canvas px-2 text-fg"
-          >
+          <select value={status.settings.keep} onChange={(e) => void save({ keep: Number(e.target.value) })} className={field({ extra: "min-w-0" })}>
             {[2, 3, 4, 6, 8, 12].map((n) => (
               <option key={n} value={n}>
                 {n}

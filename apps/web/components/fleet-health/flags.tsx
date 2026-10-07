@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckIcon, ChevronRightIcon, CircleCheckIcon } from "@/components/icons";
+import { btn } from "@/components/ui/button";
 import { ackFlag, flagMessage, type Flag } from "@/lib/fleet-health";
 import { SPRING } from "@/lib/motion";
 import { showToast } from "@/lib/toast-store";
@@ -13,8 +14,6 @@ import { SEVERITY, SEVERITY_DOT, agoAt } from "@/components/fleet-health";
 
 export type FlagMove = "hide" | "show";
 
-const PILL = "press inline-flex min-h-9 items-center gap-1.5 rounded-full px-3 text-caption font-medium disabled:opacity-60";
-const QUIET = `${PILL} border border-line-2 text-fg-2 hover:text-fg`;
 
 /** How long an acknowledgement holds, in the owner's words. */
 const holds = (f: Flag) => (f.evidenceAt === null ? "Hidden for a week" : "Hidden until something new happens");
@@ -79,12 +78,12 @@ export function FlagRow({
           {f.detail ? <p className="mt-0.5 text-caption text-fg-3">{f.detail}</p> : null}
           <div className="mt-2 flex flex-wrap items-center gap-2">
             {f.skill ? (
-              <button type="button" onClick={() => onShowSkill(f.skill!)} className={QUIET}>
+              <button type="button" onClick={() => onShowSkill(f.skill!)} className={btn("secondary", "sm")}>
                 Show changes
               </button>
             ) : null}
             {f.kind !== "proposal" ? (
-              <button type="button" onClick={() => void fine()} disabled={!!busy} className={QUIET}>
+              <button type="button" onClick={() => void fine()} disabled={!!busy} className={btn("secondary", "sm")}>
                 <CheckIcon size={13} />
                 {busy === "fine" ? "Saving…" : "Looks fine"}
               </button>
@@ -94,7 +93,7 @@ export function FlagRow({
                 type="button"
                 disabled={!onSendToChief || !!busy}
                 onClick={() => void ask()}
-                className={`${PILL} bg-fg font-semibold text-canvas disabled:bg-fill-3 disabled:text-fg-3 disabled:opacity-100`}
+                className={btn("primary", "sm")}
               >
                 {busy === "ask" ? "Sending…" : `Ask ${assistant}`}
               </button>
@@ -156,7 +155,7 @@ export function LookedAt({ flags, onMoved }: { flags: Flag[]; onMoved?: (flag: F
                     {f.ack?.action === "asked" ? `Asked ${assistant}` : "Marked fine"} · {agoAt(f.ack?.at)}
                   </span>
                 </span>
-                <button type="button" onClick={() => void showAgain(f)} disabled={busy === f.id} className={`${QUIET} shrink-0`}>
+                <button type="button" onClick={() => void showAgain(f)} disabled={busy === f.id} className={btn("secondary", "sm", "shrink-0")}>
                   {busy === f.id ? "…" : "Show again"}
                 </button>
               </li>

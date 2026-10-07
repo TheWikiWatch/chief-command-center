@@ -42,37 +42,4 @@ export function SwitchRow({
   );
 }
 
-/** A real switch: 44px track, spring thumb, accent when on. */
-export function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1.5 block px-1 text-caption font-medium text-fg-3">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-export function Select({
-  value,
-  disabled,
-  onChange,
-  children,
-}: {
-  value: string;
-  disabled?: boolean;
-  onChange: (id: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value)}
-      className="min-h-11 w-full rounded-ctl border border-line bg-well px-3 text-body text-fg outline-hidden focus:border-line-3 disabled:opacity-50"
-    >
-      {children}
-    </select>
-  );
-}
-
 export { Switch };
