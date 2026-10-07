@@ -9,8 +9,8 @@ researched against the code and upstream. Where the build differs from this plan
   and a dark tint over the acrylic so it matches the dashboard on any desktop.
 - The real end-to-end update in Windows Sandbox (§1.5) is `scripts/sandbox-update-test.mjs`, ready to run; this PC
   doesn't have Windows Sandbox turned on, so the first real staged update is the owner's own early release.
-- The editor's "update pill" for looks became "Change look" in the bot's details, with the header shrinking to a title
-  while it's open (§2.4).
+- The appearance editor opens from "Change look" in the bot's details, and the details header shrinks to a title while
+  it's open, so the options fit on a phone (§2.4).
 - Sending the patches upstream (§3.7) is drafted in `docs/UPSTREAM-PATCHES.md`; opening the PRs is the owner's call.
 
 ## 0. Decisions (interview, 2026-10-07)
