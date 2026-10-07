@@ -537,6 +537,37 @@ body {
   }
 }
 
+/* The reply as it's written: plain growing text with a soft cursor after the last line (no per-word motion). */
+.draft-text > .chat-md {
+  display: inline;
+}
+.draft-text > .chat-md > :last-child {
+  display: inline;
+}
+.draft-cursor {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 0.15em;
+  vertical-align: -0.15em;
+  border-radius: 2px;
+  background: rgb(var(--c-fg) / 0.55);
+  animation: draft-blink 1.1s steps(2, start) infinite;
+}
+@keyframes draft-blink {
+  to {
+    visibility: hidden;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .draft-cursor {
+    animation: none;
+  }
+}
+[data-motion="reduced"] .draft-cursor {
+  animation: none;
+}
+
 /*
  * Windows title bar integration (the desktop app draws the native window buttons over the top-right corner,
  * Window Controls Overlay). --wco is the width they take, 0 everywhere else (browsers, phones). Headers are

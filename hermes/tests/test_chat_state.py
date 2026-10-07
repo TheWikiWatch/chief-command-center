@@ -394,3 +394,29 @@ class CronFailureTests(unittest.TestCase):
         error, found, failure = chat_state.unwrap_cron_failure(body)
         self.assertEqual(routine, {"name": "Second Brain: nightly", "jobId": "a94696753a42", "profile": "chief"})
         self.assertEqual((error, found["jobId"], failure["streak"]), ("Connection error", "f78b53e73629", 4))
+
+
+class DraftTests(unittest.TestCase):
+    def setUp(self):
+        chat_state.clear_draft("owner")
+        self.addCleanup(chat_state.clear_draft, "owner")
+
+    def test_frames_replace_each_other_and_the_cursor_is_stripped(self):
+        self.assertIsNone(chat_state.draft("owner"))
+        self.assertEqual(chat_state.draft_signature("owner"), "")
+        chat_state.record_draft("owner", 7, "\n\nHere is")
+        self.assertEqual(chat_state.draft("owner")["text"], "Here is")
+        chat_state.record_draft("owner", 7, "\n\nHere is the plan ▉")
+        self.assertEqual(chat_state.draft("owner")["text"], "Here is the plan")
+        self.assertEqual(chat_state.draft("owner")["id"], 7)
+        self.assertEqual(chat_state.draft_signature("owner"), "7:2")
+        chat_state.record_draft("owner", 8, "A new reply")
+        self.assertEqual(chat_state.draft_signature("owner"), "8:1")
+
+    def test_an_empty_frame_shows_nothing_and_clearing_forgets_it(self):
+        chat_state.record_draft("owner", 1, " ▉ ")
+        self.assertIsNone(chat_state.draft("owner"))
+        self.assertEqual(chat_state.draft_signature("owner"), "")
+        chat_state.record_draft("owner", 1, "Text")
+        chat_state.clear_draft("owner")
+        self.assertIsNone(chat_state.draft("owner"))

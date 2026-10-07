@@ -108,6 +108,9 @@ export type ChatNotice = {
 /** What the running turn is doing: since when (epoch seconds), how many steps, and the current one. */
 export type TurnActivity = { since: number; steps: number; label: string };
 
+/** The chief's reply so far, while the turn runs: Hermes's draft id, the text, and when the frame came (epoch seconds). */
+export type ReplyDraft = { id: number; text: string; at: number };
+
 /** Work the chief handed to helpers that is still running after its turn ended (Hermes's background delegations). */
 export type BackgroundTask = { goal: string; step: string };
 export type BackgroundUnit = { id: string; status: "running" | "stalling" | "finalizing" | string; since: number; tasks: BackgroundTask[] };
@@ -126,6 +129,9 @@ export type Transcript = {
   /** The chief's open question, its current step, and notices since `nsince` (newer bridges). */
   clarify?: PendingQuestion | null;
   activity?: TurnActivity | null;
+  /** The reply as it's being written (Hermes's draft frames), and its signature for the long-poll (newer bridges). */
+  draft?: ReplyDraft | null;
+  draftSig?: string;
   /** Background tasks still running for this conversation, and their signature for the long-poll (newer bridges). */
   background?: BackgroundUnit[];
   backgroundSig?: string;

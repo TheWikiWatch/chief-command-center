@@ -249,15 +249,18 @@ class BridgeServer:
         thread: str = threads.MAIN,
         session: str = "",
         background: str | None = None,
+        draft: str | None = None,
     ) -> dict[str, Any]:
         """The transcript with the chief's state: generating, the pending approval, its open question
-        (`clarify`), notices that aren't replies, and the current step (`activity`). With `wait` (seconds)
-        and `after`, hold until a row lands after it or generating, the approval, the question or the
-        newest notice differs from what the caller has: one open request instead of a poll every 0.8s.
-        `clarify` / `notice` None means the caller doesn't track them (an older dashboard).
-        `thread` picks the conversation; `session` reads one of its earlier conversations (before a fresh start)."""
+        (`clarify`), notices that aren't replies, the current step (`activity`) and the reply as it's being
+        written (`draft`). With `wait` (seconds) and `after`, hold until a row lands after it or generating, the
+        approval, the question, the newest notice or the draft differs from what the caller has: one open request
+        instead of a poll every 0.8s. `clarify` / `notice` / `draft` None means the caller doesn't track them (an
+        older dashboard). `thread` picks the conversation; `session` reads one of its earlier conversations
+        (before a fresh start)."""
         bind, chat = self.thread_bind(thread)
         sk = bind.get("sessionKey") or ""
+        draft_chat = chat or identity.owner_id()
         if session:
             if session not in {p["id"] for p in threads.previous_sessions(thread)}:
                 raise threads.ThreadError("That conversation isn't part of this thread.")
@@ -284,6 +287,8 @@ class BridgeServer:
                     break
                 if background is not None and chat_state.background_signature(chat_state.background(sk)) != background:
                     break
+                if draft is not None and chat_state.draft_signature(draft_chat) != draft:
+                    break
                 seen = changes.wait(seen, min(_LONGPOLL_STEP, max(0.0, deadline - time.monotonic())))
                 if thread in ("", threads.MAIN):
                     bind = self.binding()
@@ -295,6 +300,11 @@ class BridgeServer:
         payload["approval"] = data.pending_approval(sk)
         payload["clarify"] = chat_state.pending_clarify(sk)
         payload["activity"] = chat_state.activity(sk, payload["generating"], chat_state.vault_path(), chat_id=chat or identity.owner_id())
+        # A draft outlives its turn only when the turn died without a final reply: it goes with the turn.
+        if not payload["generating"] and chat_state.draft(draft_chat):
+            chat_state.clear_draft(draft_chat)
+        payload["draft"] = chat_state.draft(draft_chat) if payload["generating"] else None
+        payload["draftSig"] = chat_state.draft_signature(draft_chat) if payload["generating"] else ""
         payload["background"] = chat_state.background(sk)
         payload["backgroundSig"] = chat_state.background_signature(payload["background"])
         if not before:
@@ -962,7 +972,10 @@ def _make_handler(bridge: BridgeServer):
                     logger.info("bridge %s %s rejected before handling", method, path)
                     return
                 body = read
-            result = route.run(routes.Request(self, path, parse_qs(parsed.query), body))
+            # Blank values stay ("clarify=", "draft="): the long-poll tells "the caller tracks this and has none"
+            # from "the caller doesn't track it" by the key being present. parse_qs drops blanks by default, which
+            # left the first question, notice or draft of a conversation unable to wake a waiting poll.
+            result = route.run(routes.Request(self, path, parse_qs(parsed.query, keep_blank_values=True), body))
             if result is None:
                 return  # the handler wrote the response itself (a file, the event stream)
             code = 200

@@ -52,6 +52,8 @@ export type HermesSettings = {
   ok: boolean;
   source?: string;
   error?: string;
+  /** Replies show as they're written (Hermes's streaming switch; takes effect when Chief next starts). */
+  streaming?: boolean;
   stt?: {
     provider?: string;
     enabled?: boolean;
@@ -89,7 +91,7 @@ export async function fetchSnapshot(signal?: AbortSignal): Promise<Snapshot> {
  * What the chat already knows, for a long-poll: the bridge holds the request (up to `wait` seconds)
  * until a row lands after `after`, generating differs from `gen`, or the approval differs.
  */
-export type TranscriptWait = { wait: number; gen: boolean; approval: string; clarify: string; notice: string; bg?: string };
+export type TranscriptWait = { wait: number; gen: boolean; approval: string; clarify: string; notice: string; bg?: string; draft?: string };
 
 /** `noticeSince`: the newest notice the chat has (epoch seconds), so only newer ones come back. */
 export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: TranscriptWait, noticeSince = 0): Promise<Transcript> {
@@ -103,6 +105,7 @@ export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: Tr
     q.set("clarify", live.clarify);
     q.set("notice", live.notice);
     if (live.bg !== undefined) q.set("bg", live.bg);
+    if (live.draft !== undefined) q.set("draft", live.draft);
   }
   if (noticeSince) q.set("nsince", String(noticeSince));
   if (currentChatThread() !== "main") q.set("thread", currentChatThread());
@@ -162,6 +165,7 @@ export async function patchSettings(body: {
   stt?: { provider?: string; model?: string; api_key?: string };
   tts?: { provider?: string; voice?: string; api_key?: string };
   secrets?: Record<string, string>;
+  streaming?: boolean;
 }): Promise<HermesSettings> {
   const data = await write<HermesSettings>("settings", body, 17_000, "PATCH");
   if (!data.ok) throw new Error(data.error || "Could not save settings");

@@ -97,6 +97,21 @@ class AdapterMediaTests(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(self.rows()[0]["message"], "Daily sketch\nMEDIA:/x/sketch.png")
 
+    def test_a_draft_frame_is_kept_and_the_final_reply_clears_it(self):
+        chat_state = importlib.import_module("test_bridge_plugin.chat_state")
+        self.addCleanup(chat_state.clear_draft, "owner")
+        adapter = self.adapter_mod.CommandCenterAdapter.__new__(self.adapter_mod.CommandCenterAdapter)
+        adapter._broadcast, adapter.chat_id = None, "owner"
+        self.assertTrue(adapter.supports_draft_streaming(chat_type="dm"))
+        frame = asyncio.run(adapter.send_draft("owner", 5, "Here is the plan ▉"))
+        self.assertTrue(frame.success)
+        self.assertEqual(chat_state.draft("owner")["text"], "Here is the plan")
+        self.assertFalse(self.outbox_file.exists())  # a frame never reaches the outbox
+        asyncio.run(adapter.send("owner", "Here is the plan: one, two."))
+        # The final reply goes out as usual; the draft stays until the turn ends (server.live_transcript clears it).
+        self.assertEqual(chat_state.draft("owner")["text"], "Here is the plan")
+        self.assertEqual([r["message"] for r in self.rows()], ["Here is the plan: one, two."])
+
 
 if __name__ == "__main__":
     unittest.main()

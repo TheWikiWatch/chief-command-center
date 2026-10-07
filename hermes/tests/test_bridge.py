@@ -473,6 +473,24 @@ class BridgeTests(unittest.TestCase):
         handler.do_GET()
         self.assertEqual(called, ["sse"])
 
+    def test_blank_query_values_reach_the_long_poll(self):
+        # "clarify=" / "draft=" mean "I track this and have none"; a dropped blank would read as "not tracked".
+        bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
+        seen: list[dict] = []
+        bridge.live_transcript = lambda after, **kw: seen.append({"after": after, **kw}) or {"ok": True}
+        handler_class = server._make_handler(bridge)
+        handler = object.__new__(handler_class)
+        handler.path = "/transcript?after=0&wait=25&gen=1&approval=&clarify=&notice=&bg=&draft="
+        handler._authorized = lambda: True
+        handler._json = lambda payload, code=200: None
+        handler.do_GET()
+        self.assertEqual(seen[0]["after"], 0)
+        self.assertEqual((seen[0]["clarify"], seen[0]["notice"], seen[0]["background"], seen[0]["draft"]), ("", "", "", ""))
+        self.assertEqual(seen[0]["wait"], 25)
+        handler.path = "/transcript?after=5"
+        handler.do_GET()
+        self.assertEqual((seen[1]["after"], seen[1]["clarify"], seen[1]["draft"]), (5, None, None))
+
     def test_yaml_cache_returns_independent_values(self):
         fixture = self.home / "config.yaml"
         fixture.write_text('{"model": {"name": "test"}}', encoding="utf-8")
@@ -959,3 +977,41 @@ class CriticalFactsSectionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DraftPathTests(LivePathTests):
+    """The reply as it's written rides the long-poll (chat_state.record_draft / server.live_transcript)."""
+
+    def test_a_draft_frame_wakes_the_poll_and_the_turn_s_end_clears_it(self):
+        chat_state = importlib.import_module("test_bridge_plugin.chat_state")
+        changes = importlib.import_module("test_bridge_plugin.changes")
+        self.addCleanup(chat_state.clear_draft, "owner")
+        working = patch.object(self.bridge, "generating", lambda sk: True)
+        working.start()
+        self.addCleanup(working.stop)
+        import threading
+
+        def frame():
+            time.sleep(0.15)
+            chat_state.record_draft("owner", 3, "Here is ▉")
+            changes.bump("draft")
+
+        t = threading.Thread(target=frame)
+        t.start()
+        self.addCleanup(t.join)
+        started = time.monotonic()
+        payload = self.bridge.live_transcript(150, wait=5, gen="1", approval="", draft="")
+        self.assertLess(time.monotonic() - started, 3)
+        self.assertEqual(payload["draft"], {"id": 3, "text": "Here is", "at": payload["draft"]["at"]})
+        self.assertEqual(payload["draftSig"], "3:1")
+        # The same frame holds the poll; a caller that doesn't track drafts (an older dashboard) isn't woken by one.
+        with patch.object(server, "_LONGPOLL_MAX", 0.3):
+            started = time.monotonic()
+            self.bridge.live_transcript(150, wait=5, gen="1", approval="", draft="3:1")
+            self.assertGreaterEqual(time.monotonic() - started, 0.25)
+        # The turn ends: the draft goes with it, whatever was left.
+        working.stop()
+        ended = self.bridge.live_transcript(150)
+        self.assertIsNone(ended["draft"])
+        self.assertEqual(ended["draftSig"], "")
+        self.assertIsNone(chat_state.draft("owner"))

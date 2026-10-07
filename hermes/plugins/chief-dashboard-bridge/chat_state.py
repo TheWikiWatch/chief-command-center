@@ -305,6 +305,47 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
     return out[-limit:]
 
 
+# ----------------------------------------------------------------------------- the reply as it's written
+
+# Hermes streams a reply to a platform that opts in (adapter.supports_draft_streaming) as draft frames: the text
+# so far, every `streaming.edit_interval` seconds or `buffer_threshold` characters. The adapter keeps the newest
+# frame per chat here; the transcript carries it while the turn runs, and the final reply (a regular send) clears
+# it. Hermes's cursor glyph (`streaming.cursor`, " ▉" by default) is stripped: the chat draws its own.
+_drafts: dict[str, dict[str, Any]] = {}
+_drafts_lock = threading.Lock()
+_CURSOR = "▉"
+
+
+def record_draft(chat_id: str, draft_id: int, text: str) -> None:
+    # Hermes's consumer may open with a blank line after a tool step; the chat's row has its own spacing.
+    shown = str(text or "").strip()
+    while shown.endswith(_CURSOR):
+        shown = shown[: -len(_CURSOR)].rstrip()
+    with _drafts_lock:
+        current = _drafts.get(chat_id)
+        version = (current["v"] if current and current["id"] == int(draft_id) else 0) + 1
+        _drafts[chat_id] = {"id": int(draft_id), "text": shown, "at": time.time(), "v": version}
+
+
+def clear_draft(chat_id: str) -> None:
+    with _drafts_lock:
+        _drafts.pop(chat_id, None)
+
+
+def draft(chat_id: str) -> dict[str, Any] | None:
+    """The reply being written for this chat, or None: `{"id", "text", "at"}`."""
+    with _drafts_lock:
+        current = _drafts.get(chat_id)
+        return {"id": current["id"], "text": current["text"], "at": current["at"]} if current and current["text"] else None
+
+
+def draft_signature(chat_id: str) -> str:
+    """What the dashboard last saw of the draft (it sends this back): a new frame wakes its long-poll."""
+    with _drafts_lock:
+        current = _drafts.get(chat_id)
+        return f"{current['id']}:{current['v']}" if current and current["text"] else ""
+
+
 # ----------------------------------------------------------------------------- background work
 
 _LIVE = ("running", "stalling", "finalizing")

@@ -165,6 +165,7 @@ def build(bridge) -> list[Route]:
                 thread=_thread_param(req.qs),
                 session=req.q("session")[:64],
                 background=(req.qs.get("bg") or [None])[0],
+                draft=(req.qs.get("draft") or [None])[0],
             )
         )
 

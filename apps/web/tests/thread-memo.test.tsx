@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 
 const markdown = vi.hoisted(() => ({ renders: 0 }));
@@ -38,4 +38,20 @@ it("keeps notice rows (scheduled-job results) from re-rendering when a reply arr
   view.rerender(<Thread messages={[...first, reply(2, "two")]} notices={notices} chief={undefined} awaiting={false} waitingApproval={false} connected onSuggestion={() => undefined} />);
   // Only the new reply and the row it follows: the notice doesn't run its markdown again.
   expect(markdown.renders - afterFirst).toBe(2);
+});
+
+it("a draft frame renders the draft alone, and the stored reply then replaces it", async () => {
+  markdown.renders = 0;
+  const first = [reply(1, "one"), reply(2, "two")];
+  const view = render(<Thread messages={first} chief={undefined} awaiting={true} waitingApproval={false} connected onSuggestion={() => undefined} draft={{ id: 9, text: "Here is", at: 1 }} />);
+  const afterFirst = markdown.renders;
+  expect(afterFirst).toBe(3);
+  view.rerender(<Thread messages={first} chief={undefined} awaiting={true} waitingApproval={false} connected onSuggestion={() => undefined} draft={{ id: 9, text: "Here is the plan", at: 2 }} />);
+  // Only the draft re-rendered its markdown.
+  expect(markdown.renders - afterFirst).toBe(1);
+  expect(view.getByLabelText("Nova is writing")).toHaveTextContent("Here is the plan");
+  view.rerender(<Thread messages={[...first, reply(3, "Here is the plan: one, two.")]} chief={undefined} awaiting={false} waitingApproval={false} connected onSuggestion={() => undefined} draft={null} />);
+  // The draft row leaves after its exit animation.
+  await waitFor(() => expect(view.queryByLabelText("Nova is writing")).toBeNull());
+  expect(view.getByText("Here is the plan: one, two.")).toBeInTheDocument();
 });

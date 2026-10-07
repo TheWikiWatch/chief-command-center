@@ -94,6 +94,30 @@ class CommandCenterAdapter(BasePlatformAdapter):
             _set_adapter(None)
         logger.info("command_center platform disconnected")
 
+    # The reply as it's written. With `streaming.enabled` on, Hermes's stream consumer asks whether this chat takes
+    # draft frames and then calls send_draft with the text so far (gateway/stream_consumer_transport.py); the final
+    # reply still arrives through send(). The draft stays until the turn ends (the bridge clears it then): clearing
+    # it at the final send showed "thinking" again for the moment before the stored row lands. A frame is never
+    # refused: a refusal would make Hermes fall back to sending partial messages for real.
+    def supports_draft_streaming(self, chat_type: str | None = None, metadata: dict[str, Any] | None = None, chat_id: str | None = None) -> bool:
+        if not self._draft_probed:
+            self._draft_probed = True
+            logger.info("command_center: replies stream as drafts (Hermes asked; streaming is on)")
+        return True
+
+    _draft_probed = False
+
+    async def send_draft(self, chat_id: str, draft_id: int, content: str, metadata: dict[str, Any] | None = None) -> SendResult:
+        try:
+            from .chat_state import record_draft
+
+            record_draft(chat_id or self.chat_id, draft_id, content or "")
+            changes.bump("draft")
+            logger.debug("draft frame %s: %d chars", draft_id, len(content or ""))
+        except Exception:
+            logger.debug("draft frame dropped", exc_info=True)
+        return SendResult(success=True, message_id=f"draft-{draft_id}")
+
     async def send(
         self,
         chat_id: str,

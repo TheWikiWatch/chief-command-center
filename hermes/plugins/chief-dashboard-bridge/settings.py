@@ -310,6 +310,8 @@ def _get_settings_inner() -> dict[str, Any]:
     return {
         "ok": True,
         "source": "hermes:chief",
+        # Replies shown as they're written (Hermes's `streaming.enabled`; the gateway reads it at start).
+        "streaming": _streaming_on(),
         "stt": {
             "provider": stt_provider,
             "enabled": stt_enabled,
@@ -325,6 +327,14 @@ def _get_settings_inner() -> dict[str, Any]:
             "voice_label": voice_label,
         },
     }
+
+
+def _streaming_on() -> bool:
+    try:
+        return bool(subdict(_load_config(), "streaming").get("enabled", False))
+    except Exception:
+        logger.debug("streaming setting unreadable", exc_info=True)
+        return False
 
 
 def _plugin_voices(provider: str) -> list[dict[str, str]] | None:
@@ -480,6 +490,10 @@ def _patch_settings_inner(body: dict[str, Any]) -> dict[str, Any]:
     stt_body = subdict(body, "stt")
     tts_body = subdict(body, "tts")
     secrets_body = subdict(body, "secrets")
+    if isinstance(body.get("streaming"), bool):
+        err = _save("streaming.enabled", body["streaming"])
+        if err:
+            return {"ok": False, "error": err}
     if not stt_body and not tts_body and not secrets_body:
         return get_settings()
 

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SlidersHorizontalIcon, BotIcon, PencilIcon } from "@/components/icons";
+import { SlidersHorizontalIcon, BotIcon, MessageCircleIcon, PencilIcon } from "@/components/icons";
+import { fetchSettings, patchSettings } from "@/lib/bridge";
 import { Group, Row } from "@/components/ui/settings-group";
 import { Segmented } from "@/components/ui/controls";
 import { FONT_STEPS, useDashboardPrefs } from "@/lib/dashboard-prefs";
@@ -83,7 +84,50 @@ export function IdentityGroup() {
   );
 }
 
-/* ------------------------------------------------------------------ the chief's voice (Hermes) */
+/* ------------------------------------------------------------------ replies (Hermes) */
+
+/** How replies arrive, for every device: Hermes's streaming switch (read at the gateway's start). */
+export function RepliesGroup() {
+  const assistant = useAssistantName();
+  const [on, setOn] = useState<boolean | null>(null);
+  const [note, setNote] = useState("");
+  useEffect(() => {
+    let live = true;
+    fetchSettings()
+      .then((s) => {
+        if (live) setOn(!!s.streaming);
+      })
+      .catch(() => {
+        if (live) setNote("Couldn't read this setting right now.");
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <Group icon={<MessageCircleIcon className="size-4" />} title="Replies" hint={`How ${assistant}'s replies arrive in the chat, on every device.`}>
+      <SwitchRow
+        label="Show replies as they're written"
+        hint={note || `The text appears as ${assistant} writes it instead of all at once. Takes effect the next time ${assistant} starts.`}
+        checked={!!on}
+        disabled={on === null}
+        onChange={async (next) => {
+          setOn(next);
+          setNote("");
+          try {
+            await patchSettings({ streaming: next });
+            setNote(`Saved. Takes effect the next time ${assistant} starts (tray icon → Restart Chief, or the next app start).`);
+          } catch (e) {
+            setOn(!next);
+            setNote(e instanceof Error ? e.message : "Couldn't save.");
+          }
+        }}
+      />
+    </Group>
+  );
+}
+
+/* ------------------------------------------------------------------ this device */
 
 export function AppGroup({ phone }: { phone: boolean }) {
   const assistant = useAssistantName();

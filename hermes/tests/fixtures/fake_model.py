@@ -32,6 +32,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 18080
 STEP = float(os.environ.get("WORK_STEP_S", "4"))
+# Seconds between streamed words (streaming requests only).
+STREAM_STEP = float(os.environ.get("STREAM_STEP_S", "0.04"))
 MODEL = "tiny-local"
 
 
@@ -80,19 +82,27 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.end_headers()
-        delta = {"role": "assistant"}
-        if message.get("content"):
-            delta["content"] = message["content"]
-        if message.get("tool_calls"):
-            delta["tool_calls"] = [{"index": i, **call} for i, call in enumerate(message["tool_calls"])]
         chunk = {
             "id": "c",
             "object": "chat.completion.chunk",
             "created": int(time.time()),
             "model": MODEL,
-            "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+            "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
         }
-        self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+        if message.get("tool_calls"):
+            delta = {"role": "assistant", "tool_calls": [{"index": i, **call} for i, call in enumerate(message["tool_calls"])]}
+            self.wfile.write(f"data: {json.dumps({**chunk, 'choices': [{'index': 0, 'delta': delta, 'finish_reason': None}]})}\n\n".encode())
+        # Text streams a word at a time, like a real model, so the app's "reply as it's written" has frames to show.
+        words = str(message.get("content") or "").split(" ")
+        for i, word in enumerate(w for w in words if w or True):
+            if not word and i:
+                continue
+            piece = (" " if i else "") + word
+            self.wfile.write(
+                f"data: {json.dumps({**chunk, 'choices': [{'index': 0, 'delta': {'role': 'assistant', 'content': piece}, 'finish_reason': None}]})}\n\n".encode()
+            )
+            self.wfile.flush()
+            time.sleep(STREAM_STEP)
         done = {**chunk, "choices": [{"index": 0, "delta": {}, "finish_reason": finish}]}
         self.wfile.write(f"data: {json.dumps(done)}\n\ndata: [DONE]\n\n".encode())
 

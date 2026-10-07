@@ -33,7 +33,7 @@ import { messageTimeMs, uniqueToolNames } from "@/lib/thinking-chrome";
 import { looksFailed, stepDuration, toolLabel } from "@/lib/tool-labels";
 import { Tip } from "@/components/ui/popovers";
 import { readAloud } from "@/components/chat/use-reply-speech";
-import type { ChatMessage, ChatNotice, PendingQuestion, Person, TurnActivity } from "@/lib/types";
+import type { ChatMessage, ChatNotice, PendingQuestion, Person, ReplyDraft, TurnActivity } from "@/lib/types";
 import { AskedRow, NoticeBody, QuestionCard } from "@/components/chat/question";
 import { useAssistantName } from "@/lib/identity";
 
@@ -227,6 +227,7 @@ export function Thread({
   header,
   notices,
   activity,
+  draft,
   question,
   onAnswer,
   onQuickReply,
@@ -256,6 +257,8 @@ export function Thread({
   notices?: ChatNotice[];
   /** What the running turn is doing now. */
   activity?: TurnActivity | null;
+  /** The reply so far, while the chief writes it (shown in place of the thinking row). */
+  draft?: ReplyDraft | null;
   /** The chief's open question (the turn waits for the answer), and how to answer it. */
   question?: PendingQuestion | null;
   onAnswer?: (id: string, answer: string | string[]) => Promise<void>;
@@ -271,6 +274,10 @@ export function Thread({
   const markUser = () => stick.current.gesture(Date.now());
   const [unread, setUnread] = useState(0);
   const seen = useRef<Set<number> | null>(null);
+  // Screen readers hear a reply land (never each draft frame): a polite status that says so once per reply.
+  const [announce, setAnnounce] = useState("");
+  const announced = useRef(0);
+  const assistantName = useAssistantName();
   // Sticky per message: once a message animates in, it keeps the same props so a re-render never cuts it short.
   const animated = useRef(new Set<number>());
   const rows = useMemo(() => buildRows(withNotices(messages, notices)), [messages, notices]);
@@ -298,6 +305,14 @@ export function Thread({
     }
   }
   for (const id of fresh) animated.current.add(id);
+  useEffect(() => {
+    const last = [...messages].reverse().find((m) => m.role === "assistant" && chatTone(m) === "reply" && (m.content || "").trim());
+    if (!last || !animated.current.has(last.id) || last.id <= announced.current) return;
+    announced.current = last.id;
+    setAnnounce(`${assistantName} replied`);
+    const timer = setTimeout(() => setAnnounce(""), 1500);
+    return () => clearTimeout(timer);
+  }, [messages, assistantName]);
 
   const lastKey = messages.length ? messages[messages.length - 1].id : 0;
   useLayoutEffect(() => {
@@ -418,6 +433,8 @@ export function Thread({
             <AnimatePresence>
               {question && onAnswer ? (
                 <QuestionCard key={`q-${question.id}`} question={question} chief={chief} onAnswer={onAnswer} />
+              ) : awaiting && draft?.text && !waitingApproval ? (
+                <DraftRow key={`draft-${draft.id}`} chief={chief} text={draft.text} />
               ) : awaiting ? (
                 <ThinkingRow
                   key="thinking"
@@ -431,6 +448,9 @@ export function Thread({
           </div>
         )}
         {footer}
+      </div>
+      <div role="status" aria-live="polite" className="sr-only">
+        {announce}
       </div>
       <AnimatePresence>
         {unread > 0 ? (
@@ -810,6 +830,33 @@ function useElapsed(since: number) {
   }, []);
   return Math.max(0, Math.floor((now - since) / 1000));
 }
+
+/**
+ * The reply as the chief writes it: the text so far through the same Markdown pipeline as a finished reply, with
+ * a soft cursor at the end (plain growing text; no per-word animation, so reduced motion needs nothing). The
+ * stored reply replaces it when the turn ends.
+ */
+const DraftRow = memo(function DraftRow({ chief, text }: { chief: Person | undefined; text: string }) {
+  const assistant = useAssistantName();
+  return (
+    <motion.div
+      className="mt-5 flex gap-2.5"
+      aria-busy="true"
+      aria-label={`${assistant} is writing`}
+      initial={{ opacity: 0, y: 6 }}
+      animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE.enter } }}
+      exit={{ opacity: 0, transition: { duration: 0.14 } }}
+    >
+      <div className="w-7 shrink-0">{chief ? <BotFace {...faceProps(chief)} mood="thinking" size={28} /> : null}</div>
+      <div className="min-w-0 flex-1">
+        <div className="chat-md draft-text max-w-none text-fg">
+          <Streamdown className="chat-md max-w-none">{linkifyVaultRefs(text)}</Streamdown>
+          <span aria-hidden="true" className="draft-cursor" />
+        </div>
+      </div>
+    </motion.div>
+  );
+});
 
 function ThinkingRow({ chief, waitingApproval, since, step }: { chief: Person | undefined; waitingApproval: boolean; since: number; step?: string }) {
   const assistant = useAssistantName();

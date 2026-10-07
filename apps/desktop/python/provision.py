@@ -21,6 +21,7 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
 
 Prints one JSON object: {"ok": true, "changed": [...]}.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -134,6 +135,8 @@ def owner_toolkit(home: Path) -> Path | None:
         if candidate.is_dir():
             return candidate
     return None
+
+
 _UPSTREAM_ROOT = "$HOME/.hermes/skills/obsidian-second-brain"
 _TILDE_ROOT = "~/.hermes/skills/obsidian-second-brain"
 
@@ -161,8 +164,8 @@ def _toolkit_text(text: str, root: str, python: str, pythonpath: str) -> str:
 
     head = r'uv run --directory "?' + re.escape(_UPSTREAM_ROOT) + r'"?'
     env = f'PYTHONPATH="{pythonpath}" "{python}"' if pythonpath else f'"{python}"'
-    text = re.sub(head + r'(?: python)? scripts/([\w./-]+\.py)', lambda m: f'{env} "{root}/scripts/{m.group(1)}"', text)
-    text = re.sub(head + r' python -c ', lambda m: f'{env} -c ', text)
+    text = re.sub(head + r"(?: python)? scripts/([\w./-]+\.py)", lambda m: f'{env} "{root}/scripts/{m.group(1)}"', text)
+    text = re.sub(head + r" python -c ", lambda m: f"{env} -c ", text)
     return text.replace(_UPSTREAM_ROOT, root).replace(_TILDE_ROOT, root)
 
 
@@ -201,6 +204,18 @@ def install_toolkit(src: Path, dest: Path, python: str, pythonpath: str) -> list
     return [f"{TOOLKIT} {version}: {changed} files"] if changed else []
 
 
+def _other_platform_keys() -> list[str]:
+    """The config.yaml keys of every messaging platform Hermes knows except the app's own (gateway.config.Platform;
+    the CLI's key is "cli"). Empty when Hermes can't say, so nothing is pinned by guesswork."""
+    try:
+        from gateway.config import Platform
+
+        keys = [("cli" if p.name == "LOCAL" else str(p.value)) for p in Platform]
+    except Exception:
+        return []
+    return [k for k in keys if k and k != "command_center"]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--plugins-src", required=True)
@@ -208,8 +223,7 @@ def main() -> int:
     parser.add_argument("--plugin", action="append", default=[])
     parser.add_argument("--skills-src", default="", help="bundled skills (default: <plugins-src>/chief-dashboard-bridge/skills)")
     parser.add_argument("--vendor-src", default="", help="the vendored Second Brain toolkit (default: <plugins-src>/../vendor/obsidian-second-brain)")
-    parser.add_argument("--adopted", action="store_true",
-                        help="an existing install the app took over: its own copy of the toolkit is kept, not shadowed")
+    parser.add_argument("--adopted", action="store_true", help="an existing install the app took over: its own copy of the toolkit is kept, not shadowed")
     args = parser.parse_args()
     home = Path(os.environ["HERMES_HOME"])
     home.mkdir(parents=True, exist_ok=True)
@@ -281,6 +295,20 @@ def main() -> int:
     if not display.get("busy_input_mode"):
         save_config_value("display.busy_input_mode", "steer")
         changed.append("busy input: steer")
+    # Replies show in the app as they're written: Hermes streams draft frames to the chat platform (the bridge
+    # adapter opts in; `streaming.transport` stays "auto"). Hermes's master switch is global, so on an adopted
+    # install every other platform the owner may run is pinned to today's behaviour (a per-platform value can
+    # only narrow the switch), unless the owner already chose. Settings → General can turn it off again.
+    streaming = raw.get("streaming") if isinstance(raw.get("streaming"), dict) else {}
+    if "enabled" not in streaming:
+        if args.adopted:
+            platforms = (display.get("platforms") if isinstance(display.get("platforms"), dict) else {}) or {}
+            for key in _other_platform_keys():
+                chosen = platforms.get(key) if isinstance(platforms.get(key), dict) else {}
+                if "streaming" not in chosen:
+                    save_config_value(f"display.platforms.{key}.streaming", False)
+        save_config_value("streaming.enabled", True)
+        changed.append("streaming: on")
     # The chief carries more than a single-job bot: twice Hermes's default memory, unless the owner chose.
     memory = raw.get("memory") if isinstance(raw.get("memory"), dict) else {}
     for key, value in (("memory_char_limit", 4400), ("user_char_limit", 2750)):

@@ -28,7 +28,7 @@ import { computeThinkingChrome, shouldClearPendingReply } from "@/lib/thinking-c
 import { visibleMessages } from "@/lib/compact-filter";
 import { fullPhotosOn, useDashboardPrefs, VOICE_EVENT } from "@/lib/dashboard-prefs";
 import { getSpeechPhase, blobToDataUrl, stopSpeech, subscribeSpeaking, toggleSpeechPause } from "@/lib/voice-client";
-import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, PreviousConversation, Transcript, TurnActivity, BackgroundUnit } from "@/lib/types";
+import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, PreviousConversation, ReplyDraft, Transcript, TurnActivity, BackgroundUnit } from "@/lib/types";
 import { BackgroundWork, backgroundTaskCount } from "@/components/chat/background-work";
 import { admitFiles } from "@/lib/upload-limits";
 import { shrinkImage } from "@/lib/image-shrink";
@@ -177,7 +177,7 @@ export function ChiefChat({
   // lands, and an idle chat makes one request every 25s instead of one every 2.5s.
   const [longpoll, setLongpoll] = useState(false);
   const longpollRef = useRef(false);
-  const bridgeState = useRef<{ generating: boolean; approval: string; clarify: string; notice: string; bg?: string }>({ generating: false, approval: "", clarify: "", notice: "" });
+  const bridgeState = useRef<{ generating: boolean; approval: string; clarify: string; notice: string; bg?: string; draft?: string }>({ generating: false, approval: "", clarify: "", notice: "" });
   // The chief's open question (its turn waits for the answer), notices that aren't replies, and its current step.
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
   const questionRef = useRef<PendingQuestion | null>(null);
@@ -185,6 +185,9 @@ export function ChiefChat({
   const [notices, setNotices] = useState<ChatNotice[]>([]);
   const noticeSince = useRef(0);
   const [activity, setActivity] = useState<TurnActivity | null>(null);
+  // The reply as it's being written (Hermes's draft frames); gone once the stored reply lands.
+  const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
+  const settledDraft = useRef(0);
   const [background, setBackground] = useState<BackgroundUnit[]>([]);
   const [previous, setPrevious] = useState<PreviousConversation[]>([]);
   const quickReturns = useRef(0);
@@ -466,7 +469,7 @@ export function ChiefChat({
     // What the bridge last told us, not local guesses: a difference would return the long-poll at once.
     const state = bridgeState.current;
     const live = longpollRef.current && historyPrimed.current
-      ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg }
+      ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg, draft: state.draft }
       : undefined;
     const started = Date.now();
     // An open long-poll is the chat connected and waiting for news, not a chat gone quiet.
@@ -482,9 +485,19 @@ export function ChiefChat({
         approval: data.approval?.requestId || "",
         clarify: data.clarify?.id || "",
         notice: data.noticeHead || "",
-        // Only a bridge that reports background work is asked to wake on it.
+        // Only a bridge that reports background work (or drafts) is asked to wake on it.
         ...(typeof data.backgroundSig === "string" ? { bg: data.backgroundSig } : {}),
+        ...(typeof data.draftSig === "string" ? { draft: data.draftSig } : {}),
       };
+      // The draft stays on the bridge until the turn ends; once the stored reply it became has landed here, that
+      // draft is done with, even if the turn is still wrapping up.
+      if (after > 0 && data.draft?.id && data.messages.some((m) => m.role === "assistant" && chatTone(m) === "reply" && (m.content || "").trim())) {
+        settledDraft.current = data.draft.id;
+      }
+      setReplyDraft((prev) => {
+        const next = data.generating && data.draft?.text && data.draft.id !== settledDraft.current ? data.draft : null;
+        return prev && next && prev.id === next.id && prev.text === next.text ? prev : next;
+      });
       setBackground(Array.isArray(data.background) ? data.background : []);
       if ("clarify" in data) setQuestion(data.clarify ?? null);
       if (Array.isArray(data.previous)) setPrevious(data.previous);
@@ -961,6 +974,7 @@ export function ChiefChat({
         onSuggestion={(s) => setText(s)}
         notices={notices}
         activity={activity}
+        draft={replyDraft}
         question={question}
         onAnswer={answerOpenQuestion}
         onQuickReply={sendBody}

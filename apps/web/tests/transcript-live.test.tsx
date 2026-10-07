@@ -58,3 +58,33 @@ it("Load earlier prepends older messages and says when the start is reached", as
   expect(api.earlier).toHaveBeenLastCalledWith(41);
   expect(screen.getByText("reply 1")).toBeInTheDocument();
 });
+
+it("shows the reply as it's written and asks the bridge to wake on the next frame", async () => {
+  api.transcript
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 50, messages: rows(1, 50), generating: true, longpoll: true, draft: { id: 4, text: "Here is", at: 1 }, draftSig: "4:1" })
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 50, messages: [], generating: true, longpoll: true, draft: { id: 4, text: "Here is the plan", at: 2 }, draftSig: "4:2" })
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 51, messages: rows(51, 51), generating: false, longpoll: true, draft: null, draftSig: "" })
+    .mockReturnValue(new Promise(() => {}));
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact />);
+  expect(await screen.findByText("Here is the plan", {}, { timeout: 12_000 })).toBeInTheDocument();
+  await waitFor(() => expect(api.transcript).toHaveBeenCalledTimes(4), { timeout: 12_000 });
+  expect(api.transcript.mock.calls[1][2]).toMatchObject({ draft: "4:1" });
+  expect(api.transcript.mock.calls[2][2]).toMatchObject({ draft: "4:2" });
+  expect(await screen.findByText("reply 51")).toBeInTheDocument();
+  expect(screen.queryByLabelText("Nova is writing")).toBeNull();
+}, 20_000);
+
+it("a draft is done with once its reply has landed, even while the turn is still ending", async () => {
+  api.transcript
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 50, messages: rows(1, 50), generating: true, longpoll: true, draft: { id: 4, text: "Here is the plan", at: 1 }, draftSig: "4:1" })
+    // The stored reply lands while generating is still true and the bridge still reports the draft.
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 51, messages: [{ id: 51, role: "assistant", content: "Here is the plan: one, two.", timestamp: "1790000001" }], generating: true, longpoll: true, draft: { id: 4, text: "Here is the plan: one, two.", at: 2 }, draftSig: "4:2" })
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 51, messages: [], generating: true, longpoll: true, draft: { id: 4, text: "Here is the plan: one, two.", at: 2 }, draftSig: "4:2" })
+    .mockReturnValue(new Promise(() => {}));
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact />);
+  expect(await screen.findByText("Here is the plan", {}, { timeout: 12_000 })).toBeInTheDocument();
+  expect(await screen.findByText("Here is the plan: one, two.", {}, { timeout: 12_000 })).toBeInTheDocument();
+  await waitFor(() => expect(api.transcript).toHaveBeenCalledTimes(4), { timeout: 12_000 });
+  await waitFor(() => expect(screen.queryByLabelText("Nova is writing")).toBeNull());
+  expect(screen.getAllByText("Here is the plan: one, two.")).toHaveLength(1);
+}, 20_000);

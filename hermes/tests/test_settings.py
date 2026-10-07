@@ -244,6 +244,15 @@ class PatchTests(SettingsTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+    def test_replies_as_written_is_a_switch_on_hermes_streaming(self):
+        self.assertIs(settings.patch_settings({"streaming": False}), self.current)
+        self.assertEqual(self.saves, [("streaming.enabled", False)])
+        self.saves.clear()
+        settings.patch_settings({"streaming": "yes"})
+        self.assertEqual(self.saves, [])
+        self.save_error = "Could not write Hermes config"
+        self.assertEqual(settings.patch_settings({"streaming": True})["error"], "Could not write Hermes config")
+
     def test_bad_or_empty_bodies(self):
         self.assertEqual(settings.patch_settings("nope"), {"ok": False, "error": "Invalid settings payload"})
         self.assertIs(settings.patch_settings({}), self.current)

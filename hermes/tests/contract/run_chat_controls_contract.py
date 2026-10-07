@@ -51,7 +51,8 @@ def main() -> int:
     token = secrets.token_urlsafe(32)
 
     fake = subprocess.Popen(
-        [sys.executable, str(REPO / "hermes" / "tests" / "fixtures" / "fake_model.py"), str(model_port)], env={**os.environ, "WORK_STEP_S": "3"}
+        [sys.executable, str(REPO / "hermes" / "tests" / "fixtures" / "fake_model.py"), str(model_port)],
+        env={**os.environ, "WORK_STEP_S": "3", "STREAM_STEP_S": "0.15"},
     )
     gateway = None
     try:
@@ -210,6 +211,28 @@ def main() -> int:
             [(m.get("id"), m.get("role"), str(m.get("content"))[:70], m.get("tools")) for m in rows[start:]],
         )
         check("controls refuse junk", call("/steer", {"text": "  "}).get("ok") is False and call("/queue", {"text": ""}).get("ok") is False)
+
+        # The reply as it's written: with streaming on (provisioning sets `streaming.enabled`), Hermes sends the
+        # adapter draft frames (send_draft) and the transcript carries the text so far while the turn runs. The
+        # long-poll with `draft=` returns on the first frame; the fake model streams a word every 150 ms here.
+        wait(lambda: not generating(), 60)
+        start = len(messages())
+        call("/send", {"text": "WORK on the draft", "client_id": "c-draft"})
+        seen_draft = None
+        sig = ""
+        deadline = time.time() + 90
+        while time.time() < deadline and seen_draft is None:
+            state = call(f"/transcript?after=0&wait=25&gen=1&approval=&draft={sig}", timeout=40)
+            sig = str(state.get("draftSig") or "")
+            if (state.get("draft") or {}).get("text"):
+                seen_draft = state["draft"]
+            elif not state.get("generating"):
+                break
+        check("the reply streams as a draft while the turn runs", seen_draft is not None and "Work" in str((seen_draft or {}).get("text")), seen_draft)
+        done = wait(lambda: assistant_after(start, "Work finished"), 90)
+        check(
+            "the stored reply replaces the draft", done is not None and not call("/transcript?after=0").get("draft"), call("/transcript?after=0").get("draft")
+        )
 
         # Questions: the chief asks with `clarify`; the turn waits for the answer.
         wait(lambda: not generating(), 60)

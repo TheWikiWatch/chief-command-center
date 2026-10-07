@@ -12,7 +12,7 @@ import type { Person } from "@/lib/types";
 import { type SettingsCategory } from "@/lib/settings-nav";
 import { AboutGroup } from "@/components/settings/about";
 import { BackupGroup, UpdatesGroup } from "@/components/settings/backup";
-import { AppGroup, ChiefNameGroup, IdentityGroup } from "@/components/settings/general";
+import { AppGroup, ChiefNameGroup, IdentityGroup, RepliesGroup } from "@/components/settings/general";
 import { ConnectionGroup, ModelsKeysGroup } from "@/components/settings/models";
 import { HapticsGroup, NotificationsGroup, SoundGroup } from "@/components/settings/notifications";
 import { SecondBrainGroup } from "@/components/settings/second-brain";
@@ -245,6 +245,7 @@ function CategoryPage({
         <>
           <ChiefNameGroup chief={chief} />
           <IdentityGroup />
+          <RepliesGroup />
           <AppGroup phone={phone} />
         </>
       ) : id === "models" ? (
