@@ -56,7 +56,8 @@ async function proxy(req: NextRequest, path: string[]) {
 
   // A long-poll (/transcript?wait=N) is held by the bridge for up to N seconds (at most 25).
   const wait = path[0] === "transcript" ? Math.min(25, Math.max(0, Number(url.searchParams.get("wait")) || 0)) : 0;
-  // Provider setup can fetch catalogs and run one test completion: allow a minute.
+  // Provider setup can fetch catalogs and run one test completion: allow a minute. Starting a connection waits for
+  // the service's sign-in link (Nous and an MCP server each allow 30 s).
   // A generated portrait waits on the image service (the bridge allows it 150 s); installing a pet downloads its
   // sprite sheet; the pet gallery's first read fetches its whole manifest.
   const look = path[0] === "look" ? path[2] || "" : "";
@@ -67,6 +68,10 @@ async function proxy(req: NextRequest, path: string[]) {
     : look === "pet" || look === "avatar"
       ? 70000
     : rel === "pets/catalog" || path[0] === "pets" || path[0] === "pet"
+      ? 30000
+    : rel === "connections/connect"
+      ? 75000
+    : path[0] === "connections"
       ? 30000
     : path[0] === "setup"
       ? 60000

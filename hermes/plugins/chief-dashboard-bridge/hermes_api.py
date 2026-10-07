@@ -126,6 +126,29 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "tools.web_tools": ("_get_extract_backend", "_get_search_backend"),
         "tools.registry": ("registry",),
     },
+    "connections": {
+        # The chief's scope for every connections call (Hermes's own MCP worker pattern).
+        "agent.secret_scope": ("build_profile_secret_scope", "reset_secret_scope", "set_secret_scope"),
+        # Nous sign-in: Hermes's dashboard device-code flow, its session table, and sign-out.
+        "hermes_cli.web_routers.oauth": ("_start_nous_device_code", "_oauth_sessions", "_oauth_sessions_lock"),
+        "hermes_cli.auth": ("clear_provider_auth", "invalidate_nous_auth_status_cache"),
+        "hermes_cli.nous_account": ("get_nous_portal_account_info",),
+        # Quick connections (Nous Connectors).
+        "tools.connectors.gateway.config": ("connectors_available",),
+        "tools.connectors.managed": ("managed_client",),
+        "tools.connectors.account": ("find_or_start_operation",),
+        "tools.connectors.portal.client": ("PortalConnectorClient",),
+        # Work tools (the MCP catalog) and their OAuth.
+        "hermes_cli.mcp_catalog": ("list_catalog", "installed_servers", "uninstall_entry"),
+        "tools.connectors.mcp": ("_CatalogBackend",),
+        "tools.connectors.mcp_oauth": ("cancel_attempt",),
+        "tools.mcp_oauth": ("remove_oauth_tokens",),
+        "tools.mcp_tool_discovery": ("register_mcp_servers",),
+    },
+    "mail guard": {
+        # Our pre_tool_call hook's {"action": "approve"} lands on this gate (mail_guard.py).
+        "tools.approval": ("request_tool_approval",),
+    },
     "bot looks": {
         # Bot Mode's ui_meta writer (per-key compare-and-swap, 64 KB cap, atomic write), and what its body uses.
         "tui_gateway.methods_profiles": ("_configure_ui_meta",),

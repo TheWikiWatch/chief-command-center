@@ -2,10 +2,11 @@
 
 import { AnimatePresence, motion } from "motion/react";
 
-import { ShieldAlertIcon, TerminalIcon } from "@/components/icons";
+import { MailIcon, ShieldAlertIcon, TerminalIcon } from "@/components/icons";
 import { HoldButton } from "@/components/ui/hold-button";
 import { Sheet } from "@/components/ui/sheet";
 import { useAssistantName } from "@/lib/identity";
+import { mailAction, type MailAction } from "@/lib/mail-approval";
 import { SPRING } from "@/lib/motion";
 import type { ApprovalChoice, ExecApproval } from "@/lib/types";
 import { LAYER } from "@/lib/layers";
@@ -32,6 +33,8 @@ export function ApprovalSheet({
   onChoose: (choice: ApprovalChoice) => void;
 }) {
   const assistant = useAssistantName();
+  // A mail action (mail_guard.py) shows who it goes to and what it says, not a command line.
+  const mail = approval ? mailAction(approval) : null;
   return (
     <>
       <Sheet
@@ -40,22 +43,26 @@ export function ApprovalSheet({
         closeLabel="Minimize"
         scope="container"
         zIndex={LAYER.paneSheet}
-        title="Command approval required"
-        subtitle={`${assistant} wants to run this on your PC`}
+        title={mail ? mail.title : "Command approval required"}
+        subtitle={mail ? `${assistant} wants to ${mail.what.charAt(0).toLowerCase()}${mail.what.slice(1)}` : `${assistant} wants to run this on your PC`}
         className="approval-glow"
       >
         {approval ? (
           <div className="space-y-4 px-4 pb-5">
-            <div className="rounded-card border border-warn/25 bg-canvas">
-              <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-caption text-fg-3">
-                <TerminalIcon size={14} />
-                Command
+            {mail ? (
+              <MailPreview mail={mail} />
+            ) : (
+              <div className="rounded-card border border-warn/25 bg-canvas">
+                <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-caption text-fg-3">
+                  <TerminalIcon size={14} />
+                  Command
+                </div>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all px-3 py-2.5 font-mono text-code text-fg">
+                  {approval.command || "Pending command"}
+                </pre>
               </div>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all px-3 py-2.5 font-mono text-code text-fg">
-                {approval.command || "Pending command"}
-              </pre>
-            </div>
-            {approval.reason ? (
+            )}
+            {approval.reason && !mail ? (
               <p className="flex items-start gap-2 text-callout text-warn">
                 <ShieldAlertIcon size={16} className="mt-0.5 shrink-0" />
                 <span>{approval.reason}</span>
@@ -91,7 +98,9 @@ export function ApprovalSheet({
               </button>
             </div>
             {approval.allowPermanent !== false ? (
-              <p className="text-caption text-fg-3">Press and hold “Always allow” to trust this command pattern from now on.</p>
+              <p className="text-caption text-fg-3">
+                {mail ? `Press and hold “Always allow” to let your bots ${mail.always} from now on.` : "Press and hold “Always allow” to trust this command pattern from now on."}
+              </p>
             ) : null}
           </div>
         ) : null}
@@ -116,5 +125,28 @@ export function ApprovalSheet({
         ) : null}
       </AnimatePresence>
     </>
+  );
+}
+
+/** The email (or invitation, or share) as the owner would read it: who, what, and the start of the message. */
+function MailPreview({ mail }: { mail: MailAction }) {
+  return (
+    <div className="rounded-card border border-warn/25 bg-canvas">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-caption text-fg-3">
+        <MailIcon size={14} />
+        {mail.what}
+      </div>
+      {mail.fields.length ? (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 px-3 py-2.5 text-callout">
+          {mail.fields.map((f) => (
+            <div key={f.key} className="contents">
+              <dt className="text-fg-3">{f.key}</dt>
+              <dd className="min-w-0 break-words text-fg">{f.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {mail.body ? <p className="max-h-40 overflow-auto border-t border-line px-3 py-2.5 text-callout whitespace-pre-wrap text-fg-2">{mail.body}</p> : null}
+    </div>
   );
 }

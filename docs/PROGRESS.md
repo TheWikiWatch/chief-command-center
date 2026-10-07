@@ -1016,3 +1016,44 @@
   60 fps, at most 0.1 degrees of tilt per frame (about a tenth of before).
 - Tests: per-frame motion of the head, roll, lean and dots for thinking and working; mood blends start and end exactly
   and move a little each frame; the presence CSS keeps ring and orbit off while thinking and the ring for the voice.
+
+
+**Connections: email, calendars and work tools in one click (2026-10-07).**
+
+- **The problem.** Bots asked testers to make developer accounts: the only path to Google was Hermes's Google Workspace
+  skill, which needs a Google Cloud project, a consent screen, a downloaded client file and a code copied out of a
+  broken `localhost:1` page (and its SKILL.md tells the bot flags its `setup.py` doesn't have). The app had no
+  connections screen at all.
+- **Settings → Connections** (`connections.py`, contract `chief.connections.v1`): one row per service, whatever carries
+  it, all through Hermes's own mechanisms:
+  - **Quick** (Nous Connectors): one Nous sign-in in the app (Hermes's own device-code flow), then each service's
+    ordinary sign-in page. Gmail, Calendar, Drive, Outlook and more; no warning screen, no developer account. Nous
+    and Composio keep the sign-in, which the page says plainly. The same sign-in also gives Hermes Nous as a model provider (picking it in Models & keys
+    is a later step).
+  - **On this PC** (Google only, `google_local.py`): the Chief Google app's sign-in (loopback + PKCE) writes the token
+    Hermes's Google Workspace skill reads, so the skill works without its setup. Mail stays between this PC and
+    Google. Needs the app's client file (release.local.json `googleClient`, never in the repository).
+  - **Direct** (work tools): Hermes's catalog of 60 approved services (Notion, Linear, Asana, Todoist, Atlassian,
+    Dropbox…), each with its own sign-in and nothing to register. Money-moving tools (Stripe, PayPal, Plaid,
+    Robinhood, Square) and anything that installs software aren't offered.
+- **A Connect card in chat.** A bot that needs a service asks with the `connections` tool (or Hermes's own connector
+  links, rendered the same way, so a raw sign-in link never lands in chat). One click opens the sign-in; the card turns
+  to "connected" and **Continue** tells the bot to go ahead. A prompt section tells the chief what's connected and never
+  to send anyone to Google Cloud or ask for API keys.
+- **Read freely, ask before sending** (`mail_guard.py`, a `pre_tool_call` hook): searching and reading never ask.
+  Sending, replying, forwarding, deleting and moving mail, inviting people and sharing files go to Hermes's own
+  approval gate, through Quick connectors and through the skill's `google_api.py` alike. The approval sheet shows who
+  it goes to, the subject and the first lines; "Always allow" is per kind ("send email without asking"). Email is
+  untrusted input: this gate is what stops a message from talking a bot into forwarding the inbox.
+- **Chief only for now.** Worker bots run in their own Hermes processes without the bridge plugin, so the mail guard
+  wouldn't be there to ask; sharing connections with them waits until it is (the plan's §2.5).
+- Checked on the throwaway home against the real Hermes: the catalog lists 60 services with no Hermes name missing; a
+  Notion connect returned Notion's own authorization page (dynamic registration, loopback redirect) and cancelled
+  cleanly; a Nous sign-in returned a device code; a scripted "send email" stopped on the approval sheet with the
+  recipient, subject and message, and ran once allowed; a scripted request drew the Connect card in the chat (desktop
+  and phone widths).
+- Tests: the mail guard's rule for every mail action and both paths; Google on this PC end to end against a fake
+  Google (state check, PKCE, the skill's token loads with google-auth and refreshes, unticked permissions, cancel,
+  revoke); cards from tool rows; the page's rows per backend and that no token ever reaches it; the bots' tool and
+  prompt; the file API refuses every connection secret. Dashboard: the page, both connect flows, the chooser, the Nous
+  code, disconnect, the chat card's Continue and Not now, and the approval sheet's reading of the guard's reason.

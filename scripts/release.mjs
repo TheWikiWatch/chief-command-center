@@ -65,6 +65,8 @@ const need = ["payloadDir", "releaseDir", "releasesDir", "feedDir", "signtool", 
 const missing = need.filter((k) => !local[k]);
 if (missing.length) fail(`release.local.json lacks: ${missing.join(", ")}`);
 const notFound = ["payloadDir", "signtool", "pfx", "pfxPasswordFile", "releaseKey"].filter((k) => !existsSync(local[k]));
+// Optional: the Chief Google app's Desktop OAuth client ("Google on this PC"). Named but missing is a mistake, not a choice.
+if (local.googleClient && !existsSync(local.googleClient)) notFound.push("googleClient");
 
 const desktopPkg = path.join(repo, "apps", "desktop", "package.json");
 const desktopLock = path.join(repo, "apps", "desktop", "package-lock.json");
@@ -111,6 +113,7 @@ if (flag("plan")) {
   console.log(`Dev server: ${(await devServer()) ? "RUNNING (stop it first: it shares the build folder)" : "stopped"}`);
   for (const k of need) console.log(`  ${k}: ${local[k]}${notFound.includes(k) ? "   ← NOT FOUND" : ""}`);
   console.log(`  testerCert: ${local.testerCert ? local.testerCert + (existsSync(local.testerCert) ? "" : "   ← NOT FOUND") : "(none: no tester setup zip)"}`);
+  console.log(`  googleClient: ${local.googleClient ? local.googleClient + (existsSync(local.googleClient) ? "" : "   ← NOT FOUND") : "(none: Google connects through Quick only)"}`);
   const gh = run("gh", ["repo", "view", local.releasesRepo, "--json", "visibility"], { capture: true, allowFail: true });
   console.log(`Releases repository: ${gh.status === 0 ? JSON.parse(gh.stdout).visibility.toLowerCase() + ", reachable with your gh login" : "NOT reachable (gh auth login?)"}`);
   process.exit(notFound.length || mismatch || prov.error || gh.status !== 0 ? 1 : 0);
@@ -204,6 +207,8 @@ const build = spawnSync("npm", ["run", "dist:msix"], {
     CHIEF_UPDATE_FEED: `github:${local.releasesRepo}`,
     // Where "Report a problem" e-mails go: this PC's release.local.json only, never the repository.
     ...(local.reportEmail ? { CHIEF_REPORT_EMAIL: String(local.reportEmail) } : {}),
+    // Google on this PC: the Chief Google app's client file, packaged beside the payload (never in the repository).
+    ...(local.googleClient ? { CHIEF_GOOGLE_CLIENT: String(local.googleClient) } : {}),
   },
 });
 const buildLog = path.join(local.releasesDir, `build-${version}.log`);

@@ -18,6 +18,7 @@ import { HapticsGroup, NotificationsGroup, SoundGroup } from "@/components/setti
 import { SecondBrainGroup } from "@/components/settings/second-brain";
 import { VoiceGroup } from "@/components/settings/voice";
 import { ToolsPage } from "@/components/settings/tools";
+import { ConnectionsPage } from "@/components/settings/connections";
 import { SETTINGS_PAGES } from "@/components/settings/pages";
 
 export type ApplyBody = {
@@ -253,6 +254,8 @@ function CategoryPage({
           <ConnectionGroup />
           <ModelsKeysGroup />
         </>
+      ) : id === "connections" ? (
+        <ConnectionsPage />
       ) : id === "tools" ? (
         <ToolsPage />
       ) : id === "voice" ? (

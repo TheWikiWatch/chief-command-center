@@ -106,9 +106,13 @@ export type ChatMessage = {
   steered?: boolean;
   /** Bridge: questions the chief asked with Hermes's `clarify` tool, and the owner's answers. */
   asked?: AskedQuestion[];
+  /** Bridge: a bot asking for a connection (Connect cards, connections.py). */
+  connect?: ConnectRequest[];
   /** Client-only: a gateway notice or scheduled-job message shown in the thread (not a transcript row). */
   notice?: ChatNotice;
 };
+
+export type ConnectRequest = { service: string; label: string; why: string };
 
 export type AskedQuestion = { question: string; choices: string[]; answer: string | string[]; unanswered?: boolean };
 

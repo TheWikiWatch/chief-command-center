@@ -11,6 +11,7 @@ const names = [
   "vibrate", "moon", "zap", "circle-alert", "circle-check", "sliders-horizontal", "bell", "terminal",
   "hard-drive-download", "user-plus", "user-minus", "type", "orbit", "audio-lines", "hand", "ellipsis", "house", "bot",
   "book-open", "folder", "folder-open", "external-link", "hash", "file-image", "file-video-camera", "file-code", "history", "library",
+  "mail", "calendar", "hard-drive", "plug", "lock", "send", "shield-check", "briefcase",
 ];
 const pascal = (n) => n.split("-").map((p) => p[0].toUpperCase() + p.slice(1)).join("");
 const version = JSON.parse(readFileSync("node_modules/lucide-react/package.json", "utf8")).version;

@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { AudioLinesIcon, BellIcon, WrenchIcon, BookOpenIcon, ChartColumnIcon, HardDriveDownloadIcon, InfoIcon, KeyRoundIcon, SlidersHorizontalIcon, SmartphoneIcon } from "@/components/icons";
+import { AudioLinesIcon, BellIcon, PlugIcon, WrenchIcon, BookOpenIcon, ChartColumnIcon, HardDriveDownloadIcon, InfoIcon, KeyRoundIcon, SlidersHorizontalIcon, SmartphoneIcon } from "@/components/icons";
 import type { SettingsCategory } from "@/lib/settings-nav";
 
 /**
@@ -10,6 +10,7 @@ import type { SettingsCategory } from "@/lib/settings-nav";
 export const SETTINGS_PAGES: { id: SettingsCategory; label: string; blurb: string; keywords: string; icon: ReactNode; Icon: (p: { className?: string }) => ReactNode }[] = [
   { id: "general", label: "General", blurb: "Names, identity and how this app looks.", keywords: "name rename identity soul memory appearance text size motion", icon: <SlidersHorizontalIcon size={17} />, Icon: ({ className }) => <SlidersHorizontalIcon className={className} /> },
   { id: "models", label: "Models & keys", blurb: "The model the chief thinks with, and the providers your bots can use.", keywords: "provider api key openai anthropic model connection", icon: <KeyRoundIcon size={17} />, Icon: ({ className }) => <KeyRoundIcon className={className} /> },
+  { id: "connections", label: "Connections", blurb: "Email, calendars, documents and work tools the chief can use.", keywords: "gmail google email mail outlook microsoft calendar drive docs notion linear asana todoist slack connect sign in account integration connector oauth nous", icon: <PlugIcon size={17} />, Icon: ({ className }) => <PlugIcon className={className} /> },
   { id: "tools", label: "Tools", blurb: "Making images and searching the web: pick the services, add keys, try them.", keywords: "image generation picture openai dall-e gpt-image fal web search browse internet exa tavily brave perplexity", icon: <WrenchIcon size={17} />, Icon: ({ className }) => <WrenchIcon className={className} /> },
   { id: "voice", label: "Voice", blurb: "How the chief speaks and listens.", keywords: "speech tts stt microphone speak replies check my system", icon: <AudioLinesIcon size={17} />, Icon: ({ className }) => <AudioLinesIcon className={className} /> },
   { id: "second-brain", label: "Second Brain", blurb: "Your notes folder and its routines.", keywords: "vault obsidian notes folder routines morning nightly", icon: <BookOpenIcon size={17} />, Icon: ({ className }) => <BookOpenIcon className={className} /> },

@@ -293,3 +293,23 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **A Hermes rename is spanned with `"new|old"`** in `hermes_api.CAPABILITIES` and `hermes_api.get(module, "new|old")`: one bridge works on both sides of the rename, and the old half can go once the pin is past it. Hermes 2026.10 renamed `_STT_MODEL_CONFIG_KEY` to `STT_MODEL_CONFIG_KEY` this way.
 - **A blocked upgrade retries itself when our side changes.** Every candidate PR and blocked issue carries `<!-- attempt:<key> -->`, a digest of the patches, the bridge plugin, the contracts, the suite and the payload builder (`candidate.attempt_key`); the daily poll skips a tag only when something with today's key exists (or a PR for it is open or merged). Closing the issue by hand doesn't retry it; changing one of those inputs does. Older blocked issues for the tag are closed when a new attempt reports.
 - **A forced run never downgrades.** The pin can sit on upstream main past its base tag, so a stable tag that isn't a descendant of the pinned commit would drop commits the app ships. `candidate.py` reports `contains_pin`, and a forced run only builds a tag that is newer or contains the pin.
+
+## Connections
+
+- **Plugin tools are deferred.** Hermes hides plugin tools (the bridge's `connections`, `fleet_*`, `set_bot_look`)
+  behind its tool search: a model calls them through `tool_call`, never by name. A test model that calls one directly
+  gets "Tool does not exist". A single deferred call's result row is the tool's own JSON, so cards still parse.
+- **`manage_connections` only draws its own card for clients that set `agent.connection_callback`.** The messaging
+  gateway doesn't, so it returns connect links; the bridge renders those as Connect cards instead of patching Hermes.
+- **Composio connect links are single-use.** Fetch one per click; never cache or reuse a link.
+- **The Chief Google app allows 100 users for its whole life** until Google verifies it. Don't spend them on test runs
+  (use one test account). A project left in *Testing* breaks every bot's Gmail after 7 days: it must be *In production*.
+- **The skill rewrites `google_token.json` on each refresh** with only google-auth's fields, so the account's address
+  lives beside it in `google_account.json`. The token's `scopes` must be exactly the granted ones and `expiry` must be
+  written, or google-auth refuses to refresh.
+- **Loopback sign-ins finish on the PC.** Google on this PC and Direct work tools redirect to `127.0.0.1`; from a phone
+  the card says "Finish on your PC" instead of opening a page that can't complete. Quick links work anywhere.
+- **The mail guard runs only where the bridge plugin loads** (the chief's processes). Never hand a mail connection to a
+  worker profile until the guard is installed there too, or its sends won't ask.
+- **The google-workspace SKILL.md documents `setup.py` flags that don't exist** (`--services`, `--format`). The
+  connections prompt section steers the chief to `google_api.py` and away from setup.

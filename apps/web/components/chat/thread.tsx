@@ -34,6 +34,7 @@ import { looksFailed, stepDuration, toolLabel } from "@/lib/tool-labels";
 import { Tip } from "@/components/ui/popovers";
 import { readAloud } from "@/components/chat/use-reply-speech";
 import type { ChatMessage, ChatNotice, PendingQuestion, Person, ReplyDraft, TurnActivity } from "@/lib/types";
+import { ConnectCards } from "@/components/chat/connect-card";
 import { AskedRow, NoticeBody, QuestionCard } from "@/components/chat/question";
 import { useAssistantName } from "@/lib/identity";
 
@@ -190,14 +191,14 @@ export function buildRows(messages: ChatMessage[]): Row[] {
       }
     }
     // The question itself shows as a card, and later as the question and its answer: no tool chip for it.
-    if (isToolOnly(m) && m.tools?.length && m.tools.every((t) => t === "clarify")) continue;
+    if (isToolOnly(m) && m.tools?.length && m.tools.every((t) => t === "clarify" || t === "connections")) continue;
     if (isToolOnly(m)) {
       const run = [m];
       while (i + 1 < messages.length && isToolOnly(messages[i + 1])) run.push(messages[++i]);
       rows.push(toolsRow(run));
       continue;
     }
-    if (m.notice || m.asked) {
+    if (m.notice || m.asked || m.connect) {
       rows.push(msgRow(m, m.notice ? `n-${m.notice.id}` : `m-${m.id}`, false, true, true));
       continue;
     }
@@ -205,7 +206,7 @@ export function buildRows(messages: ChatMessage[]): Row[] {
     const prev = messages[i - 1];
     const next = messages[i + 1];
     // A notice or a past question is its own block: the message after it starts a new group (with the face).
-    const sameSide = (o?: ChatMessage) => !!o && !o.notice && !o.asked && (o.role === "user" && !isMachineNote(chatTone(o))) === mine;
+    const sameSide = (o?: ChatMessage) => !!o && !o.notice && !o.asked && !o.connect && (o.role === "user" && !isMachineNote(chatTone(o))) === mine;
     rows.push(msgRow(m, `m-${m.id}`, mine, !sameSide(prev), !sameSide(next)));
   }
   return rows;
@@ -529,7 +530,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
   const time = clock(m.id >= OPTIMISTIC ? Date.now() : messageTimeMs(m.timestamp));
   const motionProps = animate ? (mine ? enterMine : enterChief) : {};
 
-  if (m.notice || m.asked) {
+  if (m.notice || m.asked || m.connect) {
     return (
       <motion.div {...motionProps} className="mt-5 flex gap-2.5">
         <div className="w-7 shrink-0" />
@@ -539,6 +540,8 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
               {m.notice.text.trim() ? <NoticeBody notice={m.notice} onQuickReply={onQuickReply} /> : null}
               <MessageMedia attachments={m.notice.attachments} />
             </>
+          ) : m.connect ? (
+            <ConnectCards items={m.connect} messageId={m.id} onQuickReply={onQuickReply} />
           ) : (
             <AskedRow items={m.asked!} />
           )}
