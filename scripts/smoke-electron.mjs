@@ -8,7 +8,7 @@
 // release.local.json's payloadDir). Everything runs on new ports in the work folder. The owner's installed Chief
 // is never touched: the script checks that its gateway is the same process, still running, before and after.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { createRequire } from "node:module";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -71,6 +71,20 @@ function liveGateway() {
   }
 }
 
+/** The end of every log the run wrote (the app's and Hermes's), so a failed run says why without being reproduced. */
+function showLogs(profile) {
+  const folders = [path.join(data, "logs"), path.join(profile, "logs")];
+  for (const folder of folders) {
+    if (!existsSync(folder)) continue;
+    for (const name of readdirSync(folder).filter((n) => /\.log$/.test(n))) {
+      const lines = readFileSync(path.join(folder, name), "utf8").trimEnd().split(/\r?\n/).slice(-25);
+      if (!lines.join("").trim()) continue;
+      console.log(`\n----- ${path.relative(work, path.join(folder, name))} (last ${lines.length} lines)`);
+      console.log(lines.join("\n"));
+    }
+  }
+}
+
 function payloadPython() {
   const manifest = JSON.parse(readFileSync(path.join(payload, "manifest.json"), "utf8")).runtime;
   return {
@@ -128,7 +142,9 @@ async function main() {
     await box.waitFor({ state: "visible", timeout: 60_000 });
     await box.fill("hello smoke test");
     await box.press("Enter");
-    await page.getByText("Hello from the local test model", { exact: false }).last().waitFor({ timeout: 90_000 });
+    // The first turn of a fresh gateway is the slowest (cold imports), and inside a release it runs right after the
+    // builds while the PC is still busy: 90 s timed out there twice (0.1.33, 0.1.36) while every standalone run passed.
+    await page.getByText("Hello from the local test model", { exact: false }).last().waitFor({ timeout: 180_000 });
     ok = check("a chat round trip", true) && ok;
 
     await box.fill("APPROVEME please");
@@ -141,6 +157,7 @@ async function main() {
     ok = check("an approved command runs and the chief answers", true) && ok;
   } catch (error) {
     ok = check("the smoke run", false, error instanceof Error ? error.message.split("\n")[0] : String(error));
+    showLogs(profile);
   } finally {
     // The app's own Quit path: Chief stops and the app exits.
     const closed = new Promise((resolve) => app.process().once("exit", (code) => resolve(code)));
