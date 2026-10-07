@@ -19,7 +19,8 @@ from typing import Any
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
-# feature -> {module: (names...)}; an empty tuple means the module itself.
+# feature -> {module: (names...)}; an empty tuple means the module itself. A name written "new|old" is found under
+# either (the first that exists): how the bridge spans a Hermes rename without a release in lockstep.
 CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
     "approvals": {
         "tools.approval": ("get_pending_gateway_approval", "list_gateway_approvals", "resolve_gateway_approval"),
@@ -94,7 +95,12 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "tool settings": {
         "hermes_cli.tools_config": ("TOOL_CATEGORIES", "get_nous_subscription_features"),
-        "hermes_cli.tools_config_providers": ("STT_MODEL_CATALOG", "_STT_MODEL_CONFIG_KEY", "_visible_providers", "provider_readiness_status"),
+        "hermes_cli.tools_config_providers": (
+            "STT_MODEL_CATALOG",
+            "STT_MODEL_CONFIG_KEY|_STT_MODEL_CONFIG_KEY",
+            "_visible_providers",
+            "provider_readiness_status",
+        ),
         "tools.tool_backend_helpers": ("resolve_provider_secret",),
     },
     "background work": {
@@ -134,11 +140,18 @@ _running = False
 
 
 def get(module: str, name: str = "") -> Any:
-    """`module.name` from Hermes, or HermesMissing (logged once as a warning, never a silent None)."""
+    """`module.name` from Hermes, or HermesMissing (logged once as a warning, never a silent None).
+
+    `name` may be "new|old": the first of them the module has."""
     key = f"{module}.{name}" if name else module
     try:
         mod = importlib.import_module(module)
-        return getattr(mod, name) if name else mod
+        if not name:
+            return mod
+        for candidate in name.split("|"):
+            if hasattr(mod, candidate):
+                return getattr(mod, candidate)
+        raise AttributeError(f"module {module!r} has none of {name!r}")
     except Exception as exc:  # ImportError, AttributeError, or an error while importing
         if key not in _warned:
             _warned.add(key)

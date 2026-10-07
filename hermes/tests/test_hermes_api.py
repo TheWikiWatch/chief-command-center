@@ -42,6 +42,23 @@ class CapabilityListTests(unittest.TestCase):
             unlisted.append(f"{where}: from {module} import {name}")
         self.assertEqual(unlisted, [], "add these to hermes_api.CAPABILITIES")
 
+    def test_a_new_or_old_name_resolves_to_whichever_this_hermes_has(self):
+        old = types.ModuleType("hermes_api_fake_old")
+        old._KEY = {"elevenlabs": "model_id"}
+        new = types.ModuleType("hermes_api_fake_new")
+        new.KEY = {"elevenlabs": "model_id", "mistral": "model"}
+        new._KEY = {"stale": True}
+        sys.modules.update({old.__name__: old, new.__name__: new})
+        try:
+            self.assertIs(hermes_api.get(old.__name__, "KEY|_KEY"), old._KEY)
+            self.assertIs(hermes_api.get(new.__name__, "KEY|_KEY"), new.KEY)  # the first listed wins
+            with self.assertLogs("chief-dashboard-bridge", level="WARNING"), self.assertRaises(hermes_api.HermesMissing):
+                hermes_api.get(old.__name__, "GONE|_GONE")
+        finally:
+            for name in (old.__name__, new.__name__):
+                sys.modules.pop(name, None)
+            hermes_api.reset_for_tests()
+
     def test_missing_names_are_reported_by_feature_and_raised_not_returned_as_none(self):
         fake = types.ModuleType("tools.approval")
         fake.get_pending_gateway_approval = lambda key: None  # the other two are "gone upstream"

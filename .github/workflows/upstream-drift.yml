@@ -1,0 +1,64 @@
+name: Upstream drift
+
+# The look-ahead half of upstream tracking (upstream.yml is the release-day half). Every night: apply our patch queue
+# to upstream Hermes main and its newest release candidate, and check statically that every Hermes name the bridge
+# uses is still there (packaging/upstream/drift.py: seconds, no build). One issue, "Upstream drift", stays up to
+# date: opened or updated when something needs work, closed when it's all clear again. Fixing a patch before
+# upstream releases the code it no longer fits keeps release day boring.
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "hermes/pin.json"
+      - "hermes/patches/**"
+      - "hermes/plugins/chief-dashboard-bridge/hermes_api.py"
+      - "packaging/upstream/drift.py"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: upstream-drift
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+      - name: Patches and bridge names against upstream main and its release candidate
+        run: python packaging/upstream/drift.py --src "$RUNNER_TEMP/hermes-drift" --report drift.md --json-out drift.json
+      - name: Keep the drift issue up to date
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ok=$(jq -r .ok drift.json)
+          { cat drift.md; echo; echo "_Checked $(date -u +%Y-%m-%dT%H:%MZ) by [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)._"; } > body.md
+          issue=$(gh issue list --state open --search "Upstream drift in:title" --json number,title --jq '.[] | select(.title == "Upstream drift") | .number' | head -n1)
+          if [ "$ok" = "true" ]; then
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --body-file body.md
+              gh issue close "$issue" --comment "All clear again: every patch applies (in its own or its next form) and every bridge name is present."
+            fi
+          elif [ -n "$issue" ]; then
+            gh issue edit "$issue" --body-file body.md
+          else
+            gh issue create --title "Upstream drift" --body-file body.md
+          fi
+      - name: The report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: drift-report
+          path: |
+            drift.md
+            drift.json
+          if-no-files-found: ignore

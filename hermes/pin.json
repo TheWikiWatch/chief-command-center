@@ -22,7 +22,11 @@
     {
       "file": "0004-payload-venv-launchers-on-another-pc.patch",
       "why": "The payload's venv is built on the release PC and its pyvenv.cfg names that PC's folder, so its launchers (venv\\Scripts\\python.exe, which Hermes puts first on PATH) exit 103 on every other PC. When that folder is gone, children get the interpreter itself first on PATH instead.",
-      "upstream": "not upstream; drop when upstream payloads ship relocatable launchers"
+      "upstream": "half upstream on main from 3383a1d8b3 (2026-10-07: the venv's Scripts no longer go on PATH on Windows). Next forms: `.next` (main after that fix) only adds the interpreter's own folder, so a child's bare `python` is the bundled one; `.rc` is the original fix rewritten for rc.35's PATH code",
+      "next": [
+        "0004-payload-venv-launchers-on-another-pc.next.patch",
+        "0004-payload-venv-launchers-on-another-pc.rc.patch"
+      ]
     }
   ]
 }

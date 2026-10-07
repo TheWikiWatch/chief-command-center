@@ -1,0 +1,37 @@
+diff --git a/pm/environments.py b/pm/environments.py
+index 85ff480160..124aeb3d60 100644
+--- a/pm/environments.py
++++ b/pm/environments.py
+@@ -354,6 +354,11 @@ def activate_dependencies(project_root: Path) -> None:
+     os.environ["PYTHONPATH"] = os.pathsep.join([str(project_root.resolve()), str(selected)])
+     os.environ.pop("VIRTUAL_ENV", None)
+     executable_dir = venv_bin_dir(environment)
++    if not _venv_launchers_work(environment) and Path(sys.executable).is_file():
++        # Chief patch (0004): a payload built on another machine names that machine's folder as its venv's
++        # `home`, so every launcher in the venv's Scripts exits 103 there. Children get the interpreter itself,
++        # which runs with the PYTHONPATH set above.
++        executable_dir = Path(sys.executable).parent
+     # The venv's own `hermes`/`hermes-acp` console scripts are editable installs bound to
+     # the build-time source snapshot, not this checkout (#124627): a child that resolves
+     # `hermes` off PATH must hit the checkout's own launcher first, never the venv's copy.
+@@ -363,6 +368,20 @@ def activate_dependencies(project_root: Path) -> None:
+         os.environ["PATH"] = os.pathsep.join([*prefix, os.environ.get("PATH", "")])
+ 
+ 
++
++def _venv_launchers_work(environment: Path) -> bool:
++    """A venv's launchers start the interpreter its pyvenv.cfg names as ``home``; False when that is gone."""
++    try:
++        lines = (environment / "pyvenv.cfg").read_text(encoding="utf-8-sig").splitlines()
++    except OSError:
++        return False
++    for line in lines:
++        key, sep, value = line.partition("=")
++        if sep and key.strip().lower() == "home":
++            return Path(value.strip()).is_dir()
++    return True
++
++
+ def activation_environment(project_root: Path) -> dict[str, str]:
+     """Read the installed PM environment; do not provision or switch imports."""
+     from pm.install import env_for

@@ -47,9 +47,11 @@ def _load_config() -> dict[str, Any]:
 
 def _stt_model_key(provider: str) -> str:
     try:
-        from hermes_cli.tools_config_providers import _STT_MODEL_CONFIG_KEY
+        from . import hermes_api
 
-        return str(_STT_MODEL_CONFIG_KEY.get(provider) or "model")
+        # Public from Hermes 2026.10 (moved to tools.transcription_common, re-exported here); private before.
+        keys = hermes_api.get("hermes_cli.tools_config_providers", "STT_MODEL_CONFIG_KEY|_STT_MODEL_CONFIG_KEY")
+        return str(keys.get(provider) or "model")
     except Exception:
         return "model_id" if provider == "elevenlabs" else "model"
 

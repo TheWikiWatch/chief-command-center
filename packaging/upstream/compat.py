@@ -219,12 +219,20 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
     results: list[tuple[str, bool, float, str]] = []
 
-    def check(name: str, fn) -> None:
+    def check(name: str, fn, retries: int = 0) -> None:
         started = time.time()
-        try:
-            ok, detail = fn()
-        except Exception as exc:  # a crash in the suite is a failed check, with its message
-            ok, detail = False, f"{type(exc).__name__}: {exc}"
+        attempts: list[str] = []
+        ok, detail = False, ""
+        for _ in range(retries + 1):
+            try:
+                ok, detail = fn()
+            except Exception as exc:  # a crash in the suite is a failed check, with its message
+                ok, detail = False, f"{type(exc).__name__}: {exc}"
+            if ok:
+                break
+            attempts.append(detail)
+        if ok and attempts:  # passed on a retry: say so, so a flaky check stays visible
+            detail = f"passed on attempt {len(attempts) + 1}; the first failure was:\n{attempts[0][-2000:]}\n---\n{detail}"
         results.append((name, ok, time.time() - started, detail))
         print(f"{'PASS' if ok else 'FAIL'} {name} ({time.time() - started:.0f}s)", flush=True)
 
@@ -278,6 +286,9 @@ def main() -> int:
             p.env(),
             timeout=900,
         ),
+        # Timing-sensitive (a live gateway, a scripted model, a stop mid-reply): one retry before calling an
+        # upgrade blocked, since a blocked-upgrade issue stops the daily poll from trying that tag again.
+        retries=1,
     )
 
     passed = all(ok for _, ok, _, _ in results)

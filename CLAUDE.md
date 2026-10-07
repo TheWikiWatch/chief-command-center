@@ -58,8 +58,12 @@ ordinary app release, made the same way as above, after it passes the compatibil
 1. **Finding one (automatic):** `.github/workflows/upstream.yml` runs daily on GitHub. When upstream Hermes has a
    newer stable release, it applies our patches, builds the payload, runs the compatibility suite, and opens either
    a PR **"Upgrade Hermes to <tag>"** (moving `hermes/pin.json`) or an issue **"Blocked Hermes upgrade: <tag>"**
-   (a patch no longer applies or a check failed; the old pin stays). Check by hand with
-   `python packaging/upstream/candidate.py`.
+   (a patch no longer applies or a check failed; the old pin stays; it retries by itself once a fix lands). Check by
+   hand with `python packaging/upstream/candidate.py`.
+   **Looking ahead:** `.github/workflows/upstream-drift.yml` runs nightly against upstream main and its newest release
+   candidate and keeps one issue, **"Upstream drift"**, up to date. When it says a patch no longer fits, write the
+   new form as `hermes/patches/<name>.next.patch` and list it under `"next"` in the entry (never edit the current
+   file: it still builds the current pin). By hand: `python packaging/upstream/drift.py --src <build>\drift-src`.
 2. **Accepting it:** review and merge the PR, then `git pull` on `main`.
 3. **Rebuilding the payload locally** (the PR only changes the pin; the package carries a payload built on this PC).
    Build into new folders so the current payload stays as a fallback:

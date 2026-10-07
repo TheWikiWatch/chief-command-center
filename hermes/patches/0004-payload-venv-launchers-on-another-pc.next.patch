@@ -1,0 +1,16 @@
+diff --git a/pm/environments.py b/pm/environments.py
+index 8a685bfc4f..75d4da6dca 100644
+--- a/pm/environments.py
++++ b/pm/environments.py
+@@ -475,6 +475,11 @@ def activate_dependencies(project_root: Path) -> None:
+     # build machine, so every executable in its Scripts fails on the user's machine.
+     if not (os.name == "nt" and environment == payload_venv(project_root)):
+         directories.append(venv_bin_dir(environment))
++    elif Path(sys.executable).is_file():
++        # Chief patch (0004, refreshed 2026-10-07): with the venv's Scripts left off, a child's bare `python`
++        # would find whatever else is on PATH. Give it the interpreter itself, which runs with the
++        # PYTHONPATH set above.
++        directories.append(Path(sys.executable).parent)
+     prefix = [str(path) for path in directories if path.is_dir()]
+     if prefix:
+         os.environ["PATH"] = os.pathsep.join([*prefix, os.environ.get("PATH", "")])

@@ -3,13 +3,17 @@ name: Upstream Hermes
 # PLAN §8 "Upstream tracking": a daily poll for a new upstream Hermes stable release. A newer one gets the
 # patch queue applied, a payload built and the compatibility suite run on it. The result is a candidate PR
 # that moves hermes/pin.json, or a blocked-upgrade issue that keeps the last good pin.
+#
+# Each PR and issue carries an attempt key (candidate.py: a digest of the patches, the bridge, the contracts and the
+# suite). A blocked tag is tried again by the daily poll as soon as that key changes, so fixing a patch is enough.
+# The look-ahead for patches that upstream's next code won't fit is upstream-drift.yml.
 on:
   schedule:
     - cron: "17 6 * * *"
   workflow_dispatch:
     inputs:
       force:
-        description: "Build and test the latest upstream release even if it isn't newer"
+        description: "Build and test the latest upstream release even if it isn't newer (never one that would drop pinned commits)"
         type: boolean
         default: false
 
@@ -26,10 +30,15 @@ jobs:
   candidate:
     runs-on: ubuntu-latest
     outputs:
-      # Newer, and no PR or issue exists for that tag yet (so a daily poll never duplicates them).
+      # Newer, and nothing exists yet for this tag with today's attempt key (so a daily poll never duplicates them).
       newer: ${{ steps.check.outputs.newer == 'true' && steps.seen.outputs.count == '0' }}
+      # A forced run may rebuild a tag that isn't newer, but never one that would drop commits the pin ships.
+      forcible: ${{ steps.check.outputs.newer == 'true' || steps.check.outputs.contains_pin == 'true' }}
       tag: ${{ steps.check.outputs.tag }}
       commit: ${{ steps.check.outputs.commit }}
+      contains_pin: ${{ steps.check.outputs.contains_pin }}
+      drops: ${{ steps.check.outputs.drops }}
+      attempt: ${{ steps.check.outputs.attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -40,26 +49,43 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           python packaging/upstream/candidate.py --json-out candidate.json
-          echo "newer=$(jq -r '.newer' candidate.json)" >> "$GITHUB_OUTPUT"
-          echo "tag=$(jq -r '.candidate.tag' candidate.json)" >> "$GITHUB_OUTPUT"
-          echo "commit=$(jq -r '.candidate.commit' candidate.json)" >> "$GITHUB_OUTPUT"
-      - name: Existing PR or issue for this tag?
+          {
+            echo "newer=$(jq -r '.newer' candidate.json)"
+            echo "tag=$(jq -r '.candidate.tag' candidate.json)"
+            echo "commit=$(jq -r '.candidate.commit' candidate.json)"
+            echo "contains_pin=$(jq -r '.contains_pin' candidate.json)"
+            echo "drops=$(jq -r '.drops_commits' candidate.json)"
+            echo "attempt=$(jq -r '.attempt_key' candidate.json)"
+          } >> "$GITHUB_OUTPUT"
+      - name: Existing PR or issue for this tag and attempt?
         id: seen
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           tag='${{ steps.check.outputs.tag }}'
-          n=$( (gh pr list --state all --search "Upgrade Hermes to $tag in:title" --json number; gh issue list --state all --search "Blocked Hermes upgrade: $tag in:title" --json number) | jq -s 'map(length) | add')
-          echo "count=$n" >> "$GITHUB_OUTPUT"
+          key='attempt:${{ steps.check.outputs.attempt }}'
+          # An open or merged PR for the tag always counts (never two). A closed PR or a blocked issue counts only with
+          # today's attempt key: once the patches or the bridge change, the tag is tried again.
+          prs=$(gh pr list --state all --search "Upgrade Hermes to $tag in:title" --json state,body \
+            | jq --arg key "$key" 'map(select(.state != "CLOSED" or (.body | contains($key)))) | length')
+          issues=$(gh issue list --state all --search "Blocked Hermes upgrade: $tag in:title" --json body \
+            | jq --arg key "$key" 'map(select(.body | contains($key))) | length')
+          echo "count=$((prs + issues))" >> "$GITHUB_OUTPUT"
+      - name: Refused downgrade
+        if: ${{ inputs.force && steps.check.outputs.newer != 'true' && steps.check.outputs.contains_pin != 'true' }}
+        run: echo "::warning::${{ steps.check.outputs.tag }} is not newer than the pin and doesn't contain the pinned commit; building it would drop ${{ steps.check.outputs.drops }} commits the app ships. Not forced."
 
   upgrade:
     needs: candidate
-    if: ${{ needs.candidate.outputs.newer == 'true' || inputs.force }}
+    if: ${{ needs.candidate.outputs.newer == 'true' || (inputs.force && needs.candidate.outputs.forcible == 'true') }}
     runs-on: windows-latest
     timeout-minutes: 150
     env:
       TAG: ${{ needs.candidate.outputs.tag }}
       COMMIT: ${{ needs.candidate.outputs.commit }}
+      ATTEMPT: ${{ needs.candidate.outputs.attempt }}
+      CONTAINS_PIN: ${{ needs.candidate.outputs.contains_pin }}
+      DROPS: ${{ needs.candidate.outputs.drops }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
@@ -68,12 +94,20 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
+      - name: Python tools
+        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      # The builder's download cache (Python, Node, Git, packages), shared with hermes.yml's.
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/uv-cache
+          key: payload-cache-${{ hashFiles('hermes/pin.json', 'packaging/payload/**') }}
+          restore-keys: payload-cache-
       - name: Patch queue on the candidate
         id: patches
         shell: bash
         run: |
           set +e
-          python packaging/payload/prepare_source.py --dest "$RUNNER_TEMP/hermes-src" --commit "$COMMIT" > patches.log 2>&1
+          python packaging/payload/prepare_source.py --dest "$RUNNER_TEMP/hermes-src" --commit "$COMMIT" --applied-out applied.json > patches.log 2>&1
           code=$?
           cat patches.log
           echo "code=$code" >> "$GITHUB_OUTPUT"
@@ -82,9 +116,7 @@ jobs:
         id: build
         if: steps.patches.outputs.code == '0'
         shell: bash
-        run: |
-          python -m pip install --disable-pip-version-check pyyaml cryptography requests
-          python packaging/payload/stage.py --hermes-src "$RUNNER_TEMP/hermes-src" --out "$RUNNER_TEMP/payload" --cache "$RUNNER_TEMP/uv-cache"
+        run: python packaging/payload/stage.py --hermes-src "$RUNNER_TEMP/hermes-src" --out "$RUNNER_TEMP/payload" --cache "$RUNNER_TEMP/uv-cache"
       - name: Compatibility suite
         id: compat
         if: steps.build.outcome == 'success'
@@ -108,17 +140,32 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
+          GITHUB_TOKEN: ${{ github.token }}
+          # Optional: with it, Claude sorts the release's changes into the PR's feature radar (upgrade_notes.py).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           branch="upstream/hermes-$TAG"
+          base=$(jq -r .commit hermes/pin.json)
+          if [ -n "$ANTHROPIC_API_KEY" ]; then python -m pip install --disable-pip-version-check anthropic; fi
           git config user.name "chief-upstream-bot"
           git config user.email "noreply@github.com"
           git checkout -b "$branch"
-          python packaging/upstream/update_pin.py --commit "$COMMIT" --base-version "$TAG"
-          git add hermes/pin.json
+          python packaging/upstream/update_pin.py --commit "$COMMIT" --base-version "$TAG" --applied applied.json | tee pin.log
+          git add -A hermes/pin.json hermes/patches
           git commit -m "Upgrade Hermes to $TAG (compatibility suite passed)"
           git push -u origin "$branch"
-          { echo "Upstream released **$TAG** ($COMMIT). The patch queue applied and the compatibility suite passed on a freshly built payload."; echo; cat compat.md; echo; echo "Ship it through a normal app release (the updater), not by editing installs."; } > body.md
+          python packaging/upstream/upgrade_notes.py --candidate "$TAG" --commit "$COMMIT" --base "$base" --src "$RUNNER_TEMP/hermes-src" --compat compat.md --pin-log pin.log --out body.md --radar-json radar.json
+          echo "<!-- attempt:$ATTEMPT -->" >> body.md
           gh pr create --title "Upgrade Hermes to $TAG" --body-file body.md --base main --head "$branch"
+      - name: Close earlier blocked issues for this tag
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for n in $(gh issue list --state open --search "Blocked Hermes upgrade: $TAG in:title" --json number,body --jq ".[] | select(.body | contains(\"attempt:$ATTEMPT\") | not) | .number"); do
+            gh issue close "$n" --comment "Superseded by a new attempt (attempt key $ATTEMPT): $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          done
       - name: Blocked-upgrade issue
         if: always() && steps.compat.outputs.code != '0'
         shell: bash
@@ -128,8 +175,13 @@ jobs:
           {
             echo "Upstream released **$TAG** ($COMMIT), but it can't be adopted yet. The pin stays at the last good commit."
             echo
+            echo "Fix it here (refresh a patch as a \`next\` form, or fix the bridge) and the daily poll tries this tag again by itself."
+            if [ "$CONTAINS_PIN" != "true" ]; then echo; echo "Note: this tag doesn't contain the pinned commit; moving to it would drop $DROPS commits."; fi
+            echo
             if [ "${{ steps.patches.outputs.code }}" != "0" ]; then echo "### Patch queue"; echo '```'; tail -c 6000 patches.log; echo '```'; fi
             if [ "${{ steps.build.outcome }}" == "failure" ]; then echo "### Payload build failed"; echo "See the workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
             if [ -f compat.md ]; then cat compat.md; fi
+            echo
+            echo "<!-- attempt:$ATTEMPT -->"
           } > body.md
           gh issue create --title "Blocked Hermes upgrade: $TAG" --body-file body.md
