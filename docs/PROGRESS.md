@@ -1068,3 +1068,8 @@
   be with a Nous sign-in; a bot asking for one that isn't gets "can't be connected from this app yet", and so does its
   card.
 - **Released to everyone as 0.1.36**, folding in the early 0.1.34 and 0.1.35.
+- **A message sent while Chief was still starting could be refused** (found by the release's smoke test, which failed
+  twice today the same way). The bridge answers before Hermes attaches the chat, and on a busy PC the attach took 17 s,
+  past the 15 s a send waited, so the message came back "not attached" and the chat showed an error. A send now waits
+  through the start-up minute (at most 45 s), and if the chat still isn't there it answers 503, so the dashboard queues
+  the message and sends it on its own. The smoke test also prints every log when it fails.

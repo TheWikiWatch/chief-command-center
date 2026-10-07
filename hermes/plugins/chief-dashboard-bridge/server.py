@@ -631,13 +631,18 @@ class BridgeServer:
         return result
 
     _STARTUP_GRACE_S = 60.0
+    _ATTACH_WAIT_MAX_S = 45.0
 
     def _attached_adapter(self, wait_s: float = 15.0):
-        """The Command Center adapter. Right after the gateway starts, /health answers a few seconds before the
-        adapter attaches; a message sent in that window waits for it instead of failing. Later on, a missing
-        adapter is a real fault and is reported at once."""
-        if time.monotonic() - self._started > self._STARTUP_GRACE_S:
+        """The Command Center adapter. Right after the gateway starts, /health answers before the adapter attaches
+        (seconds; 17 s inside a release build's smoke test, on a busy PC); a message sent in that window waits for
+        it, through the rest of the start-up grace (at most 45 s, under the proxy's limit) instead of failing.
+        Later on, a missing adapter is a real fault and is reported at once."""
+        elapsed = time.monotonic() - self._started
+        if elapsed > self._STARTUP_GRACE_S:
             wait_s = 0.0
+        else:
+            wait_s = min(max(wait_s, self._STARTUP_GRACE_S - elapsed), self._ATTACH_WAIT_MAX_S)
         end = time.monotonic() + wait_s
         while self.command_center_adapter is None and time.monotonic() < end and not self._watch_stop.is_set():
             time.sleep(0.25)
@@ -695,10 +700,13 @@ class BridgeServer:
         cc = self._attached_adapter() if use_cc else self.command_center_adapter
         # Check the target before writing uploads, so a failed send leaves no files behind.
         if use_cc and (cc is None or not sk):
+            starting = time.monotonic() - self._started <= self._STARTUP_GRACE_S + self._ATTACH_WAIT_MAX_S
             return {
                 "ok": False,
-                "error": "Command Center is not attached. Relaunch Chief Command Center.",
+                "error": "Chief is still starting." if starting else "Command Center is not attached. Relaunch Chief Command Center.",
                 "platform": "command_center",
+                # Temporary: the route answers 503, so the dashboard queues the message and sends it on its own.
+                "retry": True,
             }
         if not use_cc and not sk:
             return {"ok": False, "error": "no session bound"}

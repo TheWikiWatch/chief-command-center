@@ -313,3 +313,6 @@ Two Hermes profile helpers reach outside the profile they are given:
   worker profile until the guard is installed there too, or its sends won't ask.
 - **The google-workspace SKILL.md documents `setup.py` flags that don't exist** (`--services`, `--format`). The
   connections prompt section steers the chief to `google_api.py` and away from setup.
+- **The bridge answers before Hermes attaches the chat.** On a busy PC the gap was 17 s. A send waits through the
+  start-up minute (`_attached_adapter`, at most 45 s) and otherwise answers 503 so the dashboard's outbox retries;
+  never answer it 200 with `ok: false`, which the dashboard treats as final.

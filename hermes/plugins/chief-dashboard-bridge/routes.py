@@ -290,6 +290,10 @@ def build(bridge) -> list[Route]:
         bridge.broadcast({"type": "cc_outbox", "at": time.time(), "id": req.body.get("id")})
         return {"ok": True}
 
+    def retry_later(result: dict):
+        """A send the chief couldn't take yet (still starting) answers 503: the dashboard queues it and retries."""
+        return (result, 503) if isinstance(result, dict) and result.get("retry") else result
+
     def look_write(req: Request):
         if "face" not in req.body:
             return {"ok": False, "error": "Send a face (or null to reset)."}, 400
@@ -319,8 +323,8 @@ def build(bridge) -> list[Route]:
         Route(
             P,
             "/send",
-            lambda r: bridge.send(
-                r.b("text"), r.body["attachments"] if isinstance(r.body.get("attachments"), list) else [], r.b("client_id"), _thread_body(r.body)
+            lambda r: retry_later(
+                bridge.send(r.b("text"), r.body["attachments"] if isinstance(r.body.get("attachments"), list) else [], r.b("client_id"), _thread_body(r.body))
             ),
             limit=80 * MB,
             **A,

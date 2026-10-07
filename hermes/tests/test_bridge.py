@@ -36,6 +36,7 @@ except ImportError:
     sys.modules["yaml.loader"] = loader
 data = importlib.import_module("test_bridge_plugin.data")
 server = importlib.import_module("test_bridge_plugin.server")
+routes = importlib.import_module("test_bridge_plugin.routes")
 media = importlib.import_module("test_bridge_plugin.media")
 vapid = importlib.import_module("test_bridge_plugin.vapid")
 webpush = importlib.import_module("test_bridge_plugin.webpush")
@@ -458,6 +459,34 @@ class BridgeTests(unittest.TestCase):
             result = bridge.send("hello")
         self.assertTrue(result["ok"], result)
         self.assertEqual(received, ["hello"])
+
+    def test_a_slow_start_still_gets_the_message(self):
+        # The 0.1.36 release's smoke test: the adapter attached 17 s after the bridge, past the old fixed 15 s wait.
+        with patch.dict(os.environ, {"COMMAND_CENTER_ENABLED": "1"}):
+            bridge = server.BridgeServer(token="test", port=0, session_key_override="agent:main:command_center:dm:owner", inject=lambda text, sk: False)
+        clock = [bridge._started + 2.0]  # sent 2 s after the bridge started
+
+        def sleep(seconds):
+            clock[0] += seconds
+            if clock[0] - bridge._started >= 17.0:
+                bridge.command_center_adapter = object()
+
+        with patch.object(server.time, "monotonic", lambda: clock[0]), patch.object(server.time, "sleep", side_effect=sleep):
+            adapter = bridge._attached_adapter()
+        self.assertIsNotNone(adapter)
+        self.assertGreaterEqual(clock[0] - bridge._started, 17.0)  # waited past the old fixed 15 s
+
+    def test_a_send_the_chief_cant_take_yet_is_retried_by_the_dashboard(self):
+        with patch.dict(os.environ, {"COMMAND_CENTER_ENABLED": "1"}):
+            bridge = server.BridgeServer(token="test", port=0, session_key_override="agent:main:command_center:dm:owner", inject=lambda text, sk: False)
+            bridge._started -= 600
+            result = bridge.send("hello")
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["retry"])
+        route = routes.find(routes.build(bridge), "POST", "/send")
+        req = routes.Request(handler=None, path="/send", qs={}, body={"text": "hello"})
+        answer = route.run(req)
+        self.assertEqual(answer[1], 503)  # the dashboard's outbox queues a 503 and sends it on its own
 
     def test_approval_requires_specific_request(self):
         self.assertFalse(data.resolve_approval("session", "", "always")["ok"])
