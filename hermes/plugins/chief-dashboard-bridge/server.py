@@ -899,8 +899,8 @@ def _make_handler(bridge: BridgeServer):
             token = header[7:].strip() if header.lower().startswith("bearer ") else ""
             return bool(token) and secrets.compare_digest(token, bridge.token)
 
-        def _read_json(self, limit: int) -> dict | None:
-            """Object body, or None after a 4xx. A cut-off upload must not look like an empty message."""
+        def _read_raw(self, limit: int) -> bytes | None:
+            """The body's bytes, or None after a 4xx (no length, too large, or cut off)."""
             try:
                 length = int(self.headers.get("Content-Length") or 0)
             except ValueError:
@@ -911,7 +911,18 @@ def _make_handler(bridge: BridgeServer):
             if length > limit:
                 self._reject(413, "payload too large")
                 return None
-            raw = self.rfile.read(length) if length else b"{}"
+            raw = self.rfile.read(length) if length else b""
+            if len(raw) != length:
+                self._reject(400, "Request body was cut off")
+                return None
+            return raw
+
+        def _read_json(self, limit: int) -> dict | None:
+            """Object body, or None after a 4xx. A cut-off upload must not look like an empty message."""
+            raw = self._read_raw(limit)
+            if raw is None:
+                return None
+            raw = raw or b"{}"
             try:
                 body = json.loads(raw.decode("utf-8") or "{}")
             except Exception:
@@ -966,7 +977,14 @@ def _make_handler(bridge: BridgeServer):
                 return
             started = time.time()
             body: dict = {}
-            if method in ("POST", "PATCH"):
+            raw = b""
+            if route.raw:
+                got = self._read_raw(route.limit)
+                if got is None:
+                    logger.info("bridge %s %s rejected before handling", method, path)
+                    return
+                raw = got
+            elif method in ("POST", "PATCH"):
                 read = self._read_json(route.limit)
                 if read is None:
                     logger.info("bridge %s %s rejected before handling", method, path)
@@ -975,7 +993,7 @@ def _make_handler(bridge: BridgeServer):
             # Blank values stay ("clarify=", "draft="): the long-poll tells "the caller tracks this and has none"
             # from "the caller doesn't track it" by the key being present. parse_qs drops blanks by default, which
             # left the first question, notice or draft of a conversation unable to wake a waiting poll.
-            result = route.run(routes.Request(self, path, parse_qs(parsed.query, keep_blank_values=True), body))
+            result = route.run(routes.Request(self, path, parse_qs(parsed.query, keep_blank_values=True), body, raw))
             if result is None:
                 return  # the handler wrote the response itself (a file, the event stream)
             code = 200
@@ -996,6 +1014,9 @@ def _make_handler(bridge: BridgeServer):
 
         def do_PATCH(self):
             self._dispatch("PATCH")
+
+        def do_PUT(self):
+            self._dispatch("PUT")
 
         def _sse(self):
             """The dashboard's live channel: a `change` event (coalesced) whenever the change signal moves, the

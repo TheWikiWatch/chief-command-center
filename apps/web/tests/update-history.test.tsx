@@ -16,13 +16,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-function appDir(releases: Record<string, { notes: string; hermes: string; published: string }>, installs: unknown[] = [], extra: Record<string, string> = {}) {
+function appDir(releases: Record<string, { notes: string; hermes: string; published: string; highlights?: unknown }>, installs: unknown[] = [], extra: Record<string, string> = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), "chief-web-history-"));
   roots.push(dir);
   const kept = path.join(dir, "release-history");
   mkdirSync(kept);
   for (const [version, r] of Object.entries(releases)) {
-    writeFileSync(path.join(kept, `${version}.json`), JSON.stringify({ format: "chief-release", version, published: r.published, notes: r.notes, hermes: { base_version: r.hermes } }));
+    const hermes = { base_version: r.hermes, ...(r.highlights !== undefined ? { highlights: r.highlights } : {}) };
+    writeFileSync(path.join(kept, `${version}.json`), JSON.stringify({ format: "chief-release", version, published: r.published, notes: r.notes, hermes }));
     writeFileSync(path.join(kept, `${version}.json.sig`), "sig");
   }
   for (const [name, text] of Object.entries(extra)) writeFileSync(path.join(kept, name), text);
@@ -48,6 +49,16 @@ describe("reading the kept history", () => {
     ]);
     expect(h.installs).toEqual([{ version: "0.1.12", at: "2026-10-01T22:00:00Z", from: "0.1.11" }]);
     expect((await readUpdateHistory("", "0.1.12")).available).toBe(false);
+  });
+
+  it("keeps a release's New in Hermes lines: at most three, trimmed, strings only", async () => {
+    const dir = appDir({
+      "0.1.31": { notes: "Hermes moved.", hermes: "2026.10.2", published: "2026-10-09T10:00:00Z", highlights: ["  Faster replies ", 7, "", "Better memory", "Voice in more languages", "A fourth"] },
+      "0.1.30": { notes: "Calm updates.", hermes: "2026.9.24", published: "2026-10-07T10:00:00Z", highlights: "not a list" },
+    });
+    const h = await readUpdateHistory(dir, "0.1.31");
+    expect(h.releases[0].highlights).toEqual(["Faster replies", "Better memory", "Voice in more languages"]);
+    expect(h.releases[1].highlights).toBeUndefined();
   });
 });
 
@@ -104,6 +115,17 @@ describe("What's new", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close what's new" }));
     expect(screen.queryByText("Updated to 0.1.12")).toBeNull();
     expect(localStorage.getItem("chief-whats-new-seen")).toBe("0.1.12");
+  });
+
+  it("after an update that moved Hermes, says what's new in it", async () => {
+    const moved = { ...history, releases: [{ ...history.releases[0], hermes: "2026.10.2", highlights: ["Faster replies", "Better memory"] }, ...history.releases.slice(1)] };
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ok: true, ...moved, installs: [{ version: "0.1.12", at: new Date().toISOString(), from: "0.1.11" }] })));
+    localStorage.clear();
+    const { WhatsNewCard } = await import("@/components/updates/update-history");
+    render(<WhatsNewCard />);
+    expect(await screen.findByText("New in Hermes 2026.10.2")).toBeInTheDocument();
+    expect(screen.getByText("Faster replies")).toBeInTheDocument();
+    expect(screen.getByText("Better memory")).toBeInTheDocument();
   });
 
   it("gives way to an offered update, and drops notes a newer version replaces", async () => {

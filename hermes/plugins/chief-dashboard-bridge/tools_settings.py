@@ -227,6 +227,19 @@ def get_tools() -> dict[str, Any]:
     return {"ok": True, "image": image, "web": web}
 
 
+def image_ready() -> bool:
+    """Whether the chief's chosen image service is ready to use now (the Look drawer's "Generate portrait")."""
+    from hermes_cli.config import load_config
+
+    try:
+        with chief_config_scope():
+            described = _describe("image_gen", load_config() or {})
+    except Exception:
+        logger.debug("image readiness check failed", exc_info=True)
+        return False
+    return any(p["active"] and p["status"] == "ready" for p in described["providers"])
+
+
 def patch_tools(body: dict[str, Any]) -> dict[str, Any]:
     """{tool: "image"|"web", keys?: {NAME: value}, provider?: row name, model?: id}: keys first, then the pick."""
     from hermes_cli.config import load_config, save_config
@@ -364,7 +377,7 @@ def _plain_error(error: Any) -> str:
     return said[:240]
 
 
-def _local_image(image: str) -> str:
+def _local_image(image: str, name: str = "test-image") -> str:
     """A local file the dashboard can show: the tool's own path, or a hosted image saved to the chief's cache."""
     if not image:
         return ""
@@ -373,7 +386,7 @@ def _local_image(image: str) -> str:
     folder = chief_home() / "cache" / "tool-tests"
     folder.mkdir(parents=True, exist_ok=True)
     suffix = Path(image.split("?")[0]).suffix.lower()
-    target = folder / f"test-image-{int(time.time())}{suffix if suffix in ('.png', '.jpg', '.jpeg', '.webp') else '.png'}"
+    target = folder / f"{name}-{int(time.time())}{suffix if suffix in ('.png', '.jpg', '.jpeg', '.webp') else '.png'}"
     try:
         with urllib.request.urlopen(image, timeout=30) as resp:
             target.write_bytes(resp.read(25 * 1024 * 1024))

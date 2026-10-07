@@ -219,6 +219,8 @@ def _roster_flavor(root: Path) -> dict[str, dict[str, str]]:
 
 
 def list_roster() -> dict[str, Any]:
+    from . import looks
+
     root = install_root()
     pdir = profiles_dir(root)
     sections_path = root / "bot-sections.json"
@@ -252,7 +254,8 @@ def list_roster() -> dict[str, Any]:
                 for ext in _AVATAR_EXTS:
                     cand = assets / f"avatar.{ext}"
                     if cand.is_file():
-                        avatar = f"/api/bridge/avatar/{entry.name}"
+                        # The version makes a new photo show at once instead of a cached old one.
+                        avatar = f"/api/bridge/avatar/{entry.name}?v={cand.stat().st_mtime_ns // 1_000_000}"
                         break
             flav = flavor.get(entry.name, {})
             people.append(
@@ -266,7 +269,9 @@ def list_roster() -> dict[str, Any]:
                     "color": str(bots.get("color") or ""),
                     "imageKind": str(bots.get("imageKind") or ""),
                     "custom": bool(bots.get("custom")),
-                    "pet": bots.get("pet"),
+                    # The dashboard's own face (looks.py) and the bot's active Hermes pet; None when unset or malformed.
+                    "look": looks.read_face(meta.get("ui_meta"), entry.name),
+                    "pet": looks.active_pet(entry, entry.name),
                     "avatarUrl": avatar,
                     "model": str(model.get("default") or ""),
                     "provider": str(model.get("provider") or ""),

@@ -6,6 +6,8 @@ import { Streamdown } from "streamdown";
 
 import { BotFace, faceProps } from "@/components/bot-face";
 import { PencilIcon, UserMinusIcon } from "@/components/icons";
+import { AppearanceEditor } from "@/components/look/appearance-editor";
+import { PetSprite } from "@/components/look/pet-sprite";
 import { PersonaEditor } from "@/components/persona/persona-editor";
 import { ModelPicker } from "@/components/fleet/model-picker";
 import { NameEditor } from "@/components/persona/name-editor";
@@ -18,7 +20,7 @@ import { StatusPill } from "@/components/workforce-pane";
 import { fetchPeek } from "@/lib/bridge";
 import { EASE, SPRING } from "@/lib/motion";
 import { splitTitle } from "@/lib/names";
-import type { Peek, Person } from "@/lib/types";
+import type { FaceLook, Peek, Person } from "@/lib/types";
 import { LAYER } from "@/lib/layers";
 import { btn } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/surface";
@@ -70,6 +72,11 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
   const [shown, setShown] = useState({ name, role });
   useEffect(() => setShown({ name, role }), [name, role]);
   const [renaming, setRenaming] = useState(false);
+  const [restyling, setRestyling] = useState(false);
+  // The look as just saved (the roster catches up on its next snapshot); undefined until then.
+  const [savedLook, setSavedLook] = useState<FaceLook | null | undefined>(undefined);
+  useEffect(() => setSavedLook(undefined), [person.look]);
+  const shownPerson: Person = savedLook === undefined ? person : { ...person, look: savedLook };
 
   useEffect(() => {
     let alive = true;
@@ -90,7 +97,15 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
   return (
     <div className="flex h-full flex-col">
       <div className="relative flex flex-col items-center px-5 pb-4 pt-3 text-center">
-        {!retired ? (
+        {restyling ? (
+          <button
+            type="button"
+            onClick={() => setRestyling(false)}
+            className="press absolute left-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-fill-2 hover:text-fg"
+          >
+            Back
+          </button>
+        ) : !retired ? (
           <button
             type="button"
             onClick={() => {
@@ -105,49 +120,66 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
         <button type="button" onClick={onClose} className="press absolute right-3 top-2 min-h-11 rounded-full px-3 text-callout text-fg-2 hover:bg-fill-2 hover:text-fg">
           Close
         </button>
-        <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1, transition: SPRING.bouncy }} className={`my-3 ${retired ? "opacity-50 grayscale" : ""}`}>
-          {person.isChief ? <ChiefPresence chief={person} size={84} mood={person.ring === "working" ? "working" : "online"} /> : <BotFace {...faceProps(person)} size={88} />}
-        </motion.div>
-        {renaming ? (
-          <NameEditor
-            profile={person.isChief ? "chief" : person.id}
-            name={shown.name}
-            role={shown.role}
-            onCancel={() => setRenaming(false)}
-            onSaved={(res) => {
-              setShown({ name: res.name, role: res.role });
-              setRenaming(false);
-              if (person.isChief) setAssistantTitle(res.title);
-              showToast({
-                title: `Now called ${res.name}`,
-                body: res.soul.startsWith("kept") ? "The SOUL opens differently, so it was left as it is." : res.soul === "updated" ? "The SOUL uses the new name too." : undefined,
-                tone: "ok",
-                icon: "check",
-              });
-            }}
-          />
+        {restyling ? (
+          // The editor shows the face itself: the header shrinks to a title so the options fit, on a phone too.
+          <h2 className="flex min-h-11 items-center text-headline text-fg">{shown.name}&apos;s look</h2>
         ) : (
           <>
-            <div className="group flex items-center gap-1.5">
-              <h2 className="text-display text-fg">{shown.name}</h2>
-              {!retired ? (
-                <button
-                  type="button"
-                  aria-label={`Rename ${shown.name}`}
-                  title="Rename"
-                  onClick={() => setRenaming(true)}
-                  className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
-                >
-                  <PencilIcon size={16} />
-                </button>
-              ) : null}
+            <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1, transition: SPRING.bouncy }} className={`relative my-3 ${retired ? "opacity-50 grayscale" : ""}`}>
+              {person.isChief ? <ChiefPresence chief={shownPerson} size={84} mood={person.ring === "working" ? "working" : "online"} /> : <BotFace {...faceProps(shownPerson)} size={88} />}
+              {person.pet ? <PetSprite pet={person.pet} size={34} className="absolute -bottom-1 -right-9" /> : null}
+            </motion.div>
+            {!retired && !editing ? (
+              <button
+                type="button"
+                onClick={() => setRestyling(true)}
+                className="press -mt-1 mb-2 min-h-8 rounded-full px-3 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg"
+              >
+                Change look
+              </button>
+            ) : null}
+            {renaming ? (
+              <NameEditor
+                profile={person.isChief ? "chief" : person.id}
+                name={shown.name}
+                role={shown.role}
+                onCancel={() => setRenaming(false)}
+                onSaved={(res) => {
+                  setShown({ name: res.name, role: res.role });
+                  setRenaming(false);
+                  if (person.isChief) setAssistantTitle(res.title);
+                  showToast({
+                    title: `Now called ${res.name}`,
+                    body: res.soul.startsWith("kept") ? "The SOUL opens differently, so it was left as it is." : res.soul === "updated" ? "The SOUL uses the new name too." : undefined,
+                    tone: "ok",
+                    icon: "check",
+                  });
+                }}
+              />
+            ) : (
+              <>
+                <div className="group flex items-center gap-1.5">
+                  <h2 className="text-display text-fg">{shown.name}</h2>
+                  {!retired ? (
+                    <button
+                      type="button"
+                      aria-label={`Rename ${shown.name}`}
+                      title="Rename"
+                      onClick={() => setRenaming(true)}
+                      className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
+                    >
+                      <PencilIcon size={16} />
+                    </button>
+                  ) : null}
+                </div>
+                {shown.role ? <p className="mt-1 text-body text-fg-3">{shown.role}</p> : null}
+              </>
+            )}
+            <div className="mt-3">
+              <StatusPill person={person} />
             </div>
-            {shown.role ? <p className="mt-1 text-body text-fg-3">{shown.role}</p> : null}
           </>
         )}
-        <div className="mt-3">
-          <StatusPill person={person} />
-        </div>
         <AnimatePresence>
           {retired ? (
             <motion.p
@@ -163,7 +195,17 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
         </AnimatePresence>
       </div>
 
-      {editing ? (
+      {restyling && !editing ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-2">
+          <AppearanceEditor
+            person={shownPerson}
+            onDone={(look) => {
+              setSavedLook(look);
+              setRestyling(false);
+            }}
+          />
+        </div>
+      ) : editing ? (
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-2">
           <PersonaEditor profile={person.id} name={name} />
         </div>

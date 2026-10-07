@@ -1,15 +1,15 @@
-import { existsSync, readFileSync, rmSync, statfsSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { app, crashReporter, dialog, protocol, safeStorage, session, utilityProcess } from "electron";
+import { app, crashReporter, dialog, protocol, safeStorage, screen, session, utilityProcess } from "electron";
 
 import { createBoot, recoversBoot } from "./boot";
 import { registerBootScheme, serveBootPage } from "./boot-protocol";
 import { payloadLayout } from "./env";
 import { bridgeHealth, gatewayOwner, isOrphan, killTree, launchGateway, profileHome, requestScopedStop, waitFor } from "./gateway";
 import { actionFromArgv, permissionAllowed, permissionCheckAllowed } from "./guards";
-import { installPackage } from "./install-package";
-import { registerIpc, sendEngineState, syncHistory } from "./ipc";
+import { fallbackCommandLine, installScript, launchDetached } from "./install-package";
+import { checkForUpdates, registerIpc, sendEngineState, syncHistory } from "./ipc";
 import { Notifier } from "./notifier";
 import { missing, resolvePaths } from "./paths";
 import { decidePorts } from "./ports";
@@ -21,9 +21,32 @@ import { bridgeToken, readUpdateKey } from "./secrets";
 import { ctx, hiddenLaunch, log, setStep, STEPS, uiOrigin, uiUrl } from "./state";
 import { Store } from "./store";
 import { Supervisor, type SupervisorEvent } from "./supervisor";
+import { APP_ID, handOff, helperCopy, markReady, PACKAGE_NAME, readResult, resultFile, resultMessage, runStage, updaterDir } from "./update-helper";
 import { compareVersions, Updater, type Release } from "./updater";
 import { launchWeb, webHealth } from "./web";
 import { announceUpdate, bringToFront, createTray, createWindow, currentWork, notify, quit, runAction, setJumpList, setSessionCookie, showBootPage, showWindow } from "./window";
+
+/** What the update window shows of Chief: its face (PNG), its colour and name, from the page (`window.__chiefLook`). */
+let chiefLook: { png: Buffer | null; accent: string; name: string; reducedMotion: boolean } = { png: null, accent: "", name: "", reducedMotion: false };
+
+async function readChiefLook(): Promise<typeof chiefLook> {
+  const empty = { png: null, accent: "", name: "", reducedMotion: false };
+  const contents = ctx.window?.webContents;
+  if (!contents || contents.isDestroyed()) return empty;
+  try {
+    const look = (await Promise.race([
+      contents.executeJavaScript("typeof window.__chiefLook === 'function' ? window.__chiefLook() : null", true),
+      new Promise((resolve) => setTimeout(() => resolve(null), 2500)),
+    ])) as { png?: unknown; accent?: unknown; name?: unknown; reducedMotion?: unknown } | null;
+    if (!look) return empty;
+    const png = typeof look.png === "string" && look.png.startsWith("data:image/png;base64,") ? Buffer.from(look.png.slice(22), "base64") : null;
+    const accent = typeof look.accent === "string" && /^#[0-9a-f]{6}$/i.test(look.accent.trim()) ? look.accent.trim() : "";
+    const name = typeof look.name === "string" ? look.name.trim().slice(0, 40) : "";
+    return { png: png && png.length < 2_000_000 ? png : null, accent, name, reducedMotion: look.reducedMotion === true };
+  } catch {
+    return empty;
+  }
+}
 
 /** The data layout this version writes. A later version that changes it raises this, and an older app
  * refuses to open data with a higher number (PLAN §8 "Schema migrations"). */
@@ -35,7 +58,8 @@ const DATA_SCHEMA = 1;
  *
  * This file wires the parts together at start-up: boot.ts (the start sequence), supervisor.ts (keeping the
  * children running), window.ts (window, tray, quitting), ipc.ts (what the page may ask), phone.ts,
- * install-package.ts and runtime.ts (environments and the bundled Python).
+ * update-helper.ts and install-package.ts (restarting into an update), and runtime.ts (environments and the
+ * bundled Python).
  */
 
 const alive = (s: Supervisor | undefined) => !!s && (s.state === "running" || s.state === "starting");
@@ -147,7 +171,7 @@ const boot = createBoot({
     });
     ctx.notifier.start();
     announceUpdate();
-    void ctx.updater.check().then(() => syncHistory());
+    void checkForUpdates().then(() => syncHistory());
   },
   quit: () => app.exit(0),
   now: () => Date.now(),
@@ -262,7 +286,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         const feed = effectiveFeed(ctx.store.value.updateFeed, ctx.shippedFeed);
         if (!feed) return null;
         const repo = parseGithub(feed);
-        return repo ? githubSource(repo.owner, repo.repo, readUpdateKey(ctx.paths.secrets, safeStorage)) : folderSource(feed);
+        return repo ? githubSource(repo.owner, repo.repo, readUpdateKey(ctx.paths.secrets, safeStorage), fetch, { early: () => ctx.store.value.earlyUpdates }) : folderSource(feed);
       },
       currentVersion: app.getVersion(),
       publicKey: RELEASE_KEYS,
@@ -274,10 +298,24 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         return s.bavail * s.bsize;
       },
       activeWork: () => currentWork(),
-      // Before installing: the full backup only when the release brings a different upstream Hermes (the only
-      // thing that migrates data). The same Hermes with different app patches is caught at first start.
-      backup: (release: Release) => (release.hermes?.commit && release.hermes.commit === hermesUpstream() ? Promise.resolve({ ok: true }) : preUpdateBackup()),
+      // While preparing: the full backup only when the release brings a different upstream Hermes (the only thing
+      // that migrates data). The first start of the new version backs up again, at the last moment, before Hermes
+      // starts; the same Hermes with different app patches is caught there too.
+      backup: (release: Release, onProgress) => (release.hermes?.commit && release.hermes.commit === hermesUpstream() ? Promise.resolve({ ok: true }) : preUpdateBackup(onProgress)),
+      stage: async (file, release, onProgress) => {
+        const dir = updaterDir(ctx.paths.appDir);
+        const helper = app.isPackaged ? helperCopy(process.resourcesPath, dir, app.getVersion()) : null;
+        if (!helper) return { ok: false, error: "no update helper in this build" };
+        const job = path.join(dir, `stage-${release.version}.json`);
+        writeFileSync(job, JSON.stringify({ version: 1, packageFile: file, packageName: PACKAGE_NAME, from: app.getVersion(), to: release.version, logFile: path.join(ctx.paths.logs, "update-install.log") }));
+        const staged = await runStage(helper, job, onProgress);
+        log.info("update.staged", { version: release.version, ok: staged.ok, error: staged.error });
+        return staged;
+      },
       stopChief: async () => {
+        // Chief's face and colour for the update window, taken while the page still shows it awake (once the
+        // gateway stops, the face goes to sleep and the page dims).
+        chiefLook = await readChiefLook();
         ctx.notifier?.stop();
         await ctx.web.stop(true).catch(() => undefined);
         if (!ctx.externalGateway) await ctx.gateway.stop(true).catch(() => undefined);
@@ -287,7 +325,54 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         await ctx.web.start();
         ctx.notifier?.start();
       },
-      install: (file) => installPackage(file),
+      handOff: (file, release) => {
+        if (!app.isPackaged) return Promise.resolve({ ok: false as const, error: "Updates install only in the installed app." });
+        const dir = updaterDir(ctx.paths.appDir);
+        const logFile = path.join(ctx.paths.logs, "update-install.log");
+        const from = app.getVersion();
+        const bounds = ctx.window && !ctx.window.isMinimized() && ctx.window.isVisible() ? ctx.window.getBounds() : null;
+        const scale = bounds ? screen.getDisplayMatching(bounds).scaleFactor : 1;
+        return handOff({
+          dir,
+          helper: () => helperCopy(process.resourcesPath, dir, from),
+          job: {
+            version: 1,
+            mode: compareVersions(release.version, from) < 0 ? "rollback" : "update",
+            from,
+            to: release.version,
+            packageFile: file,
+            packageName: PACKAGE_NAME,
+            appId: APP_ID,
+            appPid: process.pid,
+            // The helper works in physical pixels; Electron's bounds are in DIPs.
+            window: bounds ? { x: Math.round(bounds.x * scale), y: Math.round(bounds.y * scale), width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } : null,
+            accent: chiefLook.accent || "#E5484D",
+            assistantName: chiefLook.name || "Chief",
+            logFile,
+            reducedMotion: chiefLook.reducedMotion,
+          },
+          writeFace: async (target) => {
+            if (!chiefLook.png) return false;
+            writeFileSync(target, chiefLook.png);
+            return true;
+          },
+          launch: (commandLine, show) => launchDetached(commandLine, show),
+          fallback: () => fallbackCommandLine(installScript(file, logFile, resultFile(dir), from, release.version)),
+          kill: (pid) => {
+            try {
+              process.kill(pid);
+            } catch {
+              /* already gone */
+            }
+          },
+          quit: () => {
+            ctx.quitting = true;
+            ctx.window?.hide();
+            setTimeout(() => app.exit(0), 300);
+          },
+          log: (line) => logLine("update-install.log", line),
+        });
+      },
       history: () => readReleases(ctx.paths.appDir, RELEASE_KEYS),
       onState: (state) => ctx.window?.webContents.send("updates:state", state),
       // Every verified release is kept for the update history (a folder feed's included).
@@ -299,7 +384,12 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         }
       },
     });
-    setInterval(() => void ctx.updater.check().then(() => syncHistory()), 24 * 3600 * 1000).unref();
+    setInterval(() => void checkForUpdates().then(() => syncHistory()), 24 * 3600 * 1000).unref();
+    // How the last update went, from the helper (or the fallback installer): one that didn't finish is reported once.
+    const lastUpdate = readResult(updaterDir(ctx.paths.appDir));
+    if (lastUpdate) logLine("update-install.log", `result ${lastUpdate.from} -> ${lastUpdate.to}: ${lastUpdate.ok ? "ok" : `failed at ${lastUpdate.step}: ${lastUpdate.message}`}`);
+    const failed = resultMessage(lastUpdate, app.getVersion());
+    if (failed && lastUpdate) ctx.updater.noteFailedUpdate(failed, lastUpdate.to);
     // Default deny (guards.ts): Electron grants every permission unless a handler says otherwise.
     session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
       const media = (details as { mediaTypes?: string[] }).mediaTypes || [];
@@ -311,6 +401,8 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: ctx.store.value.startAtLogin, args: ["--hidden"] });
     registerIpc({ run: runBoot });
     createWindow();
+    // A helper waiting on this start (after an update, or a failed one) closes its window once this one is up.
+    ctx.window?.webContents.once("did-finish-load", () => markReady(updaterDir(ctx.paths.appDir), app.getVersion()));
     createTray();
     setJumpList();
     if (ctx.updatedFrom && !hiddenLaunch()) {

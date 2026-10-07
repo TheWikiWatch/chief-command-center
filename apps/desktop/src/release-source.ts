@@ -142,9 +142,33 @@ export function githubApi(owner: string, repo: string, key: string, fetchImpl: F
   return { label: `${owner}/${repo}`, json, asset };
 }
 
-export type GithubRelease = { tag_name: string; assets?: { id: number; name: string }[] };
+export type GithubRelease = { tag_name: string; draft?: boolean; prerelease?: boolean; assets?: { id: number; name: string }[] };
 
-export function githubSource(owner: string, repo: string, key: string, fetchImpl: Fetch = fetch): ReleaseSource {
+function tagVersion(tag: string): number[] {
+  return (tag.match(/\d+/g) || []).slice(0, 3).map(Number);
+}
+
+/**
+ * The release an early-updates install takes: the highest version among the published ones that carry a release
+ * description, prereleases included (a prerelease is the owner's soak; `release:promote` makes it the latest for
+ * everyone). Drafts never count.
+ */
+export function newestRelease(releases: GithubRelease[]): GithubRelease | null {
+  const usable = releases.filter((r) => !r.draft && (r.assets || []).some((a) => a.name === "release.json"));
+  usable.sort((a, b) => {
+    const va = tagVersion(a.tag_name);
+    const vb = tagVersion(b.tag_name);
+    for (let i = 0; i < 3; i++) if ((vb[i] || 0) !== (va[i] || 0)) return (vb[i] || 0) - (va[i] || 0);
+    return 0;
+  });
+  return usable[0] ?? null;
+}
+
+/**
+ * `early`: also take prereleases (Settings → Updates → Early updates). Without it the source reads `/releases/latest`,
+ * which GitHub never points at a prerelease, so testers don't see a release until it's promoted.
+ */
+export function githubSource(owner: string, repo: string, key: string, fetchImpl: Fetch = fetch, options: { early?: () => boolean } = {}): ReleaseSource {
   const gh = githubApi(owner, repo, key, fetchImpl);
   let assets = new Map<string, number>();
 
@@ -157,7 +181,8 @@ export function githubSource(owner: string, repo: string, key: string, fetchImpl
   return {
     label: gh.label,
     refresh: async () => {
-      const body = await gh.json<GithubRelease>("/releases/latest");
+      const body = options.early?.() ? newestRelease(await gh.json<GithubRelease[]>("/releases?per_page=20")) : await gh.json<GithubRelease>("/releases/latest");
+      if (!body) throw new SourceError(`the release repository (${owner}/${repo}) has no release yet.`);
       assets = new Map((body.assets || []).map((a) => [a.name, a.id]));
     },
     read: async (name) => Buffer.from(await (await assetResponse(name)).arrayBuffer()),

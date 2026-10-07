@@ -8,7 +8,14 @@ import { compareVersions } from "@/lib/versions";
  * from the app's data folder (CHIEF_APP_DATA), so the phone shows the same list as the PC. Empty in a
  * development build, which has no app data folder.
  */
-export type HistoryRelease = { version: string; published: string; notes: string; hermes: string };
+export type HistoryRelease = {
+  version: string;
+  published: string;
+  notes: string;
+  hermes: string;
+  /** "New in Hermes": two or three short lines a release that moved Hermes carries (release-tool --hermes-highlights). */
+  highlights?: string[];
+};
 export type HistoryInstall = { version: string; at: string; from: string };
 export type UpdateHistory = { available: boolean; current: string; releases: HistoryRelease[]; installs: HistoryInstall[] };
 
@@ -31,9 +38,24 @@ export async function readUpdateHistory(appDir = process.env.CHIEF_APP_DATA || "
     const version = name.replace(/\.json$/, "");
     if (!name.endsWith(".json") || !VERSION.test(version) || !names.includes(`${name}.sig`)) continue;
     try {
-      const r = JSON.parse(stripBom(await fs.readFile(path.join(dir, name), "utf8"))) as { format?: string; version?: string; published?: string; notes?: string; hermes?: { base_version?: string } };
+      const r = JSON.parse(stripBom(await fs.readFile(path.join(dir, name), "utf8"))) as {
+        format?: string;
+        version?: string;
+        published?: string;
+        notes?: string;
+        hermes?: { base_version?: string; highlights?: unknown };
+      };
       if (r.format !== "chief-release" || r.version !== version) continue;
-      releases.push({ version, published: String(r.published || ""), notes: String(r.notes || "").trim(), hermes: String(r.hermes?.base_version || "") });
+      const highlights = Array.isArray(r.hermes?.highlights)
+        ? r.hermes.highlights.filter((h): h is string => typeof h === "string" && !!h.trim()).map((h) => h.trim().slice(0, 120)).slice(0, 3)
+        : [];
+      releases.push({
+        version,
+        published: String(r.published || ""),
+        notes: String(r.notes || "").trim(),
+        hermes: String(r.hermes?.base_version || ""),
+        ...(highlights.length ? { highlights } : {}),
+      });
     } catch {
       /* a damaged file is left out */
     }

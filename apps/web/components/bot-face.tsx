@@ -7,13 +7,27 @@ import { useEffect, useId, useMemo, useRef } from "react";
 import "blobatar/motion.css";
 
 import { readBands, readLevel, isMetering } from "@/lib/audio-level";
-import { botIdentity, type BotIdentity } from "@/lib/bot-identity";
+import { botIdentity, hashId, type BotIdentity } from "@/lib/bot-identity";
+import {
+  BUBBLE_BODIES,
+  BUBBLE_EYES,
+  bodyPath,
+  bubblePaint,
+  eyePath,
+  faceLayout,
+  floatHeight,
+  GROUND_Y,
+  squash,
+  strokedEyes,
+  type BubbleBody,
+  type BubbleEyes,
+} from "@/lib/bubble";
 import { kickFaceClock, useFaceClock } from "@/lib/face-clock";
 import { BLOB_KIND_TRAIT, cn, isBlobShape, parseBlobShape } from "@/lib/faces";
 import { CLOSED, mouthPath, mouthStroke, mouthTarget, stepMouth, voiceFromBands, type Mouth, type MouthMood } from "@/lib/mouth";
 import { gazeSeed, scanGaze } from "@/lib/eye-scan";
 import { lookState, measureLook, stepLook, type Look } from "@/lib/pointer";
-import type { Person, Ring } from "@/lib/types";
+import type { FaceLook, Person, Ring } from "@/lib/types";
 
 /** What a face is doing (VISUAL-OVERHAUL §4.2). Defaults from the ring; callers can override. */
 export type FaceMood = "idle" | "working" | "failed" | "thinking" | "listening" | "speaking" | "waiting" | "asleep" | "celebrating";
@@ -32,6 +46,8 @@ type FaceProps = {
   still?: boolean;
   custom?: boolean;
   isChief?: boolean;
+  /** A look chosen in the dashboard or by the chief; wins over the Hermes shape and colour. */
+  look?: FaceLook | null;
 };
 
 /** Props for a person's face in one spread: <BotFace {...faceProps(p)} size={48} />. */
@@ -45,7 +61,15 @@ export function faceProps(p: Person) {
     ring: p.ring,
     custom: p.custom,
     isChief: p.isChief,
+    look: p.look,
   };
+}
+
+const LOOK_STYLES = new Set(["bubble", "blob", "shape", "photo"]);
+
+/** A saved look the renderers can use, or null (anything malformed falls back to the bot's default face). */
+export function usableLook(look: FaceLook | null | undefined): FaceLook | null {
+  return look && typeof look === "object" && LOOK_STYLES.has(look.style) ? look : null;
 }
 
 function moodFor(ring: Ring, mood?: FaceMood): FaceMood {
@@ -194,15 +218,36 @@ function liveLevel(mood: FaceMood, t: number) {
   return 0;
 }
 
-export function BotFace({ name, profileId, shape, color, avatarUrl, ring = "idle", size = 72, gazeRef, mood, still, custom, isChief }: FaceProps) {
-  const identity = useMemo(() => botIdentity({ id: profileId, name, color, shape, custom, isChief }), [profileId, name, color, shape, custom, isChief]);
+export function BotFace({ name, profileId, shape, color, avatarUrl, ring = "idle", size = 72, gazeRef, mood, still, custom, isChief, look }: FaceProps) {
+  const chosen = usableLook(look);
+  // A chosen look's colour counts as the bot's own (like Hermes's `custom`); a dark one is lifted to stay visible.
+  const lookColor = chosen && chosen.style !== "photo" && chosen.color ? chosen.color : undefined;
+  const identity = useMemo(
+    () => botIdentity({ id: profileId, name, color: lookColor ?? color, shape, custom: lookColor ? true : custom, isChief }),
+    [profileId, name, color, lookColor, shape, custom, isChief],
+  );
   const m = moodFor(ring, mood);
+  if (chosen?.style === "bubble") return <BubbleFace look={chosen} color={identity.color} size={size} mood={m} identity={identity} still={still} gazeRef={gazeRef} />;
+  if (chosen?.style === "shape" && chosen.shape) return <GeometricFace shape={chosen.shape} color={identity.color} size={size} mood={m} identity={identity} still={still} gazeRef={gazeRef} />;
+  if (chosen?.style === "blob") {
+    const blob = `blobatar:${chosen.seed || identity.seed}:${chosen.blobKind || ""}`;
+    return <BlobFace name={name} shape={blob} seed={identity.seed} size={size} mood={m} identity={identity} still={still} gazeRef={gazeRef} />;
+  }
   if (avatarUrl) return <PhotoFace name={name} src={avatarUrl} size={size} mood={m} identity={identity} still={still} gazeRef={gazeRef} />;
   if (isBlobShape(identity.shape)) return <BlobFace name={name} shape={identity.shape} seed={identity.seed} size={size} mood={m} identity={identity} still={still} gazeRef={gazeRef} />;
   return <GeometricFace shape={identity.shape} color={identity.color} size={size} mood={m} identity={identity} still={still} gazeRef={gazeRef} />;
 }
 
-function useRig(el: React.RefObject<Element | null>, mood: FaceMood, still: boolean | undefined, draw: (t: number, look: Look | null) => void) {
+/**
+ * One face's frame loop on the shared clock. Each frame gets the time, where the cursor pulls it, the current mood
+ * and the live level (mic or speech) already smoothed, so a face's `draw` needs nothing from this hook's own state.
+ */
+function useRig(
+  el: React.RefObject<Element | null>,
+  mood: FaceMood,
+  still: boolean | undefined,
+  draw: (t: number, look: Look | null, mood: FaceMood, level: number) => void,
+) {
   const moodRef = useRef(mood);
   moodRef.current = mood;
   const drawRef = useRef(draw);
@@ -211,15 +256,18 @@ function useRig(el: React.RefObject<Element | null>, mood: FaceMood, still: bool
   const look = useRef(lookState());
   useFaceClock(
     el,
-    (t) => drawRef.current(t, look.current.box || look.current.w > 0.001 ? stepLook(look.current, t) : null),
+    (t) => {
+      const md = moodRef.current;
+      smoothed.current += (liveLevel(md, t) - smoothed.current) * 0.35;
+      drawRef.current(t, look.current.box || look.current.w > 0.001 ? stepLook(look.current, t) : null, md, smoothed.current);
+    },
     !still,
     () => measureLook(look.current, el.current),
   );
   useEffect(() => {
-    drawRef.current(0, null);
+    drawRef.current(0, null, moodRef.current, smoothed.current);
     kickFaceClock();
   }, [mood]);
-  return { moodRef, smoothed };
 }
 
 /** Faces smaller than this show no mouth: at avatar-dot sizes it reads as noise. */
@@ -275,11 +323,8 @@ function GeometricFace({
 
   const showMouth = size >= MOUTH_MIN_PX;
   const advanceMouth = useMouth(identity, still);
-  const { moodRef, smoothed } = useRig(svg, mood, still, (t, look) => {
-    const md = moodRef.current;
-    const raw = liveLevel(md, t);
-    smoothed.current += (raw - smoothed.current) * 0.35;
-    const pose = facePose(md, t, identity, smoothed.current, look);
+  useRig(svg, mood, still, (t, look, md, level) => {
+    const pose = facePose(md, t, identity, level, look);
     body.current?.setAttribute(
       "transform",
       `translate(${pose.tx.toFixed(2)} ${pose.ty.toFixed(2)}) rotate(${pose.roll.toFixed(2)} 20 22) translate(20 22) scale(${pose.scale.toFixed(3)}) translate(-20 -22)`,
@@ -301,7 +346,7 @@ function GeometricFace({
     glintL.current?.setAttribute("opacity", glint);
     glintR.current?.setAttribute("opacity", glint);
     if (mouth.current) {
-      const m = advanceMouth(mouthMood(md, look), t, md === "listening" ? smoothed.current : 0);
+      const m = advanceMouth(mouthMood(md, look), t, md === "listening" ? level : 0);
       mouth.current.setAttribute("d", mouthPath(m, 20 + pose.gazeX * 0.12, 25.4 + pose.gazeY * 0.1, 3.3));
     }
     if (dots.current) {
@@ -364,6 +409,188 @@ function GeometricFace({
   );
 }
 
+/** A bubble's silhouette and eyes: the chosen ones, or a stable pick from the bot's id when none was chosen. */
+export function bubbleParts(look: FaceLook, seed: string): { body: BubbleBody; eyes: BubbleEyes } {
+  const h = hashId(`${seed}:bubble`);
+  const body = (BUBBLE_BODIES as readonly string[]).includes(look.body || "") ? (look.body as BubbleBody) : BUBBLE_BODIES[h % BUBBLE_BODIES.length];
+  const eyes = (BUBBLE_EYES as readonly string[]).includes(look.eyes || "") ? (look.eyes as BubbleEyes) : "dot";
+  return { body, eyes };
+}
+
+/**
+ * The Bubble face (lib/bubble.ts): a soft body lit from the top left, floating over a shadow that shrinks as it rises,
+ * with squash and stretch, simple eyes, optional cheeks, the shared mouth and lip-sync, and three thought dots while
+ * busy. Every mood pose is the shared `facePose`, so it behaves like every other face.
+ */
+function BubbleFace({
+  look,
+  color,
+  size,
+  mood,
+  identity,
+  still,
+  gazeRef,
+}: {
+  look: FaceLook;
+  color: string;
+  size: number;
+  mood: FaceMood;
+  identity: BotIdentity;
+  still?: boolean;
+  gazeRef?: (node: SVGSVGElement | null) => void;
+}) {
+  const uid = useId().replace(/:/g, "");
+  const { body, eyes } = bubbleParts(look, identity.seed);
+  const d = bodyPath(body);
+  const layout = faceLayout(body);
+  const paint = bubblePaint(color);
+  const line = strokedEyes(eyes);
+  const svg = useRef<SVGSVGElement>(null);
+  const figure = useRef<SVGGElement>(null);
+  const shadow = useRef<SVGEllipseElement>(null);
+  const eyeL = useRef<SVGPathElement>(null);
+  const eyeR = useRef<SVGPathElement>(null);
+  const glintL = useRef<SVGCircleElement>(null);
+  const glintR = useRef<SVGCircleElement>(null);
+  const mouth = useRef<SVGPathElement>(null);
+  const dots = useRef<SVGGElement>(null);
+  const zz = useRef<SVGTextElement>(null);
+
+  const showMouth = size >= MOUTH_MIN_PX;
+  const advanceMouth = useMouth(identity, still);
+  useRig(svg, mood, still, (t, look, md, level) => {
+    const pose = facePose(md, t, identity, level, look);
+    const breath = Math.sin(((t + identity.phase) * Math.PI * 2) / identity.breathe);
+    const lift = still ? 1 : floatHeight(md, t, identity.phase);
+    const s = still ? 0 : squash(md, t, breath, level);
+    const sx = (1 + s * 0.7) * pose.scale;
+    const sy = (1 - s) * pose.scale;
+    figure.current?.setAttribute(
+      "transform",
+      `translate(${pose.tx.toFixed(2)} ${(pose.ty - lift).toFixed(2)}) rotate(${(pose.roll * 0.7).toFixed(2)} 20 ${GROUND_Y - 8}) translate(20 ${GROUND_Y}) scale(${sx.toFixed(3)} ${sy.toFixed(3)}) translate(-20 ${-GROUND_Y})`,
+    );
+    if (shadow.current) {
+      shadow.current.setAttribute("rx", (10.8 * (1 - lift * 0.07) * (1 + s * 0.5)).toFixed(2));
+      shadow.current.setAttribute("opacity", Math.max(0.12, 0.5 - lift * 0.07).toFixed(2));
+    }
+    // A still face is a portrait: eyes open and looking out, never caught mid-blink.
+    const gx = still ? 0 : pose.gazeX * 0.24;
+    const gy = still ? 0 : pose.gazeY * 0.36;
+    const lid = still && md !== "asleep" ? Math.max(pose.lid, 2.3) : pose.lid;
+    const shape = eyePath(eyes, lid, pose.eyeScale);
+    for (const [eye, glint, [ex, ey]] of [
+      [eyeL.current, glintL.current, layout.eyeL],
+      [eyeR.current, glintR.current, layout.eyeR],
+    ] as const) {
+      eye?.setAttribute("d", shape);
+      eye?.setAttribute("transform", `translate(${(ex + gx).toFixed(2)} ${(ey + gy).toFixed(2)})`);
+      glint?.setAttribute("cx", (ex + gx - 0.7).toFixed(2));
+      glint?.setAttribute("cy", (ey + gy - 0.9).toFixed(2));
+      glint?.setAttribute("opacity", !line && lid > 1 ? "0.95" : "0");
+    }
+    if (mouth.current) {
+      const m = advanceMouth(mouthMood(md, look), t, md === "listening" ? level : 0);
+      mouth.current.setAttribute("d", mouthPath(m, layout.mouth[0] + pose.gazeX * 0.12, layout.mouth[1] + pose.gazeY * 0.1, 3));
+    }
+    if (dots.current) {
+      const cs = dots.current.children;
+      for (let i = 0; i < 3; i++) (cs[i] as SVGElement | undefined)?.setAttribute("opacity", pose.dots[i].toFixed(2));
+    }
+    zz.current?.setAttribute("opacity", pose.zz.toFixed(2));
+  });
+
+  const [hx, hy] = layout.highlight;
+  return (
+    <svg
+      ref={(node) => {
+        svg.current = node;
+        gazeRef?.(node);
+      }}
+      aria-hidden
+      width={size}
+      height={size}
+      viewBox="0 0 40 44"
+      className="overflow-visible"
+      style={{ flexShrink: 0 }}
+    >
+      <defs>
+        <radialGradient id={`${uid}-body`} cx="0.34" cy="0.24" r="0.88">
+          <stop offset="0" stopColor={paint.light} />
+          <stop offset="0.46" stopColor={paint.mid} />
+          <stop offset="1" stopColor={paint.shade} />
+        </radialGradient>
+        {/* Ambient occlusion: the underside darkens where the body turns away from the light. */}
+        <radialGradient id={`${uid}-ao`} cx="0.5" cy="1.08" r="0.62">
+          <stop offset="0" stopColor="#000" stopOpacity="0.32" />
+          <stop offset="1" stopColor="#000" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id={`${uid}-rim`} cx="0.74" cy="0.94" r="0.62">
+          <stop offset="0" stopColor={paint.rim} stopOpacity="0.5" />
+          <stop offset="1" stopColor={paint.rim} stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id={`${uid}-spec`} cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stopColor="#fff" stopOpacity="0.9" />
+          <stop offset="1" stopColor="#fff" stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id={`${uid}-shadow`} cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stopColor="#000" stopOpacity="0.85" />
+          <stop offset="1" stopColor="#000" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <ellipse ref={shadow} cx={20} cy={GROUND_Y + 3.4} rx={10.8} ry={1.7} fill={`url(#${uid}-shadow)`} opacity={0.5} />
+      <g ref={figure}>
+        <path d={d} fill={`url(#${uid}-body)`} />
+        <path d={d} fill={`url(#${uid}-ao)`} />
+        <path d={d} fill={`url(#${uid}-rim)`} />
+        <path d={d} fill="none" stroke={paint.rim} strokeOpacity={0.1} strokeWidth={0.4} />
+        <ellipse cx={hx} cy={hy} rx={4.6} ry={2.5} transform={`rotate(-28 ${hx} ${hy})`} fill={`url(#${uid}-spec)`} opacity={0.85} />
+        <circle cx={hx + 4.4} cy={hy - 0.6} r={0.8} fill="#fff" opacity={0.5} />
+        {look.cheeks ? (
+          <>
+            <ellipse cx={layout.cheekL[0]} cy={layout.cheekL[1]} rx={2.3} ry={1.25} fill={paint.cheek} opacity={0.55} />
+            <ellipse cx={layout.cheekR[0]} cy={layout.cheekR[1]} rx={2.3} ry={1.25} fill={paint.cheek} opacity={0.55} />
+          </>
+        ) : null}
+        {[eyeL, eyeR].map((ref, i) => (
+          <path
+            key={i}
+            ref={ref}
+            d={eyePath(eyes, 2.3)}
+            transform={`translate(${(i ? layout.eyeR : layout.eyeL).join(" ")})`}
+            fill={line ? "none" : paint.eye}
+            stroke={line ? paint.eye : "none"}
+            strokeWidth={line ? 1.15 : 0}
+            strokeLinecap="round"
+          />
+        ))}
+        <circle ref={glintL} cx={layout.eyeL[0] - 0.7} cy={layout.eyeL[1] - 0.9} r={0.62} fill="#fff" opacity={line ? 0 : 0.95} />
+        <circle ref={glintR} cx={layout.eyeR[0] - 0.7} cy={layout.eyeR[1] - 0.9} r={0.62} fill="#fff" opacity={line ? 0 : 0.95} />
+        {showMouth ? (
+          <path
+            ref={mouth}
+            d={mouthPath(CLOSED, layout.mouth[0], layout.mouth[1], 3)}
+            fill={paint.eye}
+            stroke={paint.eye}
+            strokeWidth={mouthStroke(1.05, 40, size)}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+            opacity={0.85}
+          />
+        ) : null}
+        {mood === "asleep" ? <path d={d} fill="#000" opacity={0.22} /> : null}
+      </g>
+      <g ref={dots}>
+        <circle cx={30.4} cy={7} r={0.95} fill={paint.light} opacity={0} />
+        <circle cx={33.4} cy={4.9} r={1.2} fill={paint.light} opacity={0} />
+        <circle cx={36.8} cy={2.6} r={1.5} fill={paint.light} opacity={0} />
+      </g>
+      <text ref={zz} x={31} y={9} fontSize={7} fontWeight={700} fill={paint.light} opacity={0} fontFamily="system-ui">
+        z
+      </text>
+    </svg>
+  );
+}
+
 function PhotoFace({
   name,
   src,
@@ -382,10 +609,8 @@ function PhotoFace({
   gazeRef?: (node: HTMLImageElement | null) => void;
 }) {
   const img = useRef<HTMLImageElement>(null);
-  const { moodRef, smoothed } = useRig(img, mood, still, (t, look) => {
-    const md = moodRef.current;
-    smoothed.current += (liveLevel(md, t) - smoothed.current) * 0.35;
-    const pose = facePose(md, t, identity, smoothed.current, look);
+  useRig(img, mood, still, (t, look, md, level) => {
+    const pose = facePose(md, t, identity, level, look);
     if (img.current) img.current.style.transform = `translate(${(pose.tx * 0.4).toFixed(2)}px, ${(pose.ty * 0.6).toFixed(2)}px) rotate(${(pose.roll * 0.4).toFixed(2)}deg) scale(${pose.scale.toFixed(3)})`;
   });
   return (
@@ -457,16 +682,14 @@ function BlobFace({
     injected.current = el;
     return el;
   };
-  const { moodRef, smoothed } = useRig(box, mood, still, (t, look) => {
-    const md = moodRef.current;
-    smoothed.current += (liveLevel(md, t) - smoothed.current) * 0.35;
-    const pose = facePose(md, t, identity, smoothed.current, look);
+  useRig(box, mood, still, (t, look, md, level) => {
+    const pose = facePose(md, t, identity, level, look);
     const k = size / 40;
     if (box.current) box.current.style.transform = `translate(${(pose.tx * k * 0.5).toFixed(2)}px, ${(pose.ty * k * 0.6).toFixed(2)}px) rotate(${(pose.roll * 0.5).toFixed(2)}deg) scale(${pose.scale.toFixed(3)})`;
     if (!showMouth || !frame) return;
     const node = mouthNode();
     if (!node) return;
-    const m = advanceMouth(mouthMood(md, look), t, md === "listening" ? smoothed.current : 0);
+    const m = advanceMouth(mouthMood(md, look), t, md === "listening" ? level : 0);
     node.setAttribute("d", mouthPath(m, frame.cx, frame.cy, frame.W));
     node.style.strokeWidth = stroke;
   });

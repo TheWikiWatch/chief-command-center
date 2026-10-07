@@ -6,6 +6,7 @@
   "scripts": {
     "release": "node scripts/release.mjs",
     "release:plan": "node scripts/release.mjs --plan",
+    "release:promote": "node scripts/release.mjs --promote",
     "tester-kit": "node scripts/tester-kit.mjs",
     "check": "npm --prefix apps/web run check && npm --prefix apps/desktop run check && npm run lint:python && npm run test:python && npm run privacy",
     "test:web": "npm --prefix apps/web test",
@@ -14,6 +15,7 @@
     "privacy:history": "node scripts/privacy-scan.mjs --history",
     "hermes:source": "python packaging/payload/prepare_source.py",
     "hermes:payload": "python packaging/payload/stage.py",
+    "hermes:upgrade": "node scripts/hermes-upgrade.mjs",
     "test:desktop": "npm --prefix apps/desktop test",
     "desktop": "npm --prefix apps/desktop start",
     "lint:python": "python -m ruff check . && python -m ruff format --check . && pyright",

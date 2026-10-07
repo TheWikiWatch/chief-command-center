@@ -1,5 +1,31 @@
 export type Ring = "idle" | "working" | "failed";
 
+/**
+ * A bot's look as chosen in the dashboard or by the chief (`ui_meta["chief"].face` in its Hermes profile, written by
+ * the bridge's looks.py, which also mirrors the nearest Hermes-native face into `ui_meta["hermes-bots"]`).
+ */
+export type FaceLook = {
+  style: "bubble" | "blob" | "shape" | "photo";
+  color?: string;
+  /** Bubble: the silhouette, the eyes, rosy cheeks. */
+  body?: string;
+  eyes?: string;
+  cheeks?: boolean;
+  /** Blob: Hermes's blob face (a Blobatar seed and silhouette). */
+  seed?: string;
+  blobKind?: string;
+  /** Shape: one of the seven geometric faces. */
+  shape?: string;
+};
+
+/** A companion sprite (Hermes's petdex pets): its sheet and, when Hermes says, the frame grid. */
+export type PetInfo = {
+  slug: string;
+  name: string;
+  sheetUrl: string;
+  frames?: { cols?: number; rows?: number; width?: number; height?: number; loopMs?: number; steps?: number };
+};
+
 export type Person = {
   id: string;
   name: string;
@@ -10,8 +36,9 @@ export type Person = {
   color: string;
   imageKind: string;
   custom: boolean;
-  pet?: unknown;
+  pet?: PetInfo | null;
   avatarUrl?: string | null;
+  look?: FaceLook | null;
   model: string;
   provider: string;
   flavor: string;

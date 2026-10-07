@@ -4,11 +4,13 @@ reach it, and the function that answers.
 The dashboard proxy keeps its own allow-list (apps/web/lib/proxy-policy.ts); `hermes/tests/test_routes.py` fails
 when the two disagree, so a route is never reachable by accident or missing by mistake. A handler returns a
 JSON-able result (a dict, or `(dict, status)`), or None after writing the response itself (files, the event
-stream). Routes marked `action` are logged as one line per user action (never with their bodies).
+stream). Routes marked `action` are logged as one line per user action (never with their bodies). A path with
+`{id}` segments matches one id there (letters, digits, `_` and `-`); a `raw` route gets its body as bytes.
 """
 
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,6 +19,7 @@ from collections.abc import Callable
 KB = 1024
 MB = 1024 * KB
 DEFAULT_BODY = 1 * MB
+_ID_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass
@@ -25,12 +28,18 @@ class Request:
     path: str
     qs: dict
     body: dict = field(default_factory=dict)
+    raw: bytes = b""
 
     def q(self, name: str, default: str = "") -> str:
         return str((self.qs.get(name) or [default])[0])
 
     def b(self, name: str, default: str = "") -> str:
         return str(self.body.get(name) or default)
+
+    def seg(self, index: int) -> str:
+        """One segment of the path ("/look/ada/pet": 1 is "look", 2 is "ada")."""
+        parts = self.path.split("/")
+        return parts[index] if index < len(parts) else ""
 
 
 @dataclass(frozen=True)
@@ -42,10 +51,18 @@ class Route:
     dashboard: bool = True
     action: bool = False
     prefix: bool = False
+    raw: bool = False
+
+    @property
+    def templated(self) -> bool:
+        return "{" in self.path
 
     def matches(self, method: str, path: str) -> bool:
         if method != self.method:
             return False
+        if self.templated:
+            want, got = self.path.split("/"), path.split("/")
+            return len(want) == len(got) and all(_ID_SEGMENT.match(g) if w.startswith("{") else w == g for w, g in zip(want, got, strict=True))
         return path.startswith(self.path + "/") and path.count("/") == self.path.count("/") + 1 if self.prefix else path == self.path
 
 
@@ -58,7 +75,7 @@ def find(routes: list[Route], method: str, path: str) -> Route | None:
 
 def build(bridge) -> list[Route]:
     """The table, bound to one BridgeServer."""
-    from . import data, fleet, hermes_api, identity, media, persona, providers, push, report, routines, second_brain, speech_model, threads, usage, voice
+    from . import data, fleet, hermes_api, identity, looks, media, persona, providers, push, report, routines, second_brain, speech_model, threads, usage, voice
     from . import settings as hermes_settings
     from . import tools_settings
     from .server import _about, _cc_push, _flag, _float_param, _guarded, _thread_body, _thread_param, byte_range, legacy_in_use
@@ -85,6 +102,50 @@ def build(bridge) -> list[Route]:
         h.send_header("Content-Type", mime)
         h.send_header("Content-Length", str(len(raw)))
         h.send_header("Cache-Control", "private, max-age=60")
+        h.end_headers()
+        h.wfile.write(raw)
+        return None
+
+    def send_file(req: Request, path, mime: str, cache: str) -> None:
+        """A small file in one piece, revalidated by its ETag (a new pet or photo shows at once)."""
+        h = req.handler
+        stat = path.stat()
+        tag = f'"{stat.st_mtime_ns:x}-{stat.st_size:x}"'
+        if (h.headers.get("If-None-Match") or "") == tag:
+            h.send_response(304)
+            h.send_header("ETag", tag)
+            h.send_header("Content-Length", "0")
+            h.end_headers()
+            return None
+        raw = path.read_bytes()
+        h.send_response(200)
+        h.send_header("Content-Type", mime)
+        h.send_header("Content-Length", str(len(raw)))
+        h.send_header("Cache-Control", cache)
+        h.send_header("ETag", tag)
+        h.send_header("X-Content-Type-Options", "nosniff")
+        h.end_headers()
+        h.wfile.write(raw)
+        return None
+
+    def pet_sheet(req: Request):
+        found = looks.pet_sheet(req.seg(2))
+        if not found:
+            req.handler._reject(404, "no pet")
+            return None
+        return send_file(req, found[0], found[1], "private, no-cache")
+
+    def pet_thumb(req: Request):
+        raw = looks.thumb(req.seg(3))
+        h = req.handler
+        if not raw:
+            h._reject(404, "no thumbnail")
+            return None
+        h.send_response(200)
+        h.send_header("Content-Type", "image/png")
+        h.send_header("Content-Length", str(len(raw)))
+        h.send_header("Cache-Control", "private, max-age=86400")
+        h.send_header("X-Content-Type-Options", "nosniff")
         h.end_headers()
         h.wfile.write(raw)
         return None
@@ -210,6 +271,11 @@ def build(bridge) -> list[Route]:
     def outbox_notify(req: Request):
         bridge.broadcast({"type": "cc_outbox", "at": time.time(), "id": req.body.get("id")})
         return {"ok": True}
+
+    def look_write(req: Request):
+        if "face" not in req.body:
+            return {"ok": False, "error": "Send a face (or null to reset)."}, 400
+        return looks.call(lambda: looks.write_face(req.seg(2), req.body["face"], req.body.get("expected")))
 
     G, P = "GET", "POST"
     A = {"action": True}
@@ -350,6 +416,15 @@ def build(bridge) -> list[Route]:
             lambda r: _guarded(lambda: persona.rename(profile(r), r.b("name"), r.b("role"), update_soul=r.body.get("update_soul") is not False)),
             **A,
         ),
+        # Bot looks: faces, photos, portraits and pets (looks.py)
+        Route(G, "/look/{id}", lambda r: looks.call(lambda: looks.get_look(r.seg(2)))),
+        Route(P, "/look/{id}", look_write, limit=64 * KB, **A),
+        Route("PUT", "/look/{id}/avatar", lambda r: looks.call(lambda: looks.save_avatar(r.seg(2), r.raw)), limit=looks.AVATAR_MAX, raw=True, **A),
+        Route(P, "/look/{id}/portrait", lambda r: looks.call(lambda: looks.portrait(r.seg(2), r.b("prompt"))), limit=4 * KB, **A),
+        Route(P, "/look/{id}/pet", lambda r: looks.call(lambda: looks.set_pet(r.seg(2), r.body.get("slug"))), limit=4 * KB, **A),
+        Route(G, "/pet/{id}/sheet", pet_sheet),
+        Route(G, "/pets/catalog", lambda r: looks.call(looks.catalog)),
+        Route(G, "/pets/thumb/{id}", pet_thumb),
         Route(G, "/fleet", lambda r: _guarded(fleet.roster)),
         Route(G, "/fleet/models", lambda r: _guarded(lambda: fleet.models(refresh=_flag(r.qs, "refresh")))),
         Route(

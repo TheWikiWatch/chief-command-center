@@ -11,7 +11,21 @@ import { compareVersions } from "@/lib/versions";
 
 const newerThan = (a: string, b: string) => compareVersions(a, b) > 0;
 
-type Entry = { version: string; published: string; notes: string; hermes: string; installedAt: string; hermesChanged: boolean; known: boolean };
+type Entry = { version: string; published: string; notes: string; hermes: string; highlights?: string[]; installedAt: string; hermesChanged: boolean; known: boolean };
+
+/** "New in Hermes": what a release that moved the built-in Hermes brings, in two or three short lines. */
+function HermesHighlights({ hermes, highlights }: { hermes: string; highlights: string[] }) {
+  return (
+    <div className="mt-2 rounded-ctl bg-fill-1 px-3 py-2">
+      <p className="text-caption font-medium text-fg-2">New in Hermes{hermes ? ` ${hermes}` : ""}</p>
+      <ul className="mt-1 list-disc space-y-0.5 pl-4 text-callout text-fg-2 marker:text-fg-4">
+        {highlights.map((h) => (
+          <li key={h}>{h}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 /** Releases newest first, joined with when each first ran here; versions only seen here (no kept notes) included. */
 export function historyEntries(history: UpdateHistory): Entry[] {
@@ -27,6 +41,7 @@ export function historyEntries(history: UpdateHistory): Entry[] {
       published: r?.published || "",
       notes: r?.notes || "",
       hermes: r?.hermes || "",
+      highlights: r?.highlights,
       installedAt: installedAt.get(version) || "",
       hermesChanged: !!(r?.hermes && older?.hermes && r.hermes !== older.hermes),
       known: !!r,
@@ -87,6 +102,7 @@ export function UpdateHistorySheet({ open, onClose }: { open: boolean; onClose: 
                   <p className="mt-0.5 text-caption text-fg-3">
                     {[e.published ? `Released ${shortDate(e.published)}` : "", e.installedAt ? `installed here ${shortDate(e.installedAt)}` : ""].filter(Boolean).join(" · ") || " "}
                   </p>
+                  {e.highlights?.length ? <HermesHighlights hermes={e.hermes} highlights={e.highlights} /> : null}
                   {e.notes ? (
                     <p className="mt-1.5 whitespace-pre-wrap text-callout text-fg-2">{e.notes}</p>
                   ) : (
@@ -162,6 +178,7 @@ export function WhatsNewCard({ newer = "" }: { newer?: string }) {
             <div className="min-w-0 flex-1">
               <p className="text-body font-medium text-fg">Updated to {release.version}</p>
               <p className="mt-1 line-clamp-4 whitespace-pre-wrap text-callout text-fg-2">{release.notes}</p>
+              {release.highlights?.length ? <HermesHighlights hermes={release.hermes} highlights={release.highlights} /> : null}
               <button
                 type="button"
                 onClick={() => {

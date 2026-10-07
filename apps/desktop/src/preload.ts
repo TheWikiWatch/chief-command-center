@@ -32,8 +32,10 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
   updates: {
     state: () => ipcRenderer.invoke("updates:state"),
     check: () => ipcRenderer.invoke("updates:check"),
-    download: () => ipcRenderer.invoke("updates:download"),
-    install: (force?: boolean) => ipcRenderer.invoke("updates:install", !!force),
+    prepare: () => ipcRenderer.invoke("updates:prepare"),
+    restart: (force?: boolean) => ipcRenderer.invoke("updates:restart", !!force),
+    options: () => ipcRenderer.invoke("updates:options"),
+    setOptions: (options: { prepare?: boolean; early?: boolean }) => ipcRenderer.invoke("updates:setOptions", options),
     skip: (version: string) => ipcRenderer.invoke("updates:skip", version),
     feed: () => ipcRenderer.invoke("updates:feed"),
     setFeed: (folder: string) => ipcRenderer.invoke("updates:setFeed", folder),

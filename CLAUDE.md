@@ -31,7 +31,9 @@ This PC's paths and the owner's live install are in `CLAUDE.local.md` (git-ignor
 
 People install the app once. After that, every update reaches them through a **private GitHub releases
 repository** (no code in it, only signed releases). Their app checks it at launch and daily, with a personal
-read-only key, and shows an "Update available" card. Details: `docs/DISTRIBUTION.md`.
+read-only key, gets the update ready in the background (download, backup, Windows stages it) and shows "Version X is
+ready · Restart to update"; the restart is a small window (`ChiefUpdater.exe`) with Chief's face and a progress bar.
+Details: `docs/DISTRIBUTION.md`; the flow's traps: `docs/FRAGILE_SEAMS.md`, "Installing an update".
 
 When the owner says "ship it" / "release this" / "push this out":
 
@@ -40,9 +42,14 @@ When the owner says "ship it" / "release this" / "push this out":
 3. `npm run release -- --notes "One or two plain sentences on what changed"` (from cmd or Git Bash; in
    PowerShell npm's wrapper drops the flags, so run `node scripts/release.mjs --notes "…"` there)
 
+**Early first, when it's risky** (always for a Hermes upgrade): add `--channel early`. It publishes a GitHub
+prerelease that only an app with Settings → Backup & updates → **Early updates** on sees (the owner's). After a day or
+two of use, `npm run release:promote -- X.Y.Z` makes the same signed release the latest for everyone and attaches the
+tester kit (and runs `afterRelease`); nothing is rebuilt.
+
 `scripts/release.mjs` then runs every check, bumps the patch version (`--version X.Y.Z` to choose), builds the
 dashboard, runs the Electron smoke test on a throwaway data folder (`npm run smoke`: boot, a chat, an approval, quit),
-builds the signed package (about 5 minutes), verifies the signature, checks that the password didn't reach
+builds and self-tests the update helper and builds the signed package (about 5 minutes), verifies the signature, checks that the password didn't reach
 the log, writes the signed release manifest, uploads it as a draft release, commits, tags and pushes the version, then
 makes the draft live. A failure before the push puts the version files back and deletes the draft. `--no-publish`
 builds everything without publishing or moving the committed version (`--skip-checks` works only with it). It reads this PC's paths from `release.local.json` (git-ignored; see
@@ -64,9 +71,12 @@ ordinary app release, made the same way as above, after it passes the compatibil
    candidate and keeps one issue, **"Upstream drift"**, up to date. When it says a patch no longer fits, write the
    new form as `hermes/patches/<name>.next.patch` and list it under `"next"` in the entry (never edit the current
    file: it still builds the current pin). By hand: `python packaging/upstream/drift.py --src <build>\drift-src`.
-2. **Accepting it:** review and merge the PR, then `git pull` on `main`.
-3. **Rebuilding the payload locally** (the PR only changes the pin; the package carries a payload built on this PC).
-   Build into new folders so the current payload stays as a fallback:
+2. **Accepting it:** read the PR's "Touches our seams" and "Feature radar" (each *needs dashboard work* item worth
+   having becomes an issue), merge it, then `git pull` on `main`.
+3. **Rebuilding the payload locally** (the PR only changes the pin; the package carries a payload built on this PC):
+   **`npm run hermes:upgrade`** does all of this step and step 4 (prepares the source, builds the payload with a 3.14
+   it finds or makes, runs the compatibility suite, points `release.local.json` at the new payload and keeps the old
+   one as the fallback). By hand, into new folders so the current payload stays as a fallback:
 
    ```
    python packaging/payload/prepare_source.py --dest <build>\hermes-src-<tag>
@@ -79,9 +89,11 @@ ordinary app release, made the same way as above, after it passes the compatibil
    payload's own version) with pyyaml, cryptography and requests, and refuses an older one. Without a 3.14 installed, an
    existing payload's own interpreter makes that venv: `uv venv --python <payload>\tools\python-3.14…\python.exe <venv>`.
    `compat.py` must pass.
-4. Point `payloadDir` in `release.local.json` at the new payload, then **release as above**, with notes that say
-   Hermes moved to <tag>. The release script refuses to ship if the payload and `hermes/pin.json` disagree.
-5. Try it first on the owner's own install (Settings → Backup & updates → Check now) before telling testers.
+4. Point `payloadDir` in `release.local.json` at the new payload, then **release as above with `--channel early`**,
+   notes that say Hermes moved to <tag>, and `--hermes-highlights "One thing; another"` (two or three short lines from
+   the PR's radar: testers see them as "New in Hermes" after the update). The release script refuses to ship if the
+   payload and `hermes/pin.json` disagree.
+5. The owner's install takes it first (Early updates on); after a day or two, `npm run release:promote -- X.Y.Z`.
 
 To change a patch or add one: edit `hermes/patches/` and its entry in `hermes/pin.json`, rebuild the payload (step 3),
 and release.

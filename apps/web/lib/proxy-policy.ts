@@ -1,12 +1,24 @@
-const bridgeGet = new Set(["health", "snapshot", "transcript", "approvals", "voice-config", "settings", "file", "preview", "thumb", "events", "push/vapidPublicKey", "push/subscriptions","setup/status", "setup/providers", "setup/models", "setup/second-brain", "voice/model", "persona", "persona/soul/version", "fleet", "fleet/models", "second-brain/routines", "usage", "about", "threads", "routines", "tools"]);
+const bridgeGet = new Set(["health", "snapshot", "transcript", "approvals", "voice-config", "settings", "file", "preview", "thumb", "events", "push/vapidPublicKey", "push/subscriptions","setup/status", "setup/providers", "setup/models", "setup/second-brain", "voice/model", "persona", "persona/soul/version", "fleet", "fleet/models", "second-brain/routines", "usage", "about", "threads", "routines", "tools", "pets/catalog"]);
 const bridgePost = new Set(["send", "stop", "steer", "queue", "approve", "transcribe", "speak", "push/subscribe", "push/unsubscribe", "push/test", "setup/key", "setup/model", "setup/endpoint/check", "setup/endpoint/save", "setup/test", "report/draft", "setup/second-brain", "setup/second-brain/inspect", "setup/soul/seed", "voice/model/download", "voice/model/cancel", "voice/model/delete", "persona/soul", "persona/soul/restore", "persona/memory", "fleet/model", "fleet/retire", "fleet/restore", "fleet/archive/remove", "setup/key/remove", "clarify", "second-brain/routines", "profile/rename", "usage/budget", "threads", "threads/rename", "threads/archive", "threads/fresh", "routines", "routines/update", "routines/run", "routines/delete", "tools/test"]);
 const bridgePatch = new Set(["settings", "tools"]);
+// Routes with one id segment (`:id`: letters, digits, _ and -): a bot's look, photo, portrait and pet; pet pictures.
+const bridgeTemplates = new Set(["GET look/:id", "POST look/:id", "PUT look/:id/avatar", "POST look/:id/portrait", "POST look/:id/pet", "GET pet/:id/sheet", "GET pets/thumb/:id"]);
 const opsGet = new Set(["health", "meta", "boards", "focus", "today", "pulse", "attention", "settings"]);
+
+function templated(method: string, path: string[]): boolean {
+  for (const template of bridgeTemplates) {
+    const [want, route] = template.split(" ");
+    const parts = route.split("/");
+    if (want === method && parts.length === path.length && parts.every((part, i) => (part === ":id" ? /^[\w-]+$/.test(path[i]) : part === path[i]))) return true;
+  }
+  return false;
+}
 
 export function permittedOperation(service: "bridge" | "ops", method: string, path: string[]): boolean {
   if (!path.length || path.some(p => !p || p === "." || p === ".." || /[\\/?#%]/.test(p))) return false;
   const route = path.join("/");
   if (service === "ops") return method === "GET" ? opsGet.has(route) : method === "POST" ? route === "launch" : method === "PUT" && route === "settings";
+  if (templated(method, path)) return true;
   if (method === "GET") return bridgeGet.has(route) || (path.length === 2 && ["profile", "avatar"].includes(path[0]) && /^[\w-]+$/.test(path[1]));
   if (method === "POST") return bridgePost.has(route);
   return method === "PATCH" && bridgePatch.has(route);

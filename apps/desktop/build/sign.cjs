@@ -9,7 +9,7 @@ const { spawnSync } = require("node:child_process");
 const { readdirSync, existsSync } = require("node:fs");
 const path = require("node:path");
 
-const OWN = /^(Chief Command Center\.exe|.+\.(appx|msix))$/i;
+const OWN = /^(Chief Command Center\.exe|ChiefUpdater\.exe|.+\.(appx|msix))$/i;
 
 function signtool() {
   if (process.env.SIGNTOOL_PATH) return process.env.SIGNTOOL_PATH;

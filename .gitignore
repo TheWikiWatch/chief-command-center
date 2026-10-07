@@ -3,7 +3,7 @@ node_modules/
 .next/
 out/
 dist/
-release/
+/release/
 *.tsbuildinfo
 next-env.d.ts
 

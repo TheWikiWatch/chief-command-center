@@ -36,6 +36,16 @@ describe("proxy trust boundary", () => {
     expect(permittedOperation("bridge", "GET", ["push", "subscriptions"])).toBe(true);
     for (const p of [["push", "test"], ["push", "unsubscribe"]]) expect(permittedOperation("bridge", "POST", p)).toBe(true);
     expect(permittedOperation("bridge", "GET", ["push", "test"])).toBe(false);
+    // Bot looks: one bot id per path, each route only with its own method.
+    expect(permittedOperation("bridge", "GET", ["look", "dave-dev"])).toBe(true);
+    expect(permittedOperation("bridge", "POST", ["look", "chief"])).toBe(true);
+    expect(permittedOperation("bridge", "PUT", ["look", "chief", "avatar"])).toBe(true);
+    for (const p of [["look", "chief", "portrait"], ["look", "chief", "pet"]]) expect(permittedOperation("bridge", "POST", p)).toBe(true);
+    for (const p of [["pets", "catalog"], ["pets", "thumb", "boba"], ["pet", "chief", "sheet"]]) expect(permittedOperation("bridge", "GET", p)).toBe(true);
+    for (const p of [["look", ".."], ["look", "a.b"], ["look"], ["look", "chief", "avatar", "x"], ["pet", "chief"]]) expect(permittedOperation("bridge", "GET", p)).toBe(false);
+    expect(permittedOperation("bridge", "POST", ["look", "chief", "avatar"])).toBe(false);
+    expect(permittedOperation("bridge", "PUT", ["look", "chief"])).toBe(false);
+    expect(permittedOperation("bridge", "PUT", ["settings"])).toBe(false);
   });
   it("blocks writes before forwarding and permits same-origin JSON mutations", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ok:true})); vi.stubGlobal("fetch", fetcher);

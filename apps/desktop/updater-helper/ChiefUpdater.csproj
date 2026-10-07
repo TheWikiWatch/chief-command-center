@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Chief Updater: stages and applies the app's MSIX updates with a small branded popup (docs/PLAN-2026-10-07-updates-looks-hermes-tracking.md §1).
+       .NET Framework 4.8 + WPF ship with every Windows 11, so nothing is bundled: the output is one ChiefUpdater.exe (+ .exe.config).
+       Build: node apps/desktop/scripts/build-updater.mjs (copies it to apps/desktop/build/updater/ for the package). -->
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <AssemblyName>ChiefUpdater</AssemblyName>
+    <RootNamespace>ChiefUpdater</RootNamespace>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>ChiefUpdater.ico</ApplicationIcon>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <!-- No .pdb next to the exe: the package carries only the exe and its config. -->
+    <DebugType>none</DebugType>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <Product>Chief Command Center</Product>
+    <AssemblyTitle>Chief Updater</AssemblyTitle>
+    <Description>Installs Chief Command Center updates.</Description>
+    <Company>Chief Command Center contributors</Company>
+    <Copyright>Chief Command Center contributors (MIT)</Copyright>
+    <Version>1.0.0</Version>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinRT projections (PackageManager, IAsyncOperationWithProgress); the types themselves resolve from Windows at run time. -->
+    <PackageReference Include="Microsoft.Windows.SDK.Contracts" Version="10.0.26100.9169" />
+    <!-- Reference assemblies for net48, so the build needs only the .NET SDK (no Visual Studio targeting pack). -->
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <!-- JavaScriptSerializer: the job and result files, without a JSON library to ship. -->
+    <Reference Include="System.Web.Extensions" />
+    <!-- Only so the XAML compiler can load System.Web.Extensions; both are part of .NET Framework. -->
+    <Reference Include="System.Web" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The popup's fallback face when the app passes none. -->
+    <Resource Include="ChiefUpdater.ico" />
+    <None Remove="make-icon.ps1" />
+  </ItemGroup>
+</Project>

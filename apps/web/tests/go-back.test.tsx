@@ -9,12 +9,12 @@ afterEach(() => {
 });
 
 function desktopWith(options: { version: string; published: string; file: string }[]) {
-  const rollback = vi.fn(async () => ({ status: "installing", step: "Backing up…" }));
+  const rollback = vi.fn(async () => ({ status: "restarting", step: "Closing Chief…" }));
   const updates = {
     state: async () => ({ status: "up-to-date", checkedAt: 0 }),
     check: vi.fn(),
-    download: vi.fn(),
-    install: vi.fn(),
+    prepare: vi.fn(),
+    restart: vi.fn(),
     skip: vi.fn(),
     feed: async () => "",
     setFeed: vi.fn(),

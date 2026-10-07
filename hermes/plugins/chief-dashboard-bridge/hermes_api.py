@@ -126,6 +126,19 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "tools.web_tools": ("_get_extract_backend", "_get_search_backend"),
         "tools.registry": ("registry",),
     },
+    "bot looks": {
+        # Bot Mode's ui_meta writer (per-key compare-and-swap, 64 KB cap, atomic write), and what its body uses.
+        "tui_gateway.methods_profiles": ("_configure_ui_meta",),
+        "utils": ("atomic_yaml_write",),
+        "hermes_yaml": (),
+        # Pets: the petdex gallery, the per-profile store, its frame geometry, and `display.pet` in config.yaml.
+        "agent.pet.manifest": ("fetch_manifest",),
+        "agent.pet.store": ("install_pet", "thumbnail_png"),
+        "agent.pet.constants": ("FRAME_W", "FRAME_H", "FRAMES_PER_STATE", "LOOP_MS", "state_rows_for_grid"),
+        "hermes_cli.pets": ("_set_active", "_set_enabled"),
+        # Portraits: the chief's image generator, the same tool Settings → Tools tests.
+        "tools.registry": ("registry",),
+    },
 }
 
 

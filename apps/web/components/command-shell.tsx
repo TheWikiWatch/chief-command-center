@@ -48,6 +48,7 @@ import { useUnseenFleetFlags } from "@/lib/use-fleet-flags";
 import { useAppConfig } from "@/lib/app-config";
 import { useNeedsOnboarding } from "@/lib/use-needs-onboarding";
 import { UpdateCard, useUpdates } from "@/components/updates/update-card";
+import { ChiefLookExport } from "@/components/chief-look";
 import { WhatsNewCard } from "@/components/updates/update-history";
 // Listens for Android's install offer from the first moment (Settings → Phone shows it).
 import "@/lib/install-prompt";
@@ -680,6 +681,7 @@ export function CommandShell() {
           <WhatsNewCard newer={offeredVersion} />
         </div>
       )}
+      <ChiefLookExport chief={chief} assistant={assistant} />
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
       {paletteMounted ? <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={askChief} search={searchVaultNotes} /> : null}
       <AnimatePresence>

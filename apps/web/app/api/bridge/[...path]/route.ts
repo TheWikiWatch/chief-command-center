@@ -57,8 +57,17 @@ async function proxy(req: NextRequest, path: string[]) {
   // A long-poll (/transcript?wait=N) is held by the bridge for up to N seconds (at most 25).
   const wait = path[0] === "transcript" ? Math.min(25, Math.max(0, Number(url.searchParams.get("wait")) || 0)) : 0;
   // Provider setup can fetch catalogs and run one test completion: allow a minute.
+  // A generated portrait waits on the image service (the bridge allows it 150 s); installing a pet downloads its
+  // sprite sheet; the pet gallery's first read fetches its whole manifest.
+  const look = path[0] === "look" ? path[2] || "" : "";
   const timeoutMs = wait
     ? (wait + 10) * 1000
+    : look === "portrait"
+      ? 170000
+    : look === "pet" || look === "avatar"
+      ? 70000
+    : rel === "pets/catalog" || path[0] === "pets" || path[0] === "pet"
+      ? 30000
     : path[0] === "setup"
       ? 60000
     : rel === "tools/test"
@@ -171,6 +180,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 }
 
 export async function PATCH(req: NextRequest, ctx: Ctx) {
+  const { path } = await ctx.params;
+  return proxy(req, path);
+}
+
+/** A bot's photo (`look/<id>/avatar`): the image itself is the body. */
+export async function PUT(req: NextRequest, ctx: Ctx) {
   const { path } = await ctx.params;
   return proxy(req, path);
 }

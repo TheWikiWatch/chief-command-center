@@ -84,7 +84,8 @@ describe("design rules", () => {
     for (const f of files) {
       if (inUi(f.file) || BARE_FIELD_ALLOWED.has(f.file) || !f.file.endsWith(".tsx")) continue;
       for (const { line, tag } of openingTags(f.text, /<(?:input|textarea|select)\b/g)) {
-        if (/type="(?:file|hidden|checkbox|radio|range)"|className="hidden"/.test(tag)) continue;
+        // Not text fields: file pickers, switches, sliders and colour wells draw their own control.
+        if (/type="(?:file|hidden|checkbox|radio|range|color)"|className="hidden"/.test(tag)) continue;
         if (/\bfield\(|\bfieldClass\(/.test(tag)) continue;
         offenders.push(`${f.file}:${line}`);
       }

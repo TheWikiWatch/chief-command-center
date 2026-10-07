@@ -10,7 +10,8 @@
     "start": "npm run build && electron .",
     "test": "vitest run",
     "check": "tsc -p tsconfig.json --noEmit && vitest run",
-    "dist:msix": "npm run build && electron-builder --config electron-builder.config.cjs --win appx --publish never"
+    "build:updater": "node scripts/build-updater.mjs",
+    "dist:msix": "npm run build && npm run build:updater && electron-builder --config electron-builder.config.cjs --win appx --publish never"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",

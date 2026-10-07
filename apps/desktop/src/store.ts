@@ -31,6 +31,10 @@ export type DesktopSettings = {
   /** Where updates come from: a release folder while the repo is closed (PLAN §8a). Empty = no checks. */
   updateFeed: string;
   skippedVersions: string[];
+  /** Download, back up and stage a new release in the background as soon as a check finds it (the restart stays the owner's click). */
+  prepareUpdates: boolean;
+  /** Early updates: also take releases published as prereleases (the owner's soak before testers get them). */
+  earlyUpdates: boolean;
   /** The app version that last opened this data, and the data schema it wrote. */
   lastVersion: string;
   dataSchema: number;
@@ -60,6 +64,8 @@ export const DEFAULTS: DesktopSettings = {
   startAtLogin: true,
   updateFeed: "",
   skippedVersions: [],
+  prepareUpdates: true,
+  earlyUpdates: false,
   lastVersion: "",
   dataSchema: 0,
   lastHermes: "",

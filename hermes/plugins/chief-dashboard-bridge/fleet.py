@@ -13,6 +13,8 @@ Used by the dashboard (Fleet tab, each bot's Look drawer) and by the chief itsel
   profile, which can belong to ANOTHER Hermes install on the same PC (see docs/FRAGILE_SEAMS.md).
 - Restore imports the archive and gives the bot its provider key again. Removing an archive is permanent and
   is offered to the owner only (not a tool).
+- A new bot can arrive with a look (looks.py); the chief restyles any bot with `set_bot_look`, cosmetic and
+  reversible, so it needs no sign-off.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import data, persona, providers
+from . import data, looks, persona, providers
 from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
@@ -135,7 +137,7 @@ def _chief_model() -> dict[str, str]:
     return {"provider": str(model.get("provider") or ""), "model": str(model.get("default") or "")}
 
 
-def mint(name: str, display_name: str, role: str, description: str, soul: str, *, owner_signed: bool, cwd: str = "") -> dict[str, Any]:
+def mint(name: str, display_name: str, role: str, description: str, soul: str, *, owner_signed: bool, cwd: str = "", look: Any = None) -> dict[str, Any]:
     if not owner_signed:
         raise FleetError("A new bot needs the owner's sign-off on its SOUL draft first. Show the draft and ask.")
     name = (name or "").strip().lower()
@@ -149,6 +151,16 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
         raise FleetError("The SOUL is empty or too long (one screen is the goal).")
     if (data.profiles_dir(_root()) / name).exists():
         raise FleetError(f"A bot with the id '{name}' already exists.")
+    face = None
+    if look:
+        if not isinstance(look, dict):
+            raise FleetError("The look must be an object like {style, color}.")
+        try:
+            face = looks.face_from_args({**look, "blob_kind": look.get("blob_kind") or look.get("blobKind")}, None, name)
+        except looks.LookError as exc:
+            raise FleetError(f"The look: {exc}") from exc
+        if face["style"] == "photo":
+            raise FleetError("A new bot can't start with a photo; give it a bubble, blob or shape (a photo can be added later).")
     chief_model = _chief_model()
     with data.chief_config_scope():
         from hermes_cli.profiles import create_profile, launch_model_seed
@@ -186,6 +198,8 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
 
         second_brain.share_with(home)
         _sections_assign(name, TEAM_SECTION)
+        if face is not None:
+            looks.write_face(name, face)
     except Exception:
         logger.warning("mint of %s failed part-way; removing the half-made profile", name)
         _remove_tree(home)
@@ -318,7 +332,7 @@ def _tool(fn):
     def handle(args: dict, **_kw) -> str:
         try:
             result = fn(args or {})
-        except (FleetError, persona.PersonaError) as exc:
+        except (FleetError, persona.PersonaError, looks.LookError) as exc:
             result = {"ok": False, "error": str(exc)}
         except Exception as exc:  # never a traceback (or a value) into the conversation
             logger.warning("fleet tool failed: %s", type(exc).__name__)
@@ -366,6 +380,11 @@ TOOLS = (
                 "soul": {**_S, "description": "the signed one-screen SOUL.md text"},
                 "cwd": {**_S, "description": "optional working folder (absolute path)"},
                 "owner_signed": {**_B, "description": "true only if the owner approved this exact SOUL"},
+                "look": {
+                    "type": "object",
+                    "description": "optional face, as set_bot_look takes it: {style: bubble|blob|shape, color: '#rrggbb', body, eyes, "
+                    "cheeks, shape, seed, blobKind}",
+                },
             },
             ("id", "display_name", "role", "description", "soul", "owner_signed"),
         ),
@@ -378,6 +397,7 @@ TOOLS = (
                 a.get("soul", ""),
                 owner_signed=bool(a.get("owner_signed")),
                 cwd=str(a.get("cwd") or ""),
+                look=a.get("look") if isinstance(a.get("look"), dict) else None,
             )
         ),
         "🛠️",
@@ -411,4 +431,5 @@ TOOLS = (
         _tool(lambda a: restore(a.get("archive_id", ""))),
         "♻️",
     ),
+    ("set_bot_look", looks.TOOL_SCHEMA, _tool(looks.set_bot_look), "🎨"),
 )

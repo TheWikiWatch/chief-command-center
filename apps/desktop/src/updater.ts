@@ -6,15 +6,16 @@ import type { ActiveWork } from "./active-work";
 import { folderSource, SourceError, type ReleaseSource } from "./release-source";
 
 /**
- * "Update available — install?" (PLAN §8 "App update flow"). Nothing installs without the owner's click.
+ * "Update available" (PLAN §8 "App update flow"; docs/PLAN-2026-10-07 §1). Nothing restarts without the owner's click.
  *
  * 1. Check: read the feed's release.json and verify its Ed25519 signature against the pinned key. A failed
  *    check says why; the app never claims "up to date" without a successful check.
- * 2. Download to `updates\` with resume, then verify the package's SHA-256 against the signed manifest; a
- *    mismatch deletes the file.
- * 3. Preflight: free space, and work in progress (never interrupt a turn unless the owner says so).
- * 4. Backup, then stop Chief and hand the package to Windows, which verifies its signature, installs it and
- *    relaunches the app.
+ * 2. Prepare, while Chief keeps working: download to `updates\` with resume and verify the package's SHA-256
+ *    against the signed manifest (a mismatch deletes the file); back up when the release brings a different Hermes;
+ *    then have Windows stage the package (unpack it beside the installed one: the slow part of an install).
+ * 3. Restart, on the owner's click: never mid-turn unless the owner says so. Chief stops, a small native window
+ *    (ChiefUpdater.exe, outside the package) covers the close, Windows registers the staged package (seconds) and
+ *    the window opens the new version. If the helper can't run, a hidden installer does the whole install instead.
  *
  * Releases come from a folder (local or network) or a private GitHub repository that holds only releases,
  * read with a per-person read-only key (release-source.ts).
@@ -42,10 +43,16 @@ export type UpdateState =
   | { status: "up-to-date"; checkedAt: number }
   | { status: "available"; checkedAt: number; release: Release }
   | { status: "downloading"; release: Release; done: number; total: number }
-  | { status: "ready"; release: Release; file: string }
-  | { status: "busy"; release: Release; file: string; reasons: string[] }
-  | { status: "installing"; release: Release; step: string }
+  /** Backing up (when the release brings a different Hermes) or staging the package; `pct` null while unknown. */
+  | { status: "preparing"; release: Release; step: "backup" | "stage"; pct: number | null }
+  /** Ready to restart into; `staged`: Windows already unpacked it (the restart takes seconds, not a full install). */
+  | { status: "ready"; release: Release; file: string; staged: boolean }
+  | { status: "busy"; release: Release; file: string; staged: boolean; reasons: string[] }
+  | { status: "restarting"; release: Release; step: string }
   | { status: "error"; error: string; release?: Release };
+
+/** How the restart went: the helper's window took over, the hidden fallback installer started, or nothing did. */
+export type HandOffResult = { ok: true; via: "helper" | "fallback" } | { ok: false; error: string };
 
 export type UpdaterDeps = {
   /** A release folder (the closed-phase default). */
@@ -58,11 +65,15 @@ export type UpdaterDeps = {
   skipped: () => string[];
   freeBytes: (dir: string) => Promise<number>;
   activeWork: () => Promise<ActiveWork>;
-  backup: (release: Release) => Promise<{ ok: boolean; error?: string }>;
+  /** A backup before the release, when it needs one; `onProgress` gets 0..1. */
+  backup: (release: Release, onProgress?: (fraction: number) => void) => Promise<{ ok: boolean; error?: string }>;
+  /** Windows stages the package while the app runs (ChiefUpdater.exe stage); `onProgress` gets 0..100. */
+  stage?: (file: string, release: Release, onProgress: (pct: number) => void) => Promise<{ ok: boolean; error?: string }>;
   stopChief: () => Promise<void>;
-  /** Brings Chief back after `stopChief` when the install fails, so a failed update never leaves it stopped. */
+  /** Brings Chief back after `stopChief` when the restart fails, so a failed update never leaves it stopped. */
   startChief?: () => Promise<void>;
-  install: (file: string) => Promise<{ ok: boolean; error?: string }>;
+  /** Hands over to the helper's window (or the hidden fallback installer); on success the app is about to quit. */
+  handOff: (file: string, release: Release, staged: boolean) => Promise<HandOffResult>;
   onState?: (state: UpdateState) => void;
   /** The verified release descriptions this install keeps (release-history.ts), for "Go back to X.Y.Z". */
   history?: () => Release[];
@@ -173,8 +184,9 @@ export class Updater {
       await fs.rm(option.file, { force: true });
       return this.set({ status: "error", error: `The kept package for ${version} doesn't match its description, so it was deleted.` });
     }
-    this.set({ status: "ready", release, file: option.file });
-    return this.install(force);
+    const prepared = await this.backupAndStage(release, option.file);
+    if (prepared.status !== "ready") return prepared;
+    return this.restart(force);
   }
 
   private source(): ReleaseSource | null {
@@ -190,9 +202,12 @@ export class Updater {
   }
 
   async check(): Promise<UpdateState> {
+    const inHandState = this.state;
+    const inHand = ["downloading", "preparing", "ready", "busy", "restarting"].includes(inHandState.status) ? (inHandState as { release: Release }).release : null;
+    if (inHandState.status === "restarting") return inHandState;
     const source = this.source();
     if (!source) return this.set({ status: "error", error: "Couldn't check for updates: no update source is set." });
-    this.set({ status: "checking" });
+    if (!inHand) this.set({ status: "checking" });
     let bytes: Buffer;
     let sig: string;
     try {
@@ -200,6 +215,7 @@ export class Updater {
       bytes = await source.read("release.json");
       sig = (await source.read("release.json.sig")).toString("utf8");
     } catch (e) {
+      if (inHand) return this.state; // offline for a moment: what's in hand still stands
       const why = e instanceof SourceError ? e.message : `the release source (${source.label}) isn't reachable.`;
       return this.set({ status: "error", error: `Couldn't check for updates: ${why}` });
     }
@@ -212,10 +228,80 @@ export class Updater {
     this.deps.onVerified?.(bytes, sig, release);
     const newer = compareVersions(release.version, this.deps.currentVersion) > 0;
     if (!newer || this.deps.skipped().includes(release.version)) return this.set({ status: "up-to-date", checkedAt: Date.now() });
+    // A daily check (or "Check now") never knocks a release that is downloading, prepared or restarting back to
+    // "available"; a newer release than the one in hand does replace it.
+    if (inHand && inHand.version === release.version) return this.set(inHandState);
     return this.set({ status: "available", checkedAt: Date.now(), release });
   }
 
+  /**
+   * The helper's verdict on the last update, read at start: an update that didn't finish is shown as an error the
+   * owner can retry from (with the release, when this install still has its description).
+   */
+  noteFailedUpdate(message: string, version: string): UpdateState {
+    const release = this.deps.history?.().find((r) => r.version === version);
+    return this.set({ status: "error", error: message, ...(release && compareVersions(version, this.deps.currentVersion) > 0 ? { release } : {}) });
+  }
+
+  private preparing: Promise<UpdateState> | null = null;
+
+  /**
+   * Download, back up when needed and stage, while Chief keeps working; ends "ready" to restart. One at a time: a
+   * second call (the card, Settings, the automatic prepare after a check) joins the one running.
+   */
+  prepare(): Promise<UpdateState> {
+    if (this.preparing) return this.preparing;
+    this.preparing = this.runPrepare().finally(() => {
+      this.preparing = null;
+    });
+    return this.preparing;
+  }
+
+  private async runPrepare(): Promise<UpdateState> {
+    // Ready but not staged in this session means the backup already ran and only staging failed: try that again.
+    if (this.state.status === "ready" && !this.state.staged) return this.stage(this.state.release, this.state.file);
+    const downloaded = await this.download();
+    if (downloaded.status !== "ready" || downloaded.staged) return downloaded;
+    return this.backupAndStage(downloaded.release, downloaded.file);
+  }
+
+  /** The backup (when the release needs one), then staging; a failed backup stops here, with nothing changed. */
+  private async backupAndStage(release: Release, file: string): Promise<UpdateState> {
+    this.set({ status: "preparing", release, step: "backup", pct: null });
+    let shown = -1;
+    const backup = await this.deps.backup(release, (fraction) => {
+      const pct = Math.floor(fraction * 100);
+      if (pct !== shown) this.set({ status: "preparing", release, step: "backup", pct });
+      shown = pct;
+    });
+    if (!backup.ok) return this.set({ status: "error", release, error: `The update wasn't prepared because the backup before it failed: ${backup.error || "unknown error"}.` });
+    return this.stage(release, file);
+  }
+
+  /**
+   * Windows unpacks the package beside the installed one. A failure isn't fatal: the restart then installs the whole
+   * package itself (longer, with its own progress), so it only costs time.
+   */
+  private async stage(release: Release, file: string): Promise<UpdateState> {
+    if (!this.deps.stage) return this.set({ status: "ready", release, file, staged: false });
+    this.set({ status: "preparing", release, step: "stage", pct: 0 });
+    let shown = 0;
+    let reported = 0;
+    const staged = await this.deps
+      .stage(file, release, (pct) => {
+        const now = this.now();
+        if (pct !== shown && (now - reported >= PROGRESS_EVERY_MS || pct >= 100)) {
+          reported = now;
+          shown = pct;
+          this.set({ status: "preparing", release, step: "stage", pct });
+        }
+      })
+      .catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : String(e) }));
+    return this.set({ status: "ready", release, file, staged: staged.ok });
+  }
+
   async download(): Promise<UpdateState> {
+    if (this.state.status === "ready" || this.state.status === "busy") return this.state;
     if (this.state.status !== "available" && this.state.status !== "error") return this.state;
     const release = this.state.release;
     if (!release) return this.state;
@@ -224,7 +310,7 @@ export class Updater {
     const target = path.join(this.deps.updatesDir, release.package.file);
     const part = `${target}.part`;
     await fs.mkdir(this.deps.updatesDir, { recursive: true });
-    if (existsSync(target) && (await sha256(target)) === release.package.sha256) return this.set({ status: "ready", release, file: target });
+    if (existsSync(target) && (await sha256(target)) === release.package.sha256) return this.set({ status: "ready", release, file: target, staged: false });
     let have = 0;
     try {
       have = (await fs.stat(part)).size;
@@ -277,7 +363,7 @@ export class Updater {
     }
     await fs.rename(part, target);
     await this.prune([release.package.file]);
-    return this.set({ status: "ready", release, file: target });
+    return this.set({ status: "ready", release, file: target, staged: false });
   }
 
   /**
@@ -304,46 +390,42 @@ export class Updater {
     return removed;
   }
 
-  /** `force`: the owner chose "Install now" although Chief is busy. */
-  private installing: Promise<UpdateState> | null = null;
+  private restarting: Promise<UpdateState> | null = null;
 
   /**
-   * One install at a time: a second click (or the card's "install when the chief is done" retry, or the
-   * same card in Settings) while one runs joins it instead of handing Windows the package twice.
+   * Restart into the prepared release. `force`: the owner chose "Restart now" although Chief is busy. One at a time:
+   * a second click (or the card's "restart when Chief's done" retry, or the same card in Settings) joins the first
+   * instead of handing Windows the package twice.
    */
-  install(force = false): Promise<UpdateState> {
-    if (this.installing) return this.installing;
-    this.installing = this.runInstall(force).finally(() => {
-      this.installing = null;
+  restart(force = false): Promise<UpdateState> {
+    if (this.restarting) return this.restarting;
+    this.restarting = this.runRestart(force).finally(() => {
+      this.restarting = null;
     });
-    return this.installing;
+    return this.restarting;
   }
 
-  private async runInstall(force: boolean): Promise<UpdateState> {
+  private async runRestart(force: boolean): Promise<UpdateState> {
     const state = this.state;
     if (state.status !== "ready" && state.status !== "busy") return state;
-    const { release, file } = state;
+    const { release, file, staged } = state;
     if (!force) {
       const work = await this.deps.activeWork();
-      if (work.busy) return this.set({ status: "busy", release, file, reasons: work.reasons });
+      if (work.busy) return this.set({ status: "busy", release, file, staged, reasons: work.reasons });
     }
-    this.set({ status: "installing", release, step: "Backing up…" });
-    const backup = await this.deps.backup(release);
-    if (!backup.ok) return this.set({ status: "error", release, error: `The update wasn't installed because the backup before it failed: ${backup.error || "unknown error"}.` });
-    this.set({ status: "installing", release, step: "Stopping Chief…" });
+    this.set({ status: "restarting", release, step: "Closing Chief…" });
     await this.deps.stopChief();
-    this.set({ status: "installing", release, step: "Installing…" });
-    let result: { ok: boolean; error?: string };
+    let result: HandOffResult;
     try {
-      result = await this.deps.install(file);
+      result = await this.deps.handOff(file, release, staged);
     } catch (e) {
       result = { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
     if (!result.ok) {
-      this.set({ status: "installing", release, step: "Starting Chief again…" });
+      this.set({ status: "restarting", release, step: "Starting Chief again…" });
       await this.deps.startChief?.().catch(() => undefined);
       return this.set({ status: "error", release, error: result.error || "Windows couldn't install the update. The current version is still installed." });
     }
-    return this.state;
+    return this.set({ status: "restarting", release, step: result.via === "helper" ? "Updating…" : "Installing… it reopens by itself in about a minute." });
   }
 }

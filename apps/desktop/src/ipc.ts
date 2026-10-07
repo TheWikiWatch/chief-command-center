@@ -15,6 +15,7 @@ import { dashboardHeaders, engine, hermesVersion } from "./runtime";
 import { readUpdateKey, saveUpdateKey } from "./secrets";
 import { ctx, log, uiOrigin, uiUrl } from "./state";
 import type { Supervisor } from "./supervisor";
+import type { UpdateState } from "./updater";
 import { currentWork } from "./window";
 
 /* What the dashboard (and the boot page) may ask of the shell. */
@@ -44,6 +45,17 @@ export async function syncHistory(): Promise<{ ok: boolean; added?: number; erro
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * A check, then, when the owner allows it (Settings → Updates, on by default), the background prepare of the release it
+ * found: download, backup and staging run while Chief works, so the update card can offer "Restart". Resolves with
+ * the check's state; the prepare reports through the state events.
+ */
+export async function checkForUpdates(): Promise<UpdateState> {
+  const state = await ctx.updater.check();
+  if (state.status === "available" && ctx.store.value.prepareUpdates) void ctx.updater.prepare();
+  return state;
 }
 
 /** Chief's engine and the dashboard server, as the page's banner shows them ("restarting", "retrying in 9 min"). */
@@ -110,9 +122,18 @@ async function buildDiagnostics(out: string): Promise<{ ok: boolean; path?: stri
 export function registerIpc(boot: { run: () => Promise<unknown> }) {
   const { updater } = ctx;
   handle("updates:state", () => updater.state);
-  handle("updates:check", () => updater.check());
-  handle("updates:download", () => updater.download());
-  handle("updates:install", (force) => updater.install(force === true));
+  handle("updates:check", () => checkForUpdates());
+  handle("updates:prepare", () => updater.prepare());
+  handle("updates:restart", (force) => updater.restart(force === true));
+  handle("updates:options", () => ({ prepare: ctx.store.value.prepareUpdates, early: ctx.store.value.earlyUpdates }));
+  handle("updates:setOptions", (options) => {
+    const o = (options && typeof options === "object" ? options : {}) as { prepare?: unknown; early?: unknown };
+    ctx.store.save({
+      ...(typeof o.prepare === "boolean" ? { prepareUpdates: o.prepare } : {}),
+      ...(typeof o.early === "boolean" ? { earlyUpdates: o.early } : {}),
+    });
+    return checkForUpdates();
+  });
   handle("updates:skip", (version) => {
     const v = String(version ?? "").trim();
     if (/^\d+\.\d+\.\d+$/.test(v)) ctx.store.save({ skippedVersions: [...new Set([...ctx.store.value.skippedVersions, v])] });

@@ -16,17 +16,26 @@ export type UpdateState =
   | { status: "up-to-date"; checkedAt: number }
   | { status: "available"; checkedAt: number; release: Release }
   | { status: "downloading"; release: Release; done: number; total: number }
-  | { status: "ready"; release: Release; file: string }
-  | { status: "busy"; release: Release; file: string; reasons: string[] }
-  | { status: "installing"; release: Release; step: string }
+  /** Backing up (when the release brings a different Hermes) or having Windows unpack it; `pct` null while unknown. */
+  | { status: "preparing"; release: Release; step: "backup" | "stage"; pct: number | null }
+  /** Ready to restart into; `staged`: already unpacked, so the restart takes seconds. */
+  | { status: "ready"; release: Release; file: string; staged: boolean }
+  | { status: "busy"; release: Release; file: string; staged: boolean; reasons: string[] }
+  | { status: "restarting"; release: Release; step: string }
   | { status: "error"; error: string; release?: Release };
+
+/** Settings → Updates: prepare in the background (default on), and early updates (prereleases; the owner's soak). */
+export type UpdateOptions = { prepare: boolean; early: boolean };
 
 export type DesktopUpdates = {
   state: () => Promise<UpdateState>;
   check: () => Promise<UpdateState>;
-  download: () => Promise<UpdateState>;
-  /** `force`: install although Chief is busy (the owner chose "Install now"). */
-  install: (force?: boolean) => Promise<UpdateState>;
+  /** Download, back up when needed and stage, while Chief works; ends "ready". */
+  prepare: () => Promise<UpdateState>;
+  /** `force`: restart although Chief is busy (the owner chose "Restart now"). */
+  restart: (force?: boolean) => Promise<UpdateState>;
+  options?: () => Promise<UpdateOptions>;
+  setOptions?: (options: Partial<UpdateOptions>) => Promise<UpdateState>;
   skip: (version: string) => Promise<UpdateState>;
   feed: () => Promise<string>;
   setFeed: (folder: string) => Promise<UpdateState>;

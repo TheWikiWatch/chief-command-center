@@ -42,6 +42,12 @@ It refuses to ship a payload whose Hermes differs from `hermes/pin.json`.
 
 Testers' apps find it within a day (they check at launch and daily), or at once with **Check now**.
 
+**Early updates: try it before the testers.** `npm run release -- --channel early --notes "…"` publishes the release as
+a GitHub prerelease. Testers' apps read the repository's latest release, which is never a prerelease, so they don't
+see it; an app with **Settings → Backup & updates → Early updates** on (the maintainer's own) is offered it at once.
+After a day or two of use, `npm run release:promote -- X.Y.Z` makes the same signed release the latest for everyone
+(nothing is rebuilt) and attaches the tester kit. A Hermes upgrade always goes out this way first.
+
 **A newer Hermes ships the same way.** The daily `Upstream Hermes` workflow opens an "Upgrade Hermes to <tag>" PR
 (or a "Blocked Hermes upgrade" issue). Merge it, rebuild the payload locally (`prepare_source.py`, `stage.py`), run
 `packaging/upstream/compat.py` on it, point `payloadDir` at it, and release. The app backs up testers' data before
@@ -78,7 +84,7 @@ for anything kept outside the repository, such as refreshing a personal installe
    - installs Chief, or updates it in place, and opens it.
 
    If SmartScreen says it protected your PC, click **More info**, then **Run anyway**. Running it again later is safe.
-From then on (nothing to set up: the update source is built in), an "Update available — install?" card appears when a new release is out. Install backs up first, waits until Chief isn't working, and relaunches the app. After an update, a small "What's new" note shows that version's notes once; **History** (Settings → Backup & updates, or About) lists every published version.
+From then on (nothing to set up: the update source is built in), a new release gets ready by itself in the background while Chief keeps working (it downloads, backs up when it brings a new Hermes, and Windows unpacks it), then a "Version X is ready" card offers **Restart to update**. The restart waits until Chief isn't working (or "Restart now"); a small window with Chief's face and a progress bar covers the 10–20 seconds it takes, and the app reopens by itself. Settings → Backup & updates can turn the background preparing off ("Get update" then starts it). After an update, a small "What's new" note shows that version's notes once; **History** (Settings → Backup & updates, or About) lists every published version.
 
 2. Optional, **the phone:** Settings → Phone sets up private access through Tailscale step by step (the tester README has the short version).
 

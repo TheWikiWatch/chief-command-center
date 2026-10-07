@@ -614,6 +614,32 @@ body {
   }
 }
 
+/* A companion pet's frames (components/look/pet-sprite.tsx): one row of the sheet, stepped; still when motion is reduced. */
+.pet-sprite {
+  image-rendering: pixelated;
+  background-repeat: no-repeat;
+  animation: pet-steps var(--pet-loop, 1100ms) steps(var(--pet-steps, 6)) infinite;
+}
+
+@keyframes pet-steps {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: var(--pet-end) 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pet-sprite {
+    animation: none;
+  }
+}
+
+:root[data-motion="reduced"] .pet-sprite {
+  animation: none;
+}
+
 /* Loading placeholders (components/ui/surface.tsx Skeleton): a soft sweep, still when motion is reduced. */
 .skeleton {
   background: linear-gradient(90deg, var(--color-fill-1) 0%, var(--color-fill-3) 50%, var(--color-fill-1) 100%);

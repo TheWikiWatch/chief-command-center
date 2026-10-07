@@ -143,7 +143,14 @@ class MintTests(FleetTestCase):
         args = {"name": "nova", "display_name": "Nova", "role": "Planner", "description": "Plans the week.", "soul": SOUL, "owner_signed": True}
         args.update(overrides)
         return fleet.mint(
-            args["name"], args["display_name"], args["role"], args["description"], args["soul"], owner_signed=args["owner_signed"], cwd=args.get("cwd", "")
+            args["name"],
+            args["display_name"],
+            args["role"],
+            args["description"],
+            args["soul"],
+            owner_signed=args["owner_signed"],
+            cwd=args.get("cwd", ""),
+            look=args.get("look"),
         )
 
     def test_mint_needs_sign_off_and_valid_parts(self):
@@ -187,6 +194,17 @@ class MintTests(FleetTestCase):
         self.assertTrue(workdir.is_dir())
         self.assertEqual(self.saved_config, [("terminal.cwd", str(workdir))])
         self.assertEqual(self.sections(), {"sections": [fleet.TEAM_SECTION], "assign": {"nova": fleet.TEAM_SECTION}})
+
+    def test_a_new_bot_can_arrive_with_a_look(self):
+        for look, message in (("teal", "must be an object"), ({"style": "bubble", "eyes": "laser"}, "eyes must be one of"), ({"style": "photo"}, "photo")):
+            with self.subTest(look=look), self.assertRaises(fleet.FleetError) as caught:
+                self.mint(look=look)
+            self.assertIn(message, str(caught.exception))
+        self.assertEqual(self.hermes_calls, [], "a bad look is refused before anything is made")
+        written = []
+        with patch.object(fleet.looks, "write_face", lambda pid, face: written.append((pid, face)) or ({"ok": True}, 200)):
+            self.mint(look={"style": "bubble", "color": "teal", "blobKind": "sun"})
+        self.assertEqual(written, [("nova", {"style": "bubble", "color": "#12a594", "body": "bean", "eyes": "dot", "cheeks": False})])
 
     def test_a_failure_part_way_removes_the_half_made_profile(self):
         def broken(key, value):

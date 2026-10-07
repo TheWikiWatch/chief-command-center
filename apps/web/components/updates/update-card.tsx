@@ -3,35 +3,48 @@
 import { useEffect, useState, type ReactNode } from "react";
 
 import { CircleAlertIcon, CircleCheckIcon, DownloadIcon } from "@/components/icons";
-import { desktop, type UpdateState } from "@/lib/desktop";
+import { SwitchRow } from "@/components/settings/shared";
+import { desktop, type UpdateOptions, type UpdateState } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
 import { field } from "@/components/ui/field";
 
-/** The shell's update state, live. `null` outside the desktop app (a browser or the phone never updates). */
-export function useUpdates(): { state: UpdateState | null; api: NonNullable<ReturnType<typeof desktop>>["updates"] | null } {
+type UpdatesApi = NonNullable<ReturnType<typeof desktop>>["updates"];
+
+/** The shell's update state and options, live. `null` outside the desktop app (a browser or the phone never updates). */
+export function useUpdates(): { state: UpdateState | null; api: UpdatesApi | null; options: UpdateOptions | null } {
   const api = desktop()?.updates ?? null;
   const [state, setState] = useState<UpdateState | null>(null);
+  const [options, setOptions] = useState<UpdateOptions | null>(null);
   useEffect(() => {
     if (!api) return;
     void api.state().then(setState).catch(() => undefined);
+    void api.options?.().then(setOptions).catch(() => undefined);
     return api.onState(setState);
   }, [api]);
-  return { state, api };
+  return { state, api, options };
 }
 
 const mb = (n: number) => `${Math.max(1, Math.round(n / 1e6))} MB`;
 
+/** States the floating card shows (it stays quiet while an update prepares in the background). */
+function floats(state: UpdateState, autoPrepare: boolean): boolean {
+  if (["ready", "busy", "restarting"].includes(state.status)) return true;
+  if (state.status === "error") return !!state.release;
+  // With the background prepare on, "available" and the download only last until it starts; Settings shows them.
+  return !autoPrepare && ["available", "downloading", "preparing"].includes(state.status);
+}
+
 /**
- * "Update available — install?" (PLAN §8). Install downloads (verified against the signed release),
- * backs up, and hands the package to Windows. Chief's current turn is never interrupted unless the owner
- * chooses "Install now".
+ * "Update available" (PLAN §8; docs/PLAN-2026-10-07 §1). Getting an update downloads it (verified against the signed
+ * release), backs up when it brings a different Hermes and has Windows unpack it, all while Chief keeps working;
+ * the restart is the owner's click and never interrupts a turn unless the owner chooses "Restart now".
  */
 export function UpdateCard({ compact = false, onLater }: { compact?: boolean; onLater?: () => void }) {
   const assistant = useAssistantName();
-  const { state, api } = useUpdates();
+  const { state, api, options } = useUpdates();
   const [acting, setActing] = useState(false);
   if (!api || !state) return null;
-  const act = async (fn: () => Promise<UpdateState>) => {
+  const act = async (fn: () => Promise<unknown>) => {
     setActing(true);
     try {
       await fn();
@@ -39,13 +52,8 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
       setActing(false);
     }
   };
-  const install = async (force = false) => {
-    let s = state;
-    if (s.status === "available" || (s.status === "error" && s.release)) s = await api.download();
-    if (s.status === "ready" || s.status === "busy") await api.install(force);
-  };
 
-  if (compact && !["available", "downloading", "ready", "busy", "installing"].includes(state.status)) return null;
+  if (compact && !floats(state, options?.prepare ?? true)) return null;
 
   const content = (() => {
     switch (state.status) {
@@ -66,78 +74,112 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
           <div className="space-y-2">
             <Line tone="error">{state.error}</Line>
             <Row>
-              <Button subtle disabled={acting} onClick={() => void act(() => (state.release ? install() : api.check()).then(() => api.state()))}>
+              <Button subtle disabled={acting} onClick={() => void act(() => (state.release ? api.prepare() : api.check()))}>
                 {state.release ? "Try again" : "Retry"}
               </Button>
+              {compact && onLater ? (
+                <Button subtle disabled={acting} onClick={onLater}>
+                  Dismiss
+                </Button>
+              ) : null}
             </Row>
           </div>
         );
-      case "installing":
-        return <Line tone="idle">{state.step} {assistant} will be back in a moment.</Line>;
       case "downloading":
         return (
-          <div className="space-y-1.5">
-            <p className="text-callout text-fg-2">Downloading {state.release.version}…</p>
-            <div className="h-2 overflow-hidden rounded-full bg-fill-2" role="progressbar" aria-label="Update download" aria-valuemin={0} aria-valuemax={state.total} aria-valuenow={state.done}>
-              <div className="h-full rounded-full bg-accent" style={{ width: `${Math.round((state.done / state.total) * 100)}%` }} />
-            </div>
-            <p className="font-mono text-caption tabular text-fg-3">
-              {mb(state.done)} of {mb(state.total)}
-            </p>
-          </div>
+          <Progress
+            label={`Downloading ${state.release.version}…`}
+            pct={(state.done / state.total) * 100}
+            detail={`${mb(state.done)} of ${mb(state.total)} · ${assistant} keeps working.`}
+          />
         );
+      case "preparing":
+        return state.step === "backup" ? (
+          <Progress label={`Backing up before ${state.release.version}…`} pct={state.pct} detail={`It brings a new Hermes, so your setup is saved first. ${assistant} keeps working.`} />
+        ) : (
+          <Progress label={`Getting ${state.release.version} ready…`} pct={state.pct} detail={`Windows is unpacking it beside the current version. ${assistant} keeps working.`} />
+        );
+      case "restarting":
+        return <Progress label={state.step} pct={null} detail={`${assistant} will be back in a moment.`} />;
       case "busy":
         return (
           <div className="space-y-2">
             <Line tone="warn">
-              {state.reasons.join(" ")} Installing stops {assistant}.
+              {state.reasons.join(" ")} Restarting stops {assistant}.
             </Line>
             <Row>
               <Button
                 disabled={acting}
                 onClick={() =>
                   void act(async () => {
-                    // Wait for the turn to finish, then install; nothing is interrupted.
-                    let s = await api.install(false);
+                    // Wait for the turn to finish, then restart; nothing is interrupted.
+                    let s = await api.restart(false);
                     while (s.status === "busy") {
                       await new Promise((r) => setTimeout(r, 5000));
-                      s = await api.install(false);
+                      s = await api.restart(false);
                     }
-                    return s;
                   })
                 }
               >
-                {acting ? `Waiting for ${assistant}…` : `Install when ${assistant}'s done`}
+                {acting ? `Waiting for ${assistant}…` : `Restart when ${assistant}'s done`}
               </Button>
-              <Button subtle disabled={acting} onClick={() => void act(async () => (await api.install(true), api.state()))}>
-                Install now
+              <Button subtle disabled={acting} onClick={() => void act(() => api.restart(true))}>
+                Restart now
               </Button>
-              <Button subtle disabled={acting} onClick={() => onLater?.()}>
-                Later
+              {onLater ? (
+                <Button subtle disabled={acting} onClick={onLater}>
+                  Later
+                </Button>
+              ) : null}
+            </Row>
+          </div>
+        );
+      case "ready":
+        return (
+          <div className="space-y-2" role="region" aria-label="Update ready">
+            <p className="flex items-center gap-2 text-body font-medium text-fg">
+              <CircleCheckIcon className="size-4 text-ok" />
+              Version {state.release.version} is ready
+            </p>
+            <p className="text-callout text-fg-3">
+              {state.staged ? "Restarting takes about twenty seconds" : "Restarting takes about a minute"}; {assistant} reopens by itself.
+            </p>
+            {state.release.notes && !compact ? <p className="whitespace-pre-wrap text-callout text-fg-2">{state.release.notes}</p> : null}
+            <Row>
+              <Button disabled={acting} onClick={() => void act(() => api.restart(false))}>
+                Restart to update
               </Button>
+              {onLater ? (
+                <Button subtle disabled={acting} onClick={onLater}>
+                  Later
+                </Button>
+              ) : null}
             </Row>
           </div>
         );
       default: {
         const release = state.release;
         return (
-          <div className={`space-y-2 ${compact ? "rounded-card border border-line-2 bg-pane px-4 py-3 shadow-lg" : ""}`} role="region" aria-label="Update available">
+          <div className="space-y-2" role="region" aria-label="Update available">
             <p className="flex items-center gap-2 text-body font-medium text-fg">
               <DownloadIcon className="size-4 text-accent-text" />
-              Update available — install?
+              Update available
             </p>
             <p className="text-callout text-fg-3">
               Version {release.version}
-              {release.hermes?.base_version ? ` · Hermes ${release.hermes.base_version}` : ""} · {mb(release.package.bytes)}. A backup is made first, and {assistant} restarts.
+              {release.hermes?.base_version ? ` · Hermes ${release.hermes.base_version}` : ""} · {mb(release.package.bytes)}. It gets ready while {assistant} keeps
+              working; you choose when to restart.
             </p>
             {release.notes && !compact ? <p className="whitespace-pre-wrap text-callout text-fg-2">{release.notes}</p> : null}
             <Row>
-              <Button disabled={acting} onClick={() => void act(async () => (await install(false), api.state()))}>
-                Install
+              <Button disabled={acting} onClick={() => void act(() => api.prepare())}>
+                Get update
               </Button>
-              <Button subtle disabled={acting} onClick={() => onLater?.()}>
-                Later
-              </Button>
+              {onLater ? (
+                <Button subtle disabled={acting} onClick={onLater}>
+                  Later
+                </Button>
+              ) : null}
               <Button subtle disabled={acting} onClick={() => void act(() => api.skip(release.version))}>
                 Skip this version
               </Button>
@@ -147,7 +189,7 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
       }
     }
   })();
-  // The floating card (bottom of the app) gets its own surface; in Settings it sits inside its group.
+  // The floating card (top right of the app) gets its own surface; in Settings it sits inside its group.
   return compact ? (
     <section aria-label="App update" className="rounded-card border border-line-2 bg-raised/95 p-3.5 shadow-e4 backdrop-blur-sm">
       <p className="mb-2 text-caption font-medium text-fg-3">App update</p>
@@ -158,12 +200,49 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
   );
 }
 
+/**
+ * A progress bar with a label, a percentage when known, and a soft sweep while it isn't (the sweep stops when motion
+ * is reduced). `pct` 0..100 or null.
+ */
+function Progress({ label, pct, detail }: { label: string; pct: number | null; detail: string }) {
+  const known = pct !== null && Number.isFinite(pct);
+  const value = known ? Math.max(0, Math.min(100, Math.round(pct))) : 0;
+  return (
+    <div className="space-y-1.5">
+      <p className="flex items-baseline justify-between gap-3 text-callout text-fg-2">
+        <span>{label}</span>
+        {known ? <span className="font-mono text-caption tabular text-fg-3">{value}%</span> : null}
+      </p>
+      <div
+        className="h-1.5 overflow-hidden rounded-full bg-fill-2"
+        role="progressbar"
+        aria-label={label}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        {...(known ? { "aria-valuenow": value } : {})}
+      >
+        {known ? <div className="h-full rounded-full bg-accent transition-[width] duration-medium ease-out" style={{ width: `${Math.max(value, 2)}%` }} /> : <div className="skeleton h-full w-full" />}
+      </div>
+      <p className="text-caption text-fg-3">{detail}</p>
+    </div>
+  );
+}
+
 /** `github:owner/repo` or a github.com URL: a release repository (public, or private and read with a key). */
 export const isGithubFeed = (feed: string) => /^(github:|https:\/\/github\.com\/)[\w-]+\/[\w.-]+/.test(feed.trim());
 
 /** Settings → Updates: where updates come from (a release folder, or a GitHub release repository and, if it is private, its key), and the card. */
 export function UpdatesPanel() {
-  const { api } = useUpdates();
+  const assistant = useAssistantName();
+  const { api, options: loaded } = useUpdates();
+  // What the owner just switched, shown at once; the shell's own copy (`loaded`) until then.
+  const [chosen, setChosen] = useState<UpdateOptions | null>(null);
+  const options = chosen ?? loaded;
+  const choose = async (patch: Partial<UpdateOptions>) => {
+    if (!options || !api?.setOptions) return;
+    setChosen({ ...options, ...patch });
+    await api.setOptions(patch).catch(() => setChosen(options));
+  };
   const [feed, setFeed] = useState("");
   const [saved, setSaved] = useState("");
   const [hasKey, setHasKey] = useState(false);
@@ -181,6 +260,22 @@ export function UpdatesPanel() {
   return (
     <div className="space-y-3">
       <UpdateCard />
+      {options && api.setOptions ? (
+        <div className="-mx-3 divide-y divide-line-1 border-y border-line-1">
+          <SwitchRow
+            label="Get updates ready in the background"
+            hint={`A new version downloads and gets ready while ${assistant} works. Restarting into it is always your click.`}
+            checked={options.prepare}
+            onChange={(next) => void choose({ prepare: next })}
+          />
+          <SwitchRow
+            label="Early updates"
+            hint="Get new versions a day or two before everyone else, to try them first. For whoever publishes the app."
+            checked={options.early}
+            onChange={(next) => void choose({ early: next })}
+          />
+        </div>
+      ) : null}
       <div className="text-callout text-fg-2">
         <label htmlFor="update-feed">Update source</label>
         <div className="mt-1.5 flex gap-2">

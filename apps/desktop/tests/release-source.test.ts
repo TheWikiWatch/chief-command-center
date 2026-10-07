@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { builtInFeed, builtInReportEmail, effectiveFeed, githubSource, parseGithub } from "../src/release-source";
+import { builtInFeed, builtInReportEmail, effectiveFeed, githubSource, newestRelease, parseGithub } from "../src/release-source";
 import { Updater } from "../src/updater";
 
 describe("the update source a build carries", () => {
@@ -88,6 +88,33 @@ describe("githubSource", () => {
   });
 });
 
+describe("early updates (the owner's soak)", () => {
+  const rel = (tag: string, extra: Record<string, unknown> = {}, names = ["release.json", "release.json.sig"]) => ({ tag_name: tag, assets: names.map((name, id) => ({ id, name })), ...extra });
+
+  it("takes the highest published version with a release description, prereleases included, drafts never", () => {
+    expect(newestRelease([rel("v0.1.30"), rel("v0.1.31", { prerelease: true }), rel("v0.1.32", { draft: true }), rel("v0.1.33", {}, ["notes.txt"])])?.tag_name).toBe("v0.1.31");
+    expect(newestRelease([rel("v0.1.9"), rel("v0.1.10")])?.tag_name).toBe("v0.1.10"); // numeric, not text, order
+    expect(newestRelease([])).toBeNull();
+  });
+
+  it("reads the release list only when early updates are on; otherwise /releases/latest, which skips prereleases", async () => {
+    const urls: string[] = [];
+    const impl = (async (input: string | URL) => {
+      const url = String(input);
+      urls.push(url);
+      if (url.endsWith("/releases?per_page=20")) return Response.json([rel("v0.1.30"), rel("v0.1.31", { prerelease: true })]);
+      if (url.endsWith("/releases/latest")) return Response.json(rel("v0.1.30"));
+      return new Response("?", { status: 404 });
+    }) as typeof fetch;
+    let early = false;
+    const src = githubSource("me", "r", "k", impl, { early: () => early });
+    await src.refresh();
+    early = true;
+    await src.refresh();
+    expect(urls).toEqual(["https://api.github.com/repos/me/r/releases/latest", "https://api.github.com/repos/me/r/releases?per_page=20"]);
+  });
+});
+
 describe("Updater with a GitHub source", () => {
   const root = mkdtempSync(path.join(tmpdir(), "chief-gh-updater-"));
   afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -113,10 +140,10 @@ describe("Updater with a GitHub source", () => {
       activeWork: async () => ({ busy: false, reasons: [] }),
       backup: async () => ({ ok: true }),
       stopChief: async () => undefined,
-      install: async () => ({ ok: true }),
+      handOff: async () => ({ ok: true, via: "helper" }),
     });
     expect((await updater.check()).status).toBe("available");
-    const ready = await updater.download();
+    const ready = await updater.prepare();
     expect(ready.status === "error" ? ready.error : ready.status).toBe("ready");
     if (ready.status === "ready") expect(readFileSync(ready.file).equals(pkg)).toBe(true);
   });

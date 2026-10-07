@@ -76,7 +76,7 @@ describe("kept packages and going back", () => {
       activeWork: async () => ({ busy: false, reasons: [] }),
       backup: async () => (log.push("backup"), { ok: true }),
       stopChief: async () => void log.push("stop"),
-      install: async (file) => (log.push(`install ${path.basename(file)}`), { ok: true }),
+      handOff: async (file) => (log.push(`install ${path.basename(file)}`), { ok: true, via: "helper" }),
       onState: (s) => states.push(s),
       history: () => history,
       now: () => (now += 100),

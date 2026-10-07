@@ -52,7 +52,7 @@ function make(over: Partial<UpdaterDeps> = {}) {
     activeWork: async () => ({ busy: false, reasons: [] }),
     backup: async () => (log.push("backup"), { ok: true }),
     stopChief: async () => void log.push("stop"),
-    install: async (file) => (log.push(`install ${path.basename(file)}`), { ok: true }),
+    handOff: async (file, _release, staged) => (log.push(`hand off ${path.basename(file)}${staged ? " (staged)" : ""}`), { ok: true, via: "helper" }),
     onState: (s) => states.push(s),
     ...over,
   });
@@ -65,31 +65,78 @@ beforeEach(() => {
 });
 
 describe("Updater", () => {
-  it("offers a newer signed release, downloads and verifies it, and installs only after a backup and a stop", async () => {
+  it("offers a newer signed release, prepares it while Chief works (download, backup, stage), and restarts only on request", async () => {
     publish("1.1.0");
-    const { updater, log } = make();
+    const staged: string[] = [];
+    const { updater, log, states } = make({
+      stage: async (file, _r, onProgress) => {
+        onProgress(40);
+        onProgress(100);
+        staged.push(path.basename(file));
+        return { ok: true };
+      },
+    });
     const checked = await updater.check();
     expect(checked).toMatchObject({ status: "available", release: { version: "1.1.0", notes: "Fixes." } });
-    const ready = await updater.download();
-    expect(ready.status).toBe("ready");
+    const ready = await updater.prepare();
+    expect(ready).toMatchObject({ status: "ready", staged: true });
     expect(readFileSync(path.join(updates, "ChiefCommandCenter-1.1.0.msix")).equals(pkg)).toBe(true);
-    await updater.install();
-    expect(log).toEqual(["backup", "stop", "install ChiefCommandCenter-1.1.0.msix"]);
+    expect(staged).toEqual(["ChiefCommandCenter-1.1.0.msix"]);
+    expect(states.some((s) => s.status === "preparing" && s.step === "stage" && s.pct === 100)).toBe(true);
+    expect(log).toEqual(["backup"]); // Chief was never stopped while preparing
+    await updater.restart();
+    expect(log).toEqual(["backup", "stop", "hand off ChiefCommandCenter-1.1.0.msix (staged)"]);
+    expect(updater.state).toMatchObject({ status: "restarting" });
   });
 
-  it("installs once when Install is pressed again while the first install is still checking", async () => {
+  it("a staging failure only costs time: the restart installs the whole package", async () => {
+    publish("1.1.0");
+    const { updater, log } = make({ stage: async () => ({ ok: false, error: "0x80073CF3" }) });
+    await updater.check();
+    expect(await updater.prepare()).toMatchObject({ status: "ready", staged: false });
+    await updater.restart();
+    expect(log.at(-1)).toBe("hand off ChiefCommandCenter-1.1.0.msix");
+  });
+
+  it("preparing again after a failed staging only stages again (the backup already ran)", async () => {
+    publish("1.1.0");
+    let tries = 0;
+    const { updater, log } = make({ stage: async () => ((tries += 1), tries > 1 ? { ok: true } : { ok: false, error: "busy" }) });
+    await updater.check();
+    expect(await updater.prepare()).toMatchObject({ staged: false });
+    expect(await updater.prepare()).toMatchObject({ status: "ready", staged: true });
+    expect(log.filter((l) => l === "backup")).toHaveLength(1);
+  });
+
+  it("a check while an update is prepared (or preparing) keeps it; a newer release replaces it", async () => {
+    publish("1.1.0");
+    const { updater } = make();
+    await updater.check();
+    await updater.prepare();
+    expect((await updater.check()).status).toBe("ready");
+    publish("1.2.0");
+    expect(await updater.check()).toMatchObject({ status: "available", release: { version: "1.2.0" } });
+  });
+
+  it("prepares once and restarts once, however many times they're asked for", async () => {
     publish("1.1.0");
     let release: () => void = () => undefined;
     const slowCheck = new Promise<void>((r) => (release = r));
     const { updater, log } = make({ activeWork: async () => (await slowCheck, { busy: false, reasons: [] }) });
     await updater.check();
-    await updater.download();
-    const first = updater.install();
-    const second = updater.install(); // a double click, or the same card in Settings
+    await Promise.all([updater.prepare(), updater.prepare()]); // the automatic prepare and a click
+    const first = updater.restart();
+    const second = updater.restart(); // a double click, or the same card in Settings
     release();
     await Promise.all([first, second]);
-    expect(log.filter((l) => l.startsWith("install"))).toEqual(["install ChiefCommandCenter-1.1.0.msix"]);
+    expect(log.filter((l) => l.startsWith("hand off"))).toEqual(["hand off ChiefCommandCenter-1.1.0.msix"]);
     expect(log.filter((l) => l === "backup")).toHaveLength(1);
+  });
+
+  it("an update that didn't finish is reported at the next start, with the release to retry when it's kept", () => {
+    const { updater } = make({ history: () => [{ version: "1.1.0" } as never] });
+    expect(updater.noteFailedUpdate("The update to 1.1.0 didn't finish.", "1.1.0")).toMatchObject({ status: "error", release: { version: "1.1.0" } });
+    expect(updater.noteFailedUpdate("The update to 0.9.0 didn't finish.", "0.9.0")).toEqual({ status: "error", error: "The update to 0.9.0 didn't finish." });
   });
 
   it("says up to date only after a successful check, and honours Skip this version", async () => {
@@ -147,38 +194,37 @@ describe("Updater", () => {
     expect(await updater.download()).toEqual(expect.objectContaining({ status: "error", error: expect.stringMatching(/needs about 4 MB/) }));
   });
 
-  it("never interrupts a turn unless the owner says Install now", async () => {
+  it("never interrupts a turn unless the owner says Restart now", async () => {
     publish("1.1.0");
     let busy = true;
     const { updater, log } = make({ activeWork: async () => ({ busy, reasons: busy ? ["Chief is writing a reply."] : [] }) });
     await updater.check();
-    await updater.download();
-    expect(await updater.install()).toEqual(expect.objectContaining({ status: "busy", reasons: ["Chief is writing a reply."] }));
-    expect(log).toEqual([]);
-    await updater.install(true);
-    expect(log).toEqual(["backup", "stop", "install ChiefCommandCenter-1.1.0.msix"]);
+    await updater.prepare();
+    expect(await updater.restart()).toEqual(expect.objectContaining({ status: "busy", reasons: ["Chief is writing a reply."] }));
+    expect(log).toEqual(["backup"]);
+    await updater.restart(true);
+    expect(log).toEqual(["backup", "stop", "hand off ChiefCommandCenter-1.1.0.msix"]);
     busy = false;
   });
 
-  it("a failed backup stops the install; a failed Windows install keeps the current version", async () => {
+  it("a failed backup stops the prepare; a restart that couldn't hand over brings Chief back", async () => {
     publish("1.1.0");
     const failing = make({ backup: async () => ({ ok: false, error: "disk full" }) });
     await failing.updater.check();
-    await failing.updater.download();
-    expect(await failing.updater.install()).toEqual(expect.objectContaining({ status: "error", error: expect.stringMatching(/backup before it failed: disk full/) }));
+    expect(await failing.updater.prepare()).toEqual(expect.objectContaining({ status: "error", error: expect.stringMatching(/backup before it failed: disk full/) }));
     expect(failing.log).toEqual([]);
     const restarted: string[] = [];
-    const refused = make({ install: async () => ({ ok: false, error: "Windows reports files in use." }), startChief: async () => void restarted.push("start") });
+    const refused = make({ handOff: async () => ({ ok: false, error: "Windows didn't start the installer." }), startChief: async () => void restarted.push("start") });
     await refused.updater.check();
-    await refused.updater.download();
-    expect(await refused.updater.install()).toEqual(expect.objectContaining({ status: "error", error: "Windows reports files in use." }));
-    // Chief was stopped for the install, so it is started again.
+    await refused.updater.prepare();
+    expect(await refused.updater.restart()).toEqual(expect.objectContaining({ status: "error", error: "Windows didn't start the installer." }));
+    // Chief was stopped for the restart, so it is started again.
     expect(refused.log).toEqual(["backup", "stop"]);
     expect(restarted).toEqual(["start"]);
-    const thrown = make({ install: async () => { throw new Error("powershell missing"); }, startChief: async () => undefined });
+    const thrown = make({ handOff: async () => { throw new Error("powershell missing"); }, startChief: async () => undefined });
     await thrown.updater.check();
-    await thrown.updater.download();
-    expect(await thrown.updater.install()).toEqual(expect.objectContaining({ status: "error", error: "powershell missing" }));
+    await thrown.updater.prepare();
+    expect(await thrown.updater.restart()).toEqual(expect.objectContaining({ status: "error", error: "powershell missing" }));
   });
 
   it("reports download progress a few times a second, not once per chunk", async () => {

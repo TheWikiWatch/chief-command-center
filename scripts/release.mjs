@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 // One command to ship a new version of the app to everyone who has it (docs/DISTRIBUTION.md).
 //
-//   node scripts/release.mjs --notes "What changed, in a sentence or two"   [--version X.Y.Z]
+//   node scripts/release.mjs --notes "What changed, in a sentence or two"   [--version X.Y.Z] [--channel early]
+//                            [--hermes-highlights "One thing; another"]   ("New in Hermes" after an update that moves Hermes)
 //   node scripts/release.mjs --plan                                          (check the setup; changes nothing)
+//   node scripts/release.mjs --promote X.Y.Z                                 (an early release, to everyone)
+//
+// Channels (docs/DISTRIBUTION.md, "Early updates"): `--channel early` publishes the release as a GitHub prerelease.
+// Testers' apps read the repository's latest release, which GitHub never points at a prerelease, so only an app with
+// Settings → Updates → Early updates on (the owner's) is offered it. After a day or two of use, `--promote` makes the
+// same signed release the latest for everyone (nothing is rebuilt) and refreshes the tester kit. The default channel,
+// everyone, is what it always was.
 //
 // Steps: checks that the tree is committed and the dev server is stopped → the full test suite → bumps the
 // version (patch by default) → builds the dashboard → a smoke test of the app on a throwaway data folder (boot, a chat
@@ -62,7 +70,9 @@ const desktopPkg = path.join(repo, "apps", "desktop", "package.json");
 const desktopLock = path.join(repo, "apps", "desktop", "package-lock.json");
 const current = JSON.parse(readFileSync(desktopPkg, "utf8")).version;
 const bump = (v) => v.split(".").map((n, i) => (i === 2 ? Number(n) + 1 : Number(n))).join(".");
-const version = opt("version") || bump(current);
+const version = opt("promote") || opt("version") || bump(current);
+const channel = opt("channel") || "everyone";
+if (!["early", "everyone"].includes(channel)) fail(`--channel is "early" or "everyone" (got ${channel}).`);
 if (!/^\d+\.\d+\.\d+$/.test(version)) fail(`--version must look like 1.2.3 (got ${version}).`);
 
 const git = (...a) => run("git", a, { capture: true }).stdout.trim();
@@ -104,6 +114,16 @@ if (flag("plan")) {
   const gh = run("gh", ["repo", "view", local.releasesRepo, "--json", "visibility"], { capture: true, allowFail: true });
   console.log(`Releases repository: ${gh.status === 0 ? JSON.parse(gh.stdout).visibility.toLowerCase() + ", reachable with your gh login" : "NOT reachable (gh auth login?)"}`);
   process.exit(notFound.length || mismatch || prov.error || gh.status !== 0 ? 1 : 0);
+}
+
+if (opt("promote")) {
+  // An early release, soaked on the owner's install, becomes the latest release for everyone: the same signed files.
+  step(`Promoting ${version} to everyone…`);
+  run("node", ["packaging/release/release-tool.mjs", "promote", "--version", version, "--repo", local.releasesRepo], { what: `Promoting ${version}` });
+  testerKit({ upload: true });
+  afterRelease();
+  console.log(`\n✓ ${version} is now the latest release. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);
+  process.exit(0);
 }
 
 const notes = opt("notes") || (opt("notes-file") ? readFileSync(opt("notes-file"), "utf8").trim() : "");
@@ -212,7 +232,13 @@ step("Writing and checking the signed release description…");
 const pinnedKeys = [...readFileSync(path.join(repo, "apps", "desktop", "src", "release-key.ts"), "utf8").matchAll(/\{\s*id:\s*"([^"]+)",\s*publicKey:\s*"([^"]+)"/g)].map((m) => ({ id: m[1], publicKey: m[2] }));
 const signer = pinnedKeys.find((k) => k.id === (local.releaseKeyId || pinnedKeys[0]?.id));
 if (!signer) fail(`No pinned release key with id "${local.releaseKeyId}" in apps/desktop/src/release-key.ts.`);
-run("node", ["packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--payload-tree", provenance.tree, "--sbom", path.join(local.releasesDir, `sbom-${version}.cdx.json`), "--out", out, "--notes", notesFile]);
+const highlights = (opt("hermes-highlights") || "").split(";").map((h) => h.trim()).filter(Boolean);
+const highlightsFile = path.join(local.releasesDir, `hermes-highlights-${version}.txt`);
+if (highlights.length) writeFileSync(highlightsFile, `${highlights.join("\n")}\n`);
+run("node", [
+  "packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--payload-tree", provenance.tree,
+  "--sbom", path.join(local.releasesDir, `sbom-${version}.cdx.json`), "--out", out, "--notes", notesFile, ...(highlights.length ? ["--hermes-highlights", highlightsFile] : []),
+]);
 // The app checks it against the pinned key it names: so does this (a private key that isn't the pinned one fails here).
 run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pub", signer.publicKey]);
 rmSync(feedPkg, { force: true });
@@ -228,6 +254,17 @@ function testerKit({ upload = false } = {}) {
   step("Attaching the setup zip to the release…");
   const up = run("gh", ["release", "upload", `v${version}`, zip, "--repo", local.releasesRepo, "--clobber"], { allowFail: true });
   if (up.status !== 0) console.log(`⚠ The zip wasn't attached. Attach it by hand: gh release upload v${version} "${zip}" --repo ${local.releasesRepo}`);
+}
+
+// Optional, this PC only: a command to run after each release that reaches everyone (afterRelease in
+// release.local.json, e.g. refreshing an installer kit kept outside the repository). "{version}" is replaced; a
+// failure never undoes the release.
+function afterRelease() {
+  if (!Array.isArray(local.afterRelease) || !local.afterRelease.length) return;
+  step("Running afterRelease…");
+  const [cmd, ...rest] = local.afterRelease.map((a) => String(a).replaceAll("{version}", version));
+  const after = run(cmd, rest, { allowFail: true });
+  if (after.status !== 0) console.log(`⚠ afterRelease failed (exit ${after.status}); the release itself is done.`);
 }
 
 if (flag("no-publish")) {
@@ -257,19 +294,18 @@ if (pushed.status !== 0) {
   fail("Pushing the version failed, so the release commit and tag were undone locally and the draft is deleted. Pull, then release again.");
 }
 
-// 3. Make it live. The version is pushed now, so a failure here keeps the draft for finishing by hand.
+// 3. Make it live. The version is pushed now, so a failure here keeps the draft for finishing by hand. An early
+// release goes live as a prerelease: only apps with Early updates on are offered it.
 undo.draft = false;
-step(`Publishing ${version}…`);
-run("node", ["packaging/release/release-tool.mjs", "undraft", "--version", version, "--repo", local.releasesRepo], {
-  what: `Making the draft live (the version is pushed; finish with: node packaging/release/release-tool.mjs undraft --version ${version} --repo ${local.releasesRepo})`,
+const early = channel === "early";
+step(early ? `Publishing ${version} as an early release…` : `Publishing ${version}…`);
+run("node", ["packaging/release/release-tool.mjs", "undraft", "--version", version, "--repo", local.releasesRepo, ...(early ? ["--prerelease"] : [])], {
+  what: `Making the draft live (the version is pushed; finish with: node packaging/release/release-tool.mjs undraft --version ${version} --repo ${local.releasesRepo}${early ? " --prerelease" : ""})`,
 });
-testerKit({ upload: true });
-// Optional, this PC only: a command to run after each published release (afterRelease in release.local.json, e.g.
-// refreshing an installer kit kept outside the repository). "{version}" is replaced; a failure never undoes the release.
-if (Array.isArray(local.afterRelease) && local.afterRelease.length) {
-  step("Running afterRelease…");
-  const [cmd, ...rest] = local.afterRelease.map((a) => String(a).replaceAll("{version}", version));
-  const after = run(cmd, rest, { allowFail: true });
-  if (after.status !== 0) console.log(`⚠ afterRelease failed (exit ${after.status}); the release itself is done.`);
+if (early) {
+  console.log(`\n✓ Released ${version} as an early release: an app with Early updates on gets it now. When it has run well for a day or two: npm run release:promote -- ${version}`);
+  process.exit(0);
 }
+testerKit({ upload: true });
+afterRelease();
 console.log(`\n✓ Released ${version}. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);
