@@ -142,11 +142,8 @@ function ConnectCard({ item, cardKey, onQuickReply }: { item: ConnectRequest; ca
       {row === undefined ? (
         <div className="mt-3 h-9 rounded-full bg-fill-1" aria-hidden />
       ) : row === null ? (
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button variant="secondary" size="sm" onClick={() => openSettings("connections")}>
-            Open Connections
-          </Button>
-        </div>
+        // Not on the Connections page: this account can't reach it (Nous doesn't serve it, no private path).
+        <p className="mt-3 text-caption text-fg-3">{label} can’t be connected from this app yet.</p>
       ) : busy || flow.step === "pc-only" || flow.step === "keys" ? null : (
         <div className="mt-3 flex flex-wrap items-center gap-2">
           {needsNous ? (

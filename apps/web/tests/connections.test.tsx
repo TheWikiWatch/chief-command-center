@@ -177,6 +177,13 @@ it("a service that needs Nous sends the owner to Settings, and Not now tells the
   expect(screen.getByText(/Not connecting Outlook for now/)).toBeTruthy();
 });
 
+it("a card for a service this account can't reach says so, with nothing to press", async () => {
+  view = { ...view, services: view.services.filter((s) => s.id !== "outlook") };
+  render(<ConnectCards items={[{ service: "outlook", label: "Outlook", why: "" }]} messageId={10} onQuickReply={async () => undefined} />);
+  expect(await screen.findByText("Outlook can’t be connected from this app yet.")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Connect" })).toBeNull();
+});
+
 it("reads the mail guard's reason back as an email for the approval sheet", () => {
   const mail = mailAction({
     patternKey: "plugin_rule:chief:mail-send",

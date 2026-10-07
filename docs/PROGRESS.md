@@ -1063,3 +1063,8 @@
   didn't answer": Hermes's account runner swallows the connector gateway's error. The bridge now drives the same
   runner itself, logs the gateway's error type and code, and says why ("Nous doesn't offer that service for this
   account yet", "sign in again", "busy"); and a row offers Quick only for services the gateway lists for the account.
+- **A service the account can't reach is left out.** Outlook then showed with nothing to press (Nous doesn't serve it
+  for this account, and it has no private path). A row now shows only when it's connected, can be connected, or would
+  be with a Nous sign-in; a bot asking for one that isn't gets "can't be connected from this app yet", and so does its
+  card.
+- **Released to everyone as 0.1.36**, folding in the early 0.1.34 and 0.1.35.

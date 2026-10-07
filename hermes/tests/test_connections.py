@@ -368,6 +368,23 @@ class OverviewTests(unittest.TestCase):
         self.assertEqual((rows["gmail"]["via"], rows["googledrive"]["via"], rows["googlecalendar"]["state"]), ("local", "local", "not_connected"))
         self.assertEqual((rows["notion"]["state"], rows["notion"]["via"]), ("connected", "mcp"))
 
+    def test_a_service_this_account_cant_reach_is_left_out(self):
+        # Signed in to Nous, but its gateway doesn't serve Outlook, and Outlook has no private path.
+        self.nous = {"signedIn": True, "guest": False, "account": None, "connectors": True}
+        served = {"gmail": {"connected": False, "status": "", "account": None}}
+        with patch.object(connections, "_quick_status", return_value=served):
+            rows = self.rows()
+            self.assertNotIn("outlook", rows)
+            self.assertIn("gmail", rows)
+            with self.assertRaisesRegex(connections.ConnectionsError, "can't be connected from this app yet"):
+                connections.connect("outlook")
+            refused = json.loads(connections.tool_handler({"action": "request", "service": "outlook"}))
+            self.assertEqual(refused, {"ok": False, "error": "Outlook can't be connected from this app yet."})
+            self.assertNotIn("outlook", [c["id"] for c in json.loads(connections.tool_handler({"action": "status"}))["can_request"]])
+
+    def test_signed_out_a_nous_service_still_shows_with_the_sign_in(self):
+        self.assertTrue(self.rows()["outlook"]["needsNous"])
+
     def test_quick_needs_nous_and_says_so(self):
         with self.assertRaisesRegex(connections.ConnectionsError, "Nous"):
             connections.connect("outlook")

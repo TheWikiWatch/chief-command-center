@@ -573,6 +573,9 @@ def overview(refresh: bool = False) -> dict[str, Any]:
     except Exception:
         installed = {}
     rows = [_row(s, nous=nous, quick=quick, local=local, installed=installed) for s in services()]
+    # A service shows when it's connected, can be connected, or would be with a Nous sign-in; one this account can't
+    # reach at all (Nous doesn't serve it, no private path) is left out rather than shown with nothing to press.
+    rows = [r for r in rows if r["state"] != "not_connected" or r["backends"] or r["needsNous"]]
     result = {
         "ok": True,
         "contract": CONTRACT,
@@ -587,11 +590,19 @@ def overview(refresh: bool = False) -> dict[str, Any]:
     return result
 
 
+def _listed(view: dict[str, Any], svc: Service) -> dict[str, Any]:
+    """The service's row, or a plain refusal when this account can't connect it (it isn't on the page)."""
+    row = next((r for r in view["services"] if r["id"] == svc.id), None)
+    if row is None:
+        raise ConnectionsError(f"{svc.label} can't be connected from this app yet.")
+    return row
+
+
 def connect(service_id: str, backend: str = "", env: dict[str, Any] | None = None) -> dict[str, Any]:
     """Start connecting a service: {op, url} to open (or {needs} for keys, or {state: connected} at once)."""
     svc = _find(service_id)
     view = overview()
-    row = next(r for r in view["services"] if r["id"] == svc.id)
+    row = _listed(view, svc)
     allowed = row["backends"]
     backend = backend or (allowed[0] if allowed else "")
     if backend not in allowed:
@@ -658,7 +669,7 @@ def op_cancel(op_id: str) -> dict[str, Any]:
 
 def disconnect(service_id: str) -> dict[str, Any]:
     svc = _find(service_id)
-    row = next(r for r in overview(refresh=True)["services"] if r["id"] == svc.id)
+    row = _listed(overview(refresh=True), svc)
     via = row.get("via")
     if via == "local":
         with chief_scope() as home:
@@ -727,7 +738,7 @@ def _how(connected: list[dict[str, Any]]) -> str:
 
 def tool_request(service_id: str, why: str) -> dict[str, Any]:
     svc = _find(str(service_id or "").strip().lower())
-    row = next(r for r in overview()["services"] if r["id"] == svc.id)
+    row = _listed(overview(), svc)
     if row["state"] == "connected":
         return {"ok": True, "already_connected": True, "service": svc.id, "how": _how([{"via": row["via"]}])}
     return {
