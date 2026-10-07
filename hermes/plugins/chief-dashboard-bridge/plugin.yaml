@@ -1,7 +1,7 @@
 manifest_version: 2
 api_version: 1
 name: chief-dashboard-bridge
-version: 0.1.31
+version: 0.1.32
 description: Loopback bridge for Chief Command Center (Command Center chat platform, roster, kanban status, voice, approvals, phone alerts) and the fleet tools the chief uses to manage its bots. Versioned with the app.
 provides_hooks: []
 author: Chief Command Center contributors
