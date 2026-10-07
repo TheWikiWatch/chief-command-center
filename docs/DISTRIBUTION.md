@@ -59,6 +59,14 @@ An app updates with its own code, so an old version's update problems can't be f
 onto a current version, which fixes them for good (from 0.1.32 the app goes straight to the newest release, retries
 without a refused key, and stays within GitHub's limits).
 
+- **The simplest way, whatever the problem: send them "Update Chief.cmd".** One small file (11 KB; it's attached
+  to every release as `Update-Chief.cmd`, and `node scripts/update-file.mjs` writes it to the releases folder). They
+  double-click it: it finds the newest release, downloads it, checks the checksum and the publisher's signature (the
+  fingerprint is built in), trusts the certificate if needed (one administrator prompt, only then), asks Chief to
+  close cleanly, updates it on the drive it's on and opens it again. All data stays. A log lands on their Desktop
+  ("Chief update log.txt") to send back if anything fails. Windows may show "Windows protected your PC" for a
+  downloaded script: More info, then Run anyway. Gmail won't carry a .cmd (not even zipped): send the release's
+  download link, or use a chat app or a shared drive.
 - **"The update key was refused"** (a key kept from when the releases repository was private, since expired or
   revoked): make a fresh fine-grained token on github.com (Public repositories, read-only; no or a long expiry) and
   have them paste it in Settings → Backup & updates → Update key. It works on every version from 0.1.10, and lifts

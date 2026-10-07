@@ -982,3 +982,21 @@
   key kept; one API call per check and for a 20-release history; going back to an older version, kept against the
   daily check, refused for the running or an unknown version), web (Remove key and its note, the older-version card,
   the history's install, nothing on older apps).
+
+
+**One file to get a stuck tester onto the newest version (2026-10-07).**
+
+- A tester on 0.1.27 saw nothing happen on Check now, even with a fresh key. An app updates with its own code, so
+  rather than chase each old version's way of failing, **"Update Chief.cmd"** updates from outside the app: one small
+  file (11 KB) the tester double-clicks. It finds the newest release (github.com's own redirect, so no API limit),
+  downloads it with progress, checks its checksum and the publisher's signature (the certificate fingerprint is built
+  into the file), trusts the certificate if needed (one administrator prompt, only then), asks Chief to close cleanly
+  (`--quit`, so the Hermes engine stops properly; Windows closes what's left after 30 s), installs it on the drive
+  Chief is on, checks the version and opens Chief. Data is untouched by an update. Everything goes to "Chief update
+  log.txt" on the Desktop.
+- `node scripts/update-file.mjs` makes it from `packaging/tester/update-chief.template.cmd` (the repository and
+  fingerprint come from release.local.json, so neither is in the repository); every release that reaches everyone
+  attaches it as `Update-Chief.cmd`. Because it always fetches the newest release, any copy keeps working.
+- Checked: a dry run through cmd (`CHIEF_UPDATE_DRYRUN=1`, with `CHIEF_UPDATE_FORCE=1` to get past "already up to
+  date") found 0.1.32, downloaded all 782 MB in under a minute, and passed the checksum, signature and trust checks.
+  The install step is the tester kit's, already proven; it wasn't run here, where it would replace the owner's install.

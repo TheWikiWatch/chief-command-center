@@ -121,6 +121,7 @@ if (opt("promote")) {
   step(`Promoting ${version} to everyone…`);
   run("node", ["packaging/release/release-tool.mjs", "promote", "--version", version, "--repo", local.releasesRepo], { what: `Promoting ${version}` });
   testerKit({ upload: true });
+  updateFile();
   afterRelease();
   console.log(`\n✓ ${version} is now the latest release. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);
   process.exit(0);
@@ -256,6 +257,19 @@ function testerKit({ upload = false } = {}) {
   if (up.status !== 0) console.log(`⚠ The zip wasn't attached. Attach it by hand: gh release upload v${version} "${zip}" --repo ${local.releasesRepo}`);
 }
 
+// "Update Chief.cmd" (scripts/update-file.mjs): the one small file a tester double-clicks to get the newest version,
+// attached to every release that reaches everyone. It downloads the release itself, so any copy keeps working. The
+// release stands even if this step fails.
+function updateFile() {
+  step("Making Update Chief.cmd…");
+  if (run("node", ["scripts/update-file.mjs"], { allowFail: true }).status !== 0) return;
+  // GitHub turns spaces in asset names into dots: give it a dash.
+  const named = path.join(local.releasesDir, "Update-Chief.cmd");
+  copyFileSync(path.join(local.releasesDir, "Update Chief.cmd"), named);
+  const up = run("gh", ["release", "upload", `v${version}`, named, "--repo", local.releasesRepo, "--clobber"], { allowFail: true });
+  if (up.status !== 0) console.log(`⚠ Update-Chief.cmd wasn't attached. Attach it by hand: gh release upload v${version} "${named}" --repo ${local.releasesRepo}`);
+}
+
 // Optional, this PC only: a command to run after each release that reaches everyone (afterRelease in
 // release.local.json, e.g. refreshing an installer kit kept outside the repository). "{version}" is replaced; a
 // failure never undoes the release.
@@ -307,5 +321,6 @@ if (early) {
   process.exit(0);
 }
 testerKit({ upload: true });
+updateFile();
 afterRelease();
 console.log(`\n✓ Released ${version}. Installed apps offer it within a day, or at once with Settings → Backup & updates → Check now.`);
