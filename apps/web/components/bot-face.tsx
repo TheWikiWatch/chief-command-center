@@ -22,10 +22,10 @@ import {
   type BubbleBody,
   type BubbleEyes,
 } from "@/lib/bubble";
-import { kickFaceClock, useFaceClock } from "@/lib/face-clock";
+import { clockTime, kickFaceClock, useFaceClock } from "@/lib/face-clock";
 import { BLOB_KIND_TRAIT, cn, isBlobShape, parseBlobShape } from "@/lib/faces";
 import { CLOSED, mouthPath, mouthStroke, mouthTarget, stepMouth, voiceFromBands, type Mouth, type MouthMood } from "@/lib/mouth";
-import { gazeSeed, scanGaze } from "@/lib/eye-scan";
+import { gazeSeed, headGaze, scanGaze } from "@/lib/eye-scan";
 import { lookState, measureLook, stepLook, type Look } from "@/lib/pointer";
 import type { FaceLook, Person, Ring } from "@/lib/types";
 
@@ -113,7 +113,31 @@ export function mouthMood(mood: FaceMood, look?: Look | null): MouthMood {
  * straight out at you, widens its eyes and gives a small hop; a sleeping face flutters its eyes open
  * once and goes back to sleep.
  */
-export function facePose(mood: FaceMood, t: number, id: BotIdentity, level = 0, look?: Look | null): Pose {
+/** A mood change in progress: the pose blends from the old mood's to the new one's (k 0..1). */
+export type PoseBlend = { from: FaceMood; k: number };
+
+/** How long a face takes to move from one mood's pose to the next (seconds). */
+export const MOOD_BLEND_S = 0.36;
+
+function mixPose(a: Pose, b: Pose, k: number): Pose {
+  const m = (x: number, y: number) => x + (y - x) * k;
+  return {
+    tx: m(a.tx, b.tx),
+    ty: m(a.ty, b.ty),
+    roll: m(a.roll, b.roll),
+    scale: m(a.scale, b.scale),
+    gazeX: m(a.gazeX, b.gazeX),
+    gazeY: m(a.gazeY, b.gazeY),
+    lid: m(a.lid, b.lid),
+    dots: [m(a.dots[0], b.dots[0]), m(a.dots[1], b.dots[1]), m(a.dots[2], b.dots[2])],
+    zz: m(a.zz, b.zz),
+    eyeScale: m(a.eyeScale, b.eyeScale),
+  };
+}
+
+export function facePose(mood: FaceMood, t: number, id: BotIdentity, level = 0, look?: Look | null, blend?: PoseBlend): Pose {
+  // A mood change glides instead of popping (thinking starting or stopping, a reply beginning).
+  if (blend && blend.k < 1 && blend.from !== mood) return mixPose(facePose(blend.from, t, id, level, look), facePose(mood, t, id, level, look), blend.k);
   const pose = moodPose(mood, t, id, level);
   if (!look) return pose;
   if (look.hover && mood === "asleep") {
@@ -170,18 +194,26 @@ function moodPose(mood: FaceMood, t: number, id: BotIdentity, level = 0): Pose {
     case "thinking": {
       // Busy eyes hold and jump (lib/eye-scan.ts): reading along a line while working, up and to one side while
       // thinking. They used to drift on a slow sine and blink every 1.45 s, which read as dazed. The head leans a
-      // little toward where the eyes look instead of rocking, and blinks keep the face's own rhythm.
-      const rate = mood === "working" ? 2.6 : 2.4;
-      const g = scanGaze(mood, t, gazeSeed(id.seed));
+      // little toward where the eyes look, following them smoothly (headGaze): when it snapped with every jump the
+      // whole face twitched. Blinks keep the face's own rhythm.
+      const rate = mood === "working" ? 2.6 : 2.2;
+      const seed = gazeSeed(id.seed);
+      const g = scanGaze(mood, t, seed);
+      const h = headGaze(mood, t, seed);
+      // The thought dots fade on a smooth wave (a clipped sine has a hard corner each cycle, which reads as flicker).
+      const wave = (phase: number) => {
+        const s = (1 + sin(t * rate - phase)) / 2;
+        return 0.18 + 0.82 * s * s;
+      };
       return {
         ...base,
-        tx: g.x * 0.7,
-        ty: base.ty - 0.3 + g.y * 0.25,
-        roll: g.x * (mood === "thinking" ? 5 : 2.5),
+        tx: h.x * 0.7,
+        ty: base.ty - 0.3 + h.y * 0.25,
+        roll: h.x * (mood === "thinking" ? 4 : 2.5),
         gazeX: g.x * 3.3,
         gazeY: g.y * 2.2,
         lid: blinking ? 0.35 : mood === "working" ? 2.1 : 2.35,
-        dots: [0.2 + 0.8 * Math.max(0, sin(t * rate)), 0.2 + 0.8 * Math.max(0, sin(t * rate - 0.7)), 0.2 + 0.8 * Math.max(0, sin(t * rate - 1.4))],
+        dots: [wave(0), wave(0.8), wave(1.6)],
       };
     }
     case "failed":
@@ -242,11 +274,32 @@ export function BotFace({ name, profileId, shape, color, avatarUrl, ring = "idle
  * One face's frame loop on the shared clock. Each frame gets the time, where the cursor pulls it, the current mood
  * and the live level (mic or speech) already smoothed, so a face's `draw` needs nothing from this hook's own state.
  */
+type MoodTrack = { shown: FaceMood; change: { from: FaceMood; at: number } | null };
+
+/**
+ * The blend a face is in at time `t`, noting a mood change first (by whichever draws first, a frame or the rig's
+ * effect, so no frame shows the new mood un-blended).
+ */
+function blendFor(track: MoodTrack, t: number, md: FaceMood, still: boolean | undefined): PoseBlend | undefined {
+  if (track.shown !== md) {
+    track.change = { from: track.shown, at: t };
+    track.shown = md;
+  }
+  const c = track.change;
+  if (!c || still) return undefined;
+  const u = (t - c.at) / MOOD_BLEND_S;
+  if (u >= 1 || u < 0) return undefined;
+  return { from: c.from, k: u * u * (3 - 2 * u) };
+}
+
+/** Moods whose motion is being watched: the face clock gives them full frame rate on phones too. */
+const BUSY_MOODS = new Set<FaceMood>(["thinking", "working", "speaking", "listening", "celebrating"]);
+
 function useRig(
   el: React.RefObject<Element | null>,
   mood: FaceMood,
   still: boolean | undefined,
-  draw: (t: number, look: Look | null, mood: FaceMood, level: number) => void,
+  draw: (t: number, look: Look | null, mood: FaceMood, level: number, blend?: PoseBlend) => void,
 ) {
   const moodRef = useRef(mood);
   moodRef.current = mood;
@@ -254,20 +307,26 @@ function useRig(
   drawRef.current = draw;
   const smoothed = useRef(0);
   const look = useRef(lookState());
+  // The mood shown, and the last change (clock time): the pose blends across MOOD_BLEND_S.
+  const track = useRef<MoodTrack>({ shown: mood, change: null });
   useFaceClock(
     el,
     (t) => {
       const md = moodRef.current;
       smoothed.current += (liveLevel(md, t) - smoothed.current) * 0.35;
-      drawRef.current(t, look.current.box || look.current.w > 0.001 ? stepLook(look.current, t) : null, md, smoothed.current);
+      drawRef.current(t, look.current.box || look.current.w > 0.001 ? stepLook(look.current, t) : null, md, smoothed.current, blendFor(track.current, t, md, still));
     },
     !still,
     () => measureLook(look.current, el.current),
+    () => BUSY_MOODS.has(moodRef.current),
   );
   useEffect(() => {
-    drawRef.current(0, null, moodRef.current, smoothed.current);
+    // Drawn at the clock's real time: a redraw at t = 0 showed the face's pose from the clock's start for one frame,
+    // a visible pop at every mood change.
+    const now = still ? 0 : clockTime();
+    drawRef.current(now, null, mood, smoothed.current, blendFor(track.current, now, mood, still));
     kickFaceClock();
-  }, [mood]);
+  }, [mood, still]);
 }
 
 /** Faces smaller than this show no mouth: at avatar-dot sizes it reads as noise. */
@@ -323,8 +382,8 @@ function GeometricFace({
 
   const showMouth = size >= MOUTH_MIN_PX;
   const advanceMouth = useMouth(identity, still);
-  useRig(svg, mood, still, (t, look, md, level) => {
-    const pose = facePose(md, t, identity, level, look);
+  useRig(svg, mood, still, (t, look, md, level, blend) => {
+    const pose = facePose(md, t, identity, level, look, blend);
     body.current?.setAttribute(
       "transform",
       `translate(${pose.tx.toFixed(2)} ${pose.ty.toFixed(2)}) rotate(${pose.roll.toFixed(2)} 20 22) translate(20 22) scale(${pose.scale.toFixed(3)}) translate(-20 -22)`,
@@ -458,8 +517,8 @@ function BubbleFace({
 
   const showMouth = size >= MOUTH_MIN_PX;
   const advanceMouth = useMouth(identity, still);
-  useRig(svg, mood, still, (t, look, md, level) => {
-    const pose = facePose(md, t, identity, level, look);
+  useRig(svg, mood, still, (t, look, md, level, blend) => {
+    const pose = facePose(md, t, identity, level, look, blend);
     const breath = Math.sin(((t + identity.phase) * Math.PI * 2) / identity.breathe);
     const lift = still ? 1 : floatHeight(md, t, identity.phase);
     const s = still ? 0 : squash(md, t, breath, level);
@@ -609,8 +668,8 @@ function PhotoFace({
   gazeRef?: (node: HTMLImageElement | null) => void;
 }) {
   const img = useRef<HTMLImageElement>(null);
-  useRig(img, mood, still, (t, look, md, level) => {
-    const pose = facePose(md, t, identity, level, look);
+  useRig(img, mood, still, (t, look, md, level, blend) => {
+    const pose = facePose(md, t, identity, level, look, blend);
     if (img.current) img.current.style.transform = `translate(${(pose.tx * 0.4).toFixed(2)}px, ${(pose.ty * 0.6).toFixed(2)}px) rotate(${(pose.roll * 0.4).toFixed(2)}deg) scale(${pose.scale.toFixed(3)})`;
   });
   return (
@@ -682,8 +741,8 @@ function BlobFace({
     injected.current = el;
     return el;
   };
-  useRig(box, mood, still, (t, look, md, level) => {
-    const pose = facePose(md, t, identity, level, look);
+  useRig(box, mood, still, (t, look, md, level, blend) => {
+    const pose = facePose(md, t, identity, level, look, blend);
     const k = size / 40;
     if (box.current) box.current.style.transform = `translate(${(pose.tx * k * 0.5).toFixed(2)}px, ${(pose.ty * k * 0.6).toFixed(2)}px) rotate(${(pose.roll * 0.5).toFixed(2)}deg) scale(${pose.scale.toFixed(3)})`;
     if (!showMouth || !frame) return;

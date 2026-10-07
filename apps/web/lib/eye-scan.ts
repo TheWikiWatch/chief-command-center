@@ -88,6 +88,29 @@ export function scanGaze(mood: BusyMood, t: number, seed = 1): GazePoint {
   return { x: last.x, y: last.y };
 }
 
+/** How far back the head's gaze looks (seconds), and in how many samples. */
+const HEAD_WINDOW_S = 0.6;
+const HEAD_SAMPLES = 24;
+
+/**
+ * Where a busy face's head points: the eyes' gaze over the last 0.6 s, averaged through a raised-cosine window (light
+ * at both ends), so every snap of the eyes becomes a smooth, bell-shaped turn of the head about a quarter second later,
+ * the way people move. A head (a whole soft body, for a Bubble) turning with every snap read as a twitch. Pure.
+ */
+export function headGaze(mood: BusyMood, t: number, seed = 1): GazePoint {
+  let x = 0;
+  let y = 0;
+  let total = 0;
+  for (let i = 0; i < HEAD_SAMPLES; i++) {
+    const w = Math.sin((Math.PI * (i + 0.5)) / HEAD_SAMPLES) ** 2;
+    const g = scanGaze(mood, t - (i * HEAD_WINDOW_S) / HEAD_SAMPLES, seed);
+    x += g.x * w;
+    y += g.y * w;
+    total += w;
+  }
+  return { x: x / total, y: y / total };
+}
+
 /** A stable number from a name, for `scanGaze`'s seed. */
 export function gazeSeed(name: string): number {
   let h = 2166136261;

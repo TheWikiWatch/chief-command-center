@@ -1000,3 +1000,19 @@
 - Checked: a dry run through cmd (`CHIEF_UPDATE_DRYRUN=1`, with `CHIEF_UPDATE_FORCE=1` to get past "already up to
   date") found 0.1.32, downloaded all 782 MB in under a minute, and passed the checksum, signature and trust checks.
   The install step is the tester kit's, already proven; it wasn't run here, where it would replace the owner's install.
+
+
+**Calmer thinking, smoother faces (2026-10-07).**
+
+- **Chief thinking was too much.** Around Chief's face, thinking showed a fast spinning ring, a brighter glow and eight
+  dots on two orbits at once, on top of the face's own thought dots. Now the glow simply breathes (a little quicker
+  while working) and the face says the rest; the ring is kept for the voice (speaking, listening) and the amber
+  "needs you". Everywhere Chief appears: the Fleet orbit, the phone's top left, the chat header, voice mode.
+- **The Bubble looked twitchy while thinking.** Busy eyes jump between points on purpose, but the whole head leaned
+  and tilted up to 5 degrees with each 60 ms jump, so a soft body snapped sideways; on phones, faces also ran at 30 fps.
+  Now the eyes still jump and the head follows them smoothly a quarter second later; a mood change glides over a third
+  of a second instead of popping (it also no longer redraws the face at the clock's start for a frame); the thought
+  dots fade on a smooth wave; and phones run faces at 60 fps while one is busy. Measured in the page while thinking:
+  60 fps, at most 0.1 degrees of tilt per frame (about a tenth of before).
+- Tests: per-frame motion of the head, roll, lean and dots for thinking and working; mood blends start and end exactly
+  and move a little each frame; the presence CSS keeps ring and orbit off while thinking and the ring for the voice.

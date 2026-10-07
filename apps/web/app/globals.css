@@ -315,8 +315,8 @@ body {
   transition: opacity 400ms var(--ease-enter);
 }
 
-.presence[data-mood="thinking"] .pr-ring,
-.presence[data-mood="working"] .pr-ring,
+/* The ring is the voice's (and "needs you"'s): thinking and working breathe a glow instead (below). One calm signal
+   per state; the face's own thought dots and eyes say the rest. */
 .presence[data-mood="speaking"] .pr-ring,
 .presence[data-mood="listening"] .pr-ring,
 .presence[data-mood="approval"] .pr-ring,
@@ -396,22 +396,41 @@ body {
   }
 }
 
-.presence[data-mood="thinking"] {
-  --spin: 3.2s;
-  --orbit: 4.5s;
+/* Thinking and working: the glow breathes, slowly while thinking and a little quicker while working. It used to be
+   a fast spinning ring, the brighter glow and eight orbiting dots at once, which read as too much. */
+.presence[data-mood="thinking"] .pr-bloom,
+.presence[data-mood="working"] .pr-bloom {
+  animation: pr-breathe 2.8s var(--ease-move) infinite;
 }
 
-.presence[data-mood="thinking"] .pr-orbit,
-.presence[data-mood="working"] .pr-orbit {
-  opacity: 1;
+.presence[data-mood="working"] .pr-bloom {
+  animation-duration: 2.1s;
 }
 
-.presence[data-mood="thinking"] .pr-bloom {
-  opacity: 0.6;
+@keyframes pr-breathe {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: translate(-50%, -50%) scale(0.94);
+  }
+  50% {
+    opacity: 0.56;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
 }
 
-.presence[data-mood="working"] {
-  --spin: 7s;
+@media (prefers-reduced-motion: reduce) {
+  .presence[data-mood="thinking"] .pr-bloom,
+  .presence[data-mood="working"] .pr-bloom {
+    animation: none;
+    opacity: 0.42;
+  }
+}
+
+:root[data-motion="reduced"] .presence[data-mood="thinking"] .pr-bloom,
+:root[data-motion="reduced"] .presence[data-mood="working"] .pr-bloom {
+  animation: none;
+  opacity: 0.42;
 }
 
 .presence[data-mood="speaking"],

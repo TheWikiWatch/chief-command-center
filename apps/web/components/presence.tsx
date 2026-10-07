@@ -25,8 +25,9 @@ const FACE: Record<PresenceMood, FaceMood> = {
 };
 
 /**
- * The chief's presence (VISUAL-OVERHAUL §4.3): its face inside an aurora ring, a bloom that swells
- * with its voice, orbiting particles while it thinks, and a voice ring driven by real audio.
+ * The chief's presence (VISUAL-OVERHAUL §4.3): its face inside an aurora ring while it speaks or listens, a bloom that
+ * swells with its voice and breathes while it thinks or works, a voice ring driven by real audio, and orbiting sparks
+ * for a moment when it celebrates.
  * Speaking is picked up from the speech queue, so every placement reacts without extra wiring.
  */
 export function ChiefPresence({

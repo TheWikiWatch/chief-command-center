@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start --hostname 127.0.0.1 --port 3100",
     "check": "npm run typecheck && npm run lint && npm test",
-    "lint": "eslint . --max-warnings 115",
+    "lint": "eslint . --max-warnings 114",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:bridge": "vitest run tests/bridge-contract.test.ts",

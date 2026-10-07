@@ -172,6 +172,13 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **A version chosen from the history** (`installVersion`) is kept against the daily check (`chosen`): the check would
   otherwise offer the latest instead. It downloads by tag (`source.select`), so it needs a GitHub source; its
   description comes from the kept, verified history. `older` marks a state whose version is older than the running one.
+- **A face's body never moves with the eyes' jumps.** Busy eyes snap between holds (`scanGaze`, 60 ms); the head,
+  lean and roll follow `headGaze` (the eyes' last 0.6 s through a raised-cosine window). Driving the body from
+  `scanGaze` made a Bubble twitch. A mood change blends over `MOOD_BLEND_S` (`blendFor` in `useRig`, noticed by
+  whichever draws first), and the rig's redraw on a mood change uses `clockTime()`, never `t = 0`: drawing at 0 showed
+  the pose from the clock's start for one frame. `tests/face-motion.test.ts` measures per-frame steps.
+- **Chief's ring is the voice's.** Thinking and working breathe the glow (`pr-breathe`); the ring and the orbiting
+  dots stay off then (the orbit is only for the celebration moment). `tests/face-motion.test.ts` reads the CSS.
 - **Early updates are GitHub prereleases.** Without Early updates the source reads `/releases/latest`, which GitHub never points at a prerelease; with it, `/releases?per_page=20` and the highest version carrying a `release.json`, drafts never (`newestRelease`). `release.mjs --channel early` publishes as a prerelease and skips the tester kit and `afterRelease`; `--promote` flips the same release to latest and runs them. A version is never rebuilt between the two.
 
 ## The message box hint
