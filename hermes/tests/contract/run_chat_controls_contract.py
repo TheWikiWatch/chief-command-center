@@ -300,6 +300,24 @@ def main() -> int:
                 env_reply or "no answer within 240 s (the terminal didn't finish; not a sign the token was seen)",
             )
 
+        # An approval: Hermes posts "Hermes wants to run a command that needs your OK" with the command to the chat
+        # platform when it asks (gateway/platforms/base_exec_approval.py). The approval itself rides the transcript,
+        # so the bridge keeps that announcement out of the notices (chat_state.approval_announcement); if Hermes
+        # changes those words, the chat shows the approval twice and this fails.
+        wait(lambda: not generating(), 60)
+        start = len(messages())
+        asked_at = time.time()
+        call("/send", {"text": "APPROVEME please", "client_id": "c-approve"})
+        pending = wait(lambda: call("/transcript?after=0").get("approval") or None, 120)
+        check("an approval is asked for", bool(pending) and "chief-smoke-absent" in str((pending or {}).get("command")), pending)
+        if pending:
+            later = [n for n in call("/transcript?after=0").get("notices") or [] if float(n.get("at") or 0) >= asked_at - 1]
+            check("its announcement is not shown as a notice", not any("needs your OK" in n.get("text", "") for n in later), later)
+            approved = call("/approve", {"requestId": pending.get("requestId"), "choice": "once"})
+            check("allowing it once is accepted", approved.get("ok") is True, approved)
+            ran = wait(lambda: assistant_after(start, "Approved and ran"), 120)
+            check("the command runs after the approval", ran is not None, messages()[start:])
+
         # Background work: delegated tasks keep running after the turn that started them has ended (Hermes always runs
         # them asynchronously), and the chat shows them instead of looking idle.
         wait(lambda: not generating(), 60)

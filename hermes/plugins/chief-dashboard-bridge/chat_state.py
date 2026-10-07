@@ -196,7 +196,61 @@ def unwrap_cron(text: str) -> tuple[str, dict[str, str] | None]:
     body = text[divider + len(_CRON_DIVIDER) : footer].strip()
     if not body:
         return text, None
-    return body, {"name": name, "jobId": job_id}
+    return body, {"name": name, "jobId": job_id, "profile": CHIEF_PROFILE}
+
+
+# The chief's own profile: the gateway that posts these notices runs its jobs (routines.run_now / update take it).
+CHIEF_PROFILE = "chief"
+
+_CRON_FAILED = re.compile(r"^⚠️ Cron '(?P<name>.+?)' failed: (?P<rest>.+)$", re.S)
+_CRON_JOB_ID = re.compile(r"`hermes cron (?:runs|run|edit|pause) (?P<id>[^`\s]+)`")
+_CRON_STREAK = re.compile(r"This job has failed (?P<n>\d+) runs in a row")
+# Where Hermes's own advice starts after the error (cron/scheduler_failure_copy.py): the app has buttons for it.
+_CRON_ADVICE = re.compile(r"\.\s+(?=See the full run with|Check the script's output|Run log:|It will run again|[^.\n]*`hermes cron run )")
+
+
+def unwrap_cron_failure(text: str) -> tuple[str, dict[str, str] | None, dict[str, Any] | None]:
+    """Hermes announces a scheduled job that failed (cron/scheduler_failure_copy.py) as
+
+        ⚠️ Cron '<name>' failed: <error>. See the full run with `hermes cron runs <id>` (…); run it again with
+        `hermes cron run <id>`, edit it with …, or pause it with …
+
+    sometimes followed by "This job has failed N runs in a row — worth a review. …" (cron/scheduler.py). The app
+    shows the routine's name, the error and the streak in its own card, with Run again and Pause as buttons, so
+    this returns the error alone, the routine and the failure (Hermes's full text kept as `detail`). Anything
+    else is returned unchanged."""
+    m = _CRON_FAILED.match(text.strip())
+    if not m:
+        return text, None, None
+    rest = m.group("rest")
+    # The error is the first sentence (Hermes's causes are short phrases); its advice, where recognised, ends it too.
+    ends = [cut.start() for cut in (_CRON_ADVICE.search(rest),) if cut] + [i for i in (rest.find(". "), rest.find("\n")) if i >= 0]
+    error = rest[: min(ends)] if ends else rest
+    error = " ".join(error.split()).rstrip(".").strip() or "it didn't finish"
+    job = _CRON_JOB_ID.search(text)
+    streak = _CRON_STREAK.search(text)
+    routine = {"name": m.group("name").strip(), "jobId": job.group("id") if job else "", "profile": CHIEF_PROFILE}
+    return error, routine, {"error": error, "streak": int(streak.group("n")) if streak else 1, "detail": text.strip()}
+
+
+_APPROVAL_HEADER_FALLBACK = "Hermes wants to run a command that needs your OK"
+_approval_header: str | None = None
+
+
+def approval_announcement(text: str) -> bool:
+    """Hermes posts "⚠️ Hermes wants to run a command that needs your OK" with the command whenever it asks for
+    an approval (gateway/platforms/base_exec_approval.py). The app shows the approval as its own sheet, so the
+    announcement is never a notice. The words come from Hermes, with a copy here in case they move."""
+    global _approval_header
+    if _approval_header is None:
+        try:
+            from . import hermes_api
+
+            _approval_header = str(hermes_api.get("gateway.platforms.base_exec_approval", "EA_HEADER_TEXT"))
+        except Exception:
+            _approval_header = _APPROVAL_HEADER_FALLBACK
+    first = text.lstrip().split("\n", 1)[0]
+    return _approval_header in first or _APPROVAL_HEADER_FALLBACK in first
 
 
 def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str = "") -> list[dict[str, Any]]:
@@ -225,18 +279,26 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
         # A long reply can reach the adapter in pieces: a piece of a reply is a reply too.
         if not attachments and (not text or any(text == reply or text in reply for reply in replies)):
             continue
+        # The approval itself rides the transcript (its sheet); Hermes's announcement of it would show twice.
+        if text and approval_announcement(stripped):
+            continue
         for a in attachments:
             remember_media_path(str(a.get("path") or ""))
+        # A failure comes inside the same envelope as an answer ("Cronjob Response: …"), or bare.
         body, routine = unwrap_cron(stripped)
+        body, found, failure = unwrap_cron_failure(body)
+        routine = routine or found
         item: dict[str, Any] = {
             "id": str(row.get("id") or ""),
             "at": float(row.get("at") or 0),
             "text": body,
             # Hermes delivers a scheduled job's answer as "Cronjob Response: <name>"; the app's own relays say "cron".
-            "source": "scheduled" if row.get("source") == "cron" or raw.startswith("Cronjob Response:") else "notice",
+            "source": "scheduled" if row.get("source") == "cron" or raw.startswith("Cronjob Response:") or failure else "notice",
         }
         if routine:
             item["routine"] = routine
+        if failure:
+            item["failure"] = failure
         if attachments:
             item["attachments"] = attachments
         out.append(item)

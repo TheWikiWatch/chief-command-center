@@ -591,10 +591,22 @@ export function ChiefChat({
     });
   }
 
-  async function sendBody(body: string, files: PendingFile[] = pendingFiles): Promise<void> {
+  // Sends go one after another: a message typed while one is on its way follows it instead of colliding with
+  // it (the box never locks), and each still gets its own id, so nothing is doubled.
+  const inflight = useRef<Promise<void> | null>(null);
+  function sendBody(body: string, files: PendingFile[] = pendingFiles): Promise<void> {
+    const previous = inflight.current;
+    const run = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() => sendOne(body, files));
+    inflight.current = run;
+    void run.catch(() => undefined).finally(() => {
+      if (inflight.current === run) inflight.current = null;
+    });
+    return run;
+  }
+
+  async function sendOne(body: string, files: PendingFile[]): Promise<void> {
     const trimmed = body.trim();
     if (!trimmed && !files.length) throw new Error("Message is empty.");
-    if (busyRef.current) throw new Error("A message is still sending. Try again when it finishes.");
     if (authFailed) throw new Error(`${assistantName()} is unavailable. Your message has been kept.`);
     // While the chief waits on its question, what you type is the answer (shown as the question and its
     // answer, not as a new message).
@@ -769,7 +781,17 @@ export function ChiefChat({
     e.preventDefault();
     const body = draft.get().trim();
     if (!body && !pendingFiles.length) return;
-    try { await sendBody(body, pendingFiles); setText(""); } catch (error) { setSendError(error instanceof Error ? error.message : "Send failed. Your draft has been kept."); }
+    const files = pendingFiles;
+    // The box clears at once, so the next message can be typed while this one goes. A refused send puts the
+    // text back (ahead of anything typed since).
+    setText("");
+    try {
+      await sendBody(body, files);
+    } catch (error) {
+      const typed = draft.get();
+      setText(typed.trim() && body ? `${body}\n\n${typed}` : body || typed);
+      setSendError(error instanceof Error ? error.message : "Send failed. Your draft has been kept.");
+    }
   }
 
   function chooseApproval(choice: ApprovalChoice) {
@@ -848,7 +870,7 @@ export function ChiefChat({
   const lastReply = voiceOpen ? lastText(visible, (m) => m.role === "assistant" && chatTone(m) === "reply") : "";
 
   // Files can be added while the chief is offline too: they wait in the outbox with the message.
-  const canAttach = !authFailed && !busy;
+  const canAttach = !authFailed;
   const draggingFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types || []).includes("Files");
 
   return (

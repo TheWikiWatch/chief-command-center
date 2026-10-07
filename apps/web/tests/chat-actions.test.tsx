@@ -121,3 +121,30 @@ it("the phone header folds voice mode, status and settings into one overflow men
   fireEvent.click(screen.getByRole("menuitem",{name:"Settings"}));
   expect(onOpenSettings).toHaveBeenCalled();
 });
+it("the box stays writable and focused while a message is on its way; the next one follows it",async()=>{
+  let finishFirst!:(v:{ok:boolean})=>void;
+  api.send.mockImplementationOnce(()=>new Promise(r=>{finishFirst=r;})).mockResolvedValue({ok:true});
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  const input=screen.getByRole("textbox", { name: "Message Nova" });input.focus();
+  fireEvent.change(input,{target:{value:"first"}});fireEvent.submit(input.closest("form")!);
+  await waitFor(()=>expect(api.send).toHaveBeenCalledTimes(1));
+  expect(input).toBeEnabled();expect(input).toHaveValue("");expect(document.activeElement).toBe(input);
+  fireEvent.change(input,{target:{value:"second"}});fireEvent.submit(input.closest("form")!);
+  await new Promise(r=>setTimeout(r,50));
+  expect(api.send).toHaveBeenCalledTimes(1);
+  finishFirst({ok:true});
+  await waitFor(()=>expect(api.send).toHaveBeenCalledTimes(2));
+  expect(api.send.mock.calls[1][0]).toBe("second");expect(api.send.mock.calls[1][2]).not.toBe(api.send.mock.calls[0][2]);
+});
+it("a refused message goes back into the box ahead of what was typed since",async()=>{
+  let refuse!:(e:Error)=>void;
+  api.send.mockImplementationOnce(()=>new Promise((_,reject)=>{refuse=reject;})).mockResolvedValue({ok:true});
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
+  const input=screen.getByRole("textbox", { name: "Message Nova" });
+  fireEvent.change(input,{target:{value:"first"}});fireEvent.submit(input.closest("form")!);
+  await waitFor(()=>expect(api.send).toHaveBeenCalledTimes(1));
+  fireEvent.change(input,{target:{value:"and then"}});
+  refuse(refused("Nova refused it"));
+  await screen.findByText(/Nova refused it/);
+  expect(input).toHaveValue("first\n\nand then");
+});

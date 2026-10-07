@@ -51,3 +51,29 @@ it("turns a pasted screenshot into an attachment", () => {
   fireEvent.paste(field, { clipboardData: { files: [file], getData: () => "" } });
   expect(onAddFiles).toHaveBeenCalledWith([file]);
 });
+
+it("stays writable while a message is on its way (busy): Enter still submits", () => {
+  const submit = vi.fn((e: { preventDefault: () => void }) => e.preventDefault());
+  render(
+    <form onSubmit={submit}>
+      <Composer
+        text="the next thought"
+        onText={vi.fn()}
+        pendingFiles={[]}
+        onAddFiles={vi.fn()}
+        onRemoveFile={vi.fn()}
+        connected
+        busy
+        micStatus={{ state: "idle", cancelling: false }}
+        onMicStatus={vi.fn()}
+        onTranscript={vi.fn(async () => undefined)}
+        onMicError={vi.fn()}
+      />
+    </form>,
+  );
+  const field = screen.getByRole("textbox", { name: "Message Nova" });
+  expect(field).toBeEnabled();
+  expect(screen.getByRole("button", { name: "Send" })).toBeEnabled();
+  fireEvent.keyDown(field, { key: "Enter" });
+  expect(submit).toHaveBeenCalledTimes(1);
+});

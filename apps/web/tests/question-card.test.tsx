@@ -111,3 +111,33 @@ it("only the newest notice offers its buttons", () => {
   rerender(<Thread {...base} messages={[{ id: 1, role: "user", content: "hi", timestamp: "50" }, { id: 2, role: "assistant", content: "Fresh start.", timestamp: "200" }]} notices={[older]} />);
   expect(screen.queryByRole("button", { name: "Approve once" })).toBeNull();
 });
+
+it("a failed routine is a card with the error, the streak, Run again and Pause", async () => {
+  const { routinesApi } = await import("@/lib/routines-client");
+  const run = vi.spyOn(routinesApi, "run").mockResolvedValue({ ok: true });
+  const update = vi.spyOn(routinesApi, "update").mockResolvedValue({ ok: true });
+  render(
+    <NoticeBody
+      notice={{
+        id: "f",
+        at: 1,
+        text: "Connection error",
+        source: "scheduled",
+        routine: { name: "Second Brain: morning", jobId: "f78b", profile: "chief" },
+        failure: { error: "Connection error", streak: 4, detail: "⚠️ Cron 'Second Brain: morning' failed: Connection error. See the full run with `hermes cron runs f78b`" },
+      }}
+    />,
+  );
+  expect(screen.getByText("Second Brain: morning")).toBeInTheDocument();
+  expect(screen.getByText("Failed · Connection error")).toBeInTheDocument();
+  expect(screen.getByText("4 in a row")).toBeInTheDocument();
+  expect(screen.queryByText(/hermes cron runs/)).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Details" }));
+  expect(screen.getByText(/hermes cron runs f78b/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Run again" }));
+  await screen.findByText("Started");
+  expect(run).toHaveBeenCalledWith("chief", "f78b");
+  fireEvent.click(screen.getByRole("button", { name: "Pause" }));
+  await screen.findByText("Paused");
+  expect(update).toHaveBeenCalledWith("chief", "f78b", { enabled: false });
+});

@@ -53,6 +53,7 @@ export function Composer({
   connected: boolean;
   /** The chief is unreachable but messages can still be written: they wait in the outbox. The mic needs it. */
   offline?: boolean;
+  /** A send is on its way. The box stays writable (the next message goes after it); only the mic waits. */
   busy: boolean;
   micStatus: MicStatus;
   onMicStatus: (status: MicStatus) => void;
@@ -194,7 +195,7 @@ export function Composer({
               className={`press flex h-10 w-10 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg disabled:opacity-40 ${menu ? "bg-fill-3 text-fg" : ""}`}
               aria-label="Add attachment or emoji"
               aria-expanded={menu}
-              disabled={!writable || busy}
+              disabled={!writable}
               onClick={() => {
                 setPicker(false);
                 setMenu((v) => !v);
@@ -266,20 +267,20 @@ export function Composer({
             onPaste={(e) => {
               // A pasted screenshot or copied file becomes an attachment; pasted text stays text.
               const files = e.clipboardData?.files;
-              if (!files?.length || !writable || busy) return;
+              if (!files?.length || !writable) return;
               if (!e.clipboardData.getData("text/plain")) e.preventDefault();
               onAddFiles(files);
             }}
             enterKeyHint={phone ? "enter" : "send"}
             aria-label={hint}
             title={text ? undefined : hint}
-            disabled={!writable || busy}
+            disabled={!writable}
             rows={1}
             className="block max-h-[168px] w-full resize-none bg-transparent px-1.5 py-3 leading-6 text-fg outline-hidden focus-visible:outline-hidden disabled:opacity-60"
           />
           {/* The hint, on the box's own padding, size and line height: one line, shortened with "…" when narrow. */}
           {text ? null : (
-            <span aria-hidden="true" className={`composer-hint pointer-events-none absolute inset-x-0 top-0 truncate px-1.5 py-3 leading-6 text-fg-3 ${!writable || busy ? "opacity-60" : ""}`}>
+            <span aria-hidden="true" className={`composer-hint pointer-events-none absolute inset-x-0 top-0 truncate px-1.5 py-3 leading-6 text-fg-3 ${!writable ? "opacity-60" : ""}`}>
               {hint}
             </span>
           )}
@@ -327,7 +328,7 @@ export function Composer({
                 type="submit"
                 aria-label={connected ? (answering ? "Send answer" : working ? `Add to ${assistant}'s current work` : "Send") : `Queue for ${assistant}`}
                 title={connected && answering ? "Send answer" : connected && working ? `Add to ${assistant}'s current work (Enter)` : undefined}
-                disabled={!writable || busy}
+                disabled={!writable}
                 className="press flex h-11 w-11 items-center justify-center rounded-full bg-accent-solid text-white shadow-[0_4px_18px_rgb(var(--c-accent)/0.35)] disabled:opacity-40"
                 initial={{ opacity: 0, scale: 0.6, rotate: -90 }}
                 animate={{ opacity: 1, scale: 1, rotate: 0, transition: SPRING.snappy }}

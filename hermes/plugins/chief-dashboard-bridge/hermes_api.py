@@ -24,6 +24,8 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
     "approvals": {
         "tools.approval": ("get_pending_gateway_approval", "list_gateway_approvals", "resolve_gateway_approval"),
         "tools.slash_confirm": ("get_pending",),
+        # The words Hermes posts when it asks for an approval: the chat drops that announcement (the sheet shows it).
+        "gateway.platforms.base_exec_approval": ("EA_HEADER_TEXT",),
     },
     "questions": {
         "tools.clarify_gateway": ("mark_awaiting_text", "resolve_gateway_clarify", "get_pending_for_session"),

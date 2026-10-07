@@ -94,8 +94,10 @@ export type ChatNotice = {
   at: number;
   text: string;
   source: "scheduled" | "notice";
-  /** A scheduled job's answer, unwrapped by the bridge: which routine it came from. */
-  routine?: { name: string; jobId: string };
+  /** A scheduled job's answer, unwrapped by the bridge: which routine it came from (and whose it is). */
+  routine?: { name: string; jobId: string; profile?: string };
+  /** A scheduled job that failed, in the app's words: the error, how many runs in a row, and Hermes's full text. */
+  failure?: { error: string; streak: number; detail: string };
   /** Files it carried (an image a routine made, or one handed over after a reply's text). */
   attachments?: ChatAttachment[];
   /** Client-only: the same notice repeated this many times in a row (restarts), and when the last one came. */

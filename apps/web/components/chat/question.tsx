@@ -13,6 +13,7 @@ import { linkifyVaultRefs } from "@/lib/vault-client";
 import { field as fieldClass } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
 import { openTeam } from "@/lib/settings-nav";
+import { routinesApi } from "@/lib/routines-client";
 
 /** Hermes appends this to the choice it recommends; the card shows it as a badge instead. */
 const RECOMMENDED = /\s*\(recommended\)\s*$/i;
@@ -215,6 +216,71 @@ export function quickReplies(text: string): string[] {
   return [...new Set([...line.matchAll(/`(\/[a-z][\w-]*)`/gi)].map((m) => m[1].toLowerCase()))].slice(0, 4);
 }
 
+/**
+ * A scheduled job that failed (the bridge turns Hermes's announcement into `failure`): the routine, what went
+ * wrong in one line, how many runs in a row, and the two things to do about it. Hermes's full text is a tap away.
+ */
+function RoutineFailure({ notice }: { notice: ChatNotice }) {
+  const failure = notice.failure!;
+  const routine = notice.routine;
+  const [state, setState] = useState<"" | "running" | "ran" | "pausing" | "paused">("");
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+  const canAct = !!routine?.jobId && !!routine.profile;
+  const acting = state === "running" || state === "pausing";
+  async function act(kind: "run" | "pause") {
+    if (!routine?.profile) return;
+    setError("");
+    setState(kind === "run" ? "running" : "pausing");
+    try {
+      const result =
+        kind === "run" ? await routinesApi.run(routine.profile, routine.jobId) : await routinesApi.update(routine.profile, routine.jobId, { enabled: false });
+      if (!result.ok) throw new Error(result.error || "That didn't work.");
+      setState(kind === "run" ? "ran" : "paused");
+    } catch (e) {
+      setState("");
+      setError(e instanceof Error ? e.message : "That didn't work.");
+    }
+  }
+  return (
+    <div className="rounded-card border border-danger/30 bg-danger/[0.07] px-3.5 py-2.5">
+      <div className="flex items-center gap-1.5 text-caption font-medium text-fg-3">
+        <ClockIcon size={13} />
+        <span className="min-w-0 flex-1 truncate">{routine?.name || "Scheduled job"}</span>
+        <button type="button" onClick={() => openTeam("routines")} className="press -my-1 shrink-0 rounded-full px-2 py-1 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg">
+          Manage
+        </button>
+      </div>
+      <p className="mt-1 flex items-start gap-1.5 text-callout text-fg">
+        <CircleAlertIcon size={15} className="mt-0.5 shrink-0 text-danger" />
+        <span className="min-w-0 flex-1">Failed · {failure.error}</span>
+        {failure.streak > 1 ? <span className="shrink-0 rounded-chip bg-danger/15 px-1.5 font-mono text-micro text-danger">{failure.streak} in a row</span> : null}
+      </p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        {canAct ? (
+          <>
+            <button type="button" disabled={acting || state === "ran"} onClick={() => void act("run")} className={btn("secondary", "sm")}>
+              {state === "running" ? "Starting…" : state === "ran" ? "Started" : "Run again"}
+            </button>
+            <button type="button" disabled={acting || state === "paused"} onClick={() => void act("pause")} className={btn("ghost", "sm")}>
+              {state === "pausing" ? "Pausing…" : state === "paused" ? "Paused" : "Pause"}
+            </button>
+          </>
+        ) : null}
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="press rounded-full px-2 py-1 text-caption text-fg-3 hover:text-fg-2">
+          {open ? "Hide details" : "Details"}
+        </button>
+      </div>
+      {open ? <p className="mt-2 whitespace-pre-wrap font-mono text-micro text-fg-3">{failure.detail}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-caption text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** A scheduled job's result or a gateway notice: not a reply to anything you said. A notice that asks for
  * an answer (Hermes's text fallback, e.g. confirming /new) gets its answers as buttons while it is the newest
  * thing in the chat. */
@@ -224,6 +290,7 @@ export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQui
   const [open, setOpen] = useState(false);
   const replies = onQuickReply ? quickReplies(notice.text) : [];
   const scheduled = notice.source === "scheduled";
+  if (notice.failure) return <RoutineFailure notice={notice} />;
   // A gateway notice (a restart, a reminder that it is busy) is a quiet line; it opens to the full text.
   if (!scheduled && !replies.length) {
     const times = notice.repeat && notice.until ? `${notice.repeat}× · until ${new Date(notice.until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "";

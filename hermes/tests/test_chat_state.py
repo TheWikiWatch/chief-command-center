@@ -58,7 +58,7 @@ class CronUnwrapTests(unittest.TestCase):
     def test_the_answer_and_the_routine(self):
         body, routine = chat_state.unwrap_cron(self.WRAPPED)
         self.assertEqual(body, "Logged three changes to the Inbox.")
-        self.assertEqual(routine, {"name": "Second Brain: nightly", "jobId": "a94696753a42"})
+        self.assertEqual(routine, {"name": "Second Brain: nightly", "jobId": "a94696753a42", "profile": "chief"})
 
     def test_anything_else_is_left_alone(self):
         for text in ("A plain notice.", "Cronjob Response: half a wrapper", self.WRAPPED.replace("(job_id: ", "(id: ")):
@@ -180,6 +180,28 @@ class ChatStateTests(unittest.TestCase):
         self.assertEqual([(n["text"], n["source"]) for n in found], [("Morning brief: 3 tasks due", "scheduled"), ("📬 No home channel is set", "notice")])
         self.assertEqual([n["text"] for n in chat_state.notices("session", since=165)], ["📬 No home channel is set"])
         self.assertEqual(chat_state.notice_head(), "o4")
+
+    def test_an_approval_announcement_is_not_a_notice_and_a_failed_job_is_a_card(self):
+        rows = [
+            ("⚠️ **Hermes wants to run a command that needs your OK**\n\n```\nrm -r ./x\n```\n\nWhy it was flagged: recursive delete", "send", 100.0),
+            (CronFailureTests.GENERIC, "send", 110.0),
+            ("⌛ Approval timed out after 5 minutes — the command was NOT run.", "send", 120.0),
+        ]
+        outbox._outbox_path().write_text(
+            "".join(
+                json.dumps({"id": f"o{i}", "at": at, "chat_id": "owner", "message": m, "source": src, "read": False}) + "\n"
+                for i, (m, src, at) in enumerate(rows)
+            ),
+            encoding="utf-8",
+        )
+        found = chat_state.notices("session", since=0)
+        self.assertEqual(
+            [(n["text"], n["source"]) for n in found],
+            [("Connection error", "scheduled"), ("⌛ Approval timed out after 5 minutes — the command was NOT run.", "notice")],
+        )
+        self.assertEqual(found[0]["routine"], {"name": "Second Brain: morning", "jobId": "f78b53e73629", "profile": "chief"})
+        self.assertEqual(found[0]["failure"]["streak"], 4)
+        self.assertNotIn("failure", found[1])
 
     def test_attachments_sent_after_a_reply_show_once(self):
         shown = self.home / "img" / "shown.png"
@@ -326,3 +348,49 @@ class DefaultSoulTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CronFailureTests(unittest.TestCase):
+    GENERIC = (
+        "⚠️ Cron 'Second Brain: morning' failed: Connection error. See the full run with `hermes cron runs f78b53e73629` "
+        "(output saved under C:/x/cron/output/f78b53e73629/); run it again with `hermes cron run f78b53e73629`, "
+        "edit it with `hermes cron edit f78b53e73629`, or pause it with `hermes cron pause f78b53e73629`.\n"
+        "This job has failed 4 runs in a row — worth a review. Fix its prompt/config, or pause it with "
+        "`hermes cron pause Second Brain: morning` (resume/remove also available) to stop the noise."
+    )
+    PROVIDER = "⚠️ Cron 'Fleet: roster review' failed: the provider refused the key. Sign in again with `hermes login`. Run log: `hermes cron runs ab12`."
+    SCRIPT = "⚠️ Cron 'Second Brain: drop' failed: its script timed out. No model was invoked. Check the script's output under C:/x or `hermes cron runs cd34`, then run it again with `hermes cron run cd34`."
+
+    def test_the_error_the_routine_and_the_streak(self):
+        error, routine, failure = chat_state.unwrap_cron_failure(self.GENERIC)
+        self.assertEqual(error, "Connection error")
+        self.assertEqual(routine, {"name": "Second Brain: morning", "jobId": "f78b53e73629", "profile": "chief"})
+        self.assertEqual((failure["error"], failure["streak"]), ("Connection error", 4))
+        self.assertEqual(failure["detail"], self.GENERIC)
+
+    def test_other_failure_shapes(self):
+        error, routine, failure = chat_state.unwrap_cron_failure(self.PROVIDER)
+        self.assertEqual((error, routine["jobId"], failure["streak"]), ("the provider refused the key", "ab12", 1))
+        error, routine, _ = chat_state.unwrap_cron_failure(self.SCRIPT)
+        self.assertEqual((error, routine["jobId"]), ("its script timed out", "cd34"))
+
+    def test_anything_else_is_left_alone(self):
+        for text in ("Cron 'x' failed: no warning sign", "⚠️ Something else", "Morning brief: 3 tasks due"):
+            self.assertEqual(chat_state.unwrap_cron_failure(text), (text, None, None))
+
+    def test_the_approval_announcement_is_recognised(self):
+        self.assertTrue(chat_state.approval_announcement("⚠️ **Hermes wants to run a command that needs your OK**\n\n```\nrm -r x\n```"))
+        self.assertTrue(chat_state.approval_announcement("⚠️ Hermes wants to run a command that needs your OK\n\n```\nrm -r x\n```"))
+        self.assertFalse(chat_state.approval_announcement("⌛ Approval timed out after 5 minutes — the command was NOT run."))
+        self.assertFalse(chat_state.approval_announcement("Here is what I found.\nHermes wants to run a command that needs your OK"))
+
+    def test_a_failure_inside_the_cron_envelope(self):
+        wrapped = (
+            "Cronjob Response: Second Brain: nightly\n(job_id: a94696753a42)\n-------------\n\n"
+            + self.GENERIC.replace("Second Brain: morning", "Second Brain: nightly")
+            + '\n\nTo stop or manage this job, send me a new message (e.g. "stop reminder Second Brain: nightly").'
+        )
+        body, routine = chat_state.unwrap_cron(wrapped)
+        error, found, failure = chat_state.unwrap_cron_failure(body)
+        self.assertEqual(routine, {"name": "Second Brain: nightly", "jobId": "a94696753a42", "profile": "chief"})
+        self.assertEqual((error, found["jobId"], failure["streak"]), ("Connection error", "f78b53e73629", 4))
