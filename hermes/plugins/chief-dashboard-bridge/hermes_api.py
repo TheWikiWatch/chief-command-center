@@ -135,8 +135,10 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "hermes_cli.nous_account": ("get_nous_portal_account_info",),
         # Quick connections (Nous Connectors).
         "tools.connectors.gateway.config": ("connectors_available",),
-        "tools.connectors.managed": ("managed_client",),
-        "tools.connectors.account": ("find_or_start_operation",),
+        "tools.connectors.managed": ("managed_client", "managed_kind", "WATCH_TICK_SECONDS"),
+        "tools.connectors.live": ("open",),
+        "tools.connectors.operation": ("ConnectionOperation", "Target"),
+        "tools.connectors.run": ("drive_operation",),
         "tools.connectors.portal.client": ("PortalConnectorClient",),
         # Work tools (the MCP catalog) and their OAuth.
         "hermes_cli.mcp_catalog": ("list_catalog", "installed_servers", "uninstall_entry"),

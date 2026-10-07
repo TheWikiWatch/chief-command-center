@@ -1057,3 +1057,9 @@
   revoke); cards from tool rows; the page's rows per backend and that no token ever reaches it; the bots' tool and
   prompt; the file API refuses every connection secret. Dashboard: the page, both connect flows, the chooser, the Nous
   code, disconnect, the chat card's Continue and Not now, and the approval sheet's reading of the guard's reason.
+
+- **First use on the owner's PC.** Gmail, Calendar and Drive showed as connected on this PC at once: the owner had set
+  up Hermes's Google skill by hand before, and the page reads the same token. Outlook through Quick failed with "Nous
+  didn't answer": Hermes's account runner swallows the connector gateway's error. The bridge now drives the same
+  runner itself, logs the gateway's error type and code, and says why ("Nous doesn't offer that service for this
+  account yet", "sign in again", "busy"); and a row offers Quick only for services the gateway lists for the account.

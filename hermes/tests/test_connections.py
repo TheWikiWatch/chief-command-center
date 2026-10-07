@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import types
 import unittest
 import urllib.error
@@ -343,12 +344,22 @@ class OverviewTests(unittest.TestCase):
 
     def test_with_nous_quick_comes_first_for_google_and_carries_outlook(self):
         self.nous = {"signedIn": True, "guest": False, "account": "o@example.com", "connectors": True}
-        with patch.object(connections, "_quick_status", return_value={"gmail": {"connected": True, "status": "active", "account": "o@example.com"}}):
+        idle = {"connected": False, "status": "", "account": None}
+        served = {"gmail": {"connected": True, "status": "active", "account": "o@example.com"}, "googlecalendar": idle, "outlook": idle, "notion": idle}
+        with patch.object(connections, "_quick_status", return_value=served):
             rows = self.rows()
         self.assertEqual(rows["googlecalendar"]["backends"], ["quick", "local"])
         self.assertEqual(rows["outlook"]["backends"], ["quick"])
         self.assertEqual((rows["gmail"]["state"], rows["gmail"]["via"], rows["gmail"]["account"]), ("connected", "quick", "o@example.com"))
         self.assertEqual(rows["notion"]["backends"], ["mcp", "quick"])  # private by default, Quick as the alternative
+        self.assertEqual(rows["googledrive"]["backends"], ["local"])  # the gateway doesn't serve it for this account
+
+    def test_when_the_gateway_list_cant_be_read_quick_is_still_offered(self):
+        self.nous = {"signedIn": True, "guest": False, "account": None, "connectors": True}
+        with patch.object(connections, "_quick_status", side_effect=RuntimeError("down")):
+            view = connections.overview(refresh=True)
+        self.assertIn("quick", next(r for r in view["services"] if r["id"] == "outlook")["backends"])
+        self.assertIn("out of date", view["warning"])
 
     def test_connected_states_by_backend(self):
         self.local = {"available": True, "connected": True, "account": "me@example.com", "services": ["gmail", "googledrive"]}
@@ -391,6 +402,73 @@ class OverviewTests(unittest.TestCase):
 @contextlib.contextmanager
 def _noscope():
     yield Path(tempfile.gettempdir())
+
+
+class QuickConnectTests(unittest.TestCase):
+    """The connect runner says why Nous refused (Hermes's own account runner swallows it) and returns the link."""
+
+    def setUp(self):
+        self.opened = []
+
+        class Operation:
+            def __init__(self, targets, session_key):
+                self.targets = targets
+                self.url = ""
+
+            def snapshot(self, with_urls=True):
+                return {
+                    "targets": [
+                        {"name": t.name, "state": "initiated" if self.url else "pending", **({"connect_url": self.url} if self.url else {})}
+                        for t in self.targets
+                    ]
+                }
+
+        self.Operation = Operation
+        fake_module(self, "tools.connectors.live", open=lambda op: self.opened.append(op))
+        fake_module(self, "tools.connectors.operation", ConnectionOperation=Operation, Target=lambda name, kind, action: types.SimpleNamespace(name=name))
+        fake_module(self, "tools.connectors.managed", managed_kind=lambda client, action, force: None, managed_client=lambda: None, WATCH_TICK_SECONDS=1.0)
+        if "tools.connectors" not in sys.modules:
+            fake_module(self, "tools.connectors")
+        p = patch.object(connections, "chief_scope", _noscope)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def run_with(self, drive):
+        fake_module(self, "tools.connectors.run", drive_operation=drive)
+        return connections._quick_connect("outlook")
+
+    def test_a_refusal_says_why(self):
+        class GatewayUnavailable(RuntimeError):
+            code = "connector_not_found"
+            status = 404
+
+        def drive(op, kind, **kw):
+            raise GatewayUnavailable("not served")
+
+        with (
+            self.assertLogs("chief-dashboard-bridge", level="WARNING") as logs,
+            self.assertRaisesRegex(connections.ConnectionsError, "doesn't offer that service"),
+        ):
+            self.run_with(drive)
+        self.assertIn("GatewayUnavailable code=connector_not_found", logs.output[0])
+        self.assertEqual(len(self.opened), 1)
+
+    def test_an_expired_nous_sign_in_says_sign_in_again(self):
+        class GatewayAuthError(RuntimeError):
+            code = "NO_TOKEN"
+            status = 401
+
+        self.assertIn("Sign out of Nous", connections._gateway_reason(GatewayAuthError()))
+
+    def test_the_link_comes_back_once_the_runner_has_it(self):
+        def drive(op, kind, connection_callback, **kw):
+            op.url = "https://connect.example.com/link/1"
+            connection_callback({})
+            threading.Event().wait(0.2)  # the watcher keeps running after the link is out
+
+        operation, url = self.run_with(drive)
+        self.assertEqual(url, "https://connect.example.com/link/1")
+        self.assertIsInstance(operation, self.Operation)
 
 
 class FileApiTests(unittest.TestCase):

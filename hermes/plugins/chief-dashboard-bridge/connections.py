@@ -221,21 +221,72 @@ def _quick_status() -> dict[str, dict[str, Any]]:
     return out
 
 
-def _quick_connect(slug: str) -> tuple[Any, str]:
-    """An account-owned connect operation (Hermes's own watcher settles it) and the service's sign-in link."""
-    from tools.connectors import account
+def _gateway_reason(exc: BaseException) -> str:
+    """Why the connector gateway refused, in a sentence, from Hermes's own error types (never its raw text)."""
+    name = type(exc).__name__
+    code = str(getattr(exc, "code", "") or "")
+    if name == "GatewayAuthError" or code in ("NO_TOKEN", "UNAUTHORIZED") or getattr(exc, "status", 0) in (401, 403):
+        return "Nous didn't accept this app's sign-in. Sign out of Nous above and sign in again."
+    if name == "RateLimited" or getattr(exc, "status", 0) == 429:
+        return "Nous is busy. Try again in a minute."
+    if name == "GatewayUnavailable" and "not_found" in code.lower():
+        return "Nous doesn't offer that service for this account yet."
+    if name == "GatewayUnavailable":
+        return f"Nous's connection service isn't available right now{f' ({code})' if code else ''}. Try again later."
+    return f"Nous couldn't start that sign-in ({code or name})."
 
-    with chief_scope() as home:
-        start = account.find_or_start_operation([slug], action="connect", profile_home=str(home))
-    if not start.done.wait(_PREPARE_S) or start.failed:
+
+def _quick_connect(slug: str) -> tuple[Any, str]:
+    """A connect operation driven by Hermes's own runner and watcher (the same calls as its account-owned
+    `tools.connectors.account`, which swallows errors): the service's sign-in link, or the gateway's reason."""
+    import contextvars
+    import uuid
+
+    from tools.connectors import live, managed
+    from tools.connectors.operation import ConnectionOperation, Target
+    from tools.connectors.run import drive_operation
+
+    operation = ConnectionOperation([Target(slug, "connector", "connect")], session_key=f"account:{uuid.uuid4().hex}")
+    ready = threading.Event()
+    failure: list[BaseException] = []
+
+    def run() -> None:
+        try:
+            drive_operation(
+                operation,
+                managed.managed_kind(managed.managed_client(), "connect", force=False),
+                connection_callback=lambda _payload: ready.set(),
+                tick_seconds=managed.WATCH_TICK_SECONDS,
+                with_urls_in_result=False,
+            )
+        except Exception as exc:
+            failure.append(exc)
+            logger.warning(
+                "chief-dashboard-bridge: quick connect %s failed: %s code=%s status=%s",
+                slug,
+                type(exc).__name__,
+                getattr(exc, "code", ""),
+                getattr(exc, "status", ""),
+            )
+        finally:
+            ready.set()
+
+    with chief_scope():
+        context = contextvars.copy_context()  # the chief's home and secrets, for the runner's whole life
+        live.open(operation)
+    threading.Thread(target=lambda: context.run(run), name=f"chief-connect-{slug}", daemon=True).start()
+    if not ready.wait(_PREPARE_S):
         raise ConnectionsError("Nous didn't answer. Try again in a moment.")
-    snap = start.operation.snapshot()
+    if failure:
+        raise ConnectionsError(_gateway_reason(failure[0]))
+    snap = operation.snapshot()
     target = next((t for t in snap.get("targets") or [] if t.get("name") == slug), {})
     url = str(target.get("connect_url") or "")
     state = str(target.get("state") or "")
     if not url and state != "connected":
-        raise ConnectionsError(_plain(str(target.get("detail") or ""), "Nous couldn't start that sign-in."))
-    return start.operation, url
+        logger.warning("chief-dashboard-bridge: quick connect %s ended %s", slug, state or "without a link")
+        raise ConnectionsError(_plain(str(target.get("detail") or ""), f"Nous couldn't start that sign-in ({state or 'no link'})."))
+    return operation, url
 
 
 def _quick_disconnect(slug: str) -> None:
@@ -443,7 +494,8 @@ def _row(svc: Service, *, nous: dict[str, Any], quick: dict[str, dict[str, Any]]
     backends: list[str] = []
     if svc.mcp:
         backends.append("mcp")
-    if svc.quick and nous.get("connectors"):
+    # Quick only for what the gateway serves this account (when its list could be read at all).
+    if svc.quick and nous.get("connectors") and (not quick or svc.quick in quick):
         backends.append("quick")
     if svc.local and local.get("available"):
         backends.append("local")
