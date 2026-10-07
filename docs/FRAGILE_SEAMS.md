@@ -160,6 +160,18 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The reopened window must be raised.** The helper activates the app through `IApplicationActivationManager` after `AllowSetForegroundWindow`, which normally brings it to the front; the fallback relaunches it as a hidden background process, and Windows' focus-stealing protection keeps that window behind the others. The first start after an update (`lastVersion` older than this version) still raises it with a brief always-on-top, flashes the taskbar button if focus is withheld, and shows a "Chief updated to …" notification once Chief is up.
 - **`logs\update-install.log`** has the staging and helper lines (`staging …`, `apply 0.1.30 -> 0.1.31: <step>`), or the fallback installer's, then the app's own: `result …`, `reopened <version>`, and `ready <version>; window shown/hidden`. A graphics-process crash (a blank window) goes to `logs\desktop.log`.
 - **An installed app updates with the code it already has.** The release that brings a change to this flow still installs the old way; the new flow shows from the update after it.
+- **A saved update key can block a public repository.** GitHub answers 401 to an expired or revoked token even where
+  no token is needed, and testers kept the keys they were given while the releases repository was private (before
+  0.1.21). From 0.1.32 a refused key is retried without it (`githubApi.call`); when that works the key is dropped for
+  the session, `keyRefused()` is true, and Settings says so beside **Remove key**. A private repository still reports
+  the refusal. Apps before 0.1.32 can't do this: a tester stuck there pastes a fresh key or installs from the kit.
+- **Without a key, files come by their download links, not the API.** GitHub allows 60 API calls an hour per network
+  without a key; `/releases/assets/<id>` counts, `browser_download_url` doesn't. Before 0.1.32 the history sync fetched
+  two assets per release it hadn't kept, so an app far behind spent its hour in one check. With a key the API path
+  stays (a private repository's assets need it). A check is now one API call.
+- **A version chosen from the history** (`installVersion`) is kept against the daily check (`chosen`): the check would
+  otherwise offer the latest instead. It downloads by tag (`source.select`), so it needs a GitHub source; its
+  description comes from the kept, verified history. `older` marks a state whose version is older than the running one.
 - **Early updates are GitHub prereleases.** Without Early updates the source reads `/releases/latest`, which GitHub never points at a prerelease; with it, `/releases?per_page=20` and the highest version carrying a `release.json`, drafts never (`newestRelease`). `release.mjs --channel early` publishes as a prerelease and skips the tester kit and `afterRelease`; `--promote` flips the same release to latest and runs them. A version is never rebuilt between the two.
 
 ## The message box hint

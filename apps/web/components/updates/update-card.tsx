@@ -139,7 +139,7 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
           <div className="space-y-2" role="region" aria-label="Update ready">
             <p className="flex items-center gap-2 text-body font-medium text-fg">
               <CircleCheckIcon className="size-4 text-ok" />
-              Version {state.release.version} is ready
+              {state.older ? `Older version ${state.release.version} is ready` : `Version ${state.release.version} is ready`}
             </p>
             <p className="text-callout text-fg-3">
               {state.staged ? "Restarting takes about twenty seconds" : "Restarting takes about a minute"}; {assistant} reopens by itself.
@@ -147,7 +147,7 @@ export function UpdateCard({ compact = false, onLater }: { compact?: boolean; on
             {state.release.notes && !compact ? <p className="whitespace-pre-wrap text-callout text-fg-2">{state.release.notes}</p> : null}
             <Row>
               <Button disabled={acting} onClick={() => void act(() => api.restart(false))}>
-                Restart to update
+                {state.older ? `Restart into ${state.release.version}` : "Restart to update"}
               </Button>
               {onLater ? (
                 <Button subtle disabled={acting} onClick={onLater}>
@@ -246,6 +246,7 @@ export function UpdatesPanel() {
   const [feed, setFeed] = useState("");
   const [saved, setSaved] = useState("");
   const [hasKey, setHasKey] = useState(false);
+  const [keyRefused, setKeyRefused] = useState(false);
   const [key, setKey] = useState("");
   const [feedError, setFeedError] = useState("");
   useEffect(() => {
@@ -254,6 +255,7 @@ export function UpdatesPanel() {
       setSaved(f);
     });
     void api?.hasKey?.().then(setHasKey);
+    void api?.keyStatus?.().then((s) => setKeyRefused(s.refused));
   }, [api]);
   if (!api) return null;
   const github = isGithubFeed(saved);
@@ -337,6 +339,25 @@ export function UpdatesPanel() {
           <p className="mt-1 text-caption text-fg-3">
             {hasKey ? "Saved and protected by Windows for your account. " : ""}A key only lets this app read new releases from a private repository; a public one needs none.
           </p>
+          {hasKey && keyRefused ? (
+            <p role="status" className="mt-1.5 text-caption text-warn">
+              GitHub no longer accepts the saved key, and this release repository doesn&apos;t need one. Updates work without it; remove it to tidy up.
+            </p>
+          ) : null}
+          {hasKey && api.setKey ? (
+            <div className="mt-2">
+              <Button
+                subtle
+                onClick={async () => {
+                  await api.setKey!("");
+                  setHasKey(false);
+                  setKeyRefused(false);
+                }}
+              >
+                Remove key
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

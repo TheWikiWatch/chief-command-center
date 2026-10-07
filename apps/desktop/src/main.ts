@@ -286,7 +286,8 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         const feed = effectiveFeed(ctx.store.value.updateFeed, ctx.shippedFeed);
         if (!feed) return null;
         const repo = parseGithub(feed);
-        return repo ? githubSource(repo.owner, repo.repo, readUpdateKey(ctx.paths.secrets, safeStorage), fetch, { early: () => ctx.store.value.earlyUpdates }) : folderSource(feed);
+        ctx.updateSource = repo ? githubSource(repo.owner, repo.repo, readUpdateKey(ctx.paths.secrets, safeStorage), fetch, { early: () => ctx.store.value.earlyUpdates }) : folderSource(feed);
+        return ctx.updateSource;
       },
       currentVersion: app.getVersion(),
       publicKey: RELEASE_KEYS,

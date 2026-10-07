@@ -53,6 +53,25 @@ After a day or two of use, `npm run release:promote -- X.Y.Z` makes the same sig
 `packaging/upstream/compat.py` on it, point `payloadDir` at it, and release. The app backs up testers' data before
 the new Hermes first starts. Step by step: `CLAUDE.md`, "Hermes updates".
 
+## Maintainer: a tester stuck on an old version
+
+An app updates with its own code, so an old version's update problems can't be fixed from here; these get a tester
+onto a current version, which fixes them for good (from 0.1.32 the app goes straight to the newest release, retries
+without a refused key, and stays within GitHub's limits).
+
+- **"The update key was refused"** (a key kept from when the releases repository was private, since expired or
+  revoked): make a fresh fine-grained token on github.com (Public repositories, read-only; no or a long expiry) and
+  have them paste it in Settings → Backup & updates → Update key. It works on every version from 0.1.10, and lifts
+  them to GitHub's 5,000 calls an hour; then Check now offers the newest release directly. From 0.1.32 they can remove
+  it.
+- **"GitHub's limit for checks without a key was reached"**: wait an hour and Check now once (not repeatedly), or the
+  token above.
+- **Anything else, or 0.1.9 / 0.1.10** (their installer could be stopped half-way): install the newest package over
+  the top from the tester kit (the setup zip on the latest release, or the thumb drive). Data is kept.
+
+Once on 0.1.32 or later, any published version can be installed from Settings → Backup & updates → History →
+**Install this version**, newer or older.
+
 ## Maintainer: a key for each tester (only for a private releases repository)
 
 Not needed while the releases repository is public. For a private one, on GitHub: Settings → Developer settings → Personal access tokens → **Fine-grained tokens** → Generate new token.

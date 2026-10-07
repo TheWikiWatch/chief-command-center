@@ -91,13 +91,15 @@ export async function syncGithubHistory(owner: string, repo: string, key: string
   for (const r of releases) {
     const version = /^v?(\d+\.\d+\.\d+)$/.exec(r.tag_name || "")?.[1];
     if (!version || existsSync(path.join(dir, `${version}.json.sig`))) continue;
-    const ids = new Map((r.assets || []).map((a) => [a.name, a.id]));
-    const json = ids.get("release.json");
-    const sig = ids.get("release.json.sig");
+    const files = new Map((r.assets || []).map((a) => [a.name, a]));
+    const json = files.get("release.json");
+    const sig = files.get("release.json.sig");
     if (json === undefined || sig === undefined) continue;
     try {
-      const bytes = Buffer.from(await (await gh.asset(json)).arrayBuffer());
-      const signature = Buffer.from(await (await gh.asset(sig)).arrayBuffer()).toString("utf8");
+      // By download link when no key is in use: these don't count against GitHub's 60 API calls an hour, so an app
+      // many versions behind no longer spends its checks fetching the history.
+      const bytes = Buffer.from(await (await gh.file(json)).arrayBuffer());
+      const signature = Buffer.from(await (await gh.file(sig)).arrayBuffer()).toString("utf8");
       const release = cacheRelease(appDir, bytes, signature, publicKey);
       if (release.version === version) added++;
     } catch {

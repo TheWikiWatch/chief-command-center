@@ -958,3 +958,27 @@
 - `npm run hermes:upgrade` does the rebuild after an upgrade PR is merged: prepares the pinned source, builds the payload with a Python 3.14 it finds or makes, runs the compatibility suite, and points `release.local.json` at the new payload (the old one stays as the fallback). It refuses an uncommitted tree and says when there's nothing to do.
 - **New in Hermes**: `npm run release -- --hermes-highlights "One thing; another"` puts two or three short lines in the signed release; after the update, the What's new card and the History sheet show them under "New in Hermes <version>".
 - `docs/UPSTREAM-PATCHES.md` has the pull requests to send upstream for patches 0001, 0002 and 0004 (they fix plain Windows bugs); each one merged upstream is a patch, and a release-day risk, gone.
+
+
+**Testers far behind can update again, to the newest version or any other (2026-10-07).**
+
+- **What testers hit.** Two things stopped apps several versions behind:
+  - Keys given out while the releases repository was private (before 0.1.21) were still sent with every check, and
+    GitHub refuses an expired or revoked token (401) even for a public repository: "the update key was refused".
+    Settings had no way to remove a key.
+  - Without a key GitHub allows 60 API calls an hour per network, and the history sync fetched two files per release
+    it hadn't kept through the API: an app 15 versions behind spent most of the hour in one check, and the next check
+    or a second tester on the same network got "GitHub's limit … was reached".
+- **Fixed (0.1.32 on).** A refused key is retried without it, and Settings says the key isn't needed, with **Remove
+  key**. Files come by their plain download links, which don't count against the limit: a check is one API call.
+- **Install any version.** Settings → Backup & updates → History → **Install this version** on any published release,
+  newer or older: checked against its signed description, prepared in the background like an update, then "Restart
+  into X". Going straight to the newest is still the default (the app always asks for the latest release, never the
+  next one).
+- **Apps already out there** update with their own code, so the fix reaches them through one of these
+  (`docs/DISTRIBUTION.md`, "a tester stuck on an old version"): a fresh read-only key pasted in Settings (works from
+  0.1.10 on), or the newest package from the tester kit installed over the top.
+- Tests: desktop (an expired key retried without and never sent again; a private repository still reports it; a valid
+  key kept; one API call per check and for a 20-release history; going back to an older version, kept against the
+  daily check, refused for the running or an unknown version), web (Remove key and its note, the older-version card,
+  the history's install, nothing on older apps).

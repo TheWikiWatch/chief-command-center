@@ -36,6 +36,8 @@ export const ctx = {
   updater: undefined as unknown as Updater,
   /** The update source this build carries (a tester's install knows its releases repository from the start). */
   shippedFeed: "",
+  /** The last release source the updater used: Settings asks it whether GitHub refused the saved key. */
+  updateSource: null as import("./release-source").ReleaseSource | null,
   /** Where "Report a problem" e-mails go, built in at release time ("" hides the button). */
   reportEmail: "",
   /** The version this start replaced, when it is the first start after an update ("" otherwise). */

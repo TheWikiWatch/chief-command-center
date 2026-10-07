@@ -141,6 +141,14 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
   });
   handle("updates:feed", () => effectiveFeed(ctx.store.value.updateFeed, ctx.shippedFeed));
   handle("updates:hasKey", () => readUpdateKey(ctx.paths.secrets, safeStorage) !== "");
+  // A saved key GitHub refused while the repository answered without it: Settings offers to remove it.
+  handle("updates:keyStatus", () => ({ saved: readUpdateKey(ctx.paths.secrets, safeStorage) !== "", refused: !!ctx.updateSource?.keyRefused?.() }));
+  handle("updates:installVersion", (version) => {
+    const v = String(version ?? "").trim();
+    if (!/^\d+\.\d+\.\d+$/.test(v)) throw new Error("Not a version.");
+    log.info("update.version-chosen", { version: v });
+    return updater.installVersion(v);
+  });
   handle("updates:setKey", (key) => {
     saveUpdateKey(ctx.paths.secrets, safeStorage, String(key ?? "").trim().slice(0, 400));
     return updater.check();

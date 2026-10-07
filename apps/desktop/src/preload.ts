@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
     feed: () => ipcRenderer.invoke("updates:feed"),
     setFeed: (folder: string) => ipcRenderer.invoke("updates:setFeed", folder),
     hasKey: () => ipcRenderer.invoke("updates:hasKey"),
+    keyStatus: () => ipcRenderer.invoke("updates:keyStatus"),
+    installVersion: (version: string) => ipcRenderer.invoke("updates:installVersion", version),
     setKey: (key: string) => ipcRenderer.invoke("updates:setKey", key),
     history: () => ipcRenderer.invoke("updates:history"),
     rollbackOptions: () => ipcRenderer.invoke("updates:rollbackOptions"),

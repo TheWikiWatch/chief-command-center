@@ -19,8 +19,8 @@ export type UpdateState =
   /** Backing up (when the release brings a different Hermes) or having Windows unpack it; `pct` null while unknown. */
   | { status: "preparing"; release: Release; step: "backup" | "stage"; pct: number | null }
   /** Ready to restart into; `staged`: already unpacked, so the restart takes seconds. */
-  | { status: "ready"; release: Release; file: string; staged: boolean }
-  | { status: "busy"; release: Release; file: string; staged: boolean; reasons: string[] }
+  | { status: "ready"; release: Release; file: string; staged: boolean; older?: boolean }
+  | { status: "busy"; release: Release; file: string; staged: boolean; reasons: string[]; older?: boolean }
   | { status: "restarting"; release: Release; step: string }
   | { status: "error"; error: string; release?: Release };
 
@@ -41,7 +41,12 @@ export type DesktopUpdates = {
   setFeed: (folder: string) => Promise<UpdateState>;
   /** A private GitHub release repository's read-only key (sealed by the shell); older shells lack these. */
   hasKey?: () => Promise<boolean>;
+  /** An empty key removes the saved one. */
   setKey?: (key: string) => Promise<UpdateState>;
+  /** Whether a key is saved, and whether GitHub refused it while the repository answered without it (0.1.32 on). */
+  keyStatus?: () => Promise<{ saved: boolean; refused: boolean }>;
+  /** Install one published version, newer or older (Settings → History); 0.1.32 on. */
+  installVersion?: (version: string) => Promise<UpdateState>;
   /** Fetch and verify releases not kept yet for the update history; older shells lack it. */
   history?: () => Promise<{ ok: boolean; added?: number; error?: string }>;
   /** Earlier versions whose verified package is still on this PC, and going back to one (backup first). */

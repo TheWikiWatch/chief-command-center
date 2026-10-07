@@ -45,9 +45,10 @@ export type UpdateState =
   | { status: "downloading"; release: Release; done: number; total: number }
   /** Backing up (when the release brings a different Hermes) or staging the package; `pct` null while unknown. */
   | { status: "preparing"; release: Release; step: "backup" | "stage"; pct: number | null }
-  /** Ready to restart into; `staged`: Windows already unpacked it (the restart takes seconds, not a full install). */
-  | { status: "ready"; release: Release; file: string; staged: boolean }
-  | { status: "busy"; release: Release; file: string; staged: boolean; reasons: string[] }
+  /** Ready to restart into; `staged`: Windows already unpacked it (the restart takes seconds, not a full install);
+   * `older`: a version older than the running one, chosen from the history. */
+  | { status: "ready"; release: Release; file: string; staged: boolean; older?: boolean }
+  | { status: "busy"; release: Release; file: string; staged: boolean; reasons: string[]; older?: boolean }
   | { status: "restarting"; release: Release; step: string }
   | { status: "error"; error: string; release?: Release };
 
@@ -196,15 +197,35 @@ export class Updater {
   }
 
   private set(state: UpdateState): UpdateState {
+    if ((state.status === "ready" || state.status === "busy") && compareVersions(state.release.version, this.deps.currentVersion) < 0) state = { ...state, older: true };
     this.state = state;
     this.deps.onState?.(state);
     return state;
+  }
+
+  /** A version the owner chose from the history (newer or older); the daily check keeps it rather than the latest. */
+  private chosen = "";
+
+  /**
+   * Install one particular published version, newer or older than this one (Settings → History → Install). Its
+   * description comes from the kept, verified history; its package from that version's release (or `updates\` when
+   * it's still there), checked against the description; then it prepares and restarts like any update.
+   */
+  async installVersion(version: string): Promise<UpdateState> {
+    if (version === this.deps.currentVersion) return this.set({ status: "error", error: `Version ${version} is the one running.` });
+    const release = this.deps.history?.().find((r) => r.version === version);
+    if (!release) return this.set({ status: "error", error: `Version ${version} isn't known on this PC yet. Check for updates first, then try again.` });
+    this.chosen = version;
+    this.set({ status: "available", checkedAt: this.now(), release });
+    return this.prepare();
   }
 
   async check(): Promise<UpdateState> {
     const inHandState = this.state;
     const inHand = ["downloading", "preparing", "ready", "busy", "restarting"].includes(inHandState.status) ? (inHandState as { release: Release }).release : null;
     if (inHandState.status === "restarting") return inHandState;
+    // A version the owner chose stands until it's installed or they choose another.
+    if (this.chosen && inHand?.version === this.chosen) return inHandState;
     const source = this.source();
     if (!source) return this.set({ status: "error", error: "Couldn't check for updates: no update source is set." });
     if (!inHand) this.set({ status: "checking" });
@@ -327,7 +348,11 @@ export class Updater {
     }
     this.set({ status: "downloading", release, done: have, total: release.package.bytes });
     try {
-      await source.refresh(); // a GitHub source learns the latest release's files here
+      // A GitHub source learns the release's files here: the latest, or the version the owner chose.
+      if (this.chosen === release.version) {
+        if (!source.select) throw new SourceError("installing a chosen version needs a GitHub release source.");
+        await source.select(release.version);
+      } else await source.refresh();
       const input = await source.open(release.package.file, have);
       await new Promise<void>((resolve, reject) => {
         const output = createWriteStream(part, { flags: "a" });
