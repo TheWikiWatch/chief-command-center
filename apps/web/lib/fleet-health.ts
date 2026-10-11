@@ -54,6 +54,8 @@ export type SkillChange = {
   episode?: string | null;
   /** Made within hours of the owner asking the chief about this skill: the tidy-up they asked for, never rework. */
   requested?: boolean;
+  /** Made while the chief was answering a Fleet Health request about another skill: also never rework. */
+  handling?: boolean;
   /** Lines this save rewrote that an earlier save had added (on the save's first change; rework saves only). */
   rewrote?: number;
 };

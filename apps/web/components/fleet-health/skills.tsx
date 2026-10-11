@@ -202,6 +202,7 @@ export function ChangeRow({ change: c, title, compact = false, onReverted }: { c
             <div className="border-t border-line px-3 pb-3 pt-2">
               <p className="text-caption text-fg-3">
                 {c.requested ? <span className="font-medium text-fg-2">The tidy-up you asked for · </span> : null}
+                {c.handling ? <span className="font-medium text-fg-2">Made while answering a Fleet Health request · </span> : null}
                 {c.source}
               </p>
               <LazyDiff id={c.id} />

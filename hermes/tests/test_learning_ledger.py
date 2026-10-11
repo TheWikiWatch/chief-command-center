@@ -223,6 +223,20 @@ class LedgerTests(unittest.TestCase):
         self.assertTrue(skill["changes"][0].get("requested"))  # labelled in Show changes
         self.assertNotIn("requested", skill["changes"][1])
 
+    def test_editing_another_skill_while_answering_a_request_is_not_rework(self):
+        L = self.ledger
+        L.snapshot()
+        self.edit("# Review\n" + "\n".join(self.RULES) + "\n", when=10 * 86400)
+        for n, hours in enumerate((40, 30, 20), start=1):
+            self.edit("# Review\n" + "\n".join(f"{r} (take {n})" for r in self.RULES) + "\n", when=hours * 3600)
+        self.assertTrue(L.report()["skills"][0]["rework"]["flagged"])
+        # The owner asked about a different skill each time, an hour before: the chief was answering them.
+        self.write_acks(asked={"ada/other/skill": [time.time() - h * 3600 for h in (41, 31, 21)]})
+        skill = L.report()["skills"][0]
+        self.assertFalse(skill["rework"]["flagged"])
+        self.assertTrue(skill["changes"][0].get("handling"))
+        self.assertNotIn("requested", skill["changes"][0])
+
     def test_looks_fine_hides_a_flag_until_something_new_happens(self):
         L = self.ledger
         self.rework_week()
@@ -436,6 +450,31 @@ class LedgerTests(unittest.TestCase):
         early = L.episode_verdict([], ["ada"], start, end, end + day)
         self.assertEqual(early["label"], "too early")
         self.assertAlmostEqual(early["judgeAt"], end + L.IMPACT_WINDOW)
+        # Only the desks that use the skill count: another desk's bad fortnight isn't this skill's doing.
+        other = [dict(r, assignee="morgan") for r in events({"completed": 9, "gave_up": 1}, {"completed": 2, "gave_up": 8})]
+        mixed = events({"completed": 9, "gave_up": 1}, {"completed": 9, "gave_up": 1}) + other
+        self.assertEqual(L.episode_verdict(mixed, ["ada"], start, end, now)["label"], "no clear change")
+        unused = L.episode_verdict(mixed, [], start, end, now)
+        self.assertEqual(unused["label"], "too little work")  # never the whole team's cards
+        self.assertIn("no desk has used", unused["why"])
+
+    def test_a_shared_skill_is_judged_on_the_desks_that_used_it(self):
+        L = self.ledger
+        shared = self.hermes / "skills" / "ops" / "desk-update" / "SKILL.md"
+        shared.parent.mkdir(parents=True)
+        shared.write_text("v1\n", encoding="utf-8")
+        for desk in ("chief", "morgan"):
+            (self.hermes / "profiles" / desk / "skills").mkdir(parents=True)
+            (self.hermes / "profiles" / desk / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+        usage = {"desk-update": {"use_count": 3, "view_count": 3}, "other": {"use_count": 0, "view_count": 0, "last_used_at": None}}
+        (self.hermes / "profiles" / "chief" / "skills" / ".usage.json").write_text(json.dumps(usage), encoding="utf-8")
+        (self.hermes / "profiles" / "morgan" / "skills" / ".usage.json").write_text(json.dumps({"other": {"use_count": 2}}), encoding="utf-8")
+        self.assertEqual(L.skill_users(["ada", "chief", "morgan"]), {"desk-update": ["chief"], "other": ["morgan"]})
+        L.snapshot()
+        shared.write_text("v2\n", encoding="utf-8")
+        L.snapshot()
+        skill = next(s for s in L.report()["skills"] if s["scope"] == "shared")
+        self.assertEqual(skill["episodes"][0]["judgedOn"], ["chief"])
 
     def test_decisions_mark_proposals_and_approved_ones_applied(self):
         L = self.ledger

@@ -26,6 +26,10 @@ root above this file when it runs from a profile's scripts/ folder (the app's 30
 data folder is CHIEF_LEARNING_DIR, else <root>/learning: ledger.db (SQLite), report.json, report.md,
 proposals.json (the weekly distill) and decisions.json (the owner's Approve / Dismiss, from the dashboard).
 Standard library only. Ported from the owner's original fleet tooling; bundled with the app.
+
+The copy in the chief's scripts/ folder is installed by the app and replaced at every start: an edit there is
+lost, and until then Fleet Health's Refresh (the app's bundled copy) and the 30-minute job disagree. Change the
+app's source (hermes/plugins/chief-dashboard-bridge/ledger/learning_ledger.py) instead.
 """
 
 from __future__ import annotations
@@ -393,6 +397,23 @@ def desks() -> list[str]:
     return sorted(d.name for d in p.iterdir() if (d / "config.yaml").exists()) if p.is_dir() else []
 
 
+def skill_users(profiles: list[str]) -> dict[str, list[str]]:
+    """Which desks have used each skill, by name, from Hermes' own usage records
+    (`profiles/<desk>/skills/.usage.json`: views and uses per skill). A shared skill is judged on these desks'
+    cards: judged on the whole team's, every shared skill edited in the same fortnight got the same numbers."""
+    users: dict[str, list[str]] = {}
+    for desk in profiles:
+        try:
+            data = json.loads((HERMES / "profiles" / desk / "skills" / ".usage.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        records = data.get("skills", data) if isinstance(data, dict) else {}
+        for name, rec in records.items() if isinstance(records, dict) else ():
+            if isinstance(rec, dict) and (rec.get("use_count") or rec.get("view_count") or rec.get("last_used_at")):
+                users.setdefault(str(name), []).append(desk)
+    return users
+
+
 def memory_fill(profile: str) -> dict:
     home = HERMES / "profiles" / profile
     limits = {"memory": 2200, "user": 1375}
@@ -540,12 +561,16 @@ def quality_stats(rows: list) -> dict:
 
 
 def episode_verdict(events: list, desks_for: list[str], start: float, end: float, now: float) -> dict:
-    """Before/after verdict for one episode: 14 days before its first edit vs 14 days after its last."""
+    """Before/after verdict for one episode: 14 days before its first edit vs 14 days after its last, on the cards
+    of the desks that use the skill. No such desk: nothing can judge it (never the whole team's cards, which
+    move for reasons no single skill explains)."""
     judge_at = end + IMPACT_WINDOW
     if now < judge_at:
         days = int((judge_at - now) / DAY) + 1
         return {"label": "too early", "why": f"judged in {days}d (14 days after the last edit)", "judgeAt": judge_at}
-    mine = [r for r in events if not desks_for or r["assignee"] in desks_for]
+    if not desks_for:
+        return {"label": "too little work", "why": "no desk has used this skill, so no cards can judge it", "judgeAt": judge_at}
+    mine = [r for r in events if r["assignee"] in desks_for]
     before = quality_stats([r for r in mine if start - IMPACT_WINDOW <= r["created_at"] < start])
     after = quality_stats([r for r in mine if end <= r["created_at"] < end + IMPACT_WINDOW])
     n_b, n_a = before["done"] + before["gaveUp"], after["done"] + after["gaveUp"]
@@ -643,7 +668,7 @@ def _rewritten(conn: sqlite3.Connection, files: list[str], save_of: dict[int, fl
     return out
 
 
-def skill_rework(conn: sqlite3.Connection, edits: list, asked_at: list[float], now: float) -> dict:
+def skill_rework(conn: sqlite3.Connection, edits: list, asked_at: list[float], now: float, handling_at: list[float] | None = None) -> dict:
     """Rework for one skill: saves that rewrote lines an earlier save added within two weeks. Growth isn't rework,
     nor is a line moved to another file of the skill in the same save, a new skill's first days, or the tidy-up
     the owner asked for. Flagged at REWORK_SAVES in 7 days while the latest is within REWORK_QUIET."""
@@ -658,6 +683,9 @@ def skill_rework(conn: sqlite3.Connection, edits: list, asked_at: list[float], n
         added = set().union(*(lines.get(r["id"], ([], set()))[1] for r in group))
         rewritten = [ln for r in group for ln in lines.get(r["id"], ([], set()))[0] if _norm(ln) not in added]
         requested = any(a <= at <= a + ASKED_GRACE for a in asked_at)
+        # Any other skill the chief edits while answering a Fleet Health request (its own flag-handling skill,
+        # above all) is part of that answer too: counting it flagged the skill that handles flags.
+        handling = not requested and any(a <= at <= a + ASKED_GRACE for a in handling_at or [])
         telling = [_quote(ln) for ln in rewritten if len(_norm(ln)) >= 12] or [_quote(ln) for ln in rewritten]
         saves.append(
             {
@@ -667,7 +695,8 @@ def skill_rework(conn: sqlite3.Connection, edits: list, asked_at: list[float], n
                 "lines": len(rewritten),
                 "example": telling[0] if telling else "",
                 "requested": requested,
-                "rework": len(rewritten) >= REWORK_MIN_LINES and not requested and at >= float(first or at) + NEW_SKILL_GRACE,
+                "handling": handling,
+                "rework": len(rewritten) >= REWORK_MIN_LINES and not requested and not handling and at >= float(first or at) + NEW_SKILL_GRACE,
             }
         )
     rework = [s for s in saves if s["rework"]]
@@ -682,6 +711,7 @@ def skill_rework(conn: sqlite3.Connection, edits: list, asked_at: list[float], n
         "saves": len(saves),
         "reworkSaves": [{k: s[k] for k in ("id", "at", "lines", "example")} for s in reversed(week)],
         "requestedIds": [i for s in saves if s["requested"] for i in s["ids"]],
+        "handlingIds": [i for s in saves if s["handling"] for i in s["ids"]],
         "reworkIds": {s["ids"][0]: s["lines"] for s in rework},
         "flagged": len(week) >= REWORK_SAVES and bool(run) and now - run[-1]["at"] <= REWORK_QUIET,
         "runId": run[0]["id"] if run else None,
@@ -712,18 +742,21 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
     """Every skill edited in the last 30 days: edits (saves), rework, size trend, episodes with verdicts, recent
     changes. `asked` holds when the owner asked the chief about each skill (its tidy-up isn't rework)."""
     asked = asked or {}
+    every_ask = sorted(t for times in asked.values() for t in times)
     since = now - 30 * DAY
     rows = conn.execute("SELECT * FROM versions WHERE change IN ('added','changed','removed','reverted') AND seen_at >= ? ORDER BY id ASC", (since,)).fetchall()
     events = kanban_events(kconn, since - 2 * IMPACT_WINDOW) if kconn else []
     all_desks = desks()
+    users = skill_users(all_desks)
     by_skill: dict[tuple[str, str], list] = {}
     for r in rows:
         by_skill.setdefault((r["scope"], r["skill"]), []).append(r)
     out = []
     for (scope, skill), items in by_skill.items():
         edits = [r for r in items if r["change"] in EDIT_KINDS]
-        rework = skill_rework(conn, edits, asked.get(f"{scope}/{skill}", []), now)
+        rework = skill_rework(conn, edits, asked.get(f"{scope}/{skill}", []), now, every_ask)
         requested = set(rework.pop("requestedIds"))
+        handling = set(rework.pop("handlingIds"))
         rewrote = rework.pop("reworkIds")
         files = sorted({r["file"] for r in items})
         size_now = size_then = 0
@@ -736,7 +769,8 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
                 known_then = False
             else:
                 size_then += int(old["size"] or 0) if old["change"] != "removed" else 0
-        desks_for = [scope] if scope in all_desks else []
+        # A desk's own skill is judged on that desk's cards; a shared one on the desks that have used it.
+        desks_for = [scope] if scope in all_desks else users.get(skill.split("/")[-1], [])
         episodes = []
         for group in reversed(_episodes(edits)):
             start, end = group[0]["mtime"] or group[0]["seen_at"], group[-1]["mtime"] or group[-1]["seen_at"]
@@ -749,6 +783,7 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
                     "firstId": group[0]["id"],
                     "lastId": group[-1]["id"],
                     "verdict": episode_verdict(events, desks_for, start, end, now),
+                    "judgedOn": desks_for,
                 }
             )
         episode_of = {r["id"]: f"ep{g[0]['id']}" for g in _episodes(edits) for r in g}
@@ -769,6 +804,7 @@ def skills_summary(conn: sqlite3.Connection, kconn: sqlite3.Connection | None, n
                     "newer": later_versions(conn, r),
                     "episode": episode_of.get(r["id"]),
                     **({"requested": True} if r["id"] in requested else {}),
+                    **({"handling": True} if r["id"] in handling else {}),
                     **({"rewrote": rewrote[r["id"]]} if r["id"] in rewrote else {}),
                 }
             )
@@ -877,6 +913,10 @@ def acknowledged(flag: dict, ack: dict | None, now: float) -> bool:
     return now - at < ACK_EXPIRY if evidence is None else float(evidence) <= at
 
 
+def _and(names: list[str]) -> str:
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1] if names else "no desk"
+
+
 def _label(s: dict) -> str:
     return f"{s['name']} ({'shared' if s['scope'] == 'shared' else s['scope']})"
 
@@ -958,7 +998,7 @@ def flags(skills: list[dict], desk_cards: list[dict], props: list[dict], now: fl
                         "severity": "danger",
                         "skill": s["key"],
                         "title": f"{label} got worse after {ep['edits']} {'edit' if ep['edits'] == 1 else 'edits'}",
-                        "detail": ep["verdict"].get("why") or "",
+                        "detail": (f"On {_and(ep['judgedOn'])}'s cards: " if s["scope"] == "shared" else "") + (ep["verdict"].get("why") or ""),
                     }
                 )
     for d in desk_cards:

@@ -1073,3 +1073,9 @@
   past the 15 s a send waited, so the message came back "not attached" and the chat showed an error. A send now waits
   through the start-up minute (at most 45 s), and if the chat still isn't there it answers 503, so the dashboard queues
   the message and sends it on its own. The smoke test also prints every log when it fails.
+
+**Fleet Health: a shared skill is judged on the desks that use it (2026-10-10).**
+
+- Several shared skills were flagged "got worse after 1 edit" with identical numbers (quality 89% → 65%, median 19m → 6.5m). A shared skill was judged on every desk's cards, so any skill edited in the same fortnight inherited the whole team's movement. Now it's judged on the cards of the desks that have used it, from Hermes' own usage records (`profiles/<desk>/skills/.usage.json`), and the flag says whose cards. With no such desk, there's no verdict. On the live ledger, 4 look-alike flags (plus 2 hidden) became 1 with evidence: game-capture-ops on chief's and clip-finder's cards.
+- Answering an "Ask" made the chief edit its own flag-handling skill, which was then flagged for rework. Edits to any skill within 6 hours of an Ask are now part of the answer, never rework, and Show changes labels them "Made while answering a Fleet Health request".
+- The chief had patched both the live copy of the ledger (`scripts/learning_ledger.py`, replaced at every start) and the repo, rolling the shared flags into one note. Refresh ran the bundled copy and the 30-minute job ran the patched one, so the report flipped between styles. The patch is replaced by this fix; the ledger's header now says edits to the live copy are lost.
