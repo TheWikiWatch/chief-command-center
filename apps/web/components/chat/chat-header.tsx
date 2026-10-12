@@ -127,11 +127,12 @@ export function ChatHeader({
             </div>
           ) : null)}
       </div>
-      <div className="min-w-13 flex-1 sm:basis-auto">
-        <div className="flex items-center gap-2">
+      <div className="@container/name min-w-13 flex-1 sm:basis-auto">
+        {/* The row clips rather than spill: the peak chip shrinks to "2×" in a narrow header (deepseek-chip.tsx). */}
+        <div className="-my-0.5 flex min-w-0 items-center gap-2 overflow-hidden py-0.5">
           <h1 className="min-w-11 truncate text-headline text-fg">{name}</h1>
           {/* DeepSeek's peak/off-peak pricing only matters when the chief runs on DeepSeek. */}
-          {chief?.provider === "deepseek" ? <DeepseekChip peakOnly /> : null}
+          {chief?.provider === "deepseek" ? <DeepseekChip /> : null}
         </div>
         <AnimatePresence mode="wait" initial={false}>
           <motion.p

@@ -8,7 +8,7 @@
     "release:plan": "node scripts/release.mjs --plan",
     "release:promote": "node scripts/release.mjs --promote",
     "tester-kit": "node scripts/tester-kit.mjs",
-    "check": "npm --prefix apps/web run check && npm --prefix apps/desktop run check && npm run lint:python && npm run test:python && npm run privacy",
+    "check": "node scripts/check.mjs",
     "test:web": "npm --prefix apps/web test",
     "test:python": "python -B -m unittest discover -s hermes/tests && python -B -m unittest discover -s backup/tests",
     "privacy": "node scripts/privacy-scan.mjs",

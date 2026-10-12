@@ -179,8 +179,8 @@ function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
       <header className="app-drag titlebar-clear-phone relative z-20 flex shrink-0 items-center gap-2 border-b border-line px-4 py-2">
         {phone ? (
           <>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-headline text-fg">Vault</h1>
+            <div className="min-w-18 flex-1">
+              <h1 className="truncate text-headline text-fg">Vault</h1>
               <p className="truncate text-caption text-fg-3">Second Brain · read-only</p>
             </div>
             {trailing}

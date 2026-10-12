@@ -25,6 +25,8 @@ import { ViewSwitch } from "@/components/ui/controls";
 import { TodaySide } from "@/components/today/side-column";
 import { StateFace } from "@/components/state-face";
 import { EmptyState, SkeletonRows } from "@/components/ui/surface";
+import { TodaySectionsList } from "@/components/today/sections";
+import { sectionToday } from "@/lib/today-sections";
 
 type TodayCache = { meta: Meta; boards: Board[]; focus: FocusCard[]; stale: boolean; today: TodayItem[]; pulse: Pulse };
 
@@ -150,6 +152,8 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
   }, []);
 
   const q = query.trim().toLowerCase();
+  // "Do first" in sections (lib/today-sections.ts): built from the boards, so nothing due today is cut off.
+  const sections = useMemo(() => sectionToday(boards, today), [boards, today]);
   const ranked = useMemo(() => {
     if (attention) {
       const hot: TodayItem[] = [];
@@ -178,8 +182,8 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
       }
       return hot;
     }
-    return today;
-  }, [attention, boards, today]);
+    return [...sections.today, ...sections.overdue, ...sections.soon, ...sections.stale];
+  }, [attention, boards, sections]);
 
   const matches = useMemo(() => {
     if (!q) return ranked;
@@ -273,8 +277,8 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
       <header className="app-drag titlebar-clear-phone flex items-center gap-2 border-b border-line px-4 py-2">
         {hideTabs ? (
           <>
-            <div className="min-w-0 flex-1">
-              <h1 className="text-headline text-fg">Today</h1>
+            <div className="min-w-18 flex-1">
+              <h1 className="truncate text-headline text-fg">Today</h1>
               <p className="truncate text-caption text-fg-3">{dateLabel}</p>
             </div>
             {vaultButton}
@@ -363,6 +367,8 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
                       ) : (
                         <SkeletonRows rows={4} label="Reading your tasks" />
                       )
+                    ) : !q && !attention ? (
+                      <TodaySectionsList sections={sections} selectedTitle={launch?.title} onOpen={openToday} animate={morning} onSendToChief={onSendToChief} />
                     ) : (
                       <ol className="-mx-3.5 border-y border-line">
                         {matches.map((item, i) => (

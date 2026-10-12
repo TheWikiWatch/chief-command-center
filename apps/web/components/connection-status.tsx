@@ -3,7 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 
-import { DeepseekChip } from "@/components/deepseek-chip";
+import { DeepseekSchedule } from "@/components/deepseek-chip";
 import { SettingsIcon } from "@/components/icons";
 import { ResourceStatus } from "@/components/resource-status";
 import { Tip } from "@/components/ui/popovers";
@@ -60,10 +60,10 @@ export function ConnectionDot({ connected, authFailed, onOpen, quiet = false }: 
       <button
         type="button"
         onClick={onOpen}
-        className="press flex h-11 min-w-11 shrink-0 items-center justify-center gap-2 rounded-full px-2"
+        className="press flex h-11 min-w-11 shrink items-center justify-center gap-2 rounded-full px-2"
         aria-label={label ? `Connection: ${label}. Show status` : "Connection healthy. Show status"}
       >
-        <span className="relative flex h-2.5 w-2.5">
+        <span className="relative flex h-2.5 w-2.5 shrink-0">
           {state !== "ok" ? <span className={`absolute inset-0 animate-ping rounded-full opacity-60 ${color}`} /> : null}
           <span className={`relative h-2.5 w-2.5 rounded-full ${color} ${state === "ok" ? "shadow-[0_0_8px_rgb(var(--c-ok)/0.6)]" : ""}`} />
         </span>
@@ -71,7 +71,7 @@ export function ConnectionDot({ connected, authFailed, onOpen, quiet = false }: 
           {label && !quiet ? (
             <motion.span
               key={label}
-              className={`whitespace-nowrap text-caption font-medium ${text}`}
+              className={`min-w-0 truncate text-caption font-medium ${text}`}
               initial={{ opacity: 0, x: -4 }}
               animate={{ opacity: 1, x: 0, transition: SPRING.snappy }}
               exit={{ opacity: 0, transition: { duration: 0.12 } }}
@@ -126,7 +126,7 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
         <section>
           <h3 className="mb-2 px-1 text-callout font-medium text-fg-2">DeepSeek pricing</h3>
           <div className="rounded-card border border-line bg-card px-4 py-3">
-            <DeepseekChip detail />
+            <DeepseekSchedule />
           </div>
         </section>
         ) : null}
@@ -259,7 +259,9 @@ export function HeaderStatus({
   quiet,
 }: LinkState & { onOpenStatus?: () => void; onOpenSettings?: () => void; quiet?: boolean }) {
   return (
-    <div className="flex shrink-0 items-center">
+    // The status label gives way (truncates) before a page title does: at phone width a long label ("Approvals
+    // error", "Reconnecting…") used to push over the title.
+    <div className="flex min-w-0 shrink items-center">
       <ConnectionDot connected={connected} authFailed={authFailed} onOpen={onOpenStatus} quiet={quiet} />
       {onOpenSettings ? (
         <Tip label="Settings" shortcut={shortcutText("settings")}>
@@ -267,7 +269,7 @@ export function HeaderStatus({
             type="button"
             onClick={onOpenSettings}
             aria-label="Settings"
-            className="press flex h-11 w-11 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
+            className="press flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg"
           >
             <SettingsIcon size={20} />
           </button>

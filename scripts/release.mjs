@@ -27,6 +27,8 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSyn
 import net from "node:net";
 import path from "node:path";
 
+import { slimEnv } from "./slim-env.mjs";
+
 const repo = path.resolve(import.meta.dirname, "..");
 const args = process.argv.slice(2);
 const opt = (name) => {
@@ -42,24 +44,8 @@ function fail(message) {
 function step(message) {
   console.log(`\n▶ ${message}`);
 }
-/**
- * The environment for every step: PATH without duplicates and without the node_modules\.bin folders npm added for
- * this script. Each nested `npm run` adds a few hundred characters, and cmd.exe stops finding programs once PATH
- * passes 8191 (a long PATH plus the four levels of `npm run check` failed with "'tsc' is not recognized").
- */
-const stepEnv = (() => {
-  const key = Object.keys(process.env).find((k) => k.toLowerCase() === "path") || "PATH";
-  const seen = new Set();
-  const parts = String(process.env[key] || "")
-    .split(path.delimiter)
-    .filter((p) => {
-      const norm = p.trim().replace(/[\\/]+$/, "").toLowerCase();
-      if (!norm || seen.has(norm) || /[\\/]node_modules[\\/]\.bin$/.test(norm) || /node-gyp-bin$/.test(norm)) return false;
-      seen.add(norm);
-      return true;
-    });
-  return { ...process.env, [key]: parts.join(path.delimiter) };
-})();
+/** Every step starts from a slim PATH (scripts/slim-env.mjs): a long Windows PATH plus nested npm runs breaks cmd.exe. */
+const stepEnv = slimEnv();
 
 function run(cmd, cmdArgs, options = {}) {
   const r = spawnSync(cmd, cmdArgs, { cwd: repo, stdio: options.capture ? "pipe" : "inherit", encoding: "utf8", shell: options.shell ?? false, env: options.env ?? stepEnv });
