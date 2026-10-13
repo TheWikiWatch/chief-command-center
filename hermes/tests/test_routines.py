@@ -416,3 +416,27 @@ class RelayTests(RoutineTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RoutineSafetyTests(unittest.TestCase):
+    """A job a bot schedules that sends outside the app or runs a script asks the owner; the view says where each goes."""
+
+    def test_where_results_go(self):
+        self.assertEqual(routines.destination("command_center:abc"), ("command_center:abc", False))
+        self.assertEqual(routines.destination(None), ("local", False))
+        self.assertEqual(routines.destination("origin"), ("origin", False))
+        self.assertEqual(routines.destination("telegram:123"), ("telegram:123", True))
+        self.assertEqual(routines.destination(["command_center", "discord:9"]), ("command_center,discord:9", True))
+
+    def test_only_risky_jobs_ask(self):
+        reminder = {"action": "create", "name": "Stretch", "schedule": "every day at 10:00", "prompt": "Remind me to stretch", "deliver": "command_center"}
+        self.assertIsNone(routines.approval_for("cronjob_manage", reminder))
+        self.assertIsNone(routines.approval_for("cronjob_manage", {"action": "list"}))
+        out = routines.approval_for("cronjob_manage", {**reminder, "deliver": "telegram:555", "prompt": "Summarize the inbox"})
+        self.assertEqual(out["action"], "approve")
+        self.assertIn("sends its results to telegram:555", out["message"])
+        self.assertIn("Summarize the inbox", out["message"])
+        self.assertTrue(out["rule_key"].startswith("chief:routine:"))
+        scripted = routines.approval_for("cronjob_manage", {"action": "update", "job_id": "j1", "script": "collect.py"})
+        self.assertIn("runs the script collect.py", scripted["message"])
+        self.assertIsNone(routines.approval_for("terminal", reminder))

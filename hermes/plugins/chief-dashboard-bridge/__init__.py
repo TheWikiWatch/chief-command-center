@@ -116,6 +116,13 @@ def _register_connections(ctx) -> None:
         fleet.guard["active"] = True
     except Exception:
         logger.warning("chief-dashboard-bridge: the fleet approval couldn't be registered; the fleet tools will refuse", exc_info=True)
+    try:
+        from . import routines
+
+        # A job a bot schedules that sends outside the app or runs a script asks the owner first.
+        ctx.register_hook("pre_tool_call", routines.pre_tool_call)
+    except Exception:
+        logger.warning("chief-dashboard-bridge: the routine approval couldn't be registered", exc_info=True)
     add = getattr(ctx, "register_system_prompt_section", None)
     if add is None:
         return

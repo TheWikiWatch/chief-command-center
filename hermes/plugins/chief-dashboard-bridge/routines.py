@@ -207,10 +207,69 @@ def _last_output(jobs: Any, job_id: str, limit: int = 1500) -> str:
         return ""
 
 
+# Where a job's results go that stays inside the app: the chat, nowhere (saved only), or back to the chat it came
+# from (the chief's chats are the app's). Anything else (telegram:…, discord:…, all, bot-chat) leaves the app.
+_IN_APP = {"command_center", "local", "origin"}
+
+
+def destination(deliver: Any) -> tuple[str, bool]:
+    """(the job's delivery as Hermes stores it, whether any part of it leaves the app)."""
+    if isinstance(deliver, (list, tuple)):
+        parts = [str(p).strip() for p in deliver if str(p).strip()]
+    else:
+        parts = [p.strip() for p in str(deliver or "local").split(",") if p.strip()]
+    parts = parts or ["local"]
+    return ",".join(parts), any(p.split(":", 1)[0] not in _IN_APP for p in parts)
+
+
+def approval_for(tool_name: str, args: Any) -> dict[str, Any] | None:
+    """A scheduled job a bot creates or changes that sends its results outside the app or runs a script asks the
+    owner first (pre_tool_call): those are the two ways one bad input could keep acting, unattended, every day.
+    Ordinary reminders and routines that report in the app don't ask."""
+    import hashlib
+
+    if tool_name != "cronjob_manage" or not isinstance(args, dict):
+        return None
+    if str(args.get("action") or "").strip().lower() not in ("create", "update"):
+        return None
+    reasons = []
+    if args.get("deliver"):
+        where, external = destination(args.get("deliver"))
+        if external:
+            reasons.append(f"sends its results to {where}")
+    for key, what in (("script", "runs the script"), ("monitor_script", "runs the script"), ("monitor_url", "watches")):
+        value = str(args.get(key) or "").strip()
+        if value:
+            reasons.append(f"{what} {value[:200]}")
+    if not reasons:
+        return None
+    lines = [
+        f"{'Schedule' if args.get('action') == 'create' else 'Change'} a job that {' and '.join(reasons)}",
+        f"Name: {' '.join(str(args.get('name') or args.get('job_id') or '?').split())[:80]}",
+        f"When: {' '.join(str(args.get('schedule') or '?').split())[:80]}",
+    ]
+    prompt = " ".join(str(args.get("prompt") or "").split())
+    if prompt:
+        lines += ["", prompt[:400] + ("…" if len(prompt) > 400 else "")]
+    key = hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+    return {"action": "approve", "message": "\n".join(lines), "rule_key": f"chief:routine:{key}"}
+
+
+def pre_tool_call(tool_name: str = "", args: Any = None, **_kw: Any) -> dict[str, Any] | None:
+    """Hermes's hook: never raises; an unreadable create or update of a job asks anyway."""
+    try:
+        return approval_for(str(tool_name or ""), args)
+    except Exception:
+        if str(tool_name or "") == "cronjob_manage":
+            return {"action": "approve", "message": "Schedule or change a job", "rule_key": "chief:routine-unknown"}
+        return None
+
+
 def _describe(profile: str, home: Path, job: dict[str, Any], jobs: Any) -> dict[str, Any]:
     name = str(job.get("name") or "")
     built_in = name.startswith(BUILT_IN)
     thread = _thread_of(job.get("deliver"))
+    deliver, external = destination(job.get("deliver"))
     if profile != "chief" and thread is None:
         thread = _read(_THREADS_FILE).get(_key(profile, str(job.get("id") or "")))
     return {
@@ -228,7 +287,15 @@ def _describe(profile: str, home: Path, job: dict[str, Any], jobs: Any) -> dict[
         "lastError": job.get("last_error"),
         "lastOutput": _last_output(jobs, str(job.get("id") or "")),
         "thread": thread,
-        "silent": thread is None,
+        # Saved only: no chat, and nothing sent anywhere else.
+        "silent": thread is None and not external,
+        "deliver": deliver,
+        "external": external,
+        # Made by a bot from a conversation (Hermes records where); the app's and the dashboard's own jobs have none.
+        "createdByBot": bool(job.get("origin")) and not built_in,
+        "script": str(job.get("script") or ""),
+        "monitor": str(job.get("monitor_url") or job.get("monitor_script") or ""),
+        "workdir": str(job.get("workdir") or ""),
         "kind": "script" if job.get("no_agent") else "agent",
         "builtIn": built_in,
         "skills": list(job.get("skills") or []),
