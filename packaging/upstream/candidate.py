@@ -37,6 +37,21 @@ def api(url: str) -> dict:
         return json.loads(res.read())
 
 
+# Upstream's release tags (v2026.9.24). Anything else is refused before it reaches a workflow, a branch name or a PR:
+# a tag is upstream-controlled text, and git allows quotes, `$(...)` and `;` in tag names.
+TAG_RE = re.compile(r"^v?\d{4}\.\d{1,2}\.\d{1,3}$")
+SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def checked(tag: str, sha: str) -> tuple[str, str]:
+    """The tag and commit when both have the expected shape; SystemExit otherwise."""
+    if not TAG_RE.fullmatch(str(tag)):
+        raise SystemExit(f"upstream's latest release tag isn't a version this tool accepts: {tag!r}")
+    if not SHA_RE.fullmatch(str(sha)):
+        raise SystemExit(f"upstream's tag {tag} doesn't resolve to a full commit id")
+    return str(tag), str(sha)
+
+
 def version_tuple(tag: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", tag)[:4])
 
@@ -71,8 +86,11 @@ def main() -> int:
     pin = json.loads((REPO / "hermes" / "pin.json").read_text(encoding="utf-8"))
     owner = owner_repo(pin)
     release = api(f"https://api.github.com/repos/{owner}/releases/latest")
-    tag = release["tag_name"]
+    tag = str(release["tag_name"])
+    if not TAG_RE.fullmatch(tag):
+        checked(tag, "")
     ref = api(f"https://api.github.com/repos/{owner}/commits/{tag}")
+    tag, _ = checked(tag, str(ref.get("sha") or ""))
     rel = ancestry(owner, pin["commit"], ref["sha"])
     result = {
         "current": {"base_version": pin.get("baseVersion", ""), "commit": pin["commit"]},
