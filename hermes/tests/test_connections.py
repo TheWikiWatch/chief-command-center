@@ -3,6 +3,7 @@ against a fake Google, the Connect card from tool rows, the page's rows and the 
 
 import contextlib
 import importlib
+import importlib.util
 import json
 import os
 import sys
@@ -15,6 +16,14 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 from unittest.mock import patch
+
+
+def _installed(name: str) -> bool:
+    # find_spec on a dotted name imports its parent first, which raises when that isn't installed either.
+    try:
+        return importlib.util.find_spec(name) is not None
+    except ModuleNotFoundError:
+        return False
 
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "hermes/plugins/chief-dashboard-bridge"
@@ -287,7 +296,7 @@ class GoogleLocalTests(unittest.TestCase):
             self.assertEqual(st, {"available": True, "connected": True, "account": "owner@example.com", "services": ["gmail"]})
             self.assertNotIn("refresh", json.dumps(st))
 
-    @unittest.skipUnless(importlib.util.find_spec("google.oauth2"), "google-auth isn't installed here")
+    @unittest.skipUnless(_installed("google.oauth2"), "google-auth isn't installed here")
     def test_the_token_loads_the_way_the_skill_loads_it(self):
         from google.oauth2.credentials import Credentials
 

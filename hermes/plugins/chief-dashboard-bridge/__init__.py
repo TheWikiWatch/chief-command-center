@@ -48,6 +48,21 @@ LOG_BYTES = 2 * 1024 * 1024
 LOG_KEEP = 3
 
 
+class _Fallback(logging.Formatter):
+    """Hermes's redacting formatter, or the plain one when it fails: a formatter that raises loses the line entirely
+    (the redaction looks parts of Hermes up as it formats, which a partial import can lack)."""
+
+    def __init__(self, inner: logging.Formatter, fmt: str):
+        super().__init__(fmt)
+        self.inner = inner
+
+    def format(self, record: logging.LogRecord) -> str:
+        try:
+            return self.inner.format(record)
+        except Exception:
+            return super().format(record)
+
+
 def attach_log_file(home) -> logging.Handler | None:
     """The bridge's own rotating log in the chief's profile (`logs/chief-bridge.log`, 2 MB x 3), once per process.
 
@@ -73,7 +88,7 @@ def attach_log_file(home) -> logging.Handler | None:
     try:
         from agent.redact import RedactingFormatter
 
-        handler.setFormatter(RedactingFormatter(fmt))
+        handler.setFormatter(_Fallback(RedactingFormatter(fmt), fmt))
     except Exception:
         handler.setFormatter(logging.Formatter(fmt))
     logger.addHandler(handler)
