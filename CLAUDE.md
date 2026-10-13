@@ -29,10 +29,11 @@ This PC's paths and the owner's live install are in `CLAUDE.local.md` (git-ignor
 
 ## Shipping an update to everyone who has the app
 
-People install the app once. After that, every update reaches them through a **private GitHub releases
-repository** (no code in it, only signed releases). Their app checks it at launch and daily, with a personal
-read-only key, gets the update ready in the background (download, backup, Windows stages it) and shows "Version X is
-ready · Restart to update"; the restart is a small window (`ChiefUpdater.exe`) with Chief's face and a progress bar.
+People install the app once. After that, every update reaches them through a **public GitHub releases
+repository** (no code in it, only signed releases; public since 0.1.21, so no key is needed). Their app checks it at
+launch and daily, verifies each release against the pinned release key, gets the update ready in the background
+(download, backup, Windows stages it) and shows "Version X is ready · Restart to update"; the restart is a small
+window (`ChiefUpdater.exe`) with Chief's face and a progress bar.
 Details: `docs/DISTRIBUTION.md`; the flow's traps: `docs/FRAGILE_SEAMS.md`, "Installing an update".
 
 When the owner says "ship it" / "release this" / "push this out":

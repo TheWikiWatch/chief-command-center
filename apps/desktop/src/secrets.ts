@@ -35,7 +35,8 @@ export function bridgeToken(dir: string, sealer: Sealer, adopt?: string): string
   return token;
 }
 
-/** The read-only key for a private GitHub release repository (Settings → Updates), sealed like the token. "" = none. */
+/** Optional read-only key for the GitHub release repository (Settings → Updates): needed only if it is private, and it
+ * raises GitHub's rate limit. Sealed like the token. "" = none. */
 export function readUpdateKey(dir: string, sealer: Sealer): string {
   const file = path.join(dir, "update-key.bin");
   if (!existsSync(file) || !sealer.isEncryptionAvailable()) return "";

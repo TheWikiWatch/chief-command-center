@@ -1086,3 +1086,8 @@
 - **DeepSeek peak.** The schedule matched DeepSeek's page (01:00–04:00 and 06:00–10:00 UTC weekdays, Chinese holidays off). In Eastern time that's 9 PM–midnight and 2–6 AM, and Golden Week (Oct 1–7) kept it off-peak until Wednesday 9 PM, which is what looked broken. The header chip is now a button ("Peak · 2× until midnight", or "Peak 2×" when the name area is narrow), opening the week's peak hours in local time; the status sheet says why it's off-peak. It refreshes exactly at the flip and when the app comes back.
 - **Phone header overlap.** The chip, and a long status label in the Today and Vault headers, couldn't shrink and drew over the name or title. Both now truncate first.
 - The Chinese holiday list covers 2026 only: add 2027's (published around November) to `lib/deepseek-schedule.ts`.
+
+**The releases repository is described as public everywhere (2026-10-12).** It has been public since 0.1.21, but
+`CLAUDE.md` and a few code comments (`updater.ts`, `secrets.ts`, `release-tool.mjs`) still called it private with a
+per-person key. They now say it's read without a key; the optional update key stays, for a private repository and for
+GitHub's higher rate limit. No change to the app's behaviour.

@@ -17,8 +17,8 @@ import { folderSource, SourceError, type ReleaseSource } from "./release-source"
  *    (ChiefUpdater.exe, outside the package) covers the close, Windows registers the staged package (seconds) and
  *    the window opens the new version. If the helper can't run, a hidden installer does the whole install instead.
  *
- * Releases come from a folder (local or network) or a private GitHub repository that holds only releases,
- * read with a per-person read-only key (release-source.ts).
+ * Releases come from a folder (local or network) or a GitHub repository that holds only releases: a public one,
+ * read without a key (an optional read-only key is still sent, for a private one) (release-source.ts).
  */
 export type Release = {
   format: "chief-release";

@@ -13,8 +13,8 @@
 //   node release-tool.mjs verify --dir <release folder> --pub <base64 SPKI>
 //   node release-tool.mjs publish --dir <release folder> --repo <owner/releases-repo> [--draft (last)]
 //       Uploads release.json, its signature and the package as GitHub release v<version> (marked latest) in the
-//       private releases repository the app's updater reads with a per-person key. Uses the `gh` CLI's login.
-//       With --draft it stays a draft (read-only keys can't see it) until:
+//       releases repository the app's updater reads (public: no key needed). Uses the `gh` CLI's login.
+//       With --draft it stays a draft (the updater can't see drafts) until:
 //   node release-tool.mjs undraft --version <x.y.z> --repo <owner/releases-repo> [--prerelease (last)]
 //       --prerelease: live, but as a prerelease (an early release: only apps with Early updates on are offered it)
 //   node release-tool.mjs promote --version <x.y.z> --repo <owner/releases-repo>
@@ -117,7 +117,7 @@ function publish() {
   const release = JSON.parse(readFileSync(path.join(opts.dir, "release.json"), "utf8"));
   const files = ["release.json", "release.json.sig", release.package.file, ...(release.sbom?.file ? [release.sbom.file] : [])].map((f) => path.join(opts.dir, f));
   for (const f of files) if (!existsSync(f)) throw new Error(`missing ${f}`);
-  // --draft: uploaded but invisible to the updater (read-only keys can't see drafts) until `undraft`.
+  // --draft: uploaded but invisible to the updater (drafts need write access to see) until `undraft`.
   const draft = rest.includes("--draft");
   const args = ["release", "create", `v${release.version}`, ...files, "--repo", opts.repo, "--title", `Chief Command Center ${release.version}`,
     "--notes", release.notes || `Chief Command Center ${release.version}`, ...(draft ? ["--draft"] : ["--latest"])];
