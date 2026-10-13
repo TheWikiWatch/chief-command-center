@@ -155,3 +155,24 @@ it("the proxy forwards the routine routes and nothing else under routines", () =
   expect(permittedOperation("bridge", "POST", ["routines", "purge"])).toBe(false);
   expect(permittedOperation("bridge", "GET", ["routines", "run"])).toBe(false);
 });
+
+it("says when a job sends its results outside the app, runs a script, or was made by a bot in a chat", async () => {
+  ROUTINES.push({
+    ...ROUTINES[0],
+    id: "d4",
+    name: "Inbox digest",
+    deliver: "telegram:555",
+    external: true,
+    createdByBot: true,
+    script: "collect.py",
+    silent: false,
+  });
+  try {
+    route();
+    render(<RoutinesTab people={[]} />);
+    expect(await screen.findByText("made by Chief in a chat · sends results to telegram:555 · runs collect.py")).toBeInTheDocument();
+    expect(screen.getAllByText(/sends results to/)).toHaveLength(1); // the others stay in the app
+  } finally {
+    ROUTINES.pop();
+  }
+});

@@ -54,3 +54,26 @@ export function mailAction(approval: Pick<ExecApproval, "patternKey" | "reason">
   const body = lines.join("\n").trim();
   return { rule, ...RULES[rule], what, fields, body, exact };
 }
+
+/** The bridge's other approvals (fleet.py, routines.py): what to call them on the sheet. */
+const CHIEF_ACTIONS: Record<string, string> = {
+  "fleet-mint": "Create this bot?",
+  "fleet-retire": "Retire this bot?",
+  "fleet-restore": "Bring this bot back?",
+  "fleet-set-model": "Use this costlier model?",
+  "fleet-unknown": "Change the team?",
+  routine: "Schedule this job?",
+  "routine-unknown": "Schedule or change a job?",
+};
+
+export type ChiefAction = { title: string; text: string };
+
+/**
+ * A fleet or routine approval: its title and the bridge's description. Each is fingerprinted to its exact request
+ * (an "always" would only ever trust that one), so the sheet doesn't offer "Always allow" for them.
+ */
+export function chiefAction(approval: Pick<ExecApproval, "patternKey" | "reason">): ChiefAction | null {
+  const match = /^plugin_rule:chief:([a-z-]+?)(?::[0-9a-f]{8,64})?$/.exec(approval.patternKey || "");
+  const title = match ? CHIEF_ACTIONS[match[1]] : undefined;
+  return title ? { title, text: (approval.reason || "").trim() } : null;
+}

@@ -543,7 +543,9 @@ function SafetyNote() {
       <ShieldCheckIcon className="mt-0.5 size-4 shrink-0 text-ok" />
       <p className="min-w-0 flex-1 text-caption text-fg-3">
         {chief} can search and read what you connect. Sending, replying, forwarding, deleting or moving mail, inviting people and sharing files
-        always ask you first, with who it goes to and what it says. Email is treated as untrusted: a message can’t tell a bot to skip that.
+        ask you first, with who it goes to, what it says and the exact call. Read the sheet before you allow it: an email can try to talk a bot
+        into acting for someone else. With Google on this PC, a bot that runs its own code could still reach the mailbox, so for the strongest
+        protection connect Google with Quick.
         {onThisPc() ? null : " Some connections finish on your PC."}
       </p>
     </div>

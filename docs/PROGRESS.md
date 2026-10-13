@@ -1108,3 +1108,30 @@ fixes reach testers).
   for Quick connections only reads run without asking. Reading the Google sign-in file with the file tools is refused.
   It says plainly what it can't stop: a bot that can run arbitrary code can reach a mailbox whose token it can read.
 - **Media previews** use the running chief's own cache folder and open only local files.
+
+**Security hardening, part 2 (2026-10-13).**
+
+- **Phones pair once.** Phone access now needs, besides the Tailscale address and account, a device cookie the phone
+  gets by entering a one-time code from the PC (Settings → Phone → Pair a phone: a QR code, or eight characters typed
+  on the phone, which also works inside an iPhone home-screen app). Codes last ten minutes and work once; wrong guesses
+  lock pairing for a while; the PC keeps only a hash of each phone's token, and Remove signs a phone out at once.
+  Existing phones are asked to pair after the update.
+- **The owner approves fleet changes on the approval sheet.** Creating, retiring or restoring a bot, or pinning a costly
+  model, asks with the bot's name, role and SOUL; the model-set consent flags are gone, and without the approval hook
+  those tools refuse. Archive records can't point outside their folder; a bot's working folder must be a local path.
+- **A bot's scheduled job that sends outside the app or runs a script asks first**, and Team & Routines says where each
+  job really sends, which a bot made, and any script it runs.
+- **`CRITICAL_FACTS.md` can't become a foothold.** It is scanned like Hermes's memory before every conversation, framed
+  as facts rather than instructions, never read from a network share, and (with `_CLAUDE.md`) on Hermes's
+  protected-instruction list, so a bot's change asks the owner and fails closed in scheduled runs. The Second Brain
+  folder comes from the protected profile setting; only known rules file names reach the skills.
+- **Bridge:** phone alerts only to the browsers' push services; problem reports hide more secret shapes and the Windows
+  user name; the bridge log is redacted; Hermes's browser snapshot, vault and checkpoints are never served; the
+  ledger's revert writes only skill files.
+- **CI:** the upstream workflow runs upstream code with no write access or secrets and treats its text as data;
+  workflows get read-only permissions; `main` can't be force-pushed or deleted and needs passing checks (the owner may
+  push); GitHub's secret scanning and push protection are on.
+- **Connections** says plainly what the mail check can't stop.
+- **Deliberately not done:** limiting the Second Brain routines' tools (their skills need the terminal and the drop
+  routine fetches web links on purpose; the protections above cover the foothold), and making Fleet Health tamper-proof
+  (a bot with the terminal can rewrite anything it could check; approvals on the trusted files are the boundary).

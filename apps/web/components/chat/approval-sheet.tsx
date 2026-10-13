@@ -7,7 +7,7 @@ import { HoldButton } from "@/components/ui/hold-button";
 import { Sheet } from "@/components/ui/sheet";
 import { revealCommand } from "@/lib/command-display";
 import { useAssistantName } from "@/lib/identity";
-import { mailAction, type MailAction } from "@/lib/mail-approval";
+import { chiefAction, mailAction, type MailAction } from "@/lib/mail-approval";
 import { SPRING } from "@/lib/motion";
 import type { ApprovalChoice, ExecApproval } from "@/lib/types";
 import { LAYER } from "@/lib/layers";
@@ -39,8 +39,11 @@ export function ApprovalSheet({
   const assistant = useAssistantName();
   // A mail action (mail_guard.py) shows who it goes to and what it says, not a command line.
   const mail = approval ? mailAction(approval) : null;
-  // "Always allow" is offered only where it means something bounded (never for a mail call the guard couldn't read).
-  const always = approval?.allowPermanent !== false && (!mail || mail.always !== null);
+  // A fleet or routine change the bridge asks about (fleet.py, routines.py): its own description, not a command.
+  const action = approval && !mail ? chiefAction(approval) : null;
+  // "Always allow" is offered only where it means something bounded (never for a mail call the guard couldn't read,
+  // nor for a fleet or routine request, whose rule covers only that one request).
+  const always = approval?.allowPermanent !== false && !action && (!mail || mail.always !== null);
   return (
     <>
       <Sheet
@@ -49,15 +52,21 @@ export function ApprovalSheet({
         closeLabel="Minimize"
         scope="container"
         zIndex={LAYER.paneSheet}
-        title={mail ? mail.title : "Command approval required"}
-        subtitle={mail ? `${assistant} wants to ${mail.what.charAt(0).toLowerCase()}${mail.what.slice(1)}` : `${assistant} wants to run this on your PC`}
+        title={mail ? mail.title : action ? action.title : "Command approval required"}
+        subtitle={mail ? `${assistant} wants to ${mail.what.charAt(0).toLowerCase()}${mail.what.slice(1)}` : action ? `${assistant} asks before it does this` : `${assistant} wants to run this on your PC`}
         className="approval-glow"
       >
         {approval ? (
           <div className="space-y-4 px-4 pb-5">
             {mail ? <MailPreview mail={mail} /> : null}
-            {mail && !mail.exact ? null : <ExactCommand label={mail ? "Exact call" : "Command"} command={mail ? mail.exact : approval.command || "Pending command"} />}
-            {approval.reason && !mail ? (
+            {action ? (
+              <div className="rounded-card border border-warn/25 bg-canvas">
+                <p className="max-h-64 overflow-auto px-3 py-2.5 text-callout whitespace-pre-wrap text-fg">{revealCommand(action.text).text}</p>
+              </div>
+            ) : mail && !mail.exact ? null : (
+              <ExactCommand label={mail ? "Exact call" : "Command"} command={mail ? mail.exact : approval.command || "Pending command"} />
+            )}
+            {approval.reason && !mail && !action ? (
               <p className="flex items-start gap-2 text-callout text-warn">
                 <ShieldAlertIcon size={16} className="mt-0.5 shrink-0" />
                 <span>{approval.reason}</span>

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { sameSecret, sessionCookieName, sessionExempt, sessionSecret, TICKET_PARAM, ticketValid } from "@/lib/loopback-session";
+import { DEVICE_COOKIE, deviceAllowed } from "@/lib/server/phone-devices";
 import { allowRemoteLogin, decodeTailscaleLogin, isDirectLoopback, phoneAccess, tailscaleAllowlist, viaPhoneServe } from "@/lib/tailnet-guard";
 
 function refused(req: NextRequest, detail: string, hint: string) {
@@ -45,7 +46,13 @@ export async function proxy(req: NextRequest) {
   const login = decodeTailscaleLogin(req.headers.get("tailscale-user-login"));
   const allowlist = tailscaleAllowlist();
   if (allowRemoteLogin(login, allowlist, phone.tailnet)) {
-    return NextResponse.next();
+    // A paired phone (lib/server/phone-devices.ts): Serve's headers can be sent by any program on this PC, so the
+    // phone also shows the device cookie it got once from a code on the PC. Unpaired, it may only reach the pairing page.
+    if (req.nextUrl.pathname === "/pair" || deviceAllowed(req.cookies.get(DEVICE_COOKIE)?.value)) return NextResponse.next();
+    if (req.nextUrl.pathname.startsWith("/api/")) {
+      return NextResponse.json({ ok: false, error: "Pair this phone first: open Chief here and enter the code from the PC." }, { status: 401 });
+    }
+    return NextResponse.redirect(new URL("/pair", `https://${req.headers.get("host")}`));
   }
 
   return refused(

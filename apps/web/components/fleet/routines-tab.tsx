@@ -205,6 +205,22 @@ function RoutineList({
                     {result.text} {whenLabel(r.lastRun).toLowerCase()}
                   </span>
                 ) : null}
+                {r.external || r.script || r.monitor || r.createdByBot ? (
+                  // What a scheduled job does unattended, said plainly: a bad input must not hide here.
+                  <span className={`mt-0.5 flex items-center gap-1 text-caption ${r.external || r.script || r.monitor ? "text-warn" : "text-fg-3"}`}>
+                    <CircleAlertIcon className="size-3.5 shrink-0" />
+                    <span className="min-w-0 truncate">
+                      {[
+                        r.createdByBot ? `made by ${r.bot} in a chat` : "",
+                        r.external ? `sends results to ${r.deliver}` : "",
+                        r.script ? `runs ${r.script}` : "",
+                        r.monitor ? `watches ${r.monitor}` : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  </span>
+                ) : null}
               </span>
               <ChevronRightIcon size={16} className="shrink-0 text-fg-3" />
             </button>

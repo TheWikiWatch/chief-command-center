@@ -22,6 +22,11 @@ const phoneOn = (host = "pc.example.ts.net", access?: "tailnet") => {
 const serve = { "x-forwarded-for": "100.64.0.9", "x-forwarded-host": "127.0.0.1:3000", "x-forwarded-proto": "https" };
 const status = async (headers: Record<string, string>) =>
   (await middleware(new NextRequest("http://127.0.0.1:3000/api/bridge/health", { headers }))).status;
+// Past the identity checks, an unpaired phone is asked to pair (lib/server/phone-devices.ts; phone-pairing.test.ts).
+const asksToPair = async (headers: Record<string, string>) => {
+  const res = await middleware(new NextRequest("http://127.0.0.1:3000/api/bridge/health", { headers }));
+  return res.status === 401 && /Pair this phone/.test(await res.text());
+};
 
 describe("tailnet guard", () => {
   it("lets this PC's browser through on loopback", async () => {
@@ -64,7 +69,7 @@ describe("tailnet guard", () => {
     phoneOn();
     expect(await status({ host: "pc.example.ts.net", ...serve, "tailscale-user-login": "anyone@example.com" })).toBe(401);
     phoneOn("pc.example.ts.net", "tailnet");
-    expect(await status({ host: "pc.example.ts.net:8443", ...serve, "tailscale-user-login": "anyone@example.com" })).toBe(200);
+    expect(await asksToPair({ host: "pc.example.ts.net:8443", ...serve, "tailscale-user-login": "anyone@example.com" })).toBe(true);
     expect(await status({ host: "pc.example.ts.net", "x-forwarded-proto": "http", "tailscale-user-login": "anyone@example.com" })).toBe(401);
   });
 
@@ -83,10 +88,10 @@ describe("tailnet guard", () => {
     }
   });
 
-  it("still admits the allowlisted Serve login on the tailnet name", async () => {
+  it("lets the allowlisted Serve login on the tailnet name as far as pairing", async () => {
     process.env.CHIEF_DASHBOARD_TAILSCALE_USER = "me@example.com";
     phoneOn();
-    expect(await status({ host: "pc.example.ts.net", ...serve, "tailscale-user-login": "me@example.com" })).toBe(200);
+    expect(await asksToPair({ host: "pc.example.ts.net", ...serve, "tailscale-user-login": "me@example.com" })).toBe(true);
     expect(await status({ host: "pc.example.ts.net", ...serve })).toBe(401);
   });
 });

@@ -331,3 +331,11 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The mail guard's exact call follows an invisible mark (U+2063)** stripped from every other part, so message text
   can't move where the sheet thinks the call starts. An unsure call's rule key carries its own fingerprint, so
   "Always allow" can never widen to other calls.
+- **Phones need a device cookie** (`chief_device`, lib/server/phone-devices.ts) on top of the pinned host and the
+  Tailscale login: Serve's headers alone can be forged by a local program. `/pair` is the only path an unpaired phone
+  reaches. Pairing codes live in the dashboard server's memory: a restart drops them (make a new one).
+- **Fleet and routine approvals are fingerprinted** (`chief:fleet-mint:<hash>`, `chief:routine:<hash>`): "always" would
+  only trust that exact request, so the sheet doesn't offer it. The fleet tools refuse unless `fleet.guard` was set by
+  a successfully registered hook.
+- **The upstream workflow's build job must never get a write token or secrets**; the publish job re-applies the patch
+  queue itself (git only) instead of trusting the build's `applied.json`.

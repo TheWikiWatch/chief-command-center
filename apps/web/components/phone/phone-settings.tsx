@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 
 import { BellIcon, CheckIcon, CircleAlertIcon, CopyIcon, ExternalLinkIcon, LinkIcon, SmartphoneIcon, UsersIcon } from "@/components/icons";
+import { PairPhones } from "@/components/phone/pair-phones";
 import { QrCode } from "@/components/phone/qr-code";
 import { Group, PillButton, Row } from "@/components/ui/settings-group";
 import { desktop, type PhoneState } from "@/lib/desktop";
@@ -192,6 +193,7 @@ function PcSetup() {
       </Group>
 
       {state.url ? <YourPhone url={state.url} login={state.login} onOpen={open} /> : null}
+      {state.url ? <PairPhones url={state.url} /> : null}
       {running ? <WhoCanOpen state={state} busy={busy === "access"} onChange={(m) => void setAccess(m)} /> : null}
       {state.url ? <AlertsGroup /> : null}
     </>
@@ -232,7 +234,9 @@ function YourPhone({ url, login, onOpen }: { url: string; login: string; onOpen:
               </div>
             </Numbered>
             <Numbered n={2} title="Sign in with the same account">{login ? <span className="text-fg-3"> {login}</span> : null}</Numbered>
-            <Numbered n={3} title="Scan the code, or type the address" />
+            <Numbered n={3} title="Scan the code, or type the address, then pair it">
+              <p className="mt-0.5 text-caption text-fg-3">Pair a phone, below, shows a one-time code the phone enters once.</p>
+            </Numbered>
             <Numbered n={4} title={`Add ${assistant} to the home screen`}>
               <p className="mt-0.5 text-caption text-fg-3">Android: in Chrome, tap ⋮, then Install app (or Add to Home screen). iPhone: in Safari, tap Share, then Add to Home Screen.</p>
             </Numbered>

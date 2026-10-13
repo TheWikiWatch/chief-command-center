@@ -65,3 +65,19 @@ it("hidden characters and padding in a command are made visible", () => {
 it("an ordinary command is shown as is", () => {
   expect(revealCommand("git status")).toEqual({ text: "git status", hidden: 0, collapsed: false });
 });
+
+it("a fleet or routine approval shows its own description and can't be always-allowed", () => {
+  sheet({
+    requestId: "r4",
+    command: "<fleet_mint> (plugin approval rule)",
+    reason: "Create a new bot: Nova (Planner)\nId: nova\n\nIts SOUL:\nYou plan the week.",
+    patternKey: "plugin_rule:chief:fleet-mint:0123456789abcdef",
+    allowPermanent: true,
+    allowSession: true,
+  });
+  expect(screen.getByText("Create this bot?")).toBeTruthy();
+  expect(screen.getByText(/Create a new bot: Nova \(Planner\)/)).toBeTruthy();
+  expect(screen.queryByText(/plugin approval rule/)).toBeNull();
+  expect(screen.queryByRole("button", { name: /Always allow/ })).toBeNull();
+  expect(screen.getByRole("button", { name: "Allow once" })).toBeTruthy();
+});

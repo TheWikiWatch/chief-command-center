@@ -33,7 +33,17 @@ export type TeamRoutine = {
   lastOutput: string;
   /** The chat thread it reports to; null when it reports nowhere. */
   thread: string | null;
+  /** Saved only: no chat thread and nothing sent anywhere else. */
   silent: boolean;
+  /** Where Hermes delivers its results, as stored (e.g. "command_center", "telegram:123"). */
+  deliver?: string;
+  /** Some of its results leave the app (another chat service, every platform). */
+  external?: boolean;
+  /** A bot made it from a conversation (not the dashboard, not the app). */
+  createdByBot?: boolean;
+  /** A script it runs, or a URL or script it watches, when it has one. */
+  script?: string;
+  monitor?: string;
   kind: "agent" | "script";
   /** The app's own (Second Brain, Fleet Health): retime, move and switch off only. */
   builtIn: boolean;
