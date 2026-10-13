@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { sameSecret, sessionCookieName, sessionExempt, sessionSecret, TICKET_PARAM, ticketValid } from "@/lib/loopback-session";
-import { allowRemoteLogin, decodeTailscaleLogin, isDirectLoopback, tailscaleAllowlist } from "@/lib/tailnet-guard";
+import { allowRemoteLogin, decodeTailscaleLogin, isDirectLoopback, phoneAccess, tailscaleAllowlist, viaPhoneServe } from "@/lib/tailnet-guard";
 
 function refused(req: NextRequest, detail: string, hint: string) {
   if (req.nextUrl.pathname.startsWith("/api/")) {
@@ -37,9 +37,14 @@ export async function proxy(req: NextRequest) {
     return refused(req, "Open Chief from its desktop app on this PC.", "In the tray, right-click Chief and choose Open in browser to use it in a browser here.");
   }
 
+  // Not this PC's own window: only a request that came through phone access (Tailscale Serve) for this PC's name.
+  const phone = phoneAccess();
+  if (!viaPhoneServe(req.headers, phone.host)) {
+    return refused(req, "Open Chief in its desktop app on this PC.", "To use it on your phone, turn on phone access on the PC: Settings, then Phone.");
+  }
   const login = decodeTailscaleLogin(req.headers.get("tailscale-user-login"));
   const allowlist = tailscaleAllowlist();
-  if (allowRemoteLogin(login, allowlist)) {
+  if (allowRemoteLogin(login, allowlist, phone.tailnet)) {
     return NextResponse.next();
   }
 

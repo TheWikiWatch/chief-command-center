@@ -1091,3 +1091,20 @@
 `CLAUDE.md` and a few code comments (`updater.ts`, `secrets.ts`, `release-tool.mjs`) still called it private with a
 per-person key. They now say it's read without a key; the optional update key stays, for a private repository and for
 GitHub's higher rate limit. No change to the app's behaviour.
+
+
+**Security hardening, part 1 (2026-10-13).** From a full security review of the app (the plan stays private until its
+fixes reach testers).
+
+- **Phone access is pinned.** The dashboard accepts a request that came through Tailscale Serve only while phone access
+  is on, only for this PC's own Tailscale name, and only for the allowed account; "whole tailnet" is now an explicit
+  choice, never the default of an empty list. Turning phone access off closes it at once. (Phone pairing follows.)
+- **Approvals are answered only on the approval sheet.** Notices can no longer offer approve-type buttons.
+- **The bridge token is never a file.** An older install's plain-text copy is removed and the token replaced at the
+  next start; the bridge no longer reads one.
+- **The approval sheet shows exactly what runs.** A mail action shows its email and then the exact call; hidden
+  characters and long padding in any command are made visible. The mail check reads the Google skill's own options,
+  asks as "Act on your mail" (allowable one time at a time) when it can't be sure, shows Bcc, From and attachments, and
+  for Quick connections only reads run without asking. Reading the Google sign-in file with the file tools is refused.
+  It says plainly what it can't stop: a bot that can run arbitrary code can reach a mailbox whose token it can read.
+- **Media previews** use the running chief's own cache folder and open only local files.

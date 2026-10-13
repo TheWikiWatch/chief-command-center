@@ -59,8 +59,30 @@ export function decodeTailscaleLogin(header: string | null): string {
   }
 }
 
-export function allowRemoteLogin(login: string, allowlist: string[]): boolean {
+/**
+ * Phone access as the desktop app set it (apps/desktop/src/runtime.ts): this PC's own Tailscale name, the only Host a
+ * request that came through Serve may carry, and whether the whole tailnet may use it. No name: phone access is off.
+ */
+export function phoneAccess(env: NodeJS.ProcessEnv = process.env): { host: string; tailnet: boolean } {
+  return { host: (env.CHIEF_PHONE_HOST || "").trim().toLowerCase().replace(/\.$/, ""), tailnet: env.CHIEF_PHONE_ACCESS === "tailnet" };
+}
+
+/**
+ * A request shaped like Tailscale Serve's: phone access is on, the Host is this PC's Tailscale name (a page using DNS
+ * rebinding, or a request typed by a program on this PC to 127.0.0.1, carries another), and the scheme Serve set is
+ * https. Headers alone can be forged by a program on this PC, so this narrows who can try, it doesn't prove identity.
+ */
+export function viaPhoneServe(headers: Headers, phoneHost: string): boolean {
+  return (
+    !!phoneHost &&
+    hostnameOf(headers.get("host")) === phoneHost &&
+    (headers.get("x-forwarded-proto") || "").split(",").every((p) => p.trim().toLowerCase() === "https")
+  );
+}
+
+/** The Tailscale account allowed in: the owner's (allow-list), or anyone on the tailnet only when that was chosen. */
+export function allowRemoteLogin(login: string, allowlist: string[], wholeTailnet = false): boolean {
   if (!login) return false;
-  if (allowlist.length === 0) return true;
+  if (allowlist.length === 0) return wholeTailnet;
   return allowlist.includes(login);
 }

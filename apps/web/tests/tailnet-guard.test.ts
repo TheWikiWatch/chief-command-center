@@ -4,11 +4,19 @@ import { NextRequest } from "next/server";
 import { proxy as middleware } from "@/proxy";
 import { isDirectLoopback } from "@/lib/tailnet-guard";
 
-const ORIGINAL = process.env.CHIEF_DASHBOARD_TAILSCALE_USER;
+const KEYS = ["CHIEF_DASHBOARD_TAILSCALE_USER", "CHIEF_PHONE_HOST", "CHIEF_PHONE_ACCESS"] as const;
+const ORIGINAL = Object.fromEntries(KEYS.map((k) => [k, process.env[k]]));
 afterEach(() => {
-  if (ORIGINAL === undefined) delete process.env.CHIEF_DASHBOARD_TAILSCALE_USER;
-  else process.env.CHIEF_DASHBOARD_TAILSCALE_USER = ORIGINAL;
+  for (const k of KEYS) {
+    if (ORIGINAL[k] === undefined) delete process.env[k];
+    else process.env[k] = ORIGINAL[k];
+  }
 });
+const phoneOn = (host = "pc.example.ts.net", access?: "tailnet") => {
+  process.env.CHIEF_PHONE_HOST = host;
+  if (access) process.env.CHIEF_PHONE_ACCESS = access;
+  else delete process.env.CHIEF_PHONE_ACCESS;
+};
 
 // What Tailscale Serve adds to every proxied request (ipn/ipnlocal/serve.go).
 const serve = { "x-forwarded-for": "100.64.0.9", "x-forwarded-host": "127.0.0.1:3000", "x-forwarded-proto": "https" };
@@ -28,9 +36,36 @@ describe("tailnet guard", () => {
 
   it("does not trust a loopback Host that arrived through Serve", async () => {
     process.env.CHIEF_DASHBOARD_TAILSCALE_USER = "me@example.com";
+    phoneOn();
     expect(await status({ host: "127.0.0.1:3000", ...serve })).toBe(401);
     expect(await status({ host: "127.0.0.1:3000", ...serve, "tailscale-user-login": "someone@example.com" })).toBe(401);
-    expect(await status({ host: "127.0.0.1:3000", ...serve, "tailscale-user-login": "me@example.com" })).toBe(200);
+  });
+
+  it("a program on this PC can't get in by adding a Tailscale login header", async () => {
+    // Phone access off (the default): no request without this window's session gets in, whatever it claims.
+    expect(await status({ host: "127.0.0.1:3000", "tailscale-user-login": "x" })).toBe(401);
+    expect(await status({ host: "127.0.0.1:3000", ...serve, "tailscale-user-login": "x" })).toBe(401);
+    expect(await status({ host: "pc.example.ts.net", ...serve, "tailscale-user-login": "x" })).toBe(401);
+    // Phone access on for the owner: a loopback Host or another name is still refused, even with the owner's login.
+    process.env.CHIEF_DASHBOARD_TAILSCALE_USER = "me@example.com";
+    phoneOn();
+    expect(await status({ host: "127.0.0.1:3000", ...serve, "tailscale-user-login": "me@example.com" })).toBe(401);
+    expect(await status({ host: "localhost:3000", "tailscale-user-login": "me@example.com" })).toBe(401);
+  });
+
+  it("a website using DNS rebinding is refused", async () => {
+    process.env.CHIEF_DASHBOARD_TAILSCALE_USER = "me@example.com";
+    phoneOn();
+    expect(await status({ host: "evil.example:3000", "tailscale-user-login": "me@example.com" })).toBe(401);
+    expect(await status({ host: "evil.example:3000", ...serve, "tailscale-user-login": "me@example.com" })).toBe(401);
+  });
+
+  it("with no allowed account, only an explicit whole-tailnet choice lets other logins in", async () => {
+    phoneOn();
+    expect(await status({ host: "pc.example.ts.net", ...serve, "tailscale-user-login": "anyone@example.com" })).toBe(401);
+    phoneOn("pc.example.ts.net", "tailnet");
+    expect(await status({ host: "pc.example.ts.net:8443", ...serve, "tailscale-user-login": "anyone@example.com" })).toBe(200);
+    expect(await status({ host: "pc.example.ts.net", "x-forwarded-proto": "http", "tailscale-user-login": "anyone@example.com" })).toBe(401);
   });
 
   it("any single Serve marker is enough to fall back to the login check", async () => {
@@ -50,6 +85,7 @@ describe("tailnet guard", () => {
 
   it("still admits the allowlisted Serve login on the tailnet name", async () => {
     process.env.CHIEF_DASHBOARD_TAILSCALE_USER = "me@example.com";
+    phoneOn();
     expect(await status({ host: "pc.example.ts.net", ...serve, "tailscale-user-login": "me@example.com" })).toBe(200);
     expect(await status({ host: "pc.example.ts.net", ...serve })).toBe(401);
   });

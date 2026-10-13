@@ -46,7 +46,9 @@ export type DesktopSettings = {
   bootAttempts: { version: string; count: number } | null;
   healthyVersion: string;
   /** Phone access the app turned on: the Tailscale Serve HTTPS port, and the dashboard port it pointed at then. */
-  phoneServe: { port: number; uiPort: number } | null;
+  /** Phone access while it's on: Serve's port, the dashboard port it points at, and this PC's Tailscale name (the
+   * only Host the dashboard accepts phone requests for). */
+  phoneServe: { port: number; uiPort: number; host?: string } | null;
 };
 
 export const DEFAULTS: DesktopSettings = {

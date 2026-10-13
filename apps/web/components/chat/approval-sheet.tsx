@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { MailIcon, ShieldAlertIcon, TerminalIcon } from "@/components/icons";
 import { HoldButton } from "@/components/ui/hold-button";
 import { Sheet } from "@/components/ui/sheet";
+import { revealCommand } from "@/lib/command-display";
 import { useAssistantName } from "@/lib/identity";
 import { mailAction, type MailAction } from "@/lib/mail-approval";
 import { SPRING } from "@/lib/motion";
@@ -14,6 +15,9 @@ import { LAYER } from "@/lib/layers";
 /**
  * Approval arrives as a sheet over the thread (VISUAL-OVERHAUL §3.2, §5 #9). "Always allow" is
  * press-and-hold. Minimize keeps it one tap away as a pill above the composer.
+ *
+ * Nothing the bot writes may hide what runs: a mail action shows its email and then the exact call, and every command
+ * is shown with hidden characters and padding made visible (lib/command-display.ts).
  */
 export function ApprovalSheet({
   approval,
@@ -35,6 +39,8 @@ export function ApprovalSheet({
   const assistant = useAssistantName();
   // A mail action (mail_guard.py) shows who it goes to and what it says, not a command line.
   const mail = approval ? mailAction(approval) : null;
+  // "Always allow" is offered only where it means something bounded (never for a mail call the guard couldn't read).
+  const always = approval?.allowPermanent !== false && (!mail || mail.always !== null);
   return (
     <>
       <Sheet
@@ -49,19 +55,8 @@ export function ApprovalSheet({
       >
         {approval ? (
           <div className="space-y-4 px-4 pb-5">
-            {mail ? (
-              <MailPreview mail={mail} />
-            ) : (
-              <div className="rounded-card border border-warn/25 bg-canvas">
-                <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-caption text-fg-3">
-                  <TerminalIcon size={14} />
-                  Command
-                </div>
-                <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-all px-3 py-2.5 font-mono text-code text-fg">
-                  {approval.command || "Pending command"}
-                </pre>
-              </div>
-            )}
+            {mail ? <MailPreview mail={mail} /> : null}
+            {mail && !mail.exact ? null : <ExactCommand label={mail ? "Exact call" : "Command"} command={mail ? mail.exact : approval.command || "Pending command"} />}
             {approval.reason && !mail ? (
               <p className="flex items-start gap-2 text-callout text-warn">
                 <ShieldAlertIcon size={16} className="mt-0.5 shrink-0" />
@@ -82,7 +77,7 @@ export function ApprovalSheet({
                   This session
                 </button>
               ) : null}
-              {approval.allowPermanent !== false ? (
+              {always ? (
                 <HoldButton
                   className="approve-always"
                   disabled={resolving}
@@ -97,10 +92,12 @@ export function ApprovalSheet({
                 Deny
               </button>
             </div>
-            {approval.allowPermanent !== false ? (
+            {always ? (
               <p className="text-caption text-fg-3">
                 {mail ? `Press and hold “Always allow” to let your bots ${mail.always} from now on.` : "Press and hold “Always allow” to trust this command pattern from now on."}
               </p>
+            ) : mail ? (
+              <p className="text-caption text-fg-3">This couldn’t be read exactly, so it can only be allowed one time at a time. Check the exact call above.</p>
             ) : null}
           </div>
         ) : null}
@@ -125,6 +122,29 @@ export function ApprovalSheet({
         ) : null}
       </AnimatePresence>
     </>
+  );
+}
+
+/** What will run, exactly: hidden characters shown as markers, padding collapsed, and a note when either was found. */
+function ExactCommand({ label, command }: { label: string; command: string }) {
+  const shown = revealCommand(command);
+  return (
+    <div className="rounded-card border border-warn/25 bg-canvas">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2 text-caption text-fg-3">
+        <TerminalIcon size={14} />
+        <span className="min-w-0 flex-1">{label}</span>
+        {command.length > 400 ? <span className="shrink-0 font-mono text-micro">{command.length} characters · scroll</span> : null}
+      </div>
+      <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-all px-3 py-2.5 font-mono text-code text-fg">{shown.text}</pre>
+      {shown.hidden || shown.collapsed ? (
+        <p className="flex items-start gap-2 border-t border-line px-3 py-2 text-caption text-warn">
+          <ShieldAlertIcon size={14} className="mt-0.5 shrink-0" />
+          {shown.hidden ? `${shown.hidden} hidden character${shown.hidden === 1 ? "" : "s"} shown as markers. ` : ""}
+          {shown.collapsed ? "Long runs of blank space were shortened. " : ""}
+          Check it carefully.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

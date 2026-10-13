@@ -11,7 +11,7 @@ import { gatewayOwner } from "../src/gateway";
 import { Notifier, snippet } from "../src/notifier";
 import { isFree, pickPort } from "../src/ports";
 import { applyRestore } from "../src/restore";
-import { bridgeToken } from "../src/secrets";
+import { bridgeToken, legacyTokenFiles, rotateBridgeToken } from "../src/secrets";
 import { Store } from "../src/store";
 import { BACKOFF_MS, FAILED_RETRY_MS, HEALTH_EVERY_MS, HEALTH_FAILURES, MAX_RESTARTS, Supervisor, type SupervisorEvent } from "../src/supervisor";
 
@@ -375,6 +375,21 @@ describe("secrets and settings", () => {
     const fresh = bridgeToken(dir, broken);
     expect(fresh.length).toBeGreaterThanOrEqual(32);
     expect(readdirSync(dir).some((f) => f.startsWith("bridge-token.unreadable-"))).toBe(true);
+  });
+
+  it("finds a plain-text token an older install left, and replaces the sealed token", () => {
+    const root = path.join(tmp, "hermes-legacy");
+    expect(legacyTokenFiles(root)).toEqual([]);
+    const file = path.join(root, "profiles", "chief", "plugins", "chief-dashboard-bridge", ".token");
+    mkdirSync(path.dirname(file), { recursive: true });
+    writeFileSync(file, "synthetic-not-a-credential");
+    expect(legacyTokenFiles(root)).toEqual([file]);
+    const dir = path.join(tmp, "secrets-rotate");
+    const old = bridgeToken(dir, sealer);
+    const rotated = rotateBridgeToken(dir, sealer);
+    expect(rotated).not.toBe(old);
+    expect(rotated.length).toBeGreaterThanOrEqual(32);
+    expect(bridgeToken(dir, sealer)).toBe(rotated); // the new one is what the next start reads
   });
 
   it("stores the shell's settings with defaults", () => {

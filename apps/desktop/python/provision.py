@@ -4,7 +4,8 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
 
     python provision.py --plugins-src <dir> --bridge-port 7790 [--plugin chief-dashboard-bridge]
 
-- Copies each bundled plugin into the profile's `plugins/` when its files differ (a `.token` file there is kept).
+- Copies each bundled plugin into the profile's `plugins/` when its files differ, and removes a plain-text `.token`
+  an older install left there (the app seals the bridge token with DPAPI and rotates one that was exposed).
   Hermes's own override for bundled plugins would replace upstream's whole plugins folder, so the app's
   plugins are user plugins that the app keeps current.
 - Enables them in config.yaml, with gateway injection allowed (the bridge's chat platform needs it).
@@ -46,14 +47,13 @@ def _digest(folder: Path) -> str:
 
 
 def sync_plugin(src: Path, dst: Path) -> bool:
+    # A plain-text bridge token from an older install: never kept (the agent's file tools can read it).
+    (dst / ".token").unlink(missing_ok=True)
     if _digest(src) == _digest(dst):
         return False
     staging = dst.with_name(dst.name + ".updating")
     shutil.rmtree(staging, ignore_errors=True)
     shutil.copytree(src, staging, ignore=shutil.ignore_patterns("__pycache__", ".token"))
-    token = dst / ".token"
-    if token.is_file():
-        shutil.copy2(token, staging / ".token")
     old = dst.with_name(dst.name + ".old")
     shutil.rmtree(old, ignore_errors=True)
     if dst.exists():

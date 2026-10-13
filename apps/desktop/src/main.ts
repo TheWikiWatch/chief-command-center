@@ -12,12 +12,13 @@ import { fallbackCommandLine, installScript, launchDetached } from "./install-pa
 import { checkForUpdates, registerIpc, sendEngineState, syncHistory } from "./ipc";
 import { Notifier } from "./notifier";
 import { missing, resolvePaths } from "./paths";
+import { ensurePhoneHost } from "./phone";
 import { decidePorts } from "./ports";
 import { cacheRelease, readReleases, recordInstall } from "./release-history";
 import { RELEASE_KEYS } from "./release-key";
 import { builtInFeed, builtInReportEmail, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
 import { engine, envFor, hermesCommit, hermesUpstream, logLine, preUpdateBackup, provisionKey, runPython, toolEnv } from "./runtime";
-import { bridgeToken, readUpdateKey } from "./secrets";
+import { bridgeToken, legacyTokenFiles, readUpdateKey, rotateBridgeToken } from "./secrets";
 import { ctx, hiddenLaunch, log, setStep, STEPS, uiOrigin, uiUrl } from "./state";
 import { Store } from "./store";
 import { Supervisor, type SupervisorEvent } from "./supervisor";
@@ -113,10 +114,18 @@ const boot = createBoot({
     // it is sealed here and the plain copy removed.
     const handover = path.join(ctx.paths.appDir, "adopt-token.txt");
     const adopt = existsSync(handover) ? readFileSync(handover, "utf8").trim() : "";
+    ctx.hermesRoot = ctx.store.value.hermesRoot || path.join(ctx.paths.data, "hermes");
     ctx.token = bridgeToken(ctx.paths.secrets, safeStorage, adopt.length >= 32 ? adopt : undefined);
+    // A plain-text copy from before the app sealed the token (an adopted install's `.token`) was readable by the agent:
+    // remove it and use a new token. Skipped while an adoption is being verified (it still checks with that token).
+    const legacy = adopt ? [] : legacyTokenFiles(ctx.hermesRoot);
+    if (legacy.length) {
+      ctx.token = rotateBridgeToken(ctx.paths.secrets, safeStorage);
+      for (const file of legacy) rmSync(file, { force: true });
+      log.info("bridge.token.rotated", { removed: legacy.length });
+    }
     log.addSecret(ctx.token);
     if (existsSync(handover)) rmSync(handover, { force: true });
-    ctx.hermesRoot = ctx.store.value.hermesRoot || path.join(ctx.paths.data, "hermes");
   },
   newerDataError: () =>
     (ctx.store.value.dataSchema || 0) > DATA_SCHEMA
@@ -272,8 +281,11 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
       onEvent: (e) => onSupervisorEvent("gateway", e),
     });
     ctx.web = new Supervisor({
-      launch: async () =>
-        launchWeb(utilityProcess as never, { serverJs: ctx.paths.webServer, port: ctx.store.value.ports.ui, env: envFor("web"), logFile: path.join(ctx.paths.logs, "dashboard.log") }, (code, pid) => ctx.web.exited(code, pid)),
+      launch: async () => {
+        // Phone requests are pinned to this PC's Tailscale name (runtime.ts envFor), which an older record learns now.
+        await ensurePhoneHost();
+        return launchWeb(utilityProcess as never, { serverJs: ctx.paths.webServer, port: ctx.store.value.ports.ui, env: envFor("web"), logFile: path.join(ctx.paths.logs, "dashboard.log") }, (code, pid) => ctx.web.exited(code, pid));
+      },
       ready: async () => {
         const up = await waitFor(() => webHealth(ctx.store.value.ports.ui), 60_000);
         if (!up.ok) throw new Error(up.detail || "The dashboard didn't answer.");
