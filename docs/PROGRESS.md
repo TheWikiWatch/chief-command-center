@@ -1173,3 +1173,7 @@ and the platform registers even without it.
   aliased out), and two build-time packages inside electron-builder with no fix yet.
 - **Still to do, deliberately:** a nonce-based CSP to drop `'unsafe-inline'` (needs Next's nonce support across every
   page; tracked in the security plan).
+
+**Fix (2026-10-13): phone access set up outside the app was refused after 0.1.39.** A Tailscale Serve entry for the
+dashboard made by hand (before the app managed phone access) had no record in the app, so the dashboard had no
+Tailscale name to accept phones for. The app now adopts such an entry at start.

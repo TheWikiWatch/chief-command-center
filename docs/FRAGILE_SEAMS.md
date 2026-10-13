@@ -362,3 +362,5 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Payload provenance refuses a dirty or unknown build** unless its tree digest is in
   `packaging/payload/accepted-trees.json`; `stage.py` refuses a Hermes checkout that isn't the pin plus one patch
   commit, before it builds.
+- **No `phoneServe` record means no phone access** (proxy.ts needs `CHIEF_PHONE_HOST`). `ensurePhoneHost` adopts a
+  Serve entry that points at the dashboard's port; one pointing elsewhere is never adopted.

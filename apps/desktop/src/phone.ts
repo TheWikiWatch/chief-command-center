@@ -29,13 +29,22 @@ export async function phoneState() {
  * An older record (before phone requests were pinned to this PC's Tailscale name) learns the name before the
  * dashboard starts, so phones keep working. Best effort: without it, phone requests are refused until Settings →
  * Phone is opened, never let through.
+ *
+ * A Serve entry for the dashboard made outside the app (by hand, before the app managed phone access) has no record
+ * at all: it is adopted here, so the dashboard accepts phones through it instead of refusing them.
  */
 export async function ensurePhoneHost() {
   const rec = ctx.store.value.phoneServe;
-  if (!rec || rec.host) return;
+  if (rec?.host) return;
   try {
-    const ts = await readState(ctx.store.value.ports.ui);
-    if (ts.dnsName) ctx.store.save({ phoneServe: { ...rec, host: ts.dnsName.toLowerCase() } });
+    const ui = ctx.store.value.ports.ui;
+    const ts = await readState(ui);
+    if (!ts.dnsName) return;
+    if (rec) ctx.store.save({ phoneServe: { ...rec, host: ts.dnsName.toLowerCase() } });
+    else {
+      const ours = ts.serve.find((e) => e.ours);
+      if (ours) ctx.store.save({ phoneServe: { port: ours.port, uiPort: ui, host: ts.dnsName.toLowerCase() } });
+    }
   } catch {
     /* Tailscale not answering: try again at the next start */
   }
