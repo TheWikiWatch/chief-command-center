@@ -102,6 +102,14 @@ def _register_connections(ctx) -> None:
         ctx.register_hook("pre_tool_call", mail_guard.pre_tool_call)
     except Exception:
         logger.warning("chief-dashboard-bridge: the mail guard couldn't be registered; mail actions won't ask first", exc_info=True)
+    try:
+        from . import fleet
+
+        # Creating, retiring or restoring a bot asks the owner on the approval sheet; without this hook those tools refuse.
+        ctx.register_hook("pre_tool_call", fleet.pre_tool_call)
+        fleet.guard["active"] = True
+    except Exception:
+        logger.warning("chief-dashboard-bridge: the fleet approval couldn't be registered; the fleet tools will refuse", exc_info=True)
     add = getattr(ctx, "register_system_prompt_section", None)
     if add is None:
         return
