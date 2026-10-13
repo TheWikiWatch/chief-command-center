@@ -604,7 +604,7 @@ class PushTests(unittest.TestCase):
             return key, auth, {"endpoint": endpoint, "keys": {"p256dh": webpush.b64url_encode(public), "auth": webpush.b64url_encode(auth)}}
 
         vapid.public_key()  # a device subscribes only after fetching the key, which creates the pair
-        self.devices = [device("https://fcm.example/a"), device("https://moz.example/b")]
+        self.devices = [device("https://fcm.googleapis.com/fcm/send/a"), device("https://updates.push.services.mozilla.com/wpush/v2/b")]
         for _key, _auth, sub in self.devices:
             vapid.upsert_subscription(sub)
         self.posts = []
@@ -665,16 +665,18 @@ class PushTests(unittest.TestCase):
             token, k = h["Authorization"].removeprefix("vapid t=").split(", k=")
             self.assertEqual(k, public)
             claims = json.loads(webpush.b64url_decode(token.split(".")[1]))
-            self.assertEqual(claims["aud"], sub["endpoint"].rsplit("/", 1)[0])
+            self.assertEqual(claims["aud"], "/".join(sub["endpoint"].split("/")[:3]))  # the push service's origin
             self.assertEqual(claims["sub"], "mailto:owner@example.com")
             payload = json.loads(self.decrypt(post["data"], key, auth))
             self.assertEqual((payload["title"], payload["body"], payload["tag"]), ("Chief", "hello", "approval-abc:123"))
 
     def test_gone_subscription_is_dropped(self):
-        vapid.upsert_subscription({"endpoint": "https://fcm.example/gone", "keys": self.devices[0][2]["keys"]})
+        vapid.upsert_subscription({"endpoint": "https://fcm.googleapis.com/fcm/send/gone", "keys": self.devices[0][2]["keys"]})
         result = push.send("Chief", "x", session=self.session)
         self.assertEqual((result["sent"], result["gone"]), (2, 1))
-        self.assertEqual([s["endpoint"] for s in vapid.load_subs()], ["https://fcm.example/a", "https://moz.example/b"])
+        self.assertEqual(
+            [s["endpoint"] for s in vapid.load_subs()], ["https://fcm.googleapis.com/fcm/send/a", "https://updates.push.services.mozilla.com/wpush/v2/b"]
+        )
 
     def test_keys_are_created_once_and_existing_keys_are_kept(self):
         first = vapid.public_key()

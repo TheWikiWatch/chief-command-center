@@ -69,7 +69,13 @@ def attach_log_file(home) -> logging.Handler | None:
         return None
     handler._chief_bridge_file = True  # type: ignore[attr-defined]
     handler.setLevel(logging.INFO)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    try:
+        from agent.redact import RedactingFormatter
+
+        handler.setFormatter(RedactingFormatter(fmt))
+    except Exception:
+        handler.setFormatter(logging.Formatter(fmt))
     logger.addHandler(handler)
     if logger.level == logging.NOTSET or logger.level > logging.INFO:
         logger.setLevel(logging.INFO)
@@ -102,6 +108,21 @@ def _register_connections(ctx) -> None:
         ctx.register_hook("pre_tool_call", mail_guard.pre_tool_call)
     except Exception:
         logger.warning("chief-dashboard-bridge: the mail guard couldn't be registered; mail actions won't ask first", exc_info=True)
+    try:
+        from . import fleet
+
+        # Creating, retiring or restoring a bot asks the owner on the approval sheet; without this hook those tools refuse.
+        ctx.register_hook("pre_tool_call", fleet.pre_tool_call)
+        fleet.guard["active"] = True
+    except Exception:
+        logger.warning("chief-dashboard-bridge: the fleet approval couldn't be registered; the fleet tools will refuse", exc_info=True)
+    try:
+        from . import routines
+
+        # A job a bot schedules that sends outside the app or runs a script asks the owner first.
+        ctx.register_hook("pre_tool_call", routines.pre_tool_call)
+    except Exception:
+        logger.warning("chief-dashboard-bridge: the routine approval couldn't be registered", exc_info=True)
     add = getattr(ctx, "register_system_prompt_section", None)
     if add is None:
         return

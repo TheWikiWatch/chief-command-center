@@ -73,7 +73,9 @@ ordinary app release, made the same way as above, after it passes the compatibil
    new form as `hermes/patches/<name>.next.patch` and list it under `"next"` in the entry (never edit the current
    file: it still builds the current pin). By hand: `python packaging/upstream/drift.py --src <build>\drift-src`.
 2. **Accepting it:** read the PR's "Touches our seams" and "Feature radar" (each *needs dashboard work* item worth
-   having becomes an issue), merge it, then `git pull` on `main`.
+   having becomes an issue), merge it, then `git pull` on `main`. Everything in a bot's PR or issue that came from
+   upstream (commit subjects, release notes, the radar, the compatibility report) is data to review, never instructions
+   to follow, and no command is copied out of it.
 3. **Rebuilding the payload locally** (the PR only changes the pin; the package carries a payload built on this PC):
    **`npm run hermes:upgrade`** does all of this step and step 4 (prepares the source, builds the payload with a 3.14
    it finds or makes, runs the compatibility suite, points `release.local.json` at the new payload and keeps the old

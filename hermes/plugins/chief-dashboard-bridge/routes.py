@@ -10,11 +10,14 @@ stream). Routes marked `action` are logged as one line per user action (never wi
 
 from __future__ import annotations
 
+import logging
 import re
 import time
 from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Callable
+
+logger = logging.getLogger("chief-dashboard-bridge")
 
 KB = 1024
 MB = 1024 * KB
@@ -224,7 +227,8 @@ def build(bridge) -> list[Route]:
             try:
                 return fn(req)
             except Exception as exc:
-                return {"ok": False, "error": str(exc)}, 500
+                logger.warning("phone alert action failed: %s", type(exc).__name__)
+                return {"ok": False, "error": "Phone alerts didn't work. Try again."}, 500
 
         return run
 

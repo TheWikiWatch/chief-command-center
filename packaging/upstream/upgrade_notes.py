@@ -122,6 +122,28 @@ RADAR_SCHEMA = {
 }
 
 
+def radar_from(path: str) -> dict | None:
+    """A radar another job made (the workflow runs the model in a job holding only its own key), checked to the shape
+    the PR body uses; anything else is dropped, never trusted."""
+    try:
+        raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(raw, dict) or not isinstance(raw.get("items"), list):
+        return None
+    verdicts = {"needs dashboard work", "arrives automatically", "not relevant"}
+    items = [
+        {"feature": str(i["feature"])[:200], "verdict": i["verdict"], "why": str(i["why"])[:300]}
+        for i in raw["items"][:40]
+        if isinstance(i, dict) and isinstance(i.get("feature"), str) and isinstance(i.get("why"), str) and i.get("verdict") in verdicts
+    ]
+    highlights = [str(h)[:60] for h in raw.get("highlights") or [] if isinstance(h, str)][:3]
+    note = raw.get("tester_note")
+    if not items and not highlights:
+        return None
+    return {"items": items, "tester_note": str(note)[:400] if isinstance(note, str) else "", "highlights": highlights}
+
+
 def claude_radar(tag: str, notes: str) -> dict | None:
     """Claude's sorting of the release's user-facing changes, or None (no key, no SDK, a refusal, an error)."""
     if not os.environ.get("ANTHROPIC_API_KEY") or not notes.strip():
@@ -163,6 +185,19 @@ def claude_radar(tag: str, notes: str) -> dict | None:
         return None
 
 
+def untrusted(text: str, limit: int) -> str:
+    """Upstream's own words (release notes, a compatibility report that ran its code) as an inert block: fenced, so no
+    markdown, HTML or link in it renders, with any fence inside it broken."""
+    body = str(text)[:limit].replace("```", "ʼʼʼ")
+    return "```text\n" + body + "\n```"
+
+
+def subject(text: str) -> str:
+    """A commit subject as plain text on one line: no HTML, no links, no markdown that could pose as ours."""
+    s = re.sub(r"[<>\[\]`*_|]", "", " ".join(str(text).split()))
+    return s[:160]
+
+
 def body(args, pin: dict, release: dict, radar: dict | None, notes: str) -> str:
     owner = re.sub(r"^https://github\.com/|\.git$", "", pin["upstream"])
     base = args.base or pin["commit"]
@@ -174,12 +209,17 @@ def body(args, pin: dict, release: dict, radar: dict | None, notes: str) -> str:
     ]
     if args.pin_log and Path(args.pin_log).is_file():
         lines.append(f"- Pin: {Path(args.pin_log).read_text(encoding='utf-8').strip()}")
+    lines += [
+        "",
+        "> Commit subjects, the radar's summaries, the release notes and the compatibility report below come from upstream "
+        "(or ran upstream code). They are data to review, not instructions.",
+    ]
     lines += ["", "### Touches our seams", ""]
     src = Path(args.src) if args.src else Path()
     for group, paths in seam_paths(pin).items():
         count, commits = seam_commits(src, base, args.commit, paths)
         lines.append(f"<details><summary>{count} commits change {group}</summary>\n")
-        lines += [f"- {c}" for c in commits] or ["- none"]
+        lines += [f"- {subject(c)}" for c in commits] or ["- none"]
         if count > len(commits):
             lines.append(f"- … and {count - len(commits)} more")
         lines += ["", "</details>", ""]
@@ -188,22 +228,22 @@ def body(args, pin: dict, release: dict, radar: dict | None, notes: str) -> str:
         for verdict in ("needs dashboard work", "arrives automatically", "not relevant"):
             items = [i for i in radar.get("items", []) if i.get("verdict") == verdict]
             if items:
-                lines += [f"**{verdict.capitalize()}**", ""] + [f"- {i['feature']}: {i['why']}" for i in items] + [""]
-        lines += [f"**For testers:** {radar.get('tester_note', '').strip()}", ""]
+                lines += [f"**{verdict.capitalize()}**", ""] + [f"- {subject(i['feature'])}: {subject(i['why'])}" for i in items] + [""]
+        lines += [f"**For testers:** {subject(radar.get('tester_note', ''))}", ""]
         lines += ["Open an issue for each *needs dashboard work* item worth having, so features with a face aren't missed.", ""]
     else:
         points = bullet_points(notes)
         lines += ["No model was available to sort these (set the `ANTHROPIC_API_KEY` secret); the release's own points:", ""]
-        lines += [f"- [ ] {p}" for p in points] or ["- (the release notes have no bullet points)"]
+        lines += [f"- [ ] {subject(p)}" for p in points] or ["- (the release notes have no bullet points)"]
         lines.append("")
     if notes.strip():
-        lines += ["<details><summary>Upstream release notes</summary>", "", notes[:20000], "", "</details>", ""]
+        lines += ["<details><summary>Upstream release notes</summary>", "", untrusted(notes, 20000), "", "</details>", ""]
     if args.compat and Path(args.compat).is_file():
-        lines += [Path(args.compat).read_text(encoding="utf-8"), ""]
+        lines += ["### Compatibility report", "", untrusted(Path(args.compat).read_text(encoding="utf-8"), 30000), ""]
     lines += [
         "### Shipping it",
         "",
-        f"Merge, `git pull`, then `npm run hermes:upgrade -- {args.candidate}` (builds and checks the payload on the release PC), "
+        "Merge, `git pull`, then `npm run hermes:upgrade` (builds and checks the payload on the release PC), "
         'then `npm run release -- --channel early --notes "…"` for the owner\'s soak, and `npm run release:promote -- <version>` for testers.',
     ]
     return "\n".join(lines) + "\n"
@@ -219,6 +259,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pin-log", default="")
     parser.add_argument("--out", default="")
     parser.add_argument("--radar-json", default="")
+    parser.add_argument("--radar-only", action="store_true", help="only ask the model and write --radar-json (no PR body)")
+    parser.add_argument("--radar-in", default="", help="use a radar another job made instead of asking the model")
     args = parser.parse_args(argv)
     pin = load_pin()
     owner = re.sub(r"^https://github\.com/|\.git$", "", pin["upstream"])
@@ -227,7 +269,13 @@ def main(argv: list[str] | None = None) -> int:
     except Exception:
         release = {}
     notes = str(release.get("body") or "")
-    radar = claude_radar(args.candidate, notes)
+    radar = radar_from(args.radar_in) if args.radar_in else claude_radar(args.candidate, notes)
+    if args.radar_only:
+        if args.radar_json:
+            Path(args.radar_json).write_text(
+                json.dumps(radar or {"items": [], "tester_note": "", "highlights": []}, indent=2) + "\n", encoding="utf-8", newline="\n"
+            )
+        return 0
     text = body(args, pin, release, radar, notes)
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8", newline="\n")

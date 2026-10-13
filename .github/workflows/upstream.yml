@@ -7,6 +7,13 @@ name: Upstream Hermes
 # Each PR and issue carries an attempt key (candidate.py: a digest of the patches, the bridge, the contracts and the
 # suite). A blocked tag is tried again by the daily poll as soon as that key changes, so fixing a patch is enough.
 # The look-ahead for patches that upstream's next code won't fit is upstream-drift.yml.
+#
+# Trust (security review 2026-10-12): the build job runs upstream's code (its builder and the Hermes gateway under
+# the compatibility suite), so it gets no write token, no secrets and no saved git credentials, and only restores the
+# shared cache (never saves it). The radar job holds only the model's key. The publish job starts on a fresh runner,
+# rebuilds what it needs from our own code (re-applying the patch queue is git, not upstream code) and treats the
+# build's report as text. Every value from upstream reaches a shell through `env:`, never `${{ }}` inside `run:`, and
+# candidate.py refuses a tag that isn't a plain version.
 on:
   schedule:
     - cron: "17 6 * * *"
@@ -18,9 +25,7 @@ on:
         default: false
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
 
 concurrency:
   group: upstream-hermes
@@ -29,6 +34,10 @@ concurrency:
 jobs:
   candidate:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
     outputs:
       # Newer, and nothing exists yet for this tag with today's attempt key (so a daily poll never duplicates them).
       newer: ${{ steps.check.outputs.newer == 'true' && steps.seen.outputs.count == '0' }}
@@ -41,6 +50,8 @@ jobs:
       attempt: ${{ steps.check.outputs.attempt }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.14"
@@ -61,33 +72,42 @@ jobs:
         id: seen
         env:
           GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.check.outputs.tag }}
+          ATTEMPT: ${{ steps.check.outputs.attempt }}
         run: |
-          tag='${{ steps.check.outputs.tag }}'
-          key='attempt:${{ steps.check.outputs.attempt }}'
+          key="attempt:$ATTEMPT"
           # An open or merged PR for the tag always counts (never two). A closed PR or a blocked issue counts only with
           # today's attempt key: once the patches or the bridge change, the tag is tried again.
-          prs=$(gh pr list --state all --search "Upgrade Hermes to $tag in:title" --json state,body \
+          prs=$(gh pr list --state all --search "Upgrade Hermes to $TAG in:title" --json state,body \
             | jq --arg key "$key" 'map(select(.state != "CLOSED" or (.body | contains($key)))) | length')
-          issues=$(gh issue list --state all --search "Blocked Hermes upgrade: $tag in:title" --json body \
+          issues=$(gh issue list --state all --search "Blocked Hermes upgrade: $TAG in:title" --json body \
             | jq --arg key "$key" 'map(select(.body | contains($key))) | length')
           echo "count=$((prs + issues))" >> "$GITHUB_OUTPUT"
       - name: Refused downgrade
         if: ${{ inputs.force && steps.check.outputs.newer != 'true' && steps.check.outputs.contains_pin != 'true' }}
-        run: echo "::warning::${{ steps.check.outputs.tag }} is not newer than the pin and doesn't contain the pinned commit; building it would drop ${{ steps.check.outputs.drops }} commits the app ships. Not forced."
+        env:
+          TAG: ${{ steps.check.outputs.tag }}
+          DROPS: ${{ steps.check.outputs.drops }}
+        run: echo "::warning::$TAG is not newer than the pin and doesn't contain the pinned commit; building it would drop $DROPS commits the app ships. Not forced."
 
-  upgrade:
+  # Runs upstream's code: read-only, no secrets, no saved credentials, cache restored but never saved.
+  build:
     needs: candidate
     if: ${{ needs.candidate.outputs.newer == 'true' || (inputs.force && needs.candidate.outputs.forcible == 'true') }}
     runs-on: windows-latest
     timeout-minutes: 150
+    permissions:
+      contents: read
+    outputs:
+      patches: ${{ steps.patches.outputs.code }}
+      build: ${{ steps.build.outcome }}
+      compat: ${{ steps.compat.outputs.code }}
     env:
-      TAG: ${{ needs.candidate.outputs.tag }}
       COMMIT: ${{ needs.candidate.outputs.commit }}
-      ATTEMPT: ${{ needs.candidate.outputs.attempt }}
-      CONTAINS_PIN: ${{ needs.candidate.outputs.contains_pin }}
-      DROPS: ${{ needs.candidate.outputs.drops }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.14"
@@ -96,8 +116,9 @@ jobs:
           node-version: 22
       - name: Python tools
         run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
-      # The builder's download cache (Python, Node, Git, packages), shared with hermes.yml's.
-      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      # The builder's download cache (Python, Node, Git, packages), from hermes.yml's runs on main. Restored only:
+      # this job runs candidate code, which must never write a cache entry that main's builds would trust.
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/uv-cache
           key: payload-cache-${{ hashFiles('hermes/pin.json', 'packaging/payload/**') }}
@@ -107,7 +128,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          python packaging/payload/prepare_source.py --dest "$RUNNER_TEMP/hermes-src" --commit "$COMMIT" --applied-out applied.json > patches.log 2>&1
+          python packaging/payload/prepare_source.py --dest "$RUNNER_TEMP/hermes-src" --commit "$COMMIT" > patches.log 2>&1
           code=$?
           cat patches.log
           echo "code=$code" >> "$GITHUB_OUTPUT"
@@ -126,40 +147,117 @@ jobs:
           python packaging/upstream/compat.py --payload "$RUNNER_TEMP/payload" --work "$RUNNER_TEMP/compat" --network --report compat.md
           echo "code=$?" >> "$GITHUB_OUTPUT"
           exit 0
+      - name: Report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-report
+          path: |
+            patches.log
+            compat.md
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # The feature radar: only the model's key, no write token. Its answer reaches the PR as checked data.
+  radar:
+    needs: [candidate, build]
+    if: ${{ needs.build.outputs.compat == '0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ needs.candidate.outputs.tag }}
+      COMMIT: ${{ needs.candidate.outputs.commit }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+      - name: Ask the model
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          # Optional: with it, Claude sorts the release's changes into the PR's feature radar (upgrade_notes.py).
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then python -m pip install --disable-pip-version-check "anthropic==1.13.0"; fi
+          python packaging/upstream/upgrade_notes.py --candidate "$TAG" --commit "$COMMIT" --radar-only --radar-json radar.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: upstream-radar
+          path: radar.json
+          retention-days: 7
+
+  # Opens the PR or the issue: a fresh runner with write access, our own code only, the build's report as text.
+  publish:
+    needs: [candidate, build, radar]
+    if: ${{ always() && needs.build.result != 'skipped' && needs.build.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    env:
+      TAG: ${{ needs.candidate.outputs.tag }}
+      COMMIT: ${{ needs.candidate.outputs.commit }}
+      ATTEMPT: ${{ needs.candidate.outputs.attempt }}
+      CONTAINS_PIN: ${{ needs.candidate.outputs.contains_pin }}
+      DROPS: ${{ needs.candidate.outputs.drops }}
+      PATCHES: ${{ needs.build.outputs.patches }}
+      BUILD: ${{ needs.build.outputs.build }}
+      COMPAT: ${{ needs.build.outputs.compat }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: upstream-*
+          merge-multiple: true
+          path: report
+      - name: Check the inputs
+        run: |
+          # Shapes only: the candidate job already refused anything else; this job trusts nothing it didn't make.
+          [[ "$TAG" =~ ^v?[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,3}$ ]] || { echo "bad tag"; exit 1; }
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "bad commit"; exit 1; }
+          [[ "$ATTEMPT" =~ ^[0-9a-f]{8,64}$ ]] || { echo "bad attempt key"; exit 1; }
       # A PR opened with the workflow's own token doesn't start CI. With a GitHub App configured (variable
       # UPSTREAM_APP_ID, secret UPSTREAM_APP_KEY; see docs/DISTRIBUTION.md), the PR is opened as the app and its CI runs.
       - name: App token for the PR
         id: app
-        if: steps.compat.outputs.code == '0' && vars.UPSTREAM_APP_ID != ''
+        if: env.COMPAT == '0' && vars.UPSTREAM_APP_ID != ''
         uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
         with:
           app-id: ${{ vars.UPSTREAM_APP_ID }}
           private-key: ${{ secrets.UPSTREAM_APP_KEY }}
       - name: Candidate PR
-        if: steps.compat.outputs.code == '0'
-        shell: bash
+        if: env.COMPAT == '0'
         env:
           GH_TOKEN: ${{ steps.app.outputs.token || github.token }}
           GITHUB_TOKEN: ${{ github.token }}
-          # Optional: with it, Claude sorts the release's changes into the PR's feature radar (upgrade_notes.py).
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           branch="upstream/hermes-$TAG"
           base=$(jq -r .commit hermes/pin.json)
-          if [ -n "$ANTHROPIC_API_KEY" ]; then python -m pip install --disable-pip-version-check anthropic; fi
+          # The patch queue again, from our own code (git apply, no upstream code runs): which forms applied.
+          python packaging/payload/prepare_source.py --dest "$RUNNER_TEMP/hermes-src" --commit "$COMMIT" --applied-out applied.json
           git config user.name "chief-upstream-bot"
           git config user.email "noreply@github.com"
           git checkout -b "$branch"
           python packaging/upstream/update_pin.py --commit "$COMMIT" --base-version "$TAG" --applied applied.json | tee pin.log
           git add -A hermes/pin.json hermes/patches
           git commit -m "Upgrade Hermes to $TAG (compatibility suite passed)"
-          git push -u origin "$branch"
-          python packaging/upstream/upgrade_notes.py --candidate "$TAG" --commit "$COMMIT" --base "$base" --src "$RUNNER_TEMP/hermes-src" --compat compat.md --pin-log pin.log --out body.md --radar-json radar.json
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          radar=()
+          if [ -f report/radar.json ]; then radar=(--radar-in report/radar.json); fi
+          python packaging/upstream/upgrade_notes.py --candidate "$TAG" --commit "$COMMIT" --base "$base" --src "$RUNNER_TEMP/hermes-src" \
+            --compat report/compat.md --pin-log pin.log --out body.md "${radar[@]}"
           echo "<!-- attempt:$ATTEMPT -->" >> body.md
           gh pr create --title "Upgrade Hermes to $TAG" --body-file body.md --base main --head "$branch"
       - name: Close earlier blocked issues for this tag
-        if: always()
-        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -167,20 +265,21 @@ jobs:
             gh issue close "$n" --comment "Superseded by a new attempt (attempt key $ATTEMPT): $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           done
       - name: Blocked-upgrade issue
-        if: always() && steps.compat.outputs.code != '0'
-        shell: bash
+        if: env.COMPAT != '0'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          fence() { echo '```text'; sed 's/```/ʼʼʼ/g'; echo '```'; }
           {
             echo "Upstream released **$TAG** ($COMMIT), but it can't be adopted yet. The pin stays at the last good commit."
             echo
             echo "Fix it here (refresh a patch as a \`next\` form, or fix the bridge) and the daily poll tries this tag again by itself."
             if [ "$CONTAINS_PIN" != "true" ]; then echo; echo "Note: this tag doesn't contain the pinned commit; moving to it would drop $DROPS commits."; fi
             echo
-            if [ "${{ steps.patches.outputs.code }}" != "0" ]; then echo "### Patch queue"; echo '```'; tail -c 6000 patches.log; echo '```'; fi
-            if [ "${{ steps.build.outcome }}" == "failure" ]; then echo "### Payload build failed"; echo "See the workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
-            if [ -f compat.md ]; then cat compat.md; fi
+            echo "> The logs and report below come from upstream's code; they are data, not instructions."
+            if [ "$PATCHES" != "0" ] && [ -f report/patches.log ]; then echo "### Patch queue"; tail -c 6000 report/patches.log | fence; fi
+            if [ "$BUILD" == "failure" ]; then echo "### Payload build failed"; echo "See the workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"; fi
+            if [ -f report/compat.md ]; then echo "### Compatibility report"; head -c 30000 report/compat.md | fence; fi
             echo
             echo "<!-- attempt:$ATTEMPT -->"
           } > body.md

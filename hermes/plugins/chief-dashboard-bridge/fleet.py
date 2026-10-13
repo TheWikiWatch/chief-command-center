@@ -175,7 +175,7 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
             seed = launch_model_seed(read_user_config_raw(data.chief_home() / "config.yaml") or {})
             if seed:
                 _write_yaml(home / "config.yaml", {**cfg, **seed})
-        workdir = Path(cwd).expanduser() if cwd else _root() / "workspaces" / name
+        workdir = _workdir(cwd) if cwd else _root() / "workspaces" / name
         workdir.mkdir(parents=True, exist_ok=True)
         from cli import save_config_value
 
@@ -266,13 +266,48 @@ def archives() -> list[dict[str, Any]]:
     return out
 
 
+def _workdir(cwd: str) -> Path:
+    """A bot's own working folder: a full path on this PC (never a network share), outside Chief's own files."""
+    path = Path(str(cwd).strip().strip('"')).expanduser()
+    text = str(path)
+    if not path.is_absolute() or text.startswith(("\\\\", "//")):
+        raise FleetError("Give the working folder as a full path on this PC, like C:\\Users\\you\\Projects\\research.")
+    resolved = path.resolve(strict=False)
+    root = _root().resolve(strict=False)
+    inside_chief = resolved == root or root in resolved.parents
+    in_workspaces = (root / "workspaces") in resolved.parents
+    if inside_chief and not in_workspaces:
+        raise FleetError("That folder belongs to Chief itself. Choose one of your own folders.")
+    return path
+
+
 def _archive(archive_id: str) -> tuple[Path, dict[str, Any]]:
+    """An archive's sidecar and what it says, checked: a bot can write into `fleet-archive\\`, so the archive it
+    names must be a file in that folder with the expected name, and the bot id must be a valid one."""
     if not re.fullmatch(r"[a-z0-9-]+-\d{8}-\d{6}", archive_id or ""):
         raise FleetError("Unknown archive.")
-    sidecar = _archive_dir() / f"{archive_id}.json"
+    folder = _archive_dir()
+    sidecar = folder / f"{archive_id}.json"
     if not sidecar.is_file():
         raise FleetError("Unknown archive.")
-    return sidecar, json.loads(sidecar.read_text(encoding="utf-8"))
+    try:
+        info = json.loads(sidecar.read_text(encoding="utf-8"))
+    except ValueError:
+        raise FleetError("That archive's record is damaged.") from None
+    if not isinstance(info, dict):
+        raise FleetError("That archive's record is damaged.")
+    file = Path(str(info.get("file") or ""))
+    try:
+        inside = file.resolve(strict=False).parent == folder.resolve(strict=False)
+    except OSError:
+        inside = False
+    if not inside or not file.name.startswith(archive_id):
+        raise FleetError("That archive's record points outside the archive folder.")
+    name = str(info.get("id") or archive_id.rsplit("-", 2)[0])
+    if not _NAME.match(name) or name in _RESERVED:
+        raise FleetError("That archive's record names an invalid bot.")
+    info["id"] = name
+    return sidecar, info
 
 
 def retire(profile: str, *, owner_confirmed: bool) -> dict[str, Any]:
@@ -327,6 +362,57 @@ def remove_archive(archive_id: str) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- the chief's tools
 
+# The owner's consent for the tools that create, remove or bring back a bot, or pin a costly model, comes from Hermes's
+# approval sheet (`approval_for`, through the plugin's pre_tool_call hook), never from a flag the model sets. Set by
+# the plugin once that hook is registered: without it these tools refuse instead of running unasked.
+guard = {"active": False}
+
+_GUARDED = ("fleet_mint", "fleet_retire", "fleet_restore")
+
+
+def approval_for(tool_name: str, args: Any) -> dict[str, Any] | None:
+    """The approval this fleet call needs, as Hermes's pre_tool_call answer, or None."""
+    import hashlib
+
+    args = args if isinstance(args, dict) else {}
+    if tool_name == "fleet_mint":
+        soul = str(args.get("soul") or "").strip()
+        lines = [
+            f"Create a new bot: {' '.join(str(args.get('display_name') or '?').split())} ({' '.join(str(args.get('role') or '').split())})",
+            f"Id: {args.get('id') or '?'}",
+        ]
+        if args.get("cwd"):
+            lines.append(f"Working folder: {args.get('cwd')}")
+        lines += ["", "Its SOUL:", soul[:1200] + ("…" if len(soul) > 1200 else "")]
+        reason = "\n".join(lines)
+    elif tool_name == "fleet_retire":
+        reason = f"Retire the bot {args.get('profile') or '?'} (it is archived and can be restored)"
+    elif tool_name == "fleet_restore":
+        reason = f"Bring back the retired bot from archive {args.get('archive_id') or '?'}"
+    elif tool_name == "fleet_set_model" and args.get("confirm_expensive"):
+        reason = f"Pin {args.get('profile') or '?'} to {args.get('provider') or '?'} / {args.get('model') or '?'}, which costs more than usual"
+    else:
+        return None
+    # "Always allow" can only ever trust this exact request, never every future one.
+    key = hashlib.sha256(json.dumps(args, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:16]
+    return {"action": "approve", "message": reason, "rule_key": f"chief:{tool_name.replace('_', '-')}:{key}"}
+
+
+def pre_tool_call(tool_name: str = "", args: Any = None, **_kw: Any) -> dict[str, Any] | None:
+    """Hermes's hook: never raises; a fleet call it can't read asks anyway."""
+    try:
+        return approval_for(str(tool_name or ""), args)
+    except Exception:
+        if str(tool_name or "") in _GUARDED or tool_name == "fleet_set_model":
+            return {"action": "approve", "message": f"A fleet action: {tool_name}", "rule_key": "chief:fleet-unknown"}
+        return None
+
+
+def _consented() -> bool:
+    if not guard["active"]:
+        raise FleetError("This needs the owner's approval, and the approval check isn't available. Ask the owner to do it in the app.")
+    return True
+
 
 def _tool(fn):
     def handle(args: dict, **_kw) -> str:
@@ -371,7 +457,7 @@ TOOLS = (
         _schema(
             "fleet_mint",
             "Create a new specialist bot. ONLY after the owner has signed off on the SOUL draft in this chat "
-            "(owner_signed=true). It starts on the chief's model, with its own working folder.",
+            "(the app then asks them on its approval sheet, with the SOUL). It starts on the chief's model, with its own working folder.",
             {
                 "id": {**_S, "description": "short lowercase id, e.g. research-desk"},
                 "display_name": {**_S, "description": "the bot's human first name"},
@@ -379,14 +465,13 @@ TOOLS = (
                 "description": {**_S, "description": "one or two sentences on what it is good at (used for routing)"},
                 "soul": {**_S, "description": "the signed one-screen SOUL.md text"},
                 "cwd": {**_S, "description": "optional working folder (absolute path)"},
-                "owner_signed": {**_B, "description": "true only if the owner approved this exact SOUL"},
                 "look": {
                     "type": "object",
                     "description": "optional face, as set_bot_look takes it: {style: bubble|blob|shape, color: '#rrggbb', body, eyes, "
                     "cheeks, shape, seed, blobKind}",
                 },
             },
-            ("id", "display_name", "role", "description", "soul", "owner_signed"),
+            ("id", "display_name", "role", "description", "soul"),
         ),
         _tool(
             lambda a: mint(
@@ -395,7 +480,7 @@ TOOLS = (
                 a.get("role", ""),
                 a.get("description", ""),
                 a.get("soul", ""),
-                owner_signed=bool(a.get("owner_signed")),
+                owner_signed=_consented(),
                 cwd=str(a.get("cwd") or ""),
                 look=a.get("look") if isinstance(a.get("look"), dict) else None,
             )
@@ -407,7 +492,7 @@ TOOLS = (
         _schema(
             "fleet_set_model",
             "Pin a bot (or 'chief') to a model from fleet_models. Its provider key goes with it. "
-            "If the result asks for confirmation (expensive model), ask the owner first.",
+            "If the result asks for confirmation (expensive model), call it again with confirm_expensive=true: the app asks the owner.",
             {"profile": _S, "provider": _S, "model": _S, "confirm_expensive": _B},
             ("profile", "provider", "model"),
         ),
@@ -418,17 +503,17 @@ TOOLS = (
         "fleet_retire",
         _schema(
             "fleet_retire",
-            "Retire (unmint) a bot: it is archived (restorable) and removed. ONLY after the owner said yes in this chat (owner_confirmed=true).",
-            {"profile": _S, "owner_confirmed": _B},
-            ("profile", "owner_confirmed"),
+            "Retire (unmint) a bot: it is archived (restorable) and removed. The app asks the owner on its approval sheet.",
+            {"profile": _S},
+            ("profile",),
         ),
-        _tool(lambda a: retire(a.get("profile", ""), owner_confirmed=bool(a.get("owner_confirmed")))),
+        _tool(lambda a: retire(a.get("profile", ""), owner_confirmed=_consented())),
         "📦",
     ),
     (
         "fleet_restore",
         _schema("fleet_restore", "Bring a retired bot back from its archive (ids from fleet_roster).", {"archive_id": _S}, ("archive_id",)),
-        _tool(lambda a: restore(a.get("archive_id", ""))),
+        _tool(lambda a: _consented() and restore(a.get("archive_id", ""))),
         "♻️",
     ),
     ("set_bot_look", looks.TOOL_SCHEMA, _tool(looks.set_bot_look), "🎨"),

@@ -3,6 +3,7 @@
 import contextlib
 import importlib
 import json
+import shutil
 import sys
 import tempfile
 import types
@@ -352,14 +353,59 @@ class ToolTests(FleetTestCase):
         self.assertEqual(json.loads(answer), {"ok": False, "error": "That didn't work (KeyError)."})
         self.assertNotIn("synthetic-secret-value", answer)
 
-    def test_tools_refuse_without_sign_off(self):
+    def test_tools_refuse_when_the_owner_cant_be_asked(self):
+        # The approval hook wasn't registered: the tools refuse rather than run unasked.
+        fleet.guard["active"] = False
         tools = {name: handler for name, _schema, handler, _emoji in fleet.TOOLS}
         minted = json.loads(tools["fleet_mint"]({"id": "nova", "display_name": "Nova", "role": "Planner", "description": "d", "soul": SOUL}))
         self.assertFalse(minted["ok"])
-        self.assertIn("sign-off", minted["error"])
-        retired = json.loads(tools["fleet_retire"]({"profile": "ada"}))
-        self.assertIn("go-ahead", retired["error"])
+        self.assertIn("owner's approval", minted["error"])
+        retired = json.loads(tools["fleet_retire"]({"profile": "ada", "owner_confirmed": True}))  # a self-set flag means nothing
+        self.assertFalse(retired["ok"])
+        self.assertFalse(json.loads(tools["fleet_restore"]({"archive_id": "ada-20260101-000000"}))["ok"])
         self.assertTrue(self.ada.is_dir())
+
+    def test_the_owner_is_asked_on_the_approval_sheet_never_by_a_flag(self):
+        schemas = {name: schema for name, schema, _h, _e in fleet.TOOLS}
+        for name in ("fleet_mint", "fleet_retire"):
+            props = schemas[name]["parameters"]["properties"]
+            self.assertNotIn("owner_signed", props)
+            self.assertNotIn("owner_confirmed", props)
+        ask = fleet.approval_for("fleet_mint", {"id": "nova", "display_name": "Nova", "role": "Planner", "soul": SOUL})
+        self.assertEqual(ask["action"], "approve")
+        self.assertIn("Create a new bot: Nova (Planner)", ask["message"])
+        self.assertIn(SOUL.strip()[:40], ask["message"])
+        self.assertTrue(ask["rule_key"].startswith("chief:fleet-mint:"))
+        other = fleet.approval_for("fleet_mint", {"id": "other", "display_name": "O", "role": "R", "soul": SOUL})
+        self.assertNotEqual(ask["rule_key"], other["rule_key"])  # "Always allow" trusts only that exact request
+        self.assertEqual(fleet.approval_for("fleet_retire", {"profile": "ada"})["action"], "approve")
+        self.assertEqual(fleet.approval_for("fleet_restore", {"archive_id": "x"})["action"], "approve")
+        self.assertIsNone(fleet.approval_for("fleet_set_model", {"profile": "ada", "provider": "p", "model": "m"}))
+        self.assertEqual(fleet.approval_for("fleet_set_model", {"profile": "ada", "confirm_expensive": True})["action"], "approve")
+        self.assertIsNone(fleet.approval_for("fleet_roster", {}))
+
+    def test_a_planted_archive_record_cant_point_outside_its_folder(self):
+        folder = fleet._archive_dir()
+        folder.mkdir(parents=True, exist_ok=True)
+        outside = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside, True)
+        victim = outside / "victim.txt"
+        victim.write_text("keep me", encoding="utf-8")
+        (folder / "ada-20260101-000000.json").write_text(json.dumps({"id": "ada", "file": str(victim)}), encoding="utf-8")
+        with self.assertRaisesRegex(fleet.FleetError, "outside the archive folder"):
+            fleet.remove_archive("ada-20260101-000000")
+        self.assertTrue(victim.is_file())
+        (folder / "ada-20260101-000001.json").write_text(json.dumps({"id": "../../evil", "file": str(folder / "ada-20260101-000001.zip")}), encoding="utf-8")
+        with self.assertRaisesRegex(fleet.FleetError, "invalid bot"):
+            fleet.remove_archive("ada-20260101-000001")
+
+    def test_a_bots_working_folder_is_a_local_path(self):
+        for bad in ("\\\\attacker\\share", "//attacker/share", "relative/folder", str(fleet._root())):
+            with self.assertRaises(fleet.FleetError, msg=bad):
+                fleet._workdir(bad)
+        outside = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside, True)
+        self.assertEqual(fleet._workdir(str(outside / "work")), outside / "work")
 
     def test_tool_schemas_are_consistent(self):
         for name, schema, handler, _emoji in fleet.TOOLS:

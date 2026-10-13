@@ -33,8 +33,25 @@ _SYSTEM = (
 )
 
 
+_MORE = re.compile(
+    r"(AIza[0-9A-Za-z_-]{20,}|AKIA[0-9A-Z]{16}|xox[abposr]-[A-Za-z0-9-]{10,}|hf_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}"
+    r"|\b\d{8,10}:AA[A-Za-z0-9_-]{30,}|-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"
+    r'|"(?:api_?key|token|secret|password|access_token|refresh_token|client_secret)"\s*:\s*"[^"]*")',
+    re.IGNORECASE,
+)
+_HOME = re.compile(r"([A-Za-z]:[\\/]+Users[\\/]+)[^\\/\s\"']+", re.IGNORECASE)
+
+
 def redact(text: str) -> str:
-    return _SECRET.sub("[hidden]", text)
+    """Secrets blanked (Hermes's own patterns when available, plus the app's) and the Windows user name hidden."""
+    text = _MORE.sub("[hidden]", _SECRET.sub("[hidden]", text))
+    try:
+        from agent.redact import redact_sensitive_text
+
+        text = redact_sensitive_text(text, force=True)
+    except Exception:
+        pass
+    return _HOME.sub(r"\1<user>", text)
 
 
 def recent_errors(home: Path | None = None, now: float | None = None) -> list[str]:
