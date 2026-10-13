@@ -341,3 +341,8 @@ Two Hermes profile helpers reach outside the profile they are given:
   a successfully registered hook.
 - **The upstream workflow's build job must never get a write token or secrets**; the publish job re-applies the patch
   queue itself (git only) instead of trusting the build's `applied.json`.
+- **Hermes imports the bridge plugin more than once per gateway.** A later copy starts with empty module globals and
+  must still register the Command Center platform (its registry entry carries `COMMAND_CENTER_ALLOW_ALL_USERS`;
+  without it every dashboard message is "Unauthorized user"). The token is kept in a `sys.modules` holder
+  (bridge_token.py). The smoke test doesn't reach the second import: check `Unauthorized user` in the chief's
+  errors.log after a release.

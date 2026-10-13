@@ -72,7 +72,7 @@ class BridgeTokenTests(unittest.TestCase):
     """The token is read once and leaves the environment, so the agent's commands can't inherit it."""
 
     def tearDown(self):
-        bridge_token._token = ""
+        sys.modules.pop(bridge_token._HOLDER, None)
         os.environ.pop(bridge_token.ENV, None)
 
     def test_take_removes_it_from_the_environment(self):
@@ -90,6 +90,21 @@ class BridgeTokenTests(unittest.TestCase):
         os.environ[bridge_token.ENV] = "first"
         bridge_token.take("")
         self.assertEqual(bridge_token.take(""), "first")
+
+    def test_a_fresh_copy_of_the_plugin_still_finds_the_token(self):
+        # Hermes can import the plugin again in the same gateway (its globals empty, the environment already
+        # cleared). That copy must still get the token, or it skips registering the Command Center platform and
+        # every dashboard message is refused as "Unauthorized user".
+        import importlib.util
+
+        os.environ[bridge_token.ENV] = "from-desktop"
+        bridge_token.take("")
+        spec = importlib.util.spec_from_file_location("fresh_bridge_token", Path(bridge_token.__file__))
+        fresh = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(fresh)
+        self.assertNotIn(bridge_token.ENV, os.environ)
+        self.assertEqual(fresh.take(""), "from-desktop")
+        self.assertEqual(fresh.get(), "from-desktop")
 
 
 class BridgeTests(unittest.TestCase):

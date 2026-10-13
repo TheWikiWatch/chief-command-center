@@ -160,6 +160,14 @@ def _register(ctx):
     session_cfg = ctx.get_config("session_key", "")
     if not token:
         logger.error("chief-dashboard-bridge: no token; refusing to bind")
+        # The platform still registers: its entry carries who may chat (COMMAND_CENTER_ALLOW_ALL_USERS), and without
+        # it Hermes refuses every dashboard message, even those an earlier copy of the plugin is already serving.
+        try:
+            from .adapter import register_platform
+
+            register_platform(ctx)
+        except Exception:
+            logger.warning("Command Center platform not registered", exc_info=True)
         return
 
     try:

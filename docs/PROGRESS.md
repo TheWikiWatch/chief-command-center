@@ -1135,3 +1135,9 @@ fixes reach testers).
 - **Deliberately not done:** limiting the Second Brain routines' tools (their skills need the terminal and the drop
   routine fetches web links on purpose; the protections above cover the foothold), and making Fleet Health tamper-proof
   (a bot with the terminal can rewrite anything it could check; approvals on the trusted files are the boundary).
+
+**Fix (0.1.41, 2026-10-13): the dashboard chat refused every message after 0.1.39.** Hermes imports the bridge plugin a
+second time in the same gateway; that copy used to find the token in the old plain-text file, which 0.1.39 removed,
+so it stopped before registering the Command Center platform, and Hermes then refused every dashboard message as
+"Unauthorized user". The token now outlives a second copy in the gateway's memory (never a file or the environment),
+and the platform registers even without it.
