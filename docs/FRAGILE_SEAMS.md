@@ -320,3 +320,14 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The bridge answers before Hermes attaches the chat.** On a busy PC the gap was 17 s. A send waits through the
   start-up minute (`_attached_adapter`, at most 45 s) and otherwise answers 503 so the dashboard's outbox retries;
   never answer it 200 with `ok: false`, which the dashboard treats as final.
+
+## Security (2026-10-13)
+
+- **Phone requests are pinned to `CHIEF_PHONE_HOST`** (the PC's Tailscale name, set by the desktop from `phoneServe`).
+  Headers alone prove nothing: a local program can send every header Serve sends. Never widen the remote branch of
+  `proxy.ts` to another Host, and never treat an empty allow-list as "everyone".
+- **Quick replies never carry approval commands** (`question.tsx` `APPROVAL_COMMANDS`): notice text can be written by
+  a bot or a scheduled job.
+- **The mail guard's exact call follows an invisible mark (U+2063)** stripped from every other part, so message text
+  can't move where the sheet thinks the call starts. An unsure call's rule key carries its own fingerprint, so
+  "Always allow" can never widen to other calls.

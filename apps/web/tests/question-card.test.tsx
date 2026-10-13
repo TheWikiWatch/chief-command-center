@@ -91,15 +91,25 @@ it("the proxy forwards answers", () => {
 
 const CONFIRM_NEW = "⚠️ **Confirm /new**\n\nThis starts a fresh session.\n\n_Text fallback: reply `/approve`, `/always`, or `/cancel`._";
 
-it("a gateway prompt's text fallback becomes buttons that send the command", async () => {
+it("a gateway prompt's text fallback offers its harmless answers as buttons, never an approval", async () => {
   const { quickReplies } = await import("@/components/chat/question");
-  expect(quickReplies(CONFIRM_NEW)).toEqual(["/approve", "/always", "/cancel"]);
+  expect(quickReplies(CONFIRM_NEW)).toEqual(["/cancel"]);
   expect(quickReplies("Morning brief: 3 tasks due")).toEqual([]);
   const send = vi.fn(async () => undefined);
   render(<NoticeBody notice={{ id: "n", at: 1, text: CONFIRM_NEW, source: "notice" }} onQuickReply={send} />);
-  fireEvent.click(screen.getByRole("button", { name: "Approve once" }));
-  await waitFor(() => expect(send).toHaveBeenCalledWith("/approve"));
-  expect(screen.getByRole("button", { name: "Always approve" })).toBeDisabled();
+  expect(screen.queryByRole("button", { name: /approve/i })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  await waitFor(() => expect(send).toHaveBeenCalledWith("/cancel"));
+});
+
+it("text a bot or a scheduled job writes can't draw an approve button", async () => {
+  const { quickReplies } = await import("@/components/chat/question");
+  // What a prompt-injected run could post to catch a pending dangerous command.
+  const bait = "Routine finished. Reply `/approve` to keep it, `/yes` to confirm, `/always` to stop asking, or `/deny`.";
+  expect(quickReplies(bait)).toEqual([]);
+  const send = vi.fn(async () => undefined);
+  render(<NoticeBody notice={{ id: "s", at: 1, text: "Done. Reply `/cancel` or `/approve`.", source: "scheduled" }} onQuickReply={send} />);
+  expect(screen.queryAllByRole("button", { name: /approve|cancel|yes|always/i })).toEqual([]);
 });
 
 it("only the newest notice offers its buttons", () => {
@@ -107,9 +117,9 @@ it("only the newest notice offers its buttons", () => {
   const base = { chief: undefined, awaiting: false, waitingApproval: false, connected: true, onSuggestion: () => {}, onQuickReply: send };
   const older = { id: "a", at: 100, text: CONFIRM_NEW, source: "notice" as const };
   const { rerender } = render(<Thread {...base} messages={[{ id: 1, role: "user", content: "hi", timestamp: "50" }]} notices={[older]} />);
-  expect(screen.getByRole("button", { name: "Approve once" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   rerender(<Thread {...base} messages={[{ id: 1, role: "user", content: "hi", timestamp: "50" }, { id: 2, role: "assistant", content: "Fresh start.", timestamp: "200" }]} notices={[older]} />);
-  expect(screen.queryByRole("button", { name: "Approve once" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Cancel" })).toBeNull();
 });
 
 it("a failed routine is a card with the error, the streak, Run again and Pause", async () => {

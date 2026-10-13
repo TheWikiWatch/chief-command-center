@@ -17,7 +17,8 @@ working); the app supervises its gateway instead of the old launchers. Steps, ea
 5. Back up the install (everything but caches, logs, crash dumps and the Hermes checkout) and the app's settings.
 6. Move the old `command-center` plugin aside (the app's bridge registers that platform itself) and take it out
    of `plugins.enabled`. The bridge plugin itself is replaced by the app at start; the backup keeps the old one.
-7. Hand the bridge token to the app (phones and scripts stay authorized), point the app at the install
+7. Hand the bridge token to the app (the checks below use it; at its next start the app removes the plain-text
+   `.token` the install kept and rotates the token, since the agent's file tools could read it), point the app at the install
    (`hermesRoot`, shared gateway lock, the owner's PATH, the old ports, `adopted`), and start it.
 
 Rollback stops the app, restores the app's settings and the profile files the app changed (config.yaml, .env,

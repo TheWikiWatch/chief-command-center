@@ -104,6 +104,14 @@ export function envFor(kind: "gateway" | "web"): Record<string, string> {
     set: {
       ...common,
       ...store.value.webEnv,
+      // Phone access (proxy.ts): requests that came through Tailscale Serve are accepted only while it's on, only for
+      // this PC's own Tailscale name, and only for the allowed account (or the whole tailnet, when chosen).
+      ...(store.value.phoneServe?.host
+        ? {
+            CHIEF_PHONE_HOST: store.value.phoneServe.host,
+            CHIEF_PHONE_ACCESS: String(store.value.webEnv.CHIEF_DASHBOARD_TAILSCALE_USER || "").trim() ? "owner" : "tailnet",
+          }
+        : {}),
       CHIEF_BRIDGE_URL: `http://127.0.0.1:${store.value.ports.bridge}`,
       CHIEF_DASHBOARD_TOKEN: token,
       CHIEF_SESSION_SECRET: sessionSecret,

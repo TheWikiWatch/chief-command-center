@@ -25,6 +25,22 @@ export async function phoneState() {
   };
 }
 
+/**
+ * An older record (before phone requests were pinned to this PC's Tailscale name) learns the name before the
+ * dashboard starts, so phones keep working. Best effort: without it, phone requests are refused until Settings →
+ * Phone is opened, never let through.
+ */
+export async function ensurePhoneHost() {
+  const rec = ctx.store.value.phoneServe;
+  if (!rec || rec.host) return;
+  try {
+    const ts = await readState(ctx.store.value.ports.ui);
+    if (ts.dnsName) ctx.store.save({ phoneServe: { ...rec, host: ts.dnsName.toLowerCase() } });
+  } catch {
+    /* Tailscale not answering: try again at the next start */
+  }
+}
+
 /** Restart only the dashboard server so it reads a new allow-list (the window keeps its page). */
 async function restartWeb() {
   await ctx.web.stop(true).catch(() => undefined);
@@ -55,9 +71,11 @@ export async function enablePhone(wanted?: number) {
   if (taken) return { ok: false, error: `Port ${port} already serves ${taken.target}. Choose another port.` };
   const result = await enableServe(exe, port, ctx.store.value.ports.ui);
   if (!result.ok) return result;
-  ctx.store.save({ phoneServe: { port, uiPort: ctx.store.value.ports.ui } });
+  ctx.store.save({ phoneServe: { port, uiPort: ctx.store.value.ports.ui, host: state.dnsName.toLowerCase() } });
   // Turning it on for the first time: only the owner's own Tailscale account, unless they widened it before.
+  // Either way the dashboard restarts, so it accepts phone requests for this PC's name from now on.
   if (!ctx.store.value.webEnv[ALLOW_ENV] && state.login && !recorded) await setPhoneAccess("owner", state.login);
+  else await restartWeb();
   return { ok: true, url: phoneUrl(state.dnsName, port) };
 }
 
@@ -67,10 +85,15 @@ export async function disablePhone() {
   const ours = state.serve.find((e) => e.ours);
   if (!exe || !ours) {
     ctx.store.save({ phoneServe: null });
+    await restartWeb();
     return { ok: true };
   }
   const result = await disableServe(exe, ours.port, ctx.store.value.ports.ui);
-  if (result.ok) ctx.store.save({ phoneServe: null });
+  if (result.ok) {
+    ctx.store.save({ phoneServe: null });
+    // The dashboard stops accepting phone requests at once, not at the next start.
+    await restartWeb();
+  }
   return result;
 }
 

@@ -114,3 +114,30 @@ class AdoptedInstallTests(unittest.TestCase):
         self.assertIsNone(provision.owner_toolkit(self.home))
         (self.shared / "obsidian-second-brain").mkdir(parents=True)
         self.assertEqual(provision.owner_toolkit(self.home), self.shared / "obsidian-second-brain")
+
+
+class PluginCopyTests(unittest.TestCase):
+    """The bridge plugin's copy into the profile never keeps a plain-text token (the agent's file tools can read it)."""
+
+    def setUp(self):
+        scratch = ROOT / "hermes/tests/.runtime"
+        scratch.mkdir(exist_ok=True)
+        self.temp = tempfile.TemporaryDirectory(dir=scratch)
+        self.addCleanup(self.temp.cleanup)
+        self.src = Path(self.temp.name) / "src" / "chief-dashboard-bridge"
+        self.dst = Path(self.temp.name) / "profile" / "plugins" / "chief-dashboard-bridge"
+        self.src.mkdir(parents=True)
+        (self.src / "plugin.yaml").write_text("name: synthetic\n", encoding="utf-8")
+
+    def test_a_legacy_token_is_removed_when_the_plugin_changes(self):
+        self.dst.mkdir(parents=True)
+        (self.dst / ".token").write_text("synthetic-not-a-credential", encoding="utf-8")
+        self.assertTrue(provision.sync_plugin(self.src, self.dst))
+        self.assertTrue((self.dst / "plugin.yaml").is_file())
+        self.assertFalse((self.dst / ".token").exists())
+
+    def test_a_legacy_token_is_removed_even_when_nothing_else_changed(self):
+        provision.sync_plugin(self.src, self.dst)
+        (self.dst / ".token").write_text("synthetic-not-a-credential", encoding="utf-8")
+        self.assertFalse(provision.sync_plugin(self.src, self.dst))  # the copy is current
+        self.assertFalse((self.dst / ".token").exists())

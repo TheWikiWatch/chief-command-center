@@ -4,6 +4,10 @@ Both are best-effort and fail open:
 - `thumb_for` returns None when a thumbnail cannot be made.
 - `preview_for` returns the ORIGINAL path whenever a light preview is not
   (yet) available, so callers can always serve something playable.
+
+The files are whatever a bot saved, so ffmpeg is held to plain local files (`-protocol_whitelist file`: a "video" that
+is really a playlist can't make it open URLs or other files), run by its full path (never one found in a working
+folder), two thumbnails at a time.
 """
 
 from __future__ import annotations
@@ -11,14 +15,20 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import shutil
 import subprocess
 import threading
 from pathlib import Path
+
+from .data import chief_home
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
 FFMPEG = "ffmpeg"
 FFPROBE = "ffprobe"
+# Input options for every run: only local files may be opened, whatever the file claims to be.
+_SAFE_INPUT = ["-protocol_whitelist", "file"]
+_thumb_slots = threading.BoundedSemaphore(2)
 THUMB_TIMEOUT = 25
 PREVIEW_TIMEOUT = 240
 PREVIEW_MIN_BYTES = 50 * 1024 * 1024
@@ -29,8 +39,13 @@ _lock = threading.Lock()
 
 
 def _cache_root() -> Path:
-    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    return Path(base) / "hermes" / "profiles" / "chief" / "cache" / "bridge-media"
+    # The running chief's own profile (a test home writes into its own, never the installed app's).
+    return chief_home() / "cache" / "bridge-media"
+
+
+def _tool(name: str) -> str | None:
+    """The tool's full path from PATH (the payload's own tools come first in the gateway's PATH), or None."""
+    return shutil.which(name)
 
 
 def _key(src: Path) -> str:
@@ -43,8 +58,11 @@ def _key(src: Path) -> str:
 
 
 def _run(cmd: list[str], timeout: int) -> bool:
+    exe = _tool(cmd[0])
+    if not exe:
+        return False
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).returncode == 0
+        return subprocess.run([exe, *cmd[1:]], capture_output=True, text=True, timeout=timeout).returncode == 0
     except Exception:
         return False
 
@@ -55,23 +73,48 @@ def thumb_for(src: Path) -> Path | None:
     if out.is_file() and out.stat().st_size > 0:
         return out
     out.parent.mkdir(parents=True, exist_ok=True)
-    tmp = out.with_name(out.stem + ".tmp.jpg")
-    for ss in ("3", "1", "0"):
-        ok = _run(
-            [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-ss", ss, "-i", str(src), "-frames:v", "1", "-vf", "scale=640:-2", "-q:v", "4", str(tmp)],
-            THUMB_TIMEOUT,
-        )
-        if ok and tmp.is_file() and tmp.stat().st_size > 0:
-            try:
-                os.replace(tmp, out)
-            except OSError:
-                pass
-            return out
+    if not _thumb_slots.acquire(timeout=THUMB_TIMEOUT):
+        return None  # busy: the page asks again later
     try:
-        tmp.unlink(missing_ok=True)
-    except OSError:
-        pass
-    return None
+        if out.is_file() and out.stat().st_size > 0:
+            return out  # made by another request while this one waited
+        tmp = out.with_name(out.stem + ".tmp.jpg")
+        for ss in ("3", "1", "0"):
+            ok = _run(
+                [
+                    FFMPEG,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    *_SAFE_INPUT,
+                    "-ss",
+                    ss,
+                    "-i",
+                    str(src),
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "scale=640:-2",
+                    "-q:v",
+                    "4",
+                    str(tmp),
+                ],
+                THUMB_TIMEOUT,
+            )
+            if ok and tmp.is_file() and tmp.stat().st_size > 0:
+                try:
+                    os.replace(tmp, out)
+                except OSError:
+                    pass
+                return out
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None
+    finally:
+        _thumb_slots.release()
 
 
 def preview_for(src: Path) -> Path:
@@ -98,7 +141,7 @@ def _build_preview(src: Path, out: Path, key: str) -> None:
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         tmp = out.with_name(out.stem + ".tmp.mp4")
-        cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", "-i", str(src)]
+        cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-y", *_SAFE_INPUT, "-i", str(src)]
         height = _probe_height(src)
         if height and height > 720:
             cmd += ["-vf", "scale=-2:720"]
@@ -121,9 +164,12 @@ def _build_preview(src: Path, out: Path, key: str) -> None:
 
 
 def _probe_height(src: Path) -> int | None:
+    exe = _tool(FFPROBE)
+    if not exe:
+        return None
     try:
         r = subprocess.run(
-            [FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", str(src)],
+            [exe, "-v", "error", *_SAFE_INPUT, "-select_streams", "v:0", "-show_entries", "stream=height", "-of", "csv=p=0", str(src)],
             capture_output=True,
             text=True,
             timeout=20,

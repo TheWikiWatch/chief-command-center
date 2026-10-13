@@ -10,6 +10,25 @@ import path from "node:path";
  */
 export type Sealer = { isEncryptionAvailable(): boolean; encryptString(s: string): Buffer; decryptString(b: Buffer): string };
 
+/** A new bridge token, sealed in place of the old one (the old one was exposed: a plain-text copy existed). */
+export function rotateBridgeToken(dir: string, sealer: Sealer): string {
+  if (!sealer.isEncryptionAvailable()) throw new Error("Windows can't protect the app's secrets for this user (DPAPI unavailable).");
+  const token = randomBytes(32).toString("base64url");
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, "bridge-token.bin"), sealer.encryptString(token));
+  return token;
+}
+
+/**
+ * Plain-text bridge tokens an older install left in the plugin folder (`.token`, before the app sealed it with DPAPI).
+ * The agent's own file tools can read them, so their token is treated as exposed: the app removes them and rotates.
+ */
+export function legacyTokenFiles(hermesRoot: string): string[] {
+  return [path.join(hermesRoot, "profiles", "chief", "plugins", "chief-dashboard-bridge", ".token"), path.join(hermesRoot, "plugins", "chief-dashboard-bridge", ".token")].filter(
+    (f) => existsSync(f),
+  );
+}
+
 export function bridgeToken(dir: string, sealer: Sealer, adopt?: string): string {
   const file = path.join(dir, "bridge-token.bin");
   if (!sealer.isEncryptionAvailable()) throw new Error("Windows can't protect the app's secrets for this user (DPAPI unavailable).");

@@ -201,19 +201,22 @@ export function AskedRow({ items }: { items: AskedQuestion[] }) {
 }
 
 const QUICK_LABELS: Record<string, string> = {
-  "/approve": "Approve once",
-  "/always": "Always approve",
   "/cancel": "Cancel",
-  "/deny": "Deny",
-  "/yes": "Yes",
-  "/no": "No",
 };
 
-/** The commands a gateway prompt offers as its text fallback ("reply `/approve`, `/always`, or `/cancel`"). */
+/**
+ * Commands that answer an approval in Hermes (a pending dangerous command, an "are you sure"). Never a button: the
+ * text that would offer them can be written by a bot or a scheduled job, and one tap would approve whatever is pending
+ * without the approval sheet. Approvals are answered on that sheet; these can still be typed.
+ */
+const APPROVAL_COMMANDS = new Set(["/approve", "/always", "/deny", "/yes", "/no", "/allow", "/ok", "/confirm", "/session"]);
+
+/** The commands a gateway prompt offers as its text fallback ("reply `/cancel` to stop it"), minus approvals. */
 export function quickReplies(text: string): string[] {
   const line = text.split("\n").find((l) => /\breply\b/i.test(l) && /`\/[a-z][\w-]*`/i.test(l));
   if (!line) return [];
-  return [...new Set([...line.matchAll(/`(\/[a-z][\w-]*)`/gi)].map((m) => m[1].toLowerCase()))].slice(0, 4);
+  const commands = [...new Set([...line.matchAll(/`(\/[a-z][\w-]*)`/gi)].map((m) => m[1].toLowerCase()))];
+  return commands.filter((c) => !APPROVAL_COMMANDS.has(c)).slice(0, 4);
 }
 
 /**
@@ -288,8 +291,9 @@ export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQui
   const [sent, setSent] = useState("");
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
-  const replies = onQuickReply ? quickReplies(notice.text) : [];
   const scheduled = notice.source === "scheduled";
+  // A scheduled job's output is whatever its run wrote: never buttons.
+  const replies = onQuickReply && !scheduled ? quickReplies(notice.text) : [];
   if (notice.failure) return <RoutineFailure notice={notice} />;
   // A gateway notice (a restart, a reminder that it is busy) is a quiet line; it opens to the full text.
   if (!scheduled && !replies.length) {
