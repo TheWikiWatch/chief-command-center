@@ -131,4 +131,14 @@ describe("the helper's other files", () => {
     expect(readdirSync(out).sort()).toEqual(["ChiefUpdater-1.0.0.exe", "notes.txt"]);
     expect(helperCopy(path.join(dir, "no-resources"), out, "1.0.0")).toBeNull();
   });
+
+  it("replaces a copy whose bytes changed, even at the same size", () => {
+    const resources = path.join(dir, "resources");
+    mkdirSync(path.join(resources, "updater"), { recursive: true });
+    writeFileSync(path.join(resources, "updater", "ChiefUpdater.exe"), "MZ-good");
+    const out = path.join(dir, "copies2");
+    mkdirSync(out);
+    writeFileSync(path.join(out, "ChiefUpdater-1.0.0.exe"), "MZ-evil");
+    expect(readFileSync(helperCopy(resources, out, "1.0.0")!, "utf8")).toBe("MZ-good");
+  });
 });

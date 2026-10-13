@@ -6,7 +6,7 @@ import { BellIcon, CheckIcon, CircleAlertIcon, CopyIcon, ExternalLinkIcon, LinkI
 import { PairPhones } from "@/components/phone/pair-phones";
 import { QrCode } from "@/components/phone/qr-code";
 import { Group, PillButton, Row } from "@/components/ui/settings-group";
-import { desktop, type PhoneState } from "@/lib/desktop";
+import { desktop, type PhoneResult, type PhoneState } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
 import { canPromptInstall, isStandalone, onInstallPromptChange, phonePlatform, promptInstall } from "@/lib/install-prompt";
 import { disableWebPush, enableWebPush, pushCapability, pushDeviceCount, pushStatus, sendTestPush, type PushStatus } from "@/lib/web-push";
@@ -80,8 +80,8 @@ function PcSetup() {
     setBusy("on");
     setError("");
     setConsent("");
-    const r = await api.enable(state?.port ?? undefined).catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : String(e), consentUrl: "" }));
-    if (!r.ok) {
+    const r: PhoneResult = await api.enable(state?.port ?? undefined).catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : String(e), consentUrl: "" }));
+    if (!r.ok && !r.cancelled) {
       setError(r.error || "Phone access couldn't be turned on.");
       setConsent(r.consentUrl || "");
     }
@@ -101,7 +101,7 @@ function PcSetup() {
     setBusy("access");
     setError("");
     const r = await api.setAccess(mode);
-    if (!r.ok) setError(r.error || "That couldn't be changed.");
+    if (!r.ok && !r.cancelled) setError(r.error || "That couldn't be changed.");
     // The dashboard server restarted to read it: give it a moment, then look again.
     await new Promise((res) => setTimeout(res, 1500));
     setBusy("");

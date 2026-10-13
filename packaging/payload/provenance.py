@@ -4,7 +4,8 @@ The stamp (hermes-agent/install-stamp.json) gains a `provenance` block:
 
 - `patches`: the SHA-256 of every patch in hermes/pin.json, as applied;
 - `selection`: the SHA-256 of packaging/payload/selection.json (which Python extras and tools went in);
-- `builder`: this repository's commit when the payload was built, and whether the tree had uncommitted changes;
+- `builder`: this repository's commit when the payload was built, and whether the files that shape the payload
+  (hermes/, packaging/payload/) had uncommitted changes;
 - `tree`: one SHA-256 over every file in the payload (path, size and content; compiled Python, caches and the
   stamp itself left out), so any change to the payload after it was built shows.
 
@@ -12,6 +13,11 @@ The stamp (hermes-agent/install-stamp.json) gains a `provenance` block:
     python packaging/payload/provenance.py --payload <dir> --write     record it on a payload built before this existed
 
 stage.py writes it at the end of every build; scripts/release.mjs runs --check and puts the tree digest in release.json.
+
+The check also refuses a payload whose builder commit isn't in this repository's history, or that was built with
+uncommitted changes to those files, unless its tree digest is in accepted-trees.json (a payload that already
+shipped, accepted by hand with a note). stage.py refuses to build from a Hermes checkout that isn't exactly the
+pinned upstream commit plus the patch commit, with nothing uncommitted.
 """
 
 from __future__ import annotations
@@ -72,7 +78,33 @@ def builder(repo: Path = REPO) -> dict:
     def git(*args: str) -> str:
         return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=False).stdout.strip()
 
-    return {"commit": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain"))}
+    return {"commit": git("rev-parse", "HEAD"), "dirty": bool(git("status", "--porcelain", "--", *PAYLOAD_INPUTS))}
+
+
+# What a payload is built from in this repository: a change here, uncommitted, makes a payload no commit describes.
+PAYLOAD_INPUTS = ("hermes", "packaging/payload")
+
+
+def accepted_trees(repo: Path = REPO) -> dict:
+    try:
+        return json.loads((repo / "packaging" / "payload" / "accepted-trees.json").read_text(encoding="utf-8")).get("trees", {})
+    except (OSError, ValueError):
+        return {}
+
+
+def builder_problems(have: dict, repo: Path = REPO) -> list[str]:
+    """Why the recorded builder doesn't vouch for the payload ([] when it does, or when the tree is accepted by hand)."""
+    if have.get("tree") in accepted_trees(repo):
+        return []
+    made_by = have.get("builder") if isinstance(have.get("builder"), dict) else {}
+    commit = str(made_by.get("commit") or "")
+    if not commit:
+        return ["the payload doesn't say which commit of this repository built it: rebuild it (packaging/payload/stage.py)"]
+    known = subprocess.run(["git", "merge-base", "--is-ancestor", commit, "HEAD"], cwd=repo, capture_output=True, check=False).returncode == 0
+    problems = [] if known else [f"the payload was built from {commit[:10]}, which isn't in this repository's history"]
+    if made_by.get("dirty"):
+        problems.append("the payload was built with uncommitted changes to hermes/ or packaging/payload/: commit them and rebuild it")
+    return problems
 
 
 def record(payload: Path, repo: Path = REPO, after_the_fact: bool = False) -> dict:
@@ -104,7 +136,7 @@ def check(payload: Path, repo: Path = REPO) -> list[str]:
         problems.append("packaging/payload/selection.json changed since the payload was built")
     if have.get("tree") != tree_digest(payload):
         problems.append("the payload's files changed after it was built (its tree digest doesn't match)")
-    return problems
+    return problems + builder_problems(have, repo)
 
 
 def main(argv: list[str] | None = None) -> int:

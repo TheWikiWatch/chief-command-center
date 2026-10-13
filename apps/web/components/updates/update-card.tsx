@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 
 import { CircleAlertIcon, CircleCheckIcon, DownloadIcon } from "@/components/icons";
 import { SwitchRow } from "@/components/settings/shared";
-import { desktop, type UpdateOptions, type UpdateState } from "@/lib/desktop";
+import { desktop, wasCancelled, type UpdateOptions, type UpdateState } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
 import { field } from "@/components/ui/field";
 
@@ -294,8 +294,8 @@ export function UpdatesPanel() {
               onClick={async () => {
                 setFeedError("");
                 try {
-                  await api.setFeed(feed.trim());
-                  setSaved(feed.trim());
+                  // The app's own dialog asks before the source changes; a no leaves it as it was.
+                  if (!wasCancelled(await api.setFeed(feed.trim()))) setSaved(feed.trim());
                 } catch (e) {
                   // The shell refuses network shares and anything that isn't a repository or a local folder.
                   const text = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, "") : "";

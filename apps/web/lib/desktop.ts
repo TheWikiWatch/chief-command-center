@@ -24,6 +24,13 @@ export type UpdateState =
   | { status: "restarting"; release: Release; step: string }
   | { status: "error"; error: string; release?: Release };
 
+/**
+ * What the shell's own confirmation dialog (apps/desktop/src/owner-confirm.ts) returns when the owner says no: the
+ * state as it was, marked. Installing a version, going back, a forced restart and a new update source ask there.
+ */
+export type MaybeCancelled<T> = T & { cancelled?: true };
+export const wasCancelled = (r: unknown): boolean => !!r && typeof r === "object" && (r as { cancelled?: unknown }).cancelled === true;
+
 /** Settings → Updates: prepare in the background (default on), and early updates (prereleases; the owner's soak). */
 export type UpdateOptions = { prepare: boolean; early: boolean };
 
@@ -79,7 +86,7 @@ export type PhoneState = {
   allowed: string;
 };
 
-export type PhoneResult = { ok: boolean; error?: string; consentUrl?: string; url?: string };
+export type PhoneResult = { ok: boolean; error?: string; consentUrl?: string; url?: string; cancelled?: true };
 
 export type DesktopPhone = {
   state: () => Promise<PhoneState>;
@@ -119,7 +126,7 @@ export type ChiefDesktop = {
   openLogs?: () => Promise<string>;
   /** Taskbar jump-list and tray shortcuts ("new-thread", "voice", "today"); returns an unsubscribe. */
   onAction?: (fn: (action: string) => void) => () => void;
-  applyRestore?: () => Promise<{ ok: boolean; error?: string; report?: { remapped: string[]; review: { file: string; line: number; text: string }[]; missing_secrets: string[] } }>;
+  applyRestore?: () => Promise<{ ok: boolean; error?: string; cancelled?: true; report?: { remapped: string[]; review: { file: string; line: number; text: string }[]; missing_secrets: string[] } }>;
 };
 
 export function desktop(): ChiefDesktop | null {

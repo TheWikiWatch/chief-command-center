@@ -80,6 +80,8 @@ async function make() {
     plugins: { "chief-dashboard-bridge": bridge },
     data: { schema: Number(opts["data-schema"] || 1), min_reader: opts["min-reader"] || opts.version },
     ...(opts["key-id"] ? { signing: { key_id: opts["key-id"] } } : {}),
+    // The oldest version apps may install or go back to from now on (a release that fixes a security problem).
+    ...(/^\d+\.\d+\.\d+$/.test(opts.floor || "") ? { floor: opts.floor } : {}),
     // The payload's tree digest (packaging/payload/provenance.py), so a release says exactly which Hermes files it carries.
     ...(opts["payload-tree"] ? { payload: { tree: opts["payload-tree"] } } : {}),
     // The bill of materials ships beside the package; its digest here puts it under the release signature.

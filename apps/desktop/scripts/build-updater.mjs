@@ -8,7 +8,8 @@
 //
 //   node apps/desktop/scripts/build-updater.mjs        (npm --prefix apps/desktop run build:updater)
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,11 +60,19 @@ if (process.env.CHIEF_SIGN_PFX) {
 // A self-test of the very exe that ships: a simulated stage must speak the protocol the app reads (update-helper.ts).
 const probe = mkdtempSync(path.join(tmpdir(), "chief-updater-"));
 try {
-  const job = path.join(probe, "stage.json");
-  writeFileSync(job, JSON.stringify({ version: 1, packageFile: path.join(probe, "ChiefCommandCenter-0.0.1.msix"), packageName: "ChiefCommandCenter", from: "0.0.0", to: "0.0.1", logFile: path.join(probe, "log.txt") }));
-  const run = spawnSync(exe, ["stage", "--job", job, "--simulate"], { encoding: "utf8", windowsHide: true, timeout: 60_000 });
-  const lines = String(run.stdout || "").trim().split(/\r?\n/);
-  if (run.status !== 0 || !/"phase":"staged"/.test(lines.at(-1) || "")) fail(`the self-test failed (exit ${run.status}): ${lines.slice(-3).join(" | ")}`);
+  // A stand-in package: the helper hashes it again before staging, and refuses one that doesn't match the job.
+  const pkg = path.join(probe, "ChiefCommandCenter-0.0.1.msix");
+  writeFileSync(pkg, "not really a package");
+  const stage = (sha) => {
+    const job = path.join(probe, "stage.json");
+    writeFileSync(job, JSON.stringify({ version: 1, packageFile: pkg, packageSha256: sha, packageName: "ChiefCommandCenter", from: "0.0.0", to: "0.0.1", logFile: path.join(probe, "log.txt") }));
+    const run = spawnSync(exe, ["stage", "--job", job, "--simulate"], { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+    return { status: run.status, lines: String(run.stdout || "").trim().split(/\r?\n/) };
+  };
+  const good = stage(createHash("sha256").update(readFileSync(pkg)).digest("hex"));
+  if (good.status !== 0 || !/"phase":"staged"/.test(good.lines.at(-1) || "")) fail(`the self-test failed (exit ${good.status}): ${good.lines.slice(-3).join(" | ")}`);
+  const swapped = stage("0".repeat(64));
+  if (swapped.status !== 1 || !/"phase":"error".*changed after it was checked/.test(swapped.lines.at(-1) || "")) fail(`the self-test installed a package that doesn't match its job (exit ${swapped.status}): ${swapped.lines.slice(-2).join(" | ")}`);
 } finally {
   rmSync(probe, { recursive: true, force: true });
 }

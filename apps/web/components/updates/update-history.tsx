@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { CircleAlertIcon, SparklesIcon, XIcon } from "@/components/icons";
-import { desktop } from "@/lib/desktop";
+import { desktop, wasCancelled } from "@/lib/desktop";
 import { showToast } from "@/lib/toast-store";
 import { Sheet } from "@/components/ui/sheet";
 import { usePhoneShell } from "@/lib/use-phone-shell";
@@ -105,7 +105,7 @@ export function UpdateHistorySheet({ open, onClose }: { open: boolean; onClose: 
                     {[e.published ? `Released ${shortDate(e.published)}` : "", e.installedAt ? `installed here ${shortDate(e.installedAt)}` : ""].filter(Boolean).join(" · ") || " "}
                   </p>
                   {e.highlights?.length ? <HermesHighlights hermes={e.hermes} highlights={e.highlights} /> : null}
-                  {e.known && !current ? <InstallThisVersion version={e.version} newer={newerThan(e.version, history.current)} onStarted={onClose} /> : null}
+                  {e.known && !current ? <InstallThisVersion version={e.version} onStarted={onClose} /> : null}
                   {e.notes ? (
                     <p className="mt-1.5 whitespace-pre-wrap text-callout text-fg-2">{e.notes}</p>
                   ) : (
@@ -125,41 +125,32 @@ export function UpdateHistorySheet({ open, onClose }: { open: boolean; onClose: 
 }
 
 /**
- * "Install this version": any published version, newer or older, in the desktop app (0.1.32 on). It asks once, then
- * the version gets ready in the background like an update (checked against its signed description, backed up first
- * when it brings a different Hermes) and the update card offers the restart.
+ * "Install this version": any published version, newer or older, in the desktop app (0.1.32 on). The app's own
+ * dialog asks (a page can't install a version by itself), then the version gets ready in the background like an
+ * update (checked against its signed description, backed up first when it brings a different Hermes) and the
+ * update card offers the restart.
  */
-function InstallThisVersion({ version, newer, onStarted }: { version: string; newer: boolean; onStarted: () => void }) {
+function InstallThisVersion({ version, onStarted }: { version: string; onStarted: () => void }) {
   const install = desktop()?.updates?.installVersion;
-  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   if (!install) return null;
   const go = async () => {
     setError("");
-    const state = await install(version).catch((e: unknown) => ({ status: "error" as const, error: e instanceof Error ? e.message : String(e) }));
+    setBusy(true);
+    const state = await install(version)
+      .catch((e: unknown) => ({ status: "error" as const, error: e instanceof Error ? e.message : String(e) }))
+      .finally(() => setBusy(false));
+    if (wasCancelled(state)) return;
     if (state.status === "error") return setError(state.error);
     showToast({ title: `Getting ${version} ready`, body: "The update card says when to restart into it.", tone: "ok", icon: "check" });
     onStarted();
   };
   return (
     <div className="mt-2">
-      {asking ? (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="w-full text-caption text-fg-3">
-            {newer ? `Install ${version}?` : `Go back to ${version}? Your setup is backed up first when its Hermes is different.`} It gets ready in the background, then you restart into it.
-          </p>
-          <button type="button" onClick={() => void go()} className="press min-h-9 rounded-full bg-fg px-3 text-callout font-medium text-canvas">
-            {newer ? `Install ${version}` : `Go back to ${version}`}
-          </button>
-          <button type="button" onClick={() => setAsking(false)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
-            Cancel
-          </button>
-        </div>
-      ) : (
-        <button type="button" onClick={() => setAsking(true)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
-          Install this version
-        </button>
-      )}
+      <button type="button" disabled={busy} onClick={() => void go()} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg disabled:opacity-60">
+        Install this version
+      </button>
       {error ? (
         <p role="alert" className="mt-1.5 text-caption text-danger">
           {error}

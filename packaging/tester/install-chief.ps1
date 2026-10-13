@@ -12,7 +12,7 @@
 #
 # Nothing is downloaded and nothing else on the PC is changed. Kept to plain ASCII and Windows PowerShell 5.1.
 # -CheckOnly runs steps 1 and 2 and changes nothing (for checking a setup folder before sending it).
-# -Fingerprint <thumbprint> skips the question in step 2 (the value you were sent).
+# -Fingerprint <thumbprint> skips the question in step 2 (the whole value you were sent, 40 characters).
 # -Drive <letter> skips the question in step 3. -Plan runs steps 1 to 3 and says what it would do, changing nothing.
 param([switch]$CheckOnly, [string]$Fingerprint = "", [string]$Drive = "", [switch]$Plan)
 $ErrorActionPreference = "Stop"
@@ -58,9 +58,10 @@ if (-not $CheckOnly) {
     Say ""
     Say "Certificate fingerprint: $($cert.Thumbprint)"
     Say "Compare it with the fingerprint you were sent separately (by message)."
-    $expected = ((Read-Host "Type the first 8 characters of the fingerprint you were sent") -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
+    $expected = ((Read-Host "Paste or type the whole fingerprint you were sent (40 characters; spaces don't matter)") -replace "[^0-9A-Fa-f]", "").ToUpperInvariant()
   }
-  if ($expected.Length -lt 8 -or -not $cert.Thumbprint.ToUpperInvariant().StartsWith($expected)) {
+  # All of it: a few characters can be matched by a certificate made to look alike.
+  if ($expected.Length -ne 40 -or $cert.Thumbprint.ToUpperInvariant() -ne $expected) {
     Stop-With "That doesn't match this folder's certificate, so nothing was installed. Ask the person who sent it to check the fingerprint with you."
   }
   Say "Fingerprint matches."
@@ -133,20 +134,26 @@ if ($Plan) {
 
 Step "Getting Windows' permission"
 # Everything that needs an administrator goes in one prompt: trusting the certificate, and (for another drive) letting
-# Windows keep apps there. The commands go through an encoded command so paths with spaces are safe.
+# Windows keep apps there. The administrator side gets the certificate's bytes (checked above), not the file, which
+# could be swapped while the prompt is up, and checks its fingerprint again. Values travel base64-encoded, so no
+# quote in a path or name (curly ones included) can change the command.
+function Text64($text) { "([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($text)) + "')))" }
 $admin = @()
 if ($trusted) { Say "The certificate is already trusted on this PC." } else {
-  $admin += "Import-Certificate -FilePath '" + $cerFile.FullName.Replace("'", "''") + "' -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null"
+  $bytes = [Convert]::ToBase64String($cert.RawData)
+  $admin += "`$c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,[Convert]::FromBase64String('$bytes'))"
+  $admin += "if (`$c.Thumbprint -ne '$($cert.Thumbprint)') { exit 5 }"
+  $admin += "`$s = New-Object System.Security.Cryptography.X509Certificates.X509Store('TrustedPeople', 'LocalMachine'); `$s.Open('ReadWrite'); `$s.Add(`$c); `$s.Close()"
 }
 if ($newVolumePath) {
-  $admin += "`$v = Add-AppxVolume -Path '$newVolumePath'; if (`$v -and `$v.IsOffline) { Mount-AppxVolume -Volume `$v }"
+  $admin += "`$v = Add-AppxVolume -Path $(Text64 $newVolumePath); if (`$v -and `$v.IsOffline) { Mount-AppxVolume -Volume `$v }"
 }
 if ($admin.Count) {
   Say "Windows will ask for permission once: this lets it install packages signed with this certificate$(if ($newVolumePath) { ' and keep apps on ' + $newVolumePath.Substring(0, 2) })."
   $command = "`$ErrorActionPreference = 'Stop'; " + ($admin -join "; ")
   $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
   try {
-    $p = Start-Process -FilePath powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded
+    $p = Start-Process -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded
   } catch {
     Stop-With "Permission wasn't given, so nothing was installed. Run Install Chief again and choose Yes."
   }

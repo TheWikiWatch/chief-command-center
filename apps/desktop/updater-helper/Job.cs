@@ -20,6 +20,8 @@ sealed class Job
     public string From = "";
     public string To = "";
     public string PackageFile = "";
+    /// <summary>The package's SHA-256 from its signed release description; checked again right before Windows gets it.</summary>
+    public string PackageSha256 = "";
     public string PackageName = "ChiefCommandCenter";
     public string AppId = "ChiefCommandCenter";
     public int AppPid;
@@ -35,10 +37,17 @@ sealed class Job
 
     public bool IsRollback => Mode == "rollback";
 
+    /// <summary>
+    /// Only going back (which the owner confirmed in the app's own dialog) may install an older version: an ordinary
+    /// update never asks Windows to accept a downgrade, so an older signed package swapped in is refused.
+    /// </summary>
+    public bool AllowDowngrade => IsRollback;
+
     /// <summary>An app version x.y.z is package version x.y.z.0.</summary>
     public string PackageVersion => To + ".0";
 
     static readonly Regex AppVersion = new(@"^\d+\.\d+\.\d+$");
+    static readonly Regex Sha256Hex = new(@"^[0-9a-f]{64}$");
 
     public static Job Load(string path)
     {
@@ -52,6 +61,7 @@ sealed class Job
             From = Str(root, "from") ?? "",
             To = Str(root, "to") ?? "",
             PackageFile = Str(root, "packageFile") ?? "",
+            PackageSha256 = (Str(root, "packageSha256") ?? "").ToLowerInvariant(),
             PackageName = Str(root, "packageName") ?? "ChiefCommandCenter",
             AppId = Str(root, "appId") ?? "ChiefCommandCenter",
             AppPid = (int)(Num(root, "appPid") ?? 0),
@@ -74,6 +84,7 @@ sealed class Job
         if (job.Mode != "update" && job.Mode != "rollback") throw new InvalidDataException($"unknown mode \"{job.Mode}\"");
         if (!AppVersion.IsMatch(job.From)) throw new InvalidDataException("\"from\" must be a version x.y.z");
         if (!AppVersion.IsMatch(job.To)) throw new InvalidDataException("\"to\" must be a version x.y.z");
+        if (job.PackageSha256.Length > 0 && !Sha256Hex.IsMatch(job.PackageSha256)) throw new InvalidDataException("\"packageSha256\" must be 64 hex digits");
         if (job.AssistantName.Trim().Length == 0) job.AssistantName = "Chief";
         return job;
     }

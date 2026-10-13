@@ -141,10 +141,12 @@ try {
     Say "(dry run) would ask for administrator permission to trust the publisher."
   } else {
     Say "Windows will ask for administrator permission once, to trust Chief's publisher for app packages."
-    $cer = Join-Path $Work "chief-publisher.cer"
-    [IO.File]::WriteAllBytes($cer, $signature.SignerCertificate.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert))
-    $cmd = "Import-Certificate -FilePath '" + $cer.Replace("'", "''") + "' -CertStoreLocation Cert:\LocalMachine\TrustedPeople | Out-Null"
-    $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", $cmd
+    # The administrator side gets the publisher certificate's bytes and checks the fingerprint again (no file that could
+    # be swapped, no path that needs quoting).
+    $bytes = [Convert]::ToBase64String($signature.SignerCertificate.RawData)
+    $cmd = "`$ErrorActionPreference = 'Stop'; `$c = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(,[Convert]::FromBase64String('$bytes')); if (`$c.Thumbprint -ne '$Fingerprint') { exit 5 }; `$s = New-Object System.Security.Cryptography.X509Certificates.X509Store('TrustedPeople', 'LocalMachine'); `$s.Open('ReadWrite'); `$s.Add(`$c); `$s.Close()"
+    $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+    $p = Start-Process "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $encoded
     $trusted = Get-ChildItem Cert:\LocalMachine\TrustedPeople | Where-Object { $_.Thumbprint -eq $Fingerprint }
     if (-not $trusted) { Fail "The publisher wasn't trusted (the administrator prompt was declined or failed, exit $($p.ExitCode))." }
     Say "Trusted."

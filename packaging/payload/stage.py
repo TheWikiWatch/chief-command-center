@@ -71,6 +71,8 @@ def main(argv: list[str] | None = None) -> int:
     Path(args.out).mkdir(parents=True, exist_ok=True)
     if args.inner:
         return _inner(args)
+    if not args.finish:
+        check_source(Path(args.hermes_src))
 
     # Same isolation as upstream's stage_native: this build never touches the machine's Hermes state.
     work = Path(tempfile.mkdtemp(prefix=".build-", dir=args.out))
@@ -109,15 +111,28 @@ def main(argv: list[str] | None = None) -> int:
     return code
 
 
+def check_source(source: Path) -> None:
+    """Build only from what prepare_source.py leaves: the pinned upstream commit with one commit of patches on top and
+    nothing uncommitted. Checked before the build, which writes into the checkout."""
+    pin = json.loads((HERE.parents[1] / "hermes" / "pin.json").read_text(encoding="utf-8"))
+    upstream = subprocess.run(["git", "rev-parse", "HEAD^"], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
+    if upstream != pin["commit"]:
+        raise SystemExit(f"{source} sits on {upstream[:10]}, not the pinned {pin['commit'][:10]}: prepare it again (prepare_source.py).")
+    if subprocess.run(["git", "status", "--porcelain"], cwd=source, check=True, capture_output=True, text=True).stdout.strip():
+        raise SystemExit(f"{source} has uncommitted changes: prepare it again (prepare_source.py) rather than building from it.")
+
+
 def write_install_stamp(out: Path, source: Path) -> None:
     """Declare the app as the payload's steward. Hermes reads this stamp: `hermes update` then refuses to
     touch the tree ("managed by chief-command-center"), and version reports show the pinned commit."""
     pin = json.loads((HERE.parents[1] / "hermes" / "pin.json").read_text(encoding="utf-8"))
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
+    # What the source says it is (check_source made sure it's the pin), not what pin.json says it should be.
+    upstream = subprocess.run(["git", "rev-parse", "HEAD^"], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
     date = subprocess.run(["git", "show", "-s", "--format=%cI", pin["commit"]], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
     stamp = {
         "commit": head,
-        "upstreamCommit": pin["commit"],
+        "upstreamCommit": upstream,
         "commitDate": date,
         "baseVersion": pin["baseVersion"],
         "displayVersion": f"{pin['baseVersion']}+chief",

@@ -6,7 +6,7 @@ import { app } from "electron";
 import { curatedEnv, payloadLayout } from "./env";
 import { runJsonTool, type ToolResult } from "./python";
 import { engineRunner } from "./restore";
-import { sessionCookieName } from "./session";
+import { sessionCookieName, sessionCookieValue } from "./session";
 import { ctx, uiUrl } from "./state";
 
 /* The bundled runtime: environments for the children, the payload's install stamp, one-off Python tools. */
@@ -180,7 +180,7 @@ export function provisionKey(): string {
 
 /** Fetch with the window's session cookie: the desktop app calling its own dashboard (proxy.ts requires the cookie). */
 export function dashboardHeaders(): Record<string, string> {
-  return { Origin: uiUrl(), Host: `127.0.0.1:${ctx.store.value.ports.ui}`, Cookie: `${sessionCookieName(ctx.store.value.ports.ui)}=${ctx.sessionSecret}` };
+  return { Origin: uiUrl(), Host: `127.0.0.1:${ctx.store.value.ports.ui}`, Cookie: `${sessionCookieName(ctx.store.value.ports.ui)}=${sessionCookieValue(ctx.sessionSecret)}` };
 }
 
 /** One line in a plain-text log under logs\ (the installer's log), with a local timestamp like the installer's. */

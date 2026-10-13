@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
@@ -25,6 +26,8 @@ export type HelperJob = {
   from: string;
   to: string;
   packageFile: string;
+  /** From the signed release: the helper checks the file against it again, holding it open, right before installing. */
+  packageSha256: string;
   packageName: string;
   appId: string;
   appPid: number;
@@ -65,16 +68,17 @@ export const readyFile = (dir: string, version: string) => path.join(dir, `ready
 export const resultFile = (dir: string) => path.join(dir, "update-result.json");
 
 /**
- * The helper copied out of the package (`ChiefUpdater-<app version>.exe`), refreshed when the bundled one differs in
- * size; copies left by older versions are removed. Null when this build has no helper (a dev run, or a package built
- * before it existed).
+ * The helper copied out of the package (`ChiefUpdater-<app version>.exe`), refreshed whenever its bytes differ from the
+ * one inside the package (which Windows protects), so a copy changed on disk is never run; copies left by older
+ * versions are removed. Null when this build has no helper (a dev run, or a package built before it existed).
  */
 export function helperCopy(resourcesDir: string, dir: string, appVersion: string): string | null {
   const source = path.join(resourcesDir, "updater", HELPER_EXE);
   if (!existsSync(source)) return null;
   mkdirSync(dir, { recursive: true });
   const target = path.join(dir, `ChiefUpdater-${appVersion}.exe`);
-  if (!existsSync(target) || statSync(target).size !== statSync(source).size) copyFileSync(source, target);
+  const digest = (file: string) => createHash("sha256").update(readFileSync(file)).digest("hex");
+  if (!existsSync(target) || statSync(target).size !== statSync(source).size || digest(target) !== digest(source)) copyFileSync(source, target);
   const config = `${source}.config`;
   if (existsSync(config)) copyFileSync(config, `${target}.config`);
   for (const name of readdirSync(dir)) {

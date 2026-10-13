@@ -50,7 +50,7 @@ it("an older version chosen from the history says so on the card", async () => {
   expect(screen.getByRole("button", { name: "Restart into 0.1.27" })).toBeTruthy();
 });
 
-it("the history offers any published version, asks once, and starts getting it ready", async () => {
+it("the history offers any published version and starts getting it ready (the app's own dialog asks)", async () => {
   const calls = shell();
   vi.stubGlobal(
     "fetch",
@@ -73,8 +73,6 @@ it("the history offers any published version, asks once, and starts getting it r
   const buttons = await screen.findAllByRole("button", { name: "Install this version" });
   expect(buttons).toHaveLength(2); // not on the running version
   fireEvent.click(buttons[1]);
-  expect(screen.getByText(/Go back to 0\.1\.27\? Your setup is backed up first/)).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Go back to 0.1.27" }));
   await waitFor(() => expect(calls).toEqual(["install 0.1.27"]));
   expect(closed).toHaveBeenCalled();
 });

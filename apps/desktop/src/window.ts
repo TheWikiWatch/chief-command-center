@@ -5,8 +5,9 @@ import { app, BrowserWindow, dialog, Menu, nativeImage, Notification, session, s
 import { activeWork, fromBridgeSnapshot } from "./active-work";
 import { waitFor } from "./gateway";
 import { BOOT_URL, DESKTOP_ACTIONS, navigateDecision, sameOrigin, windowOpenDecision, type DesktopAction } from "./guards";
+import { pauseServe } from "./phone";
 import { logLine } from "./runtime";
-import { openTicket, sessionCookieName } from "./session";
+import { openTicket, sessionCookieName, sessionCookieValue } from "./session";
 import { ctx, hiddenLaunch, log, uiOrigin, uiUrl, type Step } from "./state";
 
 /* The window, the tray, the taskbar's jump list, and quitting. */
@@ -92,7 +93,7 @@ export async function showBootPage(steps: Step[]) {
 
 /** The window's session cookie for the dashboard's port (set again whenever the port may have moved). */
 export async function setSessionCookie() {
-  await session.defaultSession.cookies.set({ url: uiUrl(), name: sessionCookieName(ctx.store.value.ports.ui), value: ctx.sessionSecret, httpOnly: true, sameSite: "strict" });
+  await session.defaultSession.cookies.set({ url: uiUrl(), name: sessionCookieName(ctx.store.value.ports.ui), value: sessionCookieValue(ctx.sessionSecret), httpOnly: true, sameSite: "strict" });
 }
 
 /** Chief in the owner's own browser on this PC: a link with a ticket the dashboard swaps for the session cookie. */
@@ -212,6 +213,7 @@ export async function currentWork() {
 async function stopEverything() {
   ctx.quitting = true;
   ctx.notifier?.stop();
+  await pauseServe();
   await ctx.web.stop(true).catch(() => undefined);
   if (!ctx.externalGateway) await ctx.gateway.stop(true).catch(() => undefined);
 }

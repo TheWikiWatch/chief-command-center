@@ -573,13 +573,18 @@ class PortraitTests(LooksTestCase):
         self.assertIn("wearing round glasses", prompts[0])
         self.assertIn("plain dark background", prompts[0])
 
-    def test_a_slow_generator_times_out(self):
+    def test_a_slow_generator_times_out_and_blocks_a_second_one_until_it_ends(self):
         with patch.object(looks, "PORTRAIT_TIMEOUT", 0.05), patch.object(looks, "image_ready", return_value=True):
             event = threading.Event()
+            # Cleanups run last first: let the slow one finish, then wait until it has let go.
+            self.addCleanup(lambda: looks._portrait_running.acquire(timeout=5) and looks._portrait_running.release())
             self.addCleanup(event.set)
             with patch.object(looks, "_generate", lambda prompt: event.wait(5)):
                 body, status = looks.call(lambda: looks.portrait("ada"))
-        self.assertEqual(status, 504)
+                self.assertEqual(status, 504)
+                body, status = looks.call(lambda: looks.portrait("ada"))
+        self.assertEqual(status, 409)
+        self.assertIn("still being made", body["error"])
 
 
 class ToolTests(LooksTestCase):

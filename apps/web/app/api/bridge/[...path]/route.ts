@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { deniedFilePath, permittedOperation, protectFileHeaders, validMutationOrigin } from "@/lib/proxy-policy";
 import { bridgeUrl } from "@/lib/server/app-config";
+import { isDirectLoopback } from "@/lib/tailnet-guard";
 import { invalidateSecondBrain } from "@/lib/server/second-brain";
 
 export const dynamic = "force-dynamic";
@@ -10,6 +11,9 @@ function bridgeBase() {
   return bridgeUrl();
 }
 
+/** Choosing or inspecting the Second Brain folder names a folder on the PC: only from the PC's own window. */
+const PC_ONLY = new Set(["POST setup/second-brain", "POST setup/second-brain/inspect"]);
+
 function token() {
   return process.env.CHIEF_DASHBOARD_TOKEN || "";
 }
@@ -17,6 +21,9 @@ function token() {
 async function proxy(req: NextRequest, path: string[]) {
   if (!permittedOperation("bridge", req.method, path)) return Response.json({ ok: false, error: "Unsupported operation" }, { status: 404 });
   if (req.method !== "GET" && !validMutationOrigin(req.headers, req.url)) return Response.json({ ok: false, error: "Invalid request origin" }, { status: 403 });
+  if (PC_ONLY.has(`${req.method} ${path.join("/")}`) && !isDirectLoopback(req.headers)) {
+    return Response.json({ ok: false, error: "Choose the Second Brain folder on the PC." }, { status: 403 });
+  }
   const url = new URL(req.url);
   if (path[0] === "file" || path[0] === "preview" || path[0] === "thumb") {
     const file = url.searchParams.get("path") || "";

@@ -1,18 +1,18 @@
 import { existsSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { app, crashReporter, dialog, protocol, safeStorage, screen, session, utilityProcess } from "electron";
+import { app, crashReporter, dialog, protocol, safeStorage, screen, session, shell, utilityProcess } from "electron";
 
 import { createBoot, recoversBoot } from "./boot";
 import { registerBootScheme, serveBootPage } from "./boot-protocol";
 import { payloadLayout } from "./env";
-import { bridgeHealth, gatewayOwner, isOrphan, killTree, launchGateway, profileHome, requestScopedStop, waitFor } from "./gateway";
-import { actionFromArgv, permissionAllowed, permissionCheckAllowed } from "./guards";
+import { bridgeHealth, gatewayOwner, isOrphan, killTree, launchGateway, profileHome, requestScopedStop, stillTheGateway, waitFor } from "./gateway";
+import { actionFromArgv, navigateDecision, permissionAllowed, permissionCheckAllowed, windowOpenDecision, BOOT_URL } from "./guards";
 import { fallbackCommandLine, installScript, launchDetached } from "./install-package";
 import { checkForUpdates, registerIpc, sendEngineState, syncHistory } from "./ipc";
 import { Notifier } from "./notifier";
 import { missing, resolvePaths } from "./paths";
-import { ensurePhoneHost } from "./phone";
+import { ensurePhoneHost, resumeServe } from "./phone";
 import { decidePorts } from "./ports";
 import { cacheRelease, readReleases, recordInstall } from "./release-history";
 import { RELEASE_KEYS } from "./release-key";
@@ -81,7 +81,7 @@ async function claimGateway(): Promise<"own" | "external" | "quit"> {
   const owner = gatewayOwner(hermesRoot, payloadLayout(paths.payload).launcher);
   ctx.externalGateway = false;
   // An orphan from a crashed run of this app; never the gateway this run's supervisor is starting or running.
-  if (isOrphan(owner, ctx.gateway)) await killTree((owner as { pid: number }).pid);
+  if (isOrphan(owner, ctx.gateway) && (await stillTheGateway((owner as { pid: number }).pid, hermesRoot))) await killTree((owner as { pid: number }).pid);
   if (owner.state !== "foreign") return "own";
   const choice = await dialog.showMessageBox(ctx.window!, {
     type: "question",
@@ -101,7 +101,7 @@ async function claimGateway(): Promise<"own" | "external" | "quit"> {
   const layout = payloadLayout(paths.payload);
   await requestScopedStop({ python: layout.python, pythonPath: layout.pythonPath, hermesRoot, profile: "chief", env: toolEnv("gateway") }, owner.pid);
   await waitFor(async () => ({ ok: gatewayOwner(hermesRoot, "").state === "none" }), 25_000);
-  if (gatewayOwner(hermesRoot, "").state !== "none") await killTree(owner.pid);
+  if (gatewayOwner(hermesRoot, "").state !== "none" && (await stillTheGateway(owner.pid, hermesRoot))) await killTree(owner.pid);
   return "own";
 }
 
@@ -125,6 +125,7 @@ const boot = createBoot({
       log.info("bridge.token.rotated", { removed: legacy.length });
     }
     log.addSecret(ctx.token);
+    log.addSecret(readUpdateKey(ctx.paths.secrets, safeStorage));
     if (existsSync(handover)) rmSync(handover, { force: true });
   },
   newerDataError: () =>
@@ -241,6 +242,31 @@ crashReporter.start({ uploadToServer: false });
 process.on("unhandledRejection", (reason) => log.error("process.unhandled-rejection", { reason: reason instanceof Error ? reason : String(reason) }));
 process.on("uncaughtException", (error) => log.error("process.uncaught-exception", { error }));
 
+// A debugging port lets any local program drive the window (and its whole desktop API): the installed app never opens one.
+const debugging = ["remote-debugging-port", "remote-debugging-pipe", "inspect", "inspect-brk"].some((s) => app.commandLine.hasSwitch(s));
+if (app.isPackaged && debugging) {
+  log.warn("app.debugging-refused");
+  app.exit(1);
+}
+
+// Every web contents, not only the main window's: exact-origin navigation and window rules, no webviews.
+app.on("web-contents-created", (_event, contents) => {
+  contents.setWindowOpenHandler(({ url }) => {
+    const decision = windowOpenDecision(url, uiOrigin());
+    if (decision === "external") void shell.openExternal(url);
+    return { action: decision === "allow" ? "allow" : "deny" };
+  });
+  const guard = (event: Electron.Event, url: string) => {
+    const decision = navigateDecision(url, uiOrigin(), BOOT_URL);
+    if (decision === "allow") return;
+    event.preventDefault();
+    if (decision === "external") void shell.openExternal(url);
+  };
+  contents.on("will-navigate", guard);
+  contents.on("will-redirect", guard);
+  contents.on("will-attach-webview", (event) => event.preventDefault());
+});
+
 if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app.isReady())) {
   app.quit();
 } else {
@@ -289,6 +315,8 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
       ready: async () => {
         const up = await waitFor(() => webHealth(ctx.store.value.ports.ui), 60_000);
         if (!up.ok) throw new Error(up.detail || "The dashboard didn't answer.");
+        // Phone access was paused when the app last quit (phone.ts pauseServe).
+        void resumeServe();
       },
       health: async () => (await webHealth(ctx.store.value.ports.ui, 5_000)).ok,
       onEvent: (e) => onSupervisorEvent("web", e),
@@ -320,7 +348,19 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         const helper = app.isPackaged ? helperCopy(process.resourcesPath, dir, app.getVersion()) : null;
         if (!helper) return { ok: false, error: "no update helper in this build" };
         const job = path.join(dir, `stage-${release.version}.json`);
-        writeFileSync(job, JSON.stringify({ version: 1, packageFile: file, packageName: PACKAGE_NAME, from: app.getVersion(), to: release.version, logFile: path.join(ctx.paths.logs, "update-install.log") }));
+        writeFileSync(
+          job,
+          JSON.stringify({
+            version: 1,
+            mode: compareVersions(release.version, app.getVersion()) < 0 ? "rollback" : "update",
+            packageFile: file,
+            packageSha256: release.package.sha256,
+            packageName: PACKAGE_NAME,
+            from: app.getVersion(),
+            to: release.version,
+            logFile: path.join(ctx.paths.logs, "update-install.log"),
+          }),
+        );
         const staged = await runStage(helper, job, onProgress);
         log.info("update.staged", { version: release.version, ok: staged.ok, error: staged.error });
         return staged;
@@ -354,6 +394,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
             from,
             to: release.version,
             packageFile: file,
+            packageSha256: release.package.sha256,
             packageName: PACKAGE_NAME,
             appId: APP_ID,
             appPid: process.pid,
@@ -370,7 +411,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
             return true;
           },
           launch: (commandLine, show) => launchDetached(commandLine, show),
-          fallback: () => fallbackCommandLine(installScript(file, logFile, resultFile(dir), from, release.version)),
+          fallback: () => fallbackCommandLine(installScript(file, logFile, resultFile(dir), from, release.version, release.package.sha256, compareVersions(release.version, from) < 0)),
           kill: (pid) => {
             try {
               process.kill(pid);

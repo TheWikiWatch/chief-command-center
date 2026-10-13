@@ -3,6 +3,7 @@
 //
 //   node scripts/release.mjs --notes "What changed, in a sentence or two"   [--version X.Y.Z] [--channel early]
 //                            [--hermes-highlights "One thing; another"]   ("New in Hermes" after an update that moves Hermes)
+//                            [--floor X.Y.Z]   (no app installs or goes back to anything older: for a security fix)
 //   node scripts/release.mjs --plan                                          (check the setup; changes nothing)
 //   node scripts/release.mjs --promote X.Y.Z                                 (an early release, to everyone)
 //
@@ -152,6 +153,9 @@ if (git("rev-parse", "HEAD") !== git("rev-parse", "origin/main")) fail("main dif
 // ---------------------------------------------------------------- build
 
 if (flag("skip-checks") && !flag("no-publish")) fail("--skip-checks is only for a local build (--no-publish): a published release has passed every check.");
+// Exactly the dependencies the lock files name, freshly installed: never whatever happens to be in node_modules.
+step("Installing the locked dependencies (npm ci)…");
+for (const dir of ["apps/web", "apps/desktop"]) run("npm", ["--prefix", dir, "ci", "--no-audit", "--no-fund"], { shell: true, what: `npm ci in ${dir}` });
 step("Running every check (web, desktop, Python, privacy)…");
 if (flag("skip-checks")) console.log("⚠ CHECKS SKIPPED (--skip-checks): this build must not be published.");
 else run("npm", ["run", "check"], { shell: true, what: "npm run check" });
@@ -249,6 +253,7 @@ if (highlights.length) writeFileSync(highlightsFile, `${highlights.join("\n")}\n
 run("node", [
   "packaging/release/release-tool.mjs", "make", "--msix", feedPkg, "--version", version, "--key", local.releaseKey, "--key-id", signer.id, "--payload-tree", provenance.tree,
   "--sbom", path.join(local.releasesDir, `sbom-${version}.cdx.json`), "--out", out, "--notes", notesFile, ...(highlights.length ? ["--hermes-highlights", highlightsFile] : []),
+  ...(opt("floor") ? ["--floor", opt("floor")] : []),
 ]);
 // The app checks it against the pinned key it names: so does this (a private key that isn't the pinned one fails here).
 run("node", ["packaging/release/release-tool.mjs", "verify", "--dir", out, "--pub", signer.publicKey]);

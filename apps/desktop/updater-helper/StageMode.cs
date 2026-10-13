@@ -33,7 +33,8 @@ static class StageMode
                 last = pct;
                 output.Write(new { phase = "staging", pct });
             });
-            deployment.StageAsync(job.PackageFile, installed, progress).GetAwaiter().GetResult();
+            using (LockedPackage.Open(job.PackageFile, job.PackageSha256, options.Simulate))
+                deployment.StageAsync(job.PackageFile, installed, job.AllowDowngrade, progress).GetAwaiter().GetResult();
             progress.Report(100);
 
             string fullName = installed.FullNameFor(job.PackageVersion);

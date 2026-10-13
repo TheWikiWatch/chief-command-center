@@ -1141,3 +1141,35 @@ second time in the same gateway; that copy used to find the token in the old pla
 so it stopped before registering the Command Center platform, and Hermes then refused every dashboard message as
 "Unauthorized user". The token now outlives a second copy in the gateway's memory (never a file or the environment),
 and the platform registers even without it.
+**Security hardening, part 3 (2026-10-13): updates, the desktop shell and the rest of the review.**
+
+- **The app itself asks before the risky things.** Installing another version, going back, a restart that interrupts
+  Chief, a new update source, turning on phone access, opening it to the whole tailnet and restoring a backup now
+  show a Windows dialog from the app (a page can't do them by itself); the in-page "are you sure" steps they replace
+  are gone. "Skip this version" skips only the version on offer.
+- **Updates:** a release can name a signed floor (`--floor X.Y.Z`): no app installs or goes back to anything older. A
+  retired release key can be bounded by version (`through`). The update helper checks the package's SHA-256 again
+  while holding it open, right before Windows installs it, and only going back allows a lower version; the helper copy
+  is refreshed whenever its bytes differ. The safety backup taken before an update (it keeps secrets unencrypted) is
+  readable only by the owner.
+- **Local connections:** the app sends its token only to a bridge that first proves it knows it (a program that grabs
+  the port during a restart gets nothing). "Open in browser" links work once, for 15 seconds, and the browser's cookie
+  is a signed id, never the session secret.
+- **Desktop:** Windows tools run from System32 by full path, Python with `-P`; every window gets the navigation rules;
+  a debugging port is refused; phone access needs a Tailscale login and its Serve entry is removed while the app is
+  closed (put back at the next start); orphan cleanup ends only a process that is still Chief's gateway; crash dumps
+  join diagnostics only when the owner says so; logs redact more key shapes, JSON secrets, private keys and the
+  Windows user name.
+- **Dashboard:** sign-in links open only over https; an attachment that is a web address is a labelled link, never
+  loaded into the page; the vault checks hidden folders on the real path (short names, links); choosing the Second
+  Brain folder works only on the PC; API calls from another site are refused; COOP and CORP headers.
+- **Builds:** releases start with `npm ci`; payload provenance takes the upstream commit from the source, refuses a
+  dirty or unknown build (the shipped payload is accepted by hand in `packaging/payload/accepted-trees.json`); Python
+  installs in CI are hash-pinned; vendoring the Second Brain toolkit needs its reviewed commit; the privacy scan
+  knows more secret shapes and key files and never prints what it found.
+- **Tester tools:** the installer wants the whole 40-character fingerprint, and the administrator step gets the
+  certificate's bytes and checks them again (no file to swap, no path to quote).
+- **Dependencies:** patched sharp and source-map-js. Open Dependabot alerts left for the owner: KaTeX (not shipped:
+  aliased out), and two build-time packages inside electron-builder with no fix yet.
+- **Still to do, deliberately:** a nonce-based CSP to drop `'unsafe-inline'` (needs Next's nonce support across every
+  page; tracked in the security plan).

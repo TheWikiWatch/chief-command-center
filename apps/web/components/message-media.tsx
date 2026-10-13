@@ -10,8 +10,19 @@ import { useLayer } from "@/lib/overlay-stack";
 import { useModal } from "@/lib/use-modal";
 import type { ChatAttachment } from "@/lib/types";
 
+/** Only the page's own in-memory files (an upload not sent yet) load as they are; everything else goes through the bridge. */
 function passthrough(path: string) {
-  return /^(https?:|blob:|data:)/i.test(path);
+  return /^blob:/i.test(path);
+}
+
+/** An attachment that is a web address: shown as a labelled link that opens in the browser, never loaded into the page. */
+export function externalHost(path: string): string {
+  try {
+    const u = new URL(path);
+    return u.protocol === "https:" || u.protocol === "http:" ? u.host : "";
+  } catch {
+    return "";
+  }
 }
 
 export function mediaSrc(path: string) {
@@ -41,8 +52,10 @@ export function MessageMedia({ attachments }: { attachments?: ChatAttachment[] }
   const group = useId();
   if (!attachments?.length) return null;
 
-  const images = attachments.filter((a) => a.kind === "image");
-  const rest = attachments.filter((a) => a.kind !== "image");
+  const external = attachments.filter((a) => externalHost(a.path));
+  const local = attachments.filter((a) => !externalHost(a.path) && !/^data:/i.test(a.path));
+  const images = local.filter((a) => a.kind === "image");
+  const rest = local.filter((a) => a.kind !== "image");
 
   return (
     <>
@@ -68,6 +81,23 @@ export function MessageMedia({ attachments }: { attachments?: ChatAttachment[] }
         if (a.kind === "audio") return <AudioCard key={a.path} a={a} />;
         return <FileChip key={a.path} a={a} />;
       })}
+      {external.map((a) => (
+        <a
+          key={a.path}
+          href={a.path}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="press mt-2 flex items-center gap-3 rounded-card border border-line-2 bg-card px-3 py-2.5 hover:border-line-3"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-ctl bg-fill-2 text-fg-2">
+            <FileIcon size={18} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-callout text-fg">{a.name}</span>
+            <span className="block truncate text-caption text-fg-3">Link to {externalHost(a.path)}</span>
+          </span>
+        </a>
+      ))}
       <Lightbox items={images} index={full} group={group} onIndex={setFull} onClose={() => setFull(null)} />
     </>
   );

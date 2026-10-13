@@ -26,14 +26,22 @@ function desktopWith(options: { version: string; published: string; file: string
   return rollback;
 }
 
-it("offers the previous version when its package is kept, and asks before going back", async () => {
+it("offers the previous version when its package is kept; the app's own dialog does the asking", async () => {
   const rollback = desktopWith([{ version: "1.0.0", published: "2026-09-01T00:00:00Z", file: "x" }]);
   render(<UpdatesGroup />);
-  fireEvent.click(await screen.findByRole("button", { name: "Go back…" }));
-  expect(screen.getByText(/backed up first/)).toBeInTheDocument();
-  expect(rollback).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Go back to 1.0.0" }));
+  expect(await screen.findByText(/backed up first/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Go back…" }));
   await waitFor(() => expect(rollback).toHaveBeenCalledWith("1.0.0"));
+});
+
+it("a no in the app's dialog changes nothing and shows no error", async () => {
+  const rollback = desktopWith([{ version: "1.0.0", published: "2026-09-01T00:00:00Z", file: "x" }]);
+  rollback.mockImplementation(async () => ({ status: "error", error: "x", cancelled: true }) as never);
+  render(<UpdatesGroup />);
+  fireEvent.click(await screen.findByRole("button", { name: "Go back…" }));
+  await waitFor(() => expect(rollback).toHaveBeenCalled());
+  expect(screen.queryByText("x")).toBeNull();
+  expect(screen.getByRole("button", { name: "Go back…" })).toBeEnabled();
 });
 
 it("says nothing when no earlier version is kept", async () => {

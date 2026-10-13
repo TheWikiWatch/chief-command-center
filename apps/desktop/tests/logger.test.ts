@@ -25,6 +25,19 @@ describe("the desktop log", () => {
     expect(readFileSync(path.join(tmp, "main.jsonl"), "utf8")).not.toContain("SECRETVALUE");
   });
 
+  it("redacts key shapes, JSON secrets, private keys and the Windows user name", () => {
+    const log = new Logger(() => tmp);
+    // Assembled so the privacy scan doesn't read the samples as real secrets.
+    const pem = ["-----BEGIN PRIVATE", " KEY-----\nMIIBVQ\n-----END PRIVATE", " KEY-----"].join("");
+    const home = ["C:", "Users", ""].join("\\"); // the user name after it, assembled for the privacy scan
+    const out = log.redact(
+      [`{"api_key": "abcdef123456", "access_token": "zzzzzz999999"}`, `AI${"za"}${"S".repeat(35)}`, `hf_${"a".repeat(30)}`, `123456789:${"A".repeat(35)}`, `ey${"J"}aaaaaaaaaa.ey${"J"}bbbbbbbbbb.cccccccccc`, pem, `${home}Someone\\AppData\\x.log`, `${home}Public\\y`].join(" | "),
+    );
+    expect(out).not.toMatch(/abcdef123456|zzzzzz999999|SSSSSSSS|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|AAAAAAAAAA|bbbbbbbbbb|MIIBVQ|Someone/);
+    expect(out).toContain("C:\\Users\\<user>\\AppData");
+    expect(out).toContain(`${home}Public`);
+  });
+
   it("rotates a full file, keeping the newest few", () => {
     const file = path.join(tmp, "rot.log");
     for (let i = 0; i < 5; i++) {

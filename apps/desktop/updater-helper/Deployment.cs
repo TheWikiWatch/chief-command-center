@@ -48,9 +48,10 @@ sealed class InstalledPackage
 interface IDeployment
 {
     InstalledPackage? FindInstalled(string packageName);
-    Task StageAsync(string packageFile, InstalledPackage installed, IProgress<int> progress);
-    Task RegisterAsync(string fullName, IProgress<int> progress);
-    Task AddAsync(string packageFile, InstalledPackage installed, IProgress<int> progress);
+    // allowDowngrade: Windows may install a lower version (going back only; Job.AllowDowngrade).
+    Task StageAsync(string packageFile, InstalledPackage installed, bool allowDowngrade, IProgress<int> progress);
+    Task RegisterAsync(string fullName, bool allowDowngrade, IProgress<int> progress);
+    Task AddAsync(string packageFile, InstalledPackage installed, bool allowDowngrade, IProgress<int> progress);
     Task<uint> ActivateAsync(string aumid);
 }
 
@@ -112,31 +113,34 @@ sealed class WindowsDeployment : IDeployment
         return null;
     }
 
-    public Task StageAsync(string packageFile, InstalledPackage installed, IProgress<int> progress)
+    static DeploymentOptions Replace(bool allowDowngrade) =>
+        DeploymentOptions.ForceApplicationShutdown | (allowDowngrade ? DeploymentOptions.ForceUpdateFromAnyVersion : DeploymentOptions.None);
+
+    public Task StageAsync(string packageFile, InstalledPackage installed, bool allowDowngrade, IProgress<int> progress)
     {
         var uri = new Uri(packageFile);
         if (ApiInformation.IsMethodPresent(ManagerType, "StagePackageByUriAsync"))
         {
-            var options = new StagePackageOptions { ForceUpdateFromAnyVersion = true };
+            var options = new StagePackageOptions { ForceUpdateFromAnyVersion = allowDowngrade };
             if (installed.Volume is not null) options.TargetVolume = installed.Volume;
             return Run(manager.StagePackageByUriAsync(uri, options), progress);
         }
         return Run(manager.StagePackageAsync(uri, null), progress);
     }
 
-    public Task RegisterAsync(string fullName, IProgress<int> progress) =>
-        Run(manager.RegisterPackageByFullNameAsync(fullName, null, DeploymentOptions.ForceApplicationShutdown | DeploymentOptions.ForceUpdateFromAnyVersion), progress);
+    public Task RegisterAsync(string fullName, bool allowDowngrade, IProgress<int> progress) =>
+        Run(manager.RegisterPackageByFullNameAsync(fullName, null, Replace(allowDowngrade)), progress);
 
-    public Task AddAsync(string packageFile, InstalledPackage installed, IProgress<int> progress)
+    public Task AddAsync(string packageFile, InstalledPackage installed, bool allowDowngrade, IProgress<int> progress)
     {
         var uri = new Uri(packageFile);
         if (ApiInformation.IsMethodPresent(ManagerType, "AddPackageByUriAsync"))
         {
-            var options = new AddPackageOptions { ForceAppShutdown = true, ForceUpdateFromAnyVersion = true };
+            var options = new AddPackageOptions { ForceAppShutdown = true, ForceUpdateFromAnyVersion = allowDowngrade };
             if (installed.Volume is not null) options.TargetVolume = installed.Volume;
             return Run(manager.AddPackageByUriAsync(uri, options), progress);
         }
-        return Run(manager.AddPackageAsync(uri, null, DeploymentOptions.ForceApplicationShutdown | DeploymentOptions.ForceUpdateFromAnyVersion), progress);
+        return Run(manager.AddPackageAsync(uri, null, Replace(allowDowngrade)), progress);
     }
 
     public Task<uint> ActivateAsync(string aumid) => Task.Run(() =>
@@ -242,7 +246,7 @@ sealed class SimulatedDeployment : IDeployment
         Location = $@"C:\Program Files\WindowsApps\{packageName}_{job.From}.0_x64__simulated0000",
     };
 
-    public async Task StageAsync(string packageFile, InstalledPackage installed, IProgress<int> progress)
+    public async Task StageAsync(string packageFile, InstalledPackage installed, bool allowDowngrade, IProgress<int> progress)
     {
         for (int pct = 0; pct <= 100; pct += 2)
         {
@@ -252,11 +256,11 @@ sealed class SimulatedDeployment : IDeployment
         }
     }
 
-    public Task RegisterAsync(string fullName, IProgress<int> progress) =>
+    public Task RegisterAsync(string fullName, bool allowDowngrade, IProgress<int> progress) =>
         Deploy(progress, fail is "register" or "add" ? 35 : -1,
             new DeploymentFailure($"Windows couldn't find the prepared update {fullName}. The package could not be found.", unchecked((int)0x80073CF1)));
 
-    public Task AddAsync(string packageFile, InstalledPackage installed, IProgress<int> progress) =>
+    public Task AddAsync(string packageFile, InstalledPackage installed, bool allowDowngrade, IProgress<int> progress) =>
         Deploy(progress, fail == "add" ? 52 : -1,
             new DeploymentFailure("Deployment failed with HRESULT: 0x80070070, There is not enough space on the disk.", unchecked((int)0x80070070)));
 

@@ -93,6 +93,33 @@ class RouteTableTests(unittest.TestCase):
         self.assertEqual(out["code"], 413)
         self.assertEqual(called, [])
 
+    def test_the_bridge_proves_it_knows_the_token_without_being_sent_it(self):
+        import hashlib
+        import hmac
+
+        bridge = server.BridgeServer(token="test-token-123", port=0, session_key_override="", inject=lambda *_: False)
+        handler_class = server._make_handler(bridge)
+
+        def ask(path, client="127.0.0.1"):
+            h = object.__new__(handler_class)
+            h.path, h.command, h.client_address = path, "GET", (client, 1)
+            h.headers = {}
+            out = {}
+            h._reject = lambda code, msg: out.update(code=code, error=msg)
+            h._json = lambda body, code=200: out.update(code=code, body=body)
+            h.do_GET()
+            return out
+
+        nonce = "ab" * 16
+        got = ask(f"/health/proof?nonce={nonce}")
+        want = hmac.new(b"test-token-123", f"chief-health:{nonce}".encode(), hashlib.sha256).hexdigest()
+        self.assertEqual(got, {"code": 200, "body": {"ok": True, "proof": want}})
+        self.assertNotIn("test-token-123", json.dumps(got))
+        self.assertEqual(ask("/health/proof?nonce=short")["code"], 400)
+        self.assertEqual(ask(f"/health/proof?nonce={nonce}", client="10.0.0.5")["code"], 400)
+        # Everything else still needs the token.
+        self.assertEqual(ask("/health")["code"], 401)
+
     def test_a_raw_route_gets_its_body_as_bytes(self):
         bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
         handler_class = server._make_handler(bridge)

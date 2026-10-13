@@ -1,7 +1,9 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createWriteStream, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
+import { systemCwd, systemTool } from "./guards";
 import { rotate } from "./logger";
 import type { ChildHandle } from "./supervisor";
 
@@ -57,7 +59,7 @@ function finished(child: ChildProcess, timeoutMs: number): Promise<number | null
 /** End a process and everything it started. Never blocks the main thread (a sync wait froze the window for seconds). */
 export async function killTree(pid: number): Promise<void> {
   if (process.platform === "win32") {
-    await finished(spawn("taskkill", ["/T", "/F", "/PID", String(pid)], { windowsHide: true, stdio: "ignore" }), 15_000);
+    await finished(spawn(systemTool("taskkill"), ["/T", "/F", "/PID", String(pid)], { windowsHide: true, stdio: "ignore", cwd: systemCwd() }), 15_000);
     return;
   }
   try {
@@ -70,7 +72,8 @@ export async function killTree(pid: number): Promise<void> {
 /** Ask one gateway, in one profile home, to drain and exit (Hermes's own marker). Nothing else is touched. */
 export async function requestScopedStop(cfg: Pick<GatewayConfig, "python" | "pythonPath" | "hermesRoot" | "profile" | "env">, gatewayPid: number): Promise<boolean> {
   const script = "import sys\nfrom gateway.status import write_planned_stop_marker\nsys.exit(0 if write_planned_stop_marker(int(sys.argv[1])) else 1)";
-  const child = spawn(cfg.python, ["-B", "-c", script, String(gatewayPid)], {
+  // -P: nothing from the working folder is imported ahead of Hermes's own modules.
+  const child = spawn(cfg.python, ["-B", "-P", "-c", script, String(gatewayPid)], {
     env: { ...cfg.env, HERMES_HOME: profileHome(cfg.hermesRoot, cfg.profile), PYTHONPATH: cfg.pythonPath.join(";") },
     windowsHide: true,
     stdio: "ignore",
@@ -87,6 +90,44 @@ export function isOrphan(owner: GatewayOwner, supervisor: { state: string; child
   if (owner.state !== "ours") return false;
   if (!supervisor) return true;
   return !(supervisor.child && (supervisor.state === "running" || supervisor.state === "starting"));
+}
+
+export type ProcessInfo = { path: string; startedMs: number };
+
+/** A process's program and start time (Windows' own PowerShell); null when it's gone or can't be read. */
+export function processInfo(pid: number): Promise<ProcessInfo | null> {
+  const script = `$p = Get-Process -Id ${Math.trunc(pid)} -ErrorAction Stop; [Console]::Out.Write((@{ path = [string]$p.Path; started = $p.StartTime.ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress))`;
+  return new Promise((resolve) => {
+    const child = spawn(systemTool("powershell"), ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, cwd: systemCwd() });
+    let out = "";
+    child.stdout?.on("data", (c) => (out += String(c)));
+    child.on("error", () => resolve(null));
+    child.on("close", (code) => {
+      try {
+        const v = JSON.parse(out) as { path?: string; started?: string };
+        resolve(code === 0 ? { path: String(v.path || ""), startedMs: Date.parse(String(v.started || "")) } : null);
+      } catch {
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Whether `pid` is still the gateway this profile's pid file names: a Python or Hermes program that started before the
+ * file was written. Windows reuses pids, so a stale file can name an unrelated program; that one is never ended.
+ */
+export async function stillTheGateway(pid: number, hermesRoot: string, profile = "chief", query: (pid: number) => Promise<ProcessInfo | null> = processInfo): Promise<boolean> {
+  let written = 0;
+  try {
+    written = statSync(path.join(profileHome(hermesRoot, profile), "gateway.pid")).mtimeMs;
+  } catch {
+    return false;
+  }
+  const info = await query(pid);
+  if (!info || !Number.isFinite(info.startedMs)) return false;
+  if (!["python.exe", "pythonw.exe", "hermes.exe"].includes(path.basename(info.path).toLowerCase())) return false;
+  return info.startedMs <= written + 60_000;
 }
 
 /** The gateway's own pid (the Python process), from this profile's pid file. */
@@ -177,8 +218,24 @@ export function gatewayOwner(hermesRoot: string, ourLauncher: string, profile = 
   return same ? { state: "ours", pid } : { state: "foreign", pid, launcher };
 }
 
+/** What the bridge answers at /health/proof: the token's signature over the app's nonce (server.py). */
+export function healthProof(token: string, nonce: string): string {
+  return createHmac("sha256", token).update(`chief-health:${nonce}`).digest("hex");
+}
+
+/**
+ * Whether Chief's gateway answers on the port. The token goes only to a bridge that first proves it already knows it
+ * (/health/proof): a program that grabbed the port while the gateway restarted gets a nonce, never the token.
+ */
 export async function bridgeHealth(port: number, token: string, timeoutMs = 2500): Promise<{ ok: boolean; voice?: boolean; detail?: string }> {
   try {
+    const nonce = randomBytes(16).toString("hex");
+    const proof = await fetch(`http://127.0.0.1:${port}/health/proof?nonce=${nonce}`, { signal: AbortSignal.timeout(timeoutMs) });
+    const said = proof.ok ? String(((await proof.json().catch(() => ({}))) as { proof?: unknown }).proof ?? "") : "";
+    const want = healthProof(token, nonce);
+    if (said.length !== want.length || !timingSafeEqual(Buffer.from(said), Buffer.from(want))) {
+      return { ok: false, detail: proof.status === 401 || proof.status === 404 || said ? `Port ${port} is answered by something that isn't Chief's gateway.` : "No answer yet." };
+    }
     const res = await fetch(`http://127.0.0.1:${port}/health`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(timeoutMs) });
     if (res.status === 401) return { ok: false, detail: "The gateway answered but refused this app's token." };
     const body = (await res.json()) as { ok?: boolean; profile?: string; voice?: boolean };

@@ -58,6 +58,16 @@ describe("release keys", () => {
     const onTime = signed(manifest("1.2.0", { published: "2026-11-01T00:00:00Z", signing: { key_id: "old" } }), keyA);
     expect(verifyRelease(onTime.bytes, onTime.sig, keys).version).toBe("1.2.0");
   });
+
+  it("a retired key signs nothing past its last version, whatever date the manifest claims", () => {
+    const ranged = [{ id: "old", publicKey: pub(keyA), through: "1.5.0" }, { id: "new", publicKey: pub(keyB) }];
+    const later = signed(manifest("1.6.0", { published: "2026-01-01T00:00:00Z", signing: { key_id: "old" } }), keyA);
+    expect(() => verifyRelease(later.bytes, later.sig, ranged)).toThrow("couldn't be verified");
+    const unnamed = signed(manifest("1.6.0"), keyA);
+    expect(() => verifyRelease(unnamed.bytes, unnamed.sig, ranged)).toThrow("couldn't be verified");
+    const within = signed(manifest("1.5.0", { signing: { key_id: "old" } }), keyA);
+    expect(verifyRelease(within.bytes, within.sig, ranged).version).toBe("1.5.0");
+  });
 });
 
 describe("kept packages and going back", () => {
@@ -112,5 +122,16 @@ describe("kept packages and going back", () => {
     expect(bad).toMatchObject({ status: "error" });
     expect(existsSync(path.join(updates, packageName("1.0.0")))).toBe(false);
     expect(await updater.rollback("0.5.0")).toMatchObject({ status: "error" });
+  });
+
+  it("never offers or installs a version below the signed floor a later release names", async () => {
+    const body = Buffer.alloc(1024, 3);
+    const old = manifest("1.0.0", {}, body) as unknown as Release;
+    const fixed = manifest("1.1.0", { floor: "1.1.0" }, body) as unknown as Release;
+    const { updater, put } = setup("1.2.0", [fixed, old], body);
+    put(packageName("1.0.0"), body);
+    put(packageName("1.1.0"), body);
+    expect((await updater.rollbackOptions()).map((o) => o.version)).toEqual(["1.1.0"]);
+    expect(await updater.installVersion("1.0.0")).toMatchObject({ status: "error", error: expect.stringContaining("security problem") });
   });
 });

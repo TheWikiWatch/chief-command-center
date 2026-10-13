@@ -19,7 +19,8 @@ export function runJsonTool(
   return new Promise((resolve) => {
     let out = "";
     let err = "";
-    const child = spawn(python, ["-B", ...args], { cwd: opts.cwd, env: opts.env, windowsHide: true });
+    // -P: the script's folder and the working folder are never put ahead of the payload's own modules.
+    const child = spawn(python, ["-B", "-P", ...args], { cwd: opts.cwd, env: opts.env, windowsHide: true });
     child.stdout.setEncoding("utf8").on("data", (c: string) => (out += c));
     child.stderr.setEncoding("utf8").on("data", (c: string) => {
       const lines = (err + c).split(/\r?\n/);

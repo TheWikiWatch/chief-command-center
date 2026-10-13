@@ -223,6 +223,13 @@ class BackupContents(Case):
         self.assertEqual(sorted(removed), ["Chief backup (auto) 2026-09-01 100000.chiefbackup", "Chief backup (auto) 2026-09-02 100000.chiefbackup"])
         self.assertTrue((self.dest / "Chief backup 2026-08-01 100000.chiefbackup").exists())
 
+    @unittest.skipUnless(os.name == "nt", "Windows permissions")
+    def test_a_local_backup_with_secrets_in_the_clear_is_owner_only(self):
+        res = self.backup(parts=("setup",), kind="pre-update", secrets_plain=True)
+        acl = subprocess.run(["icacls", res["path"]], capture_output=True, text=True).stdout
+        self.assertNotIn("(I)", acl)  # nothing inherited from the folder
+        self.assertNotRegex(acl, r"BUILTIN\\Users|Everyone|Authenticated Users")
+
     def test_backups_before_updates_keep_the_newest_two_and_leave_the_others_alone(self):
         self.dest.mkdir()
         for day in range(1, 5):

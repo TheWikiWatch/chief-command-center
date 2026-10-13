@@ -41,13 +41,26 @@ const checks = [
     re: /(?:[A-Za-z]:[\\/]+Users[\\/]+|\/(?:home|Users)\/)([^\\/\s"'`<>]+)/g,
     allow: (_m, user) => PLACEHOLDER_USERS.test(user),
   },
-  { name: "secret-looking token", re: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|sk-[A-Za-z0-9_-]{24,}|xox[abp]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16})\b/g },
+  { name: "secret-looking token", re: /\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,}|sk-[A-Za-z0-9_-]{24,}|sk_live_[A-Za-z0-9]{20,}|rk_live_[A-Za-z0-9]{20,}|xox[abp]-[A-Za-z0-9-]{20,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35}|hf_[A-Za-z0-9]{30,}|glpat-[A-Za-z0-9_-]{20,})\b/g },
+  { name: "private key", re: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |ENCRYPTED )?PRIVATE KEY-----/g },
+  // A Telegram bot token (id:secret) and a Discord bot token (three dotted parts).
+  { name: "chat bot token", re: /\b(?:\d{8,10}:AA[A-Za-z0-9_-]{33}|[MN][A-Za-z0-9]{23,25}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,})\b/g },
+  { name: "signed web token", re: /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g },
   // The Chief Google app's OAuth client ("Google on this PC") lives in release.local.json's file, never in the repo.
   { name: "Google OAuth client", re: /\b(?:\d{8,}-[a-z0-9]{20,}\.apps\.googleusercontent\.com|GOCSPX-[A-Za-z0-9_-]{20,})\b/g },
   ...(words.length ? [{ name: "personal word", re: new RegExp(`(?<![A-Za-z0-9])(?:${words.map(escape).join("|")})(?![A-Za-z0-9])`, "gi") }] : []),
 ];
 
 const SKIP = /(^|\/)(package-lock\.json|.*\.(png|jpe?g|gif|webp|ico|woff2?|ttf|pdf|zip|mp3|mp4|wav))$/i;
+
+// Files that hold keys or this PC's setup by their nature, whatever is in them: never published.
+const SECRET_FILE = /(^|\/)(release\.local\.json|\.env|[^/]+\.(pfx|p12|pem|key))$/i;
+
+/** What a finding shows: enough to find it, never the secret or the private word itself (CI logs are public). */
+function masked(text) {
+  const t = String(text);
+  return t.length <= 4 ? "****" : `${t.slice(0, 3)}…(${t.length} characters)`;
+}
 
 function scanText(label, text, findings) {
   const lines = text.split(/\r?\n/);
@@ -56,7 +69,7 @@ function scanText(label, text, findings) {
       check.re.lastIndex = 0;
       for (const m of line.matchAll(check.re)) {
         if (check.allow?.(m[0], m[1])) continue;
-        findings.push(`${label}:${i + 1}: ${check.name}: ${m[0].slice(0, 80)}`);
+        findings.push(`${label}:${i + 1}: ${check.name}: ${masked(m[0])}`);
       }
     }
   });
@@ -65,6 +78,7 @@ function scanText(label, text, findings) {
 const findings = [];
 const files = git("ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0").filter(Boolean);
 for (const file of files) {
+  if (SECRET_FILE.test(file)) findings.push(`${file}: a key or local setup file (ignore it in .gitignore; never commit it)`);
   if (SKIP.test(file) || file === ".privacy-denylist") continue;
   const full = path.join(root, file);
   if (!existsSync(full)) continue;

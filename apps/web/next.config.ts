@@ -70,6 +70,9 @@ export function securityHeaders(dev: boolean): { key: string; value: string }[] 
     // External links never carry the dashboard's address (a tailnet host name) to the site they open.
     { key: "Referrer-Policy", value: "no-referrer" },
     { key: "Permissions-Policy", value: "microphone=(self), camera=(), geolocation=(), payment=(), usb=()" },
+    // A window another site opens can't reach into this one (nor this one into it), and other sites can't embed its files.
+    { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+    { key: "Cross-Origin-Resource-Policy", value: "same-origin" },
   ];
 }
 

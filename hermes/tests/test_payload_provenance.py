@@ -2,6 +2,7 @@
 
 import importlib.util
 import json
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,7 +25,14 @@ def make_repo(root: Path) -> Path:
         json.dumps({"commit": "abc", "baseVersion": "2026.9.24", "patches": [{"file": "0001-fix.patch"}]}), encoding="utf-8"
     )
     (repo / "packaging" / "payload" / "selection.json").write_text('{"extras": ["voice"]}', encoding="utf-8")
+    git(repo, "init", "-q")
+    git(repo, "add", "-A")
+    git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "repo")
     return repo
+
+
+def git(repo: Path, *args: str) -> str:
+    return subprocess.run(["git", *args], cwd=repo, capture_output=True, text=True, check=True).stdout.strip()
 
 
 def make_payload(root: Path) -> Path:
@@ -76,6 +84,30 @@ class ProvenanceTests(unittest.TestCase):
         self.assertTrue(any("0001-fix.patch" in p for p in provenance.check(self.payload, self.repo)))
         (self.repo / "packaging" / "payload" / "selection.json").write_text('{"extras": []}', encoding="utf-8")
         self.assertTrue(any("selection.json" in p for p in provenance.check(self.payload, self.repo)))
+
+    def test_a_build_from_uncommitted_payload_inputs_or_an_unknown_commit_is_refused(self):
+        (self.repo / "hermes" / "patches" / "0001-fix.patch").write_text("--- a\n+++ dirty\n", encoding="utf-8")
+        provenance.record(self.payload, self.repo)
+        self.assertTrue(any("uncommitted changes" in p for p in provenance.check(self.payload, self.repo)))
+        git(self.repo, "checkout", "--", ".")
+        provenance.record(self.payload, self.repo)
+        stamp_path = self.payload / "hermes-agent" / "install-stamp.json"
+        stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+        stamp["provenance"]["builder"]["commit"] = "0" * 40
+        stamp_path.write_text(json.dumps(stamp), encoding="utf-8")
+        self.assertTrue(any("isn't in this repository's history" in p for p in provenance.check(self.payload, self.repo)))
+
+    def test_a_tree_accepted_by_hand_passes_despite_its_build_record(self):
+        (self.repo / "README.md").write_text("unrelated\n", encoding="utf-8")  # outside the payload's inputs: never counts
+        recorded = provenance.record(self.payload, self.repo)
+        self.assertFalse(recorded["builder"]["dirty"])
+        stamp_path = self.payload / "hermes-agent" / "install-stamp.json"
+        stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+        stamp["provenance"]["builder"] = {"commit": "", "recorded_after_the_build": True}
+        stamp_path.write_text(json.dumps(stamp), encoding="utf-8")
+        self.assertTrue(provenance.check(self.payload, self.repo))
+        (self.repo / "packaging" / "payload" / "accepted-trees.json").write_text(json.dumps({"trees": {recorded["tree"]: "shipped"}}), encoding="utf-8")
+        self.assertEqual(provenance.check(self.payload, self.repo), [])
 
     def test_the_tree_digest_doesnt_depend_on_where_the_payload_is(self):
         first = provenance.tree_digest(self.payload)

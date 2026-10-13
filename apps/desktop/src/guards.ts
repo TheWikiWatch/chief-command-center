@@ -8,6 +8,20 @@ import { parseGithub } from "./release-source";
  * preload (the whole `chiefDesktop` API).
  */
 
+/**
+ * A Windows tool by its absolute path in System32 (`powershell`, `taskkill`, `conhost`): a bare name is looked up in
+ * the working folder and on PATH first, where something else could sit.
+ */
+export function systemTool(name: "powershell" | "taskkill" | "conhost" | "icacls" | "whoami", env: NodeJS.ProcessEnv = process.env): string {
+  const root = env.SystemRoot || env.windir || "C:\\Windows";
+  return name === "powershell" ? `${root}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe` : `${root}\\System32\\${name}.exe`;
+}
+
+/** The folder Windows tools run in: System32, not wherever the app happened to start. */
+export function systemCwd(env: NodeJS.ProcessEnv = process.env): string {
+  return `${env.SystemRoot || env.windir || "C:\\Windows"}\\System32`;
+}
+
 /** The URL's origin, or "" when it doesn't parse (or has none, like `about:blank`). */
 export function originOf(url: string): string {
   try {

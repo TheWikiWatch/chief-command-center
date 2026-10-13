@@ -1,6 +1,6 @@
 """Vendor a pinned release of the obsidian-second-brain toolkit (MIT, Eugeniu Ghelbur) for the app.
 
-    python packaging/upstream/osb_vendor.py --tag v0.17.0 [--source <existing checkout>]
+    python packaging/upstream/osb_vendor.py --tag v0.17.0 --commit <full sha> [--source <existing checkout>]
 
 Clones (or reuses) the upstream repository at the tag, runs its own Hermes build
 (`bash scripts/build.sh --platform hermes`), and copies the result into
@@ -56,6 +56,7 @@ def run(cmd: list[str], cwd: Path) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--tag", required=True)
+    parser.add_argument("--commit", required=True, help="the full commit the tag must point at (reviewed); a moved tag stops here")
     parser.add_argument("--source", default="", help="an existing checkout to build from (else a fresh clone)")
     args = parser.parse_args()
 
@@ -68,6 +69,8 @@ def main() -> int:
             run(["git", "clone", "--quiet", UPSTREAM, str(src)], work)
         run(["git", "checkout", "--quiet", args.tag], src)
         commit = run(["git", "rev-parse", "HEAD"], src)
+        if commit != args.commit.strip().lower():
+            raise SystemExit(f"{args.tag} is {commit}, not the commit given ({args.commit}): the tag moved, or the commit is wrong. Nothing was vendored.")
         shutil.rmtree(src / "dist", ignore_errors=True)
         run([bash(), "scripts/build.sh", "--platform", "hermes"], src)
         built = src / "dist" / "hermes"

@@ -1,4 +1,4 @@
-import { promises as fs } from "node:fs";
+import { promises as fs, realpathSync } from "node:fs";
 import path from "node:path";
 
 import { deniedFilePath } from "@/lib/proxy-policy";
@@ -82,13 +82,20 @@ export function cleanRel(raw: string): string {
 export async function resolveInVault(rel: string): Promise<{ root: string; abs: string; rel: string }> {
   const root = await vaultRoot();
   const clean = cleanRel(rel);
-  const rootReal = await fs.realpath(root);
+  // The native realpath spells out 8.3 short names (GIT~1 → .git), which the JavaScript one leaves as typed.
+  const rootReal = realpathSync.native(await fs.realpath(root));
   const abs = path.resolve(rootReal, clean);
-  const real = await fs.realpath(abs).catch(() => {
-    throw new VaultPathError("not found");
-  });
+  const real = await fs
+    .realpath(abs)
+    .then((r) => realpathSync.native(r))
+    .catch(() => {
+      throw new VaultPathError("not found");
+    });
   const inside = real === rootReal || real.toLowerCase().startsWith((rootReal + path.sep).toLowerCase());
   if (!inside) throw new VaultPathError("outside the vault");
+  // The hidden and denied rules again, on where it really is: a short name or a link inside the vault can lead to `.git`.
+  const realRel = path.relative(rootReal, real).split(path.sep).join("/");
+  if (realRel) cleanRel(realRel);
   return { root: rootReal, abs: real, rel: clean };
 }
 

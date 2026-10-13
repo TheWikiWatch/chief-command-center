@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Web.Script.Serialization;
@@ -25,6 +26,41 @@ static class Json
         if (File.Exists(path)) File.Replace(temp, path, null);
         else File.Move(temp, path);
     }
+}
+
+/// <summary>
+/// The package file, held open so nothing can change, replace or delete it until Windows has read it, and checked
+/// against the SHA-256 its signed release names (security review S11). The app checked it after the download, but
+/// it sat on disk since. A simulated run without the file skips it.
+/// </summary>
+sealed class LockedPackage : IDisposable
+{
+    readonly FileStream? stream;
+
+    LockedPackage(FileStream? stream) => this.stream = stream;
+
+    public static LockedPackage Open(string file, string sha256, bool simulate)
+    {
+        if (simulate && !File.Exists(file)) return new LockedPackage(null);
+        if (sha256.Length == 0) throw new DeploymentFailure("The update job doesn't say which package to expect, so nothing was installed.", unchecked((int)0x80070057));
+        // Read sharing only: Windows' installer can read it alongside; no one can write, rename or delete it.
+        var stream = new FileStream(file, FileMode.Open, FileAccess.Read, FileShare.Read);
+        try
+        {
+            using var sha = SHA256.Create();
+            string actual = BitConverter.ToString(sha.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+            if (actual != sha256)
+                throw new DeploymentFailure("The update file changed after it was checked, so it wasn't installed. Check for updates again.", unchecked((int)0x80096010));
+            return new LockedPackage(stream);
+        }
+        catch
+        {
+            stream.Dispose();
+            throw;
+        }
+    }
+
+    public void Dispose() => stream?.Dispose();
 }
 
 static class Errors

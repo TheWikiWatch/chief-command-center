@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { RefreshCwIcon, HardDriveDownloadIcon } from "@/components/icons";
 import { BackupPanel } from "@/components/backup/backup-panel";
 import { UpdatesPanel, useUpdates } from "@/components/updates/update-card";
+import { wasCancelled } from "@/lib/desktop";
 import { UpdateHistoryButton } from "@/components/updates/update-history";
 import { Group, PillButton, Row } from "@/components/ui/settings-group";
 import { LoadingLine } from "@/components/ui/surface";
@@ -30,7 +31,6 @@ export function UpdatesGroup() {
 function GoBackRow() {
   const { api } = useUpdates();
   const [version, setVersion] = useState("");
-  const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -40,30 +40,22 @@ function GoBackRow() {
   return (
     <Row
       label={`Go back to ${version}`}
-      hint={error || (asking ? `This reinstalls ${version}. Your setup is backed up first, and Chief restarts.` : "If this version misbehaves, the previous one is still on this PC.")}
+      hint={error || "If this version misbehaves, the previous one is still on this PC. Your setup is backed up first, and Chief restarts."}
     >
       <div className="mt-2 flex gap-2">
-        {asking ? (
-          <>
-            <PillButton
-              disabled={busy}
-              onClick={() => {
-                setBusy(true);
-                setError("");
-                void api.rollback!(version)
-                  .then((state) => state.status === "error" && setError(state.error))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              {busy ? "Going back…" : `Go back to ${version}`}
-            </PillButton>
-            <PillButton disabled={busy} onClick={() => setAsking(false)}>
-              Cancel
-            </PillButton>
-          </>
-        ) : (
-          <PillButton onClick={() => setAsking(true)}>Go back…</PillButton>
-        )}
+        {/* The app's own dialog asks before going back (a page can't downgrade the app by itself). */}
+        <PillButton
+          disabled={busy}
+          onClick={() => {
+            setBusy(true);
+            setError("");
+            void api.rollback!(version)
+              .then((state) => !wasCancelled(state) && state.status === "error" && setError(state.error))
+              .finally(() => setBusy(false));
+          }}
+        >
+          {busy ? "Going back…" : "Go back…"}
+        </PillButton>
       </div>
     </Row>
   );

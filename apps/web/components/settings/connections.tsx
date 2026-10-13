@@ -14,6 +14,7 @@ import {
   onThisPc,
   openSignIn,
   pollNousSignIn,
+  signInUrl,
   signOutNous,
   startNousSignIn,
   useConnectFlow,
@@ -210,9 +211,11 @@ function NousGroup({ view, signin, action }: { view: ConnectionsView; signin: No
               {session.code}
             </p>
             <div className="flex flex-wrap items-center gap-2">
-              <a href={session.url} target="_blank" rel="noreferrer" className={btn("secondary", "sm")}>
-                Open Nous <ExternalLinkIcon className="size-3.5" />
-              </a>
+              {signInUrl(session.url) ? (
+                <a href={signInUrl(session.url)} target="_blank" rel="noreferrer" className={btn("secondary", "sm")}>
+                  Open Nous <ExternalLinkIcon className="size-3.5" />
+                </a>
+              ) : null}
               <Button variant="ghost" size="sm" onClick={cancel}>
                 Cancel
               </Button>
@@ -430,9 +433,11 @@ export function FlowNote({
         <p className="shimmer-text min-w-0 flex-1 text-callout" aria-live="polite">
           Finish signing in to {label} in your browser…
         </p>
-        <a href={flow.url} target="_blank" rel="noreferrer" className={btn("secondary", "sm")}>
-          Open again <ExternalLinkIcon className="size-3.5" />
-        </a>
+        {signInUrl(flow.url) ? (
+          <a href={signInUrl(flow.url)} target="_blank" rel="noreferrer" className={btn("secondary", "sm")}>
+            Open again <ExternalLinkIcon className="size-3.5" />
+          </a>
+        ) : null}
         <Button variant="ghost" size="sm" onClick={onCancel}>
           Cancel
         </Button>

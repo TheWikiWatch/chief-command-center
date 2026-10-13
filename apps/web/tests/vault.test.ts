@@ -25,6 +25,8 @@ beforeAll(() => {
   writeFileSync(path.join(outside, "secret.txt"), "nope");
   try {
     symlinkSync(outside, path.join(root, "escape"), "junction");
+    // A link inside the vault that leads into its own hidden folder.
+    symlinkSync(path.join(root, ".obsidian"), path.join(root, "settings"), "junction");
     junction = true;
   } catch {
     junction = false;
@@ -37,6 +39,11 @@ afterAll(() => {
 });
 
 describe("vault paths", () => {
+  it("checks the hidden-folder rules again on where a path really leads", async () => {
+    if (!junction) return;
+    await expect(resolveInVault("settings/app.json")).rejects.toThrow(VaultPathError);
+  });
+
   it("rejects traversal, absolute, stream and hidden paths", () => {
     for (const bad of ["../x", "wiki/../../x", "C:\\Windows\\win.ini", "C:/x", "index.md::$DATA", ".obsidian/app.json", "wiki/.hidden", "a\0b", "state.db"]) {
       expect(() => cleanRel(bad), bad).toThrow(VaultPathError);

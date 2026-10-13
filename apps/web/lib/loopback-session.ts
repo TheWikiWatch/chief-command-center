@@ -8,10 +8,14 @@
  * through a short-lived signed ticket from the desktop app (tray → Open in browser), which the proxy
  * swaps for the cookie. Phones keep using their Tailscale identity. Without the variable (development servers)
  * nothing changes.
+ *
+ * The cookie is never the secret itself: browsers send 127.0.0.1's cookies to every port on it, so it is a random id
+ * and that id signed with the secret (`<id>.<hmac>`); another local service that sees it learns nothing it can sign
+ * with. A ticket works once, for 15 seconds.
  */
 
 export const TICKET_PARAM = "open";
-const TICKET_TTL_MS = 60_000;
+const TICKET_TTL_MS = 15_000;
 
 export function sessionSecret(env: Record<string, string | undefined> = process.env): string {
   return (env.CHIEF_SESSION_SECRET || "").trim();
@@ -43,12 +47,31 @@ export async function makeTicket(secret: string, now = Date.now()): Promise<stri
   return `${expires}.${await hmacHex(secret, `open:${expires}`)}`;
 }
 
+/** Tickets already swapped for a cookie, until they expire: each works once. */
+const usedTickets = new Map<string, number>();
+
 export async function ticketValid(ticket: string, secret: string, now = Date.now()): Promise<boolean> {
   const m = /^(\d{13})\.([0-9a-f]{64})$/.exec(ticket || "");
   if (!m || !secret) return false;
   const expires = Number(m[1]);
   if (expires < now || expires > now + TICKET_TTL_MS) return false;
-  return sameSecret(m[2], await hmacHex(secret, `open:${expires}`));
+  if (!sameSecret(m[2], await hmacHex(secret, `open:${expires}`))) return false;
+  for (const [sig, until] of usedTickets) if (until < now) usedTickets.delete(sig);
+  if (usedTickets.has(m[2])) return false;
+  usedTickets.set(m[2], expires);
+  return true;
+}
+
+/** A browser's session cookie: a fresh random id, signed with the secret (the secret itself never leaves the server). */
+export async function makeSessionCookie(secret: string): Promise<string> {
+  const id = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+  return `${id}.${await hmacHex(secret, `session:${id}`)}`;
+}
+
+export async function sessionCookieValid(value: string, secret: string): Promise<boolean> {
+  const m = /^([0-9a-f]{32})\.([0-9a-f]{64})$/.exec(value || "");
+  if (!m || !secret) return false;
+  return sameSecret(m[2], await hmacHex(secret, `session:${m[1]}`));
 }
 
 /** Paths that answer without the session: the desktop app's readiness probe only. */

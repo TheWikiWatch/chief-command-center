@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 
 import { app, dialog, ipcMain, safeStorage, shell } from "electron";
@@ -6,6 +6,7 @@ import { app, dialog, ipcMain, safeStorage, shell } from "electron";
 import { createDiagnostics } from "./diagnostics";
 import { bridgeHealth, profileHome } from "./gateway";
 import { BOOT_URL, dialogOptions, fileFilters, originOf, senderAllowed, validFeed, validServePort } from "./guards";
+import { type Confirm, confirmFeed, confirmForcedRestart, confirmInstall, confirmPhoneAccess, confirmPhoneEnable, confirmRestore, confirmRollback, skipAllowed } from "./owner-confirm";
 import { disablePhone, enablePhone, OPENABLE, phoneState, setPhoneAccess } from "./phone";
 import { RELEASE_KEYS } from "./release-key";
 import { syncGithubHistory } from "./release-history";
@@ -34,6 +35,21 @@ function handle(channel: string, fn: (...args: unknown[]) => unknown, opts: { bo
     return fn(...args);
   });
 }
+
+/**
+ * The shell's own dialog for an action a page could otherwise start alone (owner-confirm.ts). Resolves true only when
+ * the owner pressed the button that goes ahead; Escape, closing it or Cancel is a no.
+ */
+async function ownerConfirms(c: Confirm, channel: string): Promise<boolean> {
+  if (!ctx.window) return false;
+  const choice = await dialog.showMessageBox(ctx.window, { type: "question", message: c.message, detail: c.detail, buttons: [c.ok, "Cancel"], defaultId: 1, cancelId: 1, noLink: true });
+  const yes = choice.response === 0;
+  log.info("owner.confirm", { channel, yes });
+  return yes;
+}
+
+/** What a cancelled update action returns: the state as it was, marked so the page doesn't report progress. */
+const cancelled = (state: UpdateState) => ({ ...state, cancelled: true as const });
 
 /** Fetch and verify any published release this install hasn't kept yet (GitHub feeds; a folder feed is kept as it is checked). */
 export async function syncHistory(): Promise<{ ok: boolean; added?: number; error?: string }> {
@@ -90,15 +106,42 @@ async function reportDiagnostics(): Promise<{ ok: boolean; path?: string; name?:
   return result.ok ? { ...result, name: path.basename(out) } : result;
 }
 
+/** Crash dumps on this PC (the app's own; nothing is uploaded). */
+function crashDumps(): { dir: string; prefix: string; pattern: RegExp; text: boolean }[] {
+  const dirs = [app.getPath("crashDumps"), path.join(app.getPath("crashDumps"), "reports")];
+  const any = dirs.some((d) => {
+    try {
+      return readdirSync(d).some((n) => n.endsWith(".dmp"));
+    } catch {
+      return false;
+    }
+  });
+  return any ? dirs.map((dir) => ({ dir, prefix: "crashes", pattern: /\.dmp$/, text: false })) : [];
+}
+
 async function buildDiagnostics(out: string): Promise<{ ok: boolean; path?: string; error?: string }> {
+  // A crash dump is a copy of the app's memory (it can hold parts of conversations and keys), so it goes in only when
+  // the owner says so; logs are redacted and always go.
+  let dumps = crashDumps();
+  if (dumps.length && ctx.window) {
+    const choice = await dialog.showMessageBox(ctx.window, {
+      type: "question",
+      message: "Include crash reports?",
+      detail: "The app crashed at some point and kept a report. It helps find the cause, but it's a copy of the app's memory at that moment and can hold parts of conversations or keys. Include it only if you're sending this to someone you trust.",
+      buttons: ["Leave them out", "Include them"],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    if (choice.response !== 1) dumps = [];
+  } else dumps = [];
   const result = await createDiagnostics({
     out,
     redact: (text) => log.redact(text),
     sources: [
       { dir: ctx.paths.logs, prefix: "logs", pattern: /\.(log|jsonl)(\.\d+)?$/, text: true },
       { dir: path.join(profileHome(ctx.hermesRoot), "logs"), prefix: "bridge", pattern: /^chief-bridge\.log(\.\d+)?$/, text: true },
-      { dir: app.getPath("crashDumps"), prefix: "crashes", pattern: /\.dmp$/, text: false },
-      { dir: path.join(app.getPath("crashDumps"), "reports"), prefix: "crashes", pattern: /\.dmp$/, text: false },
+      ...dumps,
     ],
     info: {
       app: app.getVersion(),
@@ -124,7 +167,13 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
   handle("updates:state", () => updater.state);
   handle("updates:check", () => checkForUpdates());
   handle("updates:prepare", () => updater.prepare());
-  handle("updates:restart", (force) => updater.restart(force === true));
+  handle("updates:restart", async (force) => {
+    if (force === true) {
+      const ask = confirmForcedRestart((await currentWork()).reasons);
+      if (ask && !(await ownerConfirms(ask, "updates:restart"))) return cancelled(updater.state);
+    }
+    return updater.restart(force === true);
+  });
   handle("updates:options", () => ({ prepare: ctx.store.value.prepareUpdates, early: ctx.store.value.earlyUpdates }));
   handle("updates:setOptions", (options) => {
     const o = (options && typeof options === "object" ? options : {}) as { prepare?: unknown; early?: unknown };
@@ -136,41 +185,57 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
   });
   handle("updates:skip", (version) => {
     const v = String(version ?? "").trim();
-    if (/^\d+\.\d+\.\d+$/.test(v)) ctx.store.save({ skippedVersions: [...new Set([...ctx.store.value.skippedVersions, v])] });
+    const offered = updater.state.status === "available" ? updater.state.release.version : null;
+    if (skipAllowed(v, offered)) ctx.store.save({ skippedVersions: [...new Set([...ctx.store.value.skippedVersions, v])] });
     return updater.check();
   });
   handle("updates:feed", () => effectiveFeed(ctx.store.value.updateFeed, ctx.shippedFeed));
   handle("updates:hasKey", () => readUpdateKey(ctx.paths.secrets, safeStorage) !== "");
   // A saved key GitHub refused while the repository answered without it: Settings offers to remove it.
   handle("updates:keyStatus", () => ({ saved: readUpdateKey(ctx.paths.secrets, safeStorage) !== "", refused: !!ctx.updateSource?.keyRefused?.() }));
-  handle("updates:installVersion", (version) => {
+  handle("updates:installVersion", async (version) => {
     const v = String(version ?? "").trim();
     if (!/^\d+\.\d+\.\d+$/.test(v)) throw new Error("Not a version.");
+    if (v !== app.getVersion() && !(await ownerConfirms(confirmInstall(v, app.getVersion()), "updates:installVersion"))) return cancelled(updater.state);
     log.info("update.version-chosen", { version: v });
     return updater.installVersion(v);
   });
   handle("updates:setKey", (key) => {
-    saveUpdateKey(ctx.paths.secrets, safeStorage, String(key ?? "").trim().slice(0, 400));
+    const k = String(key ?? "").trim().slice(0, 400);
+    log.addSecret(k);
+    saveUpdateKey(ctx.paths.secrets, safeStorage, k);
     return updater.check();
   });
-  handle("updates:setFeed", (folder) => {
+  handle("updates:setFeed", async (folder) => {
     const feed = validFeed(folder);
     if (feed === null) throw new Error("Use a GitHub repository (github:owner/repo) or a folder on this PC. Network shares aren't allowed.");
+    const ask = confirmFeed(feed, ctx.store.value.updateFeed);
+    if (ask && !(await ownerConfirms(ask, "updates:setFeed"))) return cancelled(updater.state);
     ctx.store.save({ updateFeed: feed });
     return updater.check();
   });
   handle("updates:history", () => syncHistory());
   handle("updates:rollbackOptions", () => updater.rollbackOptions());
-  handle("updates:rollback", (version) => {
+  handle("updates:rollback", async (version) => {
     const v = String(version ?? "");
     if (!/^\d+\.\d+\.\d+$/.test(v)) throw new Error("Not a version.");
+    if (!(await ownerConfirms(confirmRollback(v, app.getVersion()), "updates:rollback"))) return cancelled(updater.state);
     log.info("update.rollback-requested", { version: v });
     return updater.rollback(v);
   });
   handle("phone:state", () => phoneState());
-  handle("phone:enable", (port) => enablePhone(validServePort(port)));
+  handle("phone:enable", async (port) => {
+    const p = validServePort(port);
+    if (!(await ownerConfirms(confirmPhoneEnable(), "phone:enable"))) return { ok: false, cancelled: true, error: "" };
+    return enablePhone(p);
+  });
   handle("phone:disable", () => disablePhone());
-  handle("phone:setAccess", (mode) => setPhoneAccess(mode === "owner" ? "owner" : "tailnet"));
+  handle("phone:setAccess", async (mode) => {
+    const m = mode === "owner" ? "owner" : "tailnet";
+    const ask = confirmPhoneAccess(m);
+    if (ask && !(await ownerConfirms(ask, "phone:setAccess"))) return { ok: false, cancelled: true, error: "" };
+    return setPhoneAccess(m);
+  });
   handle("phone:open", (url) => (OPENABLE.test(String(url)) ? shell.openExternal(String(url)).then(() => true) : false));
   handle("boot:retry", () => boot.run(), { boot: true });
   handle("boot:logs", () => shell.openPath(ctx.paths.logs), { boot: true });
@@ -216,16 +281,7 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
   });
   handle("desktop:applyRestore", async () => {
     const work = await currentWork();
-    if (work.busy) {
-      const choice = await dialog.showMessageBox(ctx.window!, {
-        type: "warning",
-        message: "Chief is in the middle of something.",
-        detail: `${work.reasons.join("\n")}\n\nRestoring stops Chief now.`,
-        buttons: ["Restore anyway", "Cancel"],
-        cancelId: 1,
-      });
-      if (choice.response === 1) return { ok: false, error: "Restore cancelled." };
-    }
+    if (!(await ownerConfirms(confirmRestore(work.busy ? work.reasons : []), "desktop:applyRestore"))) return { ok: false, cancelled: true, error: "Restore cancelled." };
     ctx.notifier?.stop();
     log.info("restore.apply");
     const result = await applyRestore({

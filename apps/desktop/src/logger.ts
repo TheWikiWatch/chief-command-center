@@ -26,9 +26,18 @@ export function rotate(file: string, maxBytes = LOG_BYTES, keep = LOG_KEEP): voi
 }
 
 const PATTERNS: [RegExp, string][] = [
+  [/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[redacted private key]"],
   [/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/g, "$1 [redacted]"],
   [/\b(token|secret|password|passwd|api[_-]?key|key|ticket|open)=([^&\s"']{6,})/gi, "$1=[redacted]"],
-  [/\b(ghp|gho|github_pat|sk|xox[abp])[-_][A-Za-z0-9_-]{16,}/g, "[redacted]"],
+  // JSON pairs: "api_key": "…", "token": "…" (settings and replies written into a log line).
+  [/("(?:[a-z_]*api[_-]?key|[a-z_]*token|[a-z_]*secret|password|authorization)"\s*:\s*)"[^"]{6,}"/gi, '$1"[redacted]"'],
+  [/\b(ghp|gho|ghs|github_pat|sk|xox[abp]|glpat|hf|sk_live|rk_live)[-_][A-Za-z0-9_-]{16,}/g, "[redacted]"],
+  [/\bAIza[0-9A-Za-z_-]{30,}/g, "[redacted]"],
+  // Telegram bot tokens and JSON web tokens.
+  [/\b\d{8,10}:[A-Za-z0-9_-]{35}\b/g, "[redacted]"],
+  [/\beyJ[A-Za-z0-9_-]{8,}\.eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[redacted]"],
+  // The Windows user name in home paths (a report travels; who sent it is in the e-mail already).
+  [/([A-Za-z]:[\\/]+Users[\\/]+)(?!Public\b|Default\b)[^\\/"'\s]+/gi, "$1<user>"],
 ];
 
 export class Logger {

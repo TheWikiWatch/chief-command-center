@@ -31,10 +31,20 @@ export type Release = {
   data: { schema: number; min_reader: string };
   /** Which pinned key signed it (release-key.ts); older manifests have none and are checked against every key. */
   signing?: { key_id?: string };
+  /**
+   * The oldest version that may be installed or gone back to (`--floor` at release): a release that fixes a security
+   * problem names itself, so no version with the problem is offered again. The highest floor of any verified release
+   * this install has seen applies (`releaseFloor`).
+   */
+  floor?: string;
 };
 
-/** A pinned release key; `expires` (ISO date): manifests published after it don't verify with this key. */
-export type ReleaseKey = { id: string; publicKey: string; expires?: string };
+/**
+ * A pinned release key. `through`: the last version it may sign (set when it's retired): a manifest for a later version
+ * doesn't verify with it, whatever date it claims. `expires` (ISO date, older): manifests published after it don't
+ * verify with this key; the date is the manifest's own, so `through` is what actually bounds a retired key.
+ */
+export type ReleaseKey = { id: string; publicKey: string; expires?: string; through?: string };
 export type ReleaseKeys = string | ReleaseKey[];
 
 export type UpdateState =
@@ -117,7 +127,11 @@ export function verifyRelease(bytes: Buffer, signatureB64: string, keys: Release
   }
   const keyId = claimed.signing?.key_id;
   const published = Date.parse(String(claimed.published || ""));
-  const usable = list.filter((k) => (keyId && typeof keys !== "string" ? k.id === keyId : true)).filter((k) => !k.expires || !(published > Date.parse(k.expires)));
+  const claimedVersion = String(claimed.version || "");
+  const usable = list
+    .filter((k) => (keyId && typeof keys !== "string" ? k.id === keyId : true))
+    .filter((k) => !k.expires || !(published > Date.parse(k.expires)))
+    .filter((k) => !k.through || (/^\d+\.\d+\.\d+$/.test(claimedVersion) && compareVersions(claimedVersion, k.through) <= 0));
   if (!usable.some((k) => verifiesWith(bytes, signatureB64, k.publicKey))) {
     throw new UpdateError("This update couldn't be verified (its signature doesn't match). Nothing was downloaded.");
   }
@@ -130,6 +144,23 @@ export function verifyRelease(bytes: Buffer, signatureB64: string, keys: Release
 }
 
 export class UpdateError extends Error {}
+
+/**
+ * The oldest version this app may install or go back to: the highest `floor` any verified release names (a release
+ * that fixes a security problem names itself, so no version with the problem is offered again). "" when none does.
+ */
+export function releaseFloor(history: readonly { floor?: string }[]): string {
+  let floor = "";
+  for (const r of history) {
+    const f = typeof r.floor === "string" && /^\d+\.\d+\.\d+$/.test(r.floor) ? r.floor : "";
+    if (f && (!floor || compareVersions(f, floor) > 0)) floor = f;
+  }
+  return floor;
+}
+
+export function belowFloor(version: string, floor: string): boolean {
+  return !!floor && compareVersions(version, floor) < 0;
+}
 
 /** A release's package file name (packaging/release/release-tool.mjs names them so). */
 export function packageName(version: string): string {
@@ -160,8 +191,10 @@ export class Updater {
   /** Earlier versions whose verified package is still in `updates\`, newest first (Settings → "Go back to X.Y.Z"). */
   async rollbackOptions(): Promise<RollbackOption[]> {
     const out: RollbackOption[] = [];
+    const floor = releaseFloor(this.deps.history?.() ?? []);
     for (const release of this.deps.history?.() ?? []) {
       if (compareVersions(release.version, this.deps.currentVersion) >= 0) continue;
+      if (belowFloor(release.version, floor)) continue;
       const file = path.join(this.deps.updatesDir, release.package.file);
       try {
         if ((await fs.stat(file)).size !== release.package.bytes) continue;
@@ -215,6 +248,8 @@ export class Updater {
     if (version === this.deps.currentVersion) return this.set({ status: "error", error: `Version ${version} is the one running.` });
     const release = this.deps.history?.().find((r) => r.version === version);
     if (!release) return this.set({ status: "error", error: `Version ${version} isn't known on this PC yet. Check for updates first, then try again.` });
+    const floor = releaseFloor(this.deps.history?.() ?? []);
+    if (belowFloor(version, floor)) return this.set({ status: "error", error: `Version ${version} can't be installed any more: a later release fixed a security problem in it. ${floor} is the oldest you can go back to.` });
     this.chosen = version;
     this.set({ status: "available", checkedAt: this.now(), release });
     return this.prepare();

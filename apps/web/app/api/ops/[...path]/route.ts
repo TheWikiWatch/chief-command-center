@@ -2,6 +2,7 @@ import { NextRequest } from "next/server";
 import { permittedOperation, validMutationOrigin } from "@/lib/proxy-policy";
 import { opsUrl } from "@/lib/server/app-config";
 import { secondBrain } from "@/lib/server/second-brain";
+import { isDirectLoopback } from "@/lib/tailnet-guard";
 import { vaultToday } from "@/lib/server/today-routes";
 
 export const dynamic = "force-dynamic";
@@ -30,6 +31,7 @@ async function proxy(req: NextRequest, path: string[]) {
 
   let body: ArrayBuffer | string | undefined;
   if (req.method === "PUT" && path[0] === "settings") {
+    if (!isDirectLoopback(req.headers)) return Response.json({ ok: false, error: "Choose the Second Brain folder on the PC." }, { status: 403 });
     // The dashboard only edits the vault folder. Never relay other Ops settings such as hermes_cmd.
     const vaultPath = await req.json().then((b: unknown) => (b as { vault_path?: unknown })?.vault_path, () => undefined);
     if (typeof vaultPath !== "string" || !vaultPath.trim()) {

@@ -1,0 +1,6 @@
+{
+  "note": "Payloads accepted by hand although their build record doesn't vouch for them (provenance.py builder_problems): each is one that already shipped, kept until the next payload build replaces it. Never add one that hasn't shipped.",
+  "trees": {
+    "3552078fff6a21ad1c0795ddba68b0ef2b2919238ebb73ffdadb6d28109784c2": "payload-p4: Hermes 2026.9.24 (41cd311) with 4 patches, built 2026-10-04 from a0d67d8 with uncommitted changes recorded; the payload every release since then has shipped (0.1.40 included)"
+  }
+}

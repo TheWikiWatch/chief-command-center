@@ -13,7 +13,13 @@ export function sessionCookieName(uiPort: number): string {
   return `chief_session_${uiPort}`;
 }
 
-const TICKET_TTL_MS = 60_000;
+const TICKET_TTL_MS = 15_000;
+
+/** The window's session cookie: a random id signed with the secret, exactly as the dashboard checks it (never the secret). */
+export function sessionCookieValue(secret: string): string {
+  const id = randomBytes(16).toString("hex");
+  return `${id}.${createHmac("sha256", secret).update(`session:${id}`).digest("hex")}`;
+}
 
 /** `<expires ms>.<hmac>`, signed exactly as the dashboard checks it. */
 export function openTicket(secret: string, now = Date.now()): string {

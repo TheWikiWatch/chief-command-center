@@ -156,7 +156,7 @@ sealed class ApplyFlow
             try
             {
                 log.Note($"registering the staged package {fullName}");
-                await deployment.RegisterAsync(fullName, progress);
+                await deployment.RegisterAsync(fullName, job.AllowDowngrade, progress);
                 log.Note("registered the staged package");
             }
             catch (Exception e)
@@ -178,7 +178,8 @@ sealed class ApplyFlow
             try
             {
                 log.Note($"installing from the package file {Path.GetFileName(job.PackageFile)}");
-                await deployment.AddAsync(job.PackageFile, installed ?? new InstalledPackage(), progress);
+                using (LockedPackage.Open(job.PackageFile, job.PackageSha256, options.Simulate))
+                    await deployment.AddAsync(job.PackageFile, installed ?? new InstalledPackage(), job.AllowDowngrade, progress);
                 log.Note("installed from the package file");
             }
             catch (Exception e)

@@ -16,7 +16,16 @@ it("builds bridge urls for file, preview and thumb", () => {
   expect(mediaSrc(clip.path)).toBe(`/api/bridge/file?path=${enc}`);
   expect(previewSrc(clip.path)).toBe(`/api/bridge/preview?path=${enc}`);
   expect(thumbSrc(clip.path)).toBe(`/api/bridge/thumb?path=${enc}`);
-  expect(mediaSrc("https://example.com/a.mp4")).toBe("https://example.com/a.mp4");
+  expect(mediaSrc("blob:http://127.0.0.1:3000/abc")).toBe("blob:http://127.0.0.1:3000/abc");
+});
+
+it("never loads a web address or data: link into the page; a web address is a labelled link", () => {
+  render(<MessageMedia attachments={[{ path: "https://example.com/a.png", name: "a.png", kind: "image", mime: "image/png" }, { path: "data:text/html,hi", name: "x.html", kind: "file", mime: "text/html" }]} />);
+  expect(document.querySelector("img")).toBeNull();
+  const link = screen.getByText("Link to example.com").closest("a")!;
+  expect(link.getAttribute("href")).toBe("https://example.com/a.png");
+  expect(link.getAttribute("rel")).toContain("noopener");
+  expect(screen.queryByText("x.html")).toBeNull();
 });
 
 it("renders a video card with light-preview source, poster and full-quality link", () => {
@@ -30,7 +39,7 @@ it("renders a video card with light-preview source, poster and full-quality link
 });
 
 it("moves between a message's images in the lightbox", async () => {
-  const images = ["a.png", "b.png"].map((name) => ({ path: `https://example.com/${name}`, name, kind: "image" as const, mime: "image/png" }));
+  const images = ["a.png", "b.png"].map((name) => ({ path: `C:/media/${name}`, name, kind: "image" as const, mime: "image/png" }));
   render(<MessageMedia attachments={images} />);
   fireEvent.click(screen.getByRole("button", { name: "Open a.png" }));
   expect(await screen.findByText("1 / 2")).toBeInTheDocument();

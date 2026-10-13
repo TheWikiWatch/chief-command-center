@@ -535,12 +535,26 @@ def _generate(prompt: str) -> str:
     return path
 
 
+# One picture at a time. A thread can't be stopped, so one that timed out may still be running (and paying for a
+# picture nobody will see): until it ends, another request is refused rather than starting a second one.
+_portrait_running = threading.Lock()
+
+
 def portrait(profile_id: str, prompt: str = "") -> tuple[dict[str, Any], int]:
     """Generate a square portrait for the bot and make it its photo."""
     home = _home(profile_id)
     if not image_ready():
         raise LookError(NO_IMAGE_GENERATOR)
-    path = _within(lambda: _generate(portrait_prompt(home, prompt)), PORTRAIT_TIMEOUT)
+    if not _portrait_running.acquire(blocking=False):
+        raise LookError("A picture is still being made. Try again in a minute.", 409)
+
+    def make() -> str:
+        try:
+            return _generate(portrait_prompt(home, prompt))
+        finally:
+            _portrait_running.release()
+
+    path = _within(make, PORTRAIT_TIMEOUT)
     try:
         blob = Path(path).read_bytes()
     except OSError as exc:

@@ -25,6 +25,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import tempfile
 import time
 import zipfile
@@ -226,6 +227,36 @@ def backup_name(kind: str = "manual", when: float | None = None) -> str:
     return f"Chief backup{label} {stamp}{SUFFIX}"
 
 
+def _windows_tool(name: str) -> str:
+    return str(Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / name)
+
+
+def owner_only(path: Path) -> bool:
+    """Only the signed-in user (and SYSTEM and Administrators, as in their own profile) can open this file; nothing
+    inherited from the folder, which may be one other accounts can read. Windows only; False when it couldn't be
+    done (a drive without permissions, such as FAT32 or exFAT, has none to set)."""
+    if os.name != "nt":
+        try:
+            os.chmod(path, 0o600)
+            return True
+        except OSError:
+            return False
+    try:
+        out = subprocess.run([_windows_tool("whoami.exe"), "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=15, check=True).stdout
+        sid = out.strip().rsplit(",", 1)[-1].strip().strip('"')
+        if not re.fullmatch(r"S-1-5-[0-9-]+", sid):
+            return False
+        subprocess.run(
+            [_windows_tool("icacls.exe"), str(path), "/inheritance:r", "/grant:r", f"*{sid}:F", "*S-1-5-18:F", "*S-1-5-32-544:F"],
+            capture_output=True,
+            timeout=30,
+            check=True,
+        )
+        return True
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def create(
     dest_dir: Path,
     *,
@@ -318,6 +349,10 @@ def create(
             }
             zf.writestr("manifest.json", json.dumps(manifest, indent=1))
         _verify_zip(zip_path)
+        if secrets_plain:
+            # Its secrets are in the clear: lock the file down before a byte of it is written (S13). The rename keeps it.
+            partial.touch()
+            owner_only(partial)
         with open(partial, "wb") as out:
             if passphrase:
                 crypto.encrypt_file(zip_path, out, passphrase)

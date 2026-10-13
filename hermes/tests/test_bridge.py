@@ -698,7 +698,7 @@ class PushTests(unittest.TestCase):
         self.assertEqual(vapid.public_key(), first)
         record = json.loads((self.home / "command_center_vapid.json").read_text(encoding="utf-8"))
         self.assertEqual(set(record), {"publicKey", "private_pem"})
-        self.assertTrue(record["private_pem"].startswith("-----BEGIN PRIVATE KEY-----"))
+        self.assertTrue(record["private_pem"].startswith("-----BEGIN PRIVATE" + " KEY-----"))
         vapid.private_key()  # loads
 
     def test_no_subscriptions_sends_nothing(self):

@@ -10,14 +10,25 @@ const parsesAsPowerShell = (script: string) => {
 };
 
 describe("the fallback install script", () => {
-  const script = installScript("C:\\Updates\\Chief O'Brien 1.2.3.msix", "C:\\Logs\\update-install.log", "C:\\App\\updater\\update-result.json", "1.2.2", "1.2.3");
+  const SHA = "ab".repeat(32);
+  const script = installScript("C:\\Updates\\Chief O'Brien 1.2.3.msix", "C:\\Logs\\update-install.log", "C:\\App\\updater\\update-result.json", "1.2.2", "1.2.3", SHA);
 
   it("installs onto the drive Chief is already on, and always brings Chief back", () => {
     expect(script).toContain("Get-AppxVolume");
     expect(script).toContain("$extra.Volume = $vol");
-    expect(script).toContain("-ForceUpdateFromAnyVersion -ErrorAction Stop @extra");
+    expect(script).toContain("-ForceApplicationShutdown -ErrorAction Stop @extra");
     expect(script).toContain("'C:\\Updates\\Chief O''Brien 1.2.3.msix'"); // quotes in the path are escaped
     expect(script.indexOf("finally")).toBeLessThan(script.indexOf("Start-Process"));
+  });
+
+  it("installs only the package it checked, held open so it can't be swapped, and downgrades only when going back", () => {
+    expect(script).toContain("[System.IO.File]::Open('C:\\Updates\\Chief O''Brien 1.2.3.msix', 'Open', 'Read', 'Read')");
+    expect(script).toContain(`if ($h -ne '${SHA}')`);
+    expect(script.indexOf("ComputeHash")).toBeLessThan(script.indexOf("Add-AppxPackage"));
+    expect(script).not.toContain("-ForceUpdateFromAnyVersion");
+    expect(installScript("C:\\u\\a.msix", "C:\\l.log", "", "1.2.3", "1.2.2", SHA, true)).toContain("-ForceUpdateFromAnyVersion");
+    // No hash given: nothing matches, so nothing installs.
+    expect(installScript("C:\\u\\a.msix", "C:\\l.log")).toContain("if ($h -ne 'missing')");
   });
 
   it("writes the same result file as the helper, so the next start can say how it went", () => {
@@ -29,7 +40,7 @@ describe("the fallback install script", () => {
 
   it("runs with no window at all: headless conhost, hidden PowerShell, encoded command", () => {
     const line = fallbackCommandLine(script);
-    expect(line.startsWith("conhost.exe --headless powershell.exe ")).toBe(true);
+    expect(line).toMatch(/^"[A-Z]:\\Windows\\System32\\conhost\.exe" --headless "[A-Z]:\\Windows\\System32\\WindowsPowerShell\\v1\.0\\powershell\.exe" /i);
     expect(line).toContain("-WindowStyle Hidden -EncodedCommand ");
     const encoded = line.split("-EncodedCommand ")[1];
     expect(Buffer.from(encoded, "base64").toString("utf16le")).toBe(script);

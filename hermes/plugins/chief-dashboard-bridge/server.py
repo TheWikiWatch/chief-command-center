@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import json
 import logging
 import os
@@ -899,6 +901,16 @@ def _make_handler(bridge: BridgeServer):
         def log_message(self, fmt, *args):
             logger.debug("%s - " + fmt, self.address_string(), *args)
 
+        def _health_proof(self) -> None:
+            """Before the app sends its token anywhere, the bridge proves it already knows it: the token's HMAC over the
+            app's random nonce (gateway.ts `bridgeHealth`). Without the token; the answer is no use as one."""
+            nonce = (parse_qs(urlparse(self.path).query).get("nonce") or [""])[0]
+            if self.client_address[0] not in ("127.0.0.1", "::1") or not (32 <= len(nonce) <= 128 and all(c in "0123456789abcdef" for c in nonce)):
+                self._reject(400, "bad nonce")
+                return
+            proof = hmac.new(bridge.token.encode(), f"chief-health:{nonce}".encode(), hashlib.sha256).hexdigest()
+            self._json({"ok": True, "proof": proof})
+
         def _authorized(self) -> bool:
             if self.client_address[0] not in ("127.0.0.1", "::1"):
                 return False
@@ -974,6 +986,9 @@ def _make_handler(bridge: BridgeServer):
 
         def _dispatch(self, method: str) -> None:
             """Answer from the route table (routes.py): 401 without the token, 404 for anything not in it."""
+            if method == "GET" and urlparse(self.path).path == "/health/proof":
+                self._health_proof()
+                return
             if not self._authorized():
                 self._reject(401, "unauthorized")
                 return

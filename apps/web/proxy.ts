@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { sameSecret, sessionCookieName, sessionExempt, sessionSecret, TICKET_PARAM, ticketValid } from "@/lib/loopback-session";
+import { makeSessionCookie, sessionCookieName, sessionCookieValid, sessionExempt, sessionSecret, TICKET_PARAM, ticketValid } from "@/lib/loopback-session";
 import { DEVICE_COOKIE, deviceAllowed } from "@/lib/server/phone-devices";
 import { allowRemoteLogin, decodeTailscaleLogin, isDirectLoopback, phoneAccess, tailscaleAllowlist, viaPhoneServe } from "@/lib/tailnet-guard";
 
@@ -19,12 +19,18 @@ function refused(req: NextRequest, detail: string, hint: string) {
 
 /** Next 16's request gate (formerly middleware; runs on Node): who may open the dashboard at all. */
 export async function proxy(req: NextRequest) {
+  // Another site (or another port on 127.0.0.1, which browsers count as the same site) never calls the API. A
+  // browser always says where a request came from; the desktop app's own requests and a typed address say nothing or "none".
+  const site = req.headers.get("sec-fetch-site");
+  if (req.nextUrl.pathname.startsWith("/api/") && (site === "cross-site" || site === "same-site")) {
+    return NextResponse.json({ ok: false, error: "Not allowed from another site." }, { status: 403 });
+  }
   if (isDirectLoopback(req.headers)) {
     // The desktop app's per-launch secret (lib/loopback-session.ts): loopback alone proves nothing.
     const secret = sessionSecret();
     if (!secret || sessionExempt(req.nextUrl.pathname)) return NextResponse.next();
     const name = sessionCookieName(req.headers.get("host"));
-    if (sameSecret(req.cookies.get(name)?.value || "", secret)) return NextResponse.next();
+    if (await sessionCookieValid(req.cookies.get(name)?.value || "", secret)) return NextResponse.next();
     const ticket = req.nextUrl.searchParams.get(TICKET_PARAM) || "";
     if (ticket && (await ticketValid(ticket, secret))) {
       // Back to the same host the browser used (nextUrl says "localhost" for 127.0.0.1, a different cookie jar).
@@ -32,7 +38,7 @@ export async function proxy(req: NextRequest) {
       params.delete(TICKET_PARAM);
       const query = params.toString();
       const res = NextResponse.redirect(new URL(`${req.nextUrl.pathname}${query ? `?${query}` : ""}`, `http://${req.headers.get("host")}`));
-      res.cookies.set(name, secret, { httpOnly: true, sameSite: "strict", path: "/" });
+      res.cookies.set(name, await makeSessionCookie(secret), { httpOnly: true, sameSite: "strict", path: "/" });
       return res;
     }
     return refused(req, "Open Chief from its desktop app on this PC.", "In the tray, right-click Chief and choose Open in browser to use it in a browser here.");

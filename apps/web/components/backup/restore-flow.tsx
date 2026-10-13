@@ -81,6 +81,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
     setError("");
     try {
       const res = await d.applyRestore();
+      if (res.cancelled) return;
       if (!res.ok || !res.report) setError(res.error || "The restore didn't finish; your previous setup was kept.");
       else setStage({ name: "done", report: res.report });
     } finally {

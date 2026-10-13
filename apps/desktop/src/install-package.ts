@@ -1,6 +1,8 @@
 import path from "node:path";
 import { spawn } from "node:child_process";
 
+import { systemCwd, systemTool } from "./guards";
+
 /**
  * Starting installers outside the app. Windows shuts the package's processes down to replace it
  * (ForceApplicationShutdown), so anything that must outlive the app is started by WMI (`Win32_Process.Create`): its
@@ -28,7 +30,7 @@ export function wmiLaunchScript(commandLine: string, show: boolean): string {
 /** Runs `wmiLaunchScript` in a hidden PowerShell without blocking the app; resolves the started process's id. */
 export function launchDetached(commandLine: string, show: boolean, timeoutMs = 30_000): Promise<{ ok: true; pid: number } | { ok: false; error: string }> {
   return new Promise((resolve) => {
-    const child = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", wmiLaunchScript(commandLine, show)], { windowsHide: true });
+    const child = spawn(systemTool("powershell"), ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", wmiLaunchScript(commandLine, show)], { windowsHide: true, cwd: systemCwd() });
     let out = "";
     let err = "";
     const timer = setTimeout(() => child.kill(), timeoutMs);
@@ -49,8 +51,10 @@ export function launchDetached(commandLine: string, show: boolean, timeoutMs = 3
 /**
  * The fallback installer: Windows installs the verified package (checking its signature again) and the app is
  * relaunched whatever happened. It writes the same result file as the helper, so the next start can say how it went.
+ * Like the helper, it holds the package open (read sharing only) while it checks the SHA-256 from the signed release
+ * and installs it, and lets Windows accept an older version only when going back (`downgrade`).
  */
-export function installScript(file: string, logFile: string, resultFile = "", from = "", to = ""): string {
+export function installScript(file: string, logFile: string, resultFile = "", from = "", to = "", sha256 = "", downgrade = false): string {
   const log = logFile.replace(/'/g, "''");
   const result = resultFile.replace(/'/g, "''");
   const writeResult = (ok: boolean, message: string) =>
@@ -68,7 +72,13 @@ export function installScript(file: string, logFile: string, resultFile = "", fr
     "  if ($loc) { $vol = Get-AppxVolume | Where-Object { $loc.ToUpperInvariant().StartsWith(([string]$_.PackageStorePath).ToUpperInvariant() + '\\') } | Select-Object -First 1 }",
     "  $extra = @{}",
     "  if ($vol) { $extra.Volume = $vol }",
-    `  Add-AppxPackage -Path '${file.replace(/'/g, "''")}' -ForceApplicationShutdown -ForceUpdateFromAnyVersion -ErrorAction Stop @extra`,
+    `  $fs = [System.IO.File]::Open('${file.replace(/'/g, "''")}', 'Open', 'Read', 'Read')`,
+    "  try {",
+    "    $sha = [System.Security.Cryptography.SHA256]::Create()",
+    "    $h = -join ($sha.ComputeHash($fs) | ForEach-Object { $_.ToString('x2') })",
+    `    if ($h -ne '${/^[0-9a-f]{64}$/.test(sha256) ? sha256 : "missing"}') { throw 'The update file changed after it was checked, so it was not installed.' }`,
+    `    Add-AppxPackage -Path '${file.replace(/'/g, "''")}' -ForceApplicationShutdown${downgrade ? " -ForceUpdateFromAnyVersion" : ""} -ErrorAction Stop @extra`,
+    "  } finally { $fs.Dispose() }",
     "  Note ('installed ' + (Get-AppxPackage -Name ChiefCommandCenter).Version)",
     writeResult(true, "''"),
     "} catch {",
@@ -91,5 +101,5 @@ export function installScript(file: string, logFile: string, resultFile = "", fr
  */
 export function fallbackCommandLine(script: string): string {
   const encoded = Buffer.from(script, "utf16le").toString("base64");
-  return `conhost.exe --headless powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ${encoded}`;
+  return `"${systemTool("conhost")}" --headless "${systemTool("powershell")}" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -EncodedCommand ${encoded}`;
 }

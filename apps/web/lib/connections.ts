@@ -71,9 +71,24 @@ export const onThisPc = () => typeof window !== "undefined" && /^(localhost|127\
 export const BACKEND_LABEL: Record<Backend, string> = { quick: "Quick", local: "On this PC", mcp: "Direct" };
 
 /** Open a sign-in page. The desktop app sends it to the system browser; a blocked popup leaves the card's link. */
-export function openSignIn(url: string): boolean {
+/**
+ * A sign-in address the bridge handed back, if it's one to open: https only, with no user name or password in it.
+ * Anything else (a `javascript:` or `file:` link, a plain-http page) is never opened or linked.
+ */
+export function signInUrl(url: string): string {
   try {
-    return !!window.open(url, "_blank", "noopener,noreferrer");
+    const u = new URL(url);
+    return u.protocol === "https:" && !u.username && !u.password ? u.href : "";
+  } catch {
+    return "";
+  }
+}
+
+export function openSignIn(url: string): boolean {
+  const safe = signInUrl(url);
+  if (!safe) return false;
+  try {
+    return !!window.open(safe, "_blank", "noopener,noreferrer");
   } catch {
     return false;
   }

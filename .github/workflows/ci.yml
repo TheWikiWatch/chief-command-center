@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.14"
       - name: Python tools (pinned)
-        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+        run: python -m pip install --disable-pip-version-check --require-hashes -r requirements-dev.txt
       - name: Privacy scan (files, and the commits this push or pull request adds)
         env:
           PRIVACY_DENYLIST: ${{ secrets.PRIVACY_DENYLIST }}

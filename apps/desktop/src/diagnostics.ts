@@ -3,6 +3,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 
+import { systemCwd, systemTool } from "./guards";
+
 /**
  * Settings → About → Create diagnostics: the app's logs, the bridge's log, crash dumps and versions in one zip
  * the owner looks at and sends themselves. Nothing leaves the PC on its own. Text files pass through the log's
@@ -41,9 +43,9 @@ export function zipFolder(folder: string, out: string): Promise<{ ok: boolean; e
   const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
   return new Promise((resolve) => {
     const child = spawn(
-      "powershell.exe",
+      systemTool("powershell"),
       ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", `Compress-Archive -Path ${q(path.join(folder, "*"))} -DestinationPath ${q(out)} -Force`],
-      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"] },
+      { windowsHide: true, stdio: ["ignore", "ignore", "pipe"], cwd: systemCwd() },
     );
     let stderr = "";
     child.stderr?.on("data", (chunk) => (stderr += String(chunk)));

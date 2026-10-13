@@ -64,6 +64,8 @@ export async function enablePhone(wanted?: number) {
   if (!exe) return { ok: false, error: "Tailscale isn't installed on this PC." };
   const state = await phoneState();
   if (state.backend !== "Running") return { ok: false, error: "Tailscale isn't running and signed in on this PC." };
+  // Without the owner's login there is no account to limit phone access to.
+  if (!state.login) return { ok: false, error: "Sign in to Tailscale on this PC first (open the Tailscale app, then Log in)." };
   const recorded = ctx.store.value.phoneServe;
   const port = wanted ?? (state.moved && recorded ? recorded.port : choosePort(state.serve));
   if (port === null) return { ok: false, error: "Every port Tailscale Serve can use (443, 8443, 10000) is taken by something else on this PC." };
@@ -95,6 +97,36 @@ export async function disablePhone() {
     await restartWeb();
   }
   return result;
+}
+
+/**
+ * Quitting: the Serve entry goes with the dashboard, so while the app is closed nothing else on this PC can take the
+ * dashboard's port and receive what phones send. The setting stays; `resumeServe` puts the entry back at the next start.
+ * Best effort, and never more than a few seconds.
+ */
+export async function pauseServe(): Promise<void> {
+  const rec = ctx.store.value.phoneServe;
+  const exe = findTailscale();
+  if (!rec || !exe) return;
+  await Promise.race([disableServe(exe, rec.port, rec.uiPort).catch(() => undefined), new Promise((r) => setTimeout(r, 5000))]);
+}
+
+/** Once the dashboard answers: phone access back on, pointing at the port the dashboard has now. */
+export async function resumeServe(): Promise<void> {
+  const rec = ctx.store.value.phoneServe;
+  const exe = findTailscale();
+  if (!rec || !exe) return;
+  const ui = ctx.store.value.ports.ui;
+  try {
+    const ts = await readState(ui);
+    if (ts.backend !== "Running" || ts.serve.some((e) => e.ours)) return;
+    // Another program's entry on that port is left alone (Settings → Phone then offers another port).
+    if (ts.serve.some((e) => e.port === rec.port && !e.target.endsWith(`:${rec.uiPort}`))) return;
+    const res = await enableServe(exe, rec.port, ui);
+    if (res.ok) ctx.store.save({ phoneServe: { ...rec, uiPort: ui } });
+  } catch {
+    /* Tailscale not answering: Settings → Phone shows it off, and turning it on again works */
+  }
 }
 
 /** Links the Phone page may open: Tailscale's own pages (downloads, admin, consent) and the phone app stores. */

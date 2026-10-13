@@ -346,3 +346,19 @@ Two Hermes profile helpers reach outside the profile they are given:
   without it every dashboard message is "Unauthorized user"). The token is kept in a `sys.modules` holder
   (bridge_token.py). The smoke test doesn't reach the second import: check `Unauthorized user` in the chief's
   errors.log after a release.
+- **The shell's own confirmation dialogs are the ask** (owner-confirm.ts): the dashboard no longer asks first for
+  installing a version, going back, a new update source or phone access. A cancelled action returns `cancelled: true`;
+  the page must treat it as "nothing happened", never as an error.
+- **The update helper re-hashes the package and holds it open** (`LockedPackage`, read sharing only) through stage or
+  add, and passes `ForceUpdateFromAnyVersion` only for `mode: "rollback"`. A job without `packageSha256` installs
+  nothing. A same-version reinstall through the helper isn't possible (there is no such flow).
+- **`bridgeHealth` needs `/health/proof`** before it sends the token: a bridge plugin older than the app (an external
+  gateway on an old plugin) reads as "something that isn't Chief's gateway".
+- **The dashboard's session cookie is `<id>.<hmac>`**, never the secret; the desktop app derives it the same way
+  (session.ts `sessionCookieValue`). A ticket is single-use: opening the same link twice shows the "Open Chief from its
+  desktop app" page.
+- **Phone access pauses on quit** (`pauseServe` removes the Serve entry; `resumeServe` adds it back once the dashboard
+  answers). If Tailscale isn't running at the next start, Settings → Phone shows it off until it's turned on again.
+- **Payload provenance refuses a dirty or unknown build** unless its tree digest is in
+  `packaging/payload/accepted-trees.json`; `stage.py` refuses a Hermes checkout that isn't the pin plus one patch
+  commit, before it builds.
