@@ -6,6 +6,7 @@ import path from "node:path";
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { GET, POST } from "@/app/pair/route";
 import { proxy } from "@/proxy";
 import { createPairingCode, DEVICE_COOKIE, deviceAllowed, listDevices, redeemPairingCode, removeDevice, resetPairingForTests } from "@/lib/server/phone-devices";
 
@@ -82,6 +83,23 @@ describe("the gate", () => {
     expect((await phone("/", res.cookie)).status).toBe(200);
     expect((await phone("/api/bridge/health", res.cookie)).status).toBe(200);
     expect((await phone("/", "made-up.cookie-value-that-is-long-enough")).status).toBe(307);
+  });
+
+  it("the pairing form posts its real origin and lands on the same origin", async () => {
+    // The app-wide Referrer-Policy: no-referrer would make a browser post this form with Origin: null.
+    const html = await (await GET(new NextRequest("https://pc.example.ts.net/pair"))).text();
+    expect(html).toContain('<meta name="referrer" content="same-origin">');
+    const { code } = createPairingCode();
+    const res = await POST(
+      new NextRequest("https://pc.example.ts.net/pair", {
+        method: "POST",
+        headers: { ...serve, origin: "https://pc.example.ts.net", "content-type": "application/x-www-form-urlencoded" },
+        body: `code=${encodeURIComponent(code)}`,
+      }),
+    );
+    expect(res.status).toBe(303);
+    expect(res.headers.get("location")).toBe("/");
+    expect(res.headers.get("set-cookie")).toMatch(/chief_device=.+HttpOnly/i);
   });
 
   it("a paired phone still needs phone access on and the allowed account", async () => {

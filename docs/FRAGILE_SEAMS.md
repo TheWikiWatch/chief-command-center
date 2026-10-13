@@ -334,6 +334,8 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Phones need a device cookie** (`chief_device`, lib/server/phone-devices.ts) on top of the pinned host and the
   Tailscale login: Serve's headers alone can be forged by a local program. `/pair` is the only path an unpaired phone
   reaches. Pairing codes live in the dashboard server's memory: a restart drops them (make a new one).
+  `/pair` sets its own `<meta name="referrer" content="same-origin">`: under the app-wide `no-referrer` a browser
+  posts a plain form with `Origin: null`, which the origin check refuses.
 - **Fleet and routine approvals are fingerprinted** (`chief:fleet-mint:<hash>`, `chief:routine:<hash>`): "always" would
   only trust that exact request, so the sheet doesn't offer it. The fleet tools refuse unless `fleet.guard` was set by
   a successfully registered hook.
