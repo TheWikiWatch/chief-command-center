@@ -337,10 +337,10 @@ class SetupTests(SecondBrainTestCase):
         self.assertIn("note-taking/second-brain-writes/SKILL.md", record)
         path = second_brain._skill_path(self.chief)
         path.write_text(path.read_text(encoding="utf-8") + "\nMy own rule.\n", encoding="utf-8")
-        second_brain.install_skill(self.chief, self.vault, rules="RULES.md")
+        second_brain.install_skill(self.chief, self.vault, rules="_CLAUDE.md")
         self.assertIn("My own rule.", path.read_text(encoding="utf-8"), "an edited skill is the editor's now")
         writes = self.chief / "skills" / "note-taking" / "second-brain-writes" / "SKILL.md"
-        self.assertIn("RULES.md", writes.read_text(encoding="utf-8"), "an unedited one still follows the folder")
+        self.assertIn("_CLAUDE.md", writes.read_text(encoding="utf-8"), "an unedited one still follows the folder")
 
     def test_a_folder_with_its_own_rules_is_used_as_it_is(self):
         self.vault.mkdir()

@@ -363,6 +363,11 @@ def _revert(conn: sqlite3.Connection, version_id: int, discard_newer: int = 0) -
             f"change #{version_id} has {newer} later {edits} to this file; reverting it would undo them too (pass --discard-newer {newer} to go ahead)"
         )
     target = Path(row["file"])
+    # The database records paths; a tampered one must not make "Revert" write anywhere else.
+    resolved = target.resolve(strict=False)
+    under = any(root.resolve(strict=False) in resolved.parents for _scope, root in skill_roots())
+    if not under or not (resolved.name == "SKILL.md" or (resolved.suffix == ".md" and resolved.parent.name == "references")):
+        raise SystemExit(f"change #{version_id} isn't a skill file this tool may write")
     stamp = time.strftime("%Y%m%d-%H%M%S")
     if target.exists():
         backup = target.with_name(f"{target.name}.bak-ledger-{stamp}")

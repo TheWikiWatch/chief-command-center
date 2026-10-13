@@ -111,7 +111,8 @@ _DENIED_SUFFIXES = (".pem", ".key", ".p12", ".pfx", ".kdbx")
 # Never served back: Hermes SQLite databases and side files (state.db-wal holds recent chat).
 _SERVE_DENIED_SUFFIXES = (".db", ".db-wal", ".db-shm", ".db-journal", ".sqlite", ".sqlite3", ".sqlite-wal", ".sqlite-shm")
 # Under Hermes's own folders: logs, session records, memory, pairing and config are never files to show.
-_HERMES_DENIED_DIRS = {"logs", "sessions", "memories", "pairing", "locks", "secrets", "mcp-tokens", "shared"}
+# Also Hermes's browser snapshot (copied cookies and logins), its encrypted vault and file checkpoints.
+_HERMES_DENIED_DIRS = {"logs", "sessions", "memories", "pairing", "locks", "secrets", "mcp-tokens", "shared", "browser-profile", "vault", "checkpoints"}
 _HERMES_DENIED_SUFFIXES = (".yaml", ".yml", ".log", ".jsonl", ".lock", ".json")
 # Hermes's own profile id rule (hermes_constants.PROFILE_ID_RE): no path separators, no "..".
 PROFILE_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
@@ -1149,8 +1150,11 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                     # the morning brief) keeps its context for Chief; the chat already shows it as a notice.
                     if content.lstrip().startswith(_CRON_MIRROR):
                         continue
-                for att in attachments:
-                    remember_media_path(str(att.get("path") or ""))
+                # Files the bot sent may be shown wherever they are; a path written in anyone else's text is not
+                # one (the owner's own uploads live in the app's inbound folder, which is served anyway).
+                if role == "assistant":
+                    for att in attachments:
+                        remember_media_path(str(att.get("path") or ""))
             if role == "tool" and not names:
                 continue
             if role not in {"user", "assistant", "tool"}:

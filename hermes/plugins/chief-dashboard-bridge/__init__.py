@@ -69,7 +69,13 @@ def attach_log_file(home) -> logging.Handler | None:
         return None
     handler._chief_bridge_file = True  # type: ignore[attr-defined]
     handler.setLevel(logging.INFO)
-    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    try:
+        from agent.redact import RedactingFormatter
+
+        handler.setFormatter(RedactingFormatter(fmt))
+    except Exception:
+        handler.setFormatter(logging.Formatter(fmt))
     logger.addHandler(handler)
     if logger.level == logging.NOTSET or logger.level > logging.INFO:
         logger.setLevel(logging.INFO)

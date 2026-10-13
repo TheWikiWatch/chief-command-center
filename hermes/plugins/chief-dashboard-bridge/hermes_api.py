@@ -147,6 +147,10 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "tools.mcp_oauth": ("remove_oauth_tokens",),
         "tools.mcp_tool_discovery": ("register_mcp_servers",),
     },
+    "redaction": {
+        # Hermes's own secret patterns for the bridge's log and problem reports (report.py, __init__.py).
+        "agent.redact": ("RedactingFormatter", "redact_sensitive_text"),
+    },
     "mail guard": {
         # Our pre_tool_call hook's {"action": "approve"} lands on this gate (mail_guard.py).
         "tools.approval": ("request_tool_approval",),

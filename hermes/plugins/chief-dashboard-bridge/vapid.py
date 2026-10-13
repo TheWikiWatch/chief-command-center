@@ -93,10 +93,28 @@ def save_subs(subs: list[dict[str, Any]]) -> None:
         _atomic_write(subs_path(), json.dumps({"subscriptions": subs}, indent=2))
 
 
+# The push services browsers use (Chrome/Edge/Android, Firefox, Safari/iOS, Windows). A subscription naming any
+# other host would make the bridge post to it.
+_PUSH_HOSTS = ("fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com")
+
+
+def push_endpoint_ok(endpoint: str) -> bool:
+    from urllib.parse import urlparse
+
+    try:
+        url = urlparse(endpoint)
+    except ValueError:
+        return False
+    host = (url.hostname or "").lower()
+    return url.scheme == "https" and not url.username and any(host == h or host.endswith("." + h) for h in _PUSH_HOSTS)
+
+
 def upsert_subscription(sub: dict[str, Any]) -> dict[str, Any]:
     endpoint = str((sub or {}).get("endpoint") or "").strip()
     if not endpoint.startswith("https://"):
         return {"ok": False, "error": "missing endpoint"}
+    if not push_endpoint_ok(endpoint):
+        return {"ok": False, "error": "That isn't a browser's push service."}
     keys = (sub or {}).get("keys") or {}
     if not keys.get("p256dh") or not keys.get("auth"):
         return {"ok": False, "error": "missing keys"}
