@@ -25,6 +25,7 @@ def _installed(name: str) -> bool:
     except ModuleNotFoundError:
         return False
 
+
 ROOT = Path(__file__).resolve().parents[2]
 PLUGIN = ROOT / "hermes/plugins/chief-dashboard-bridge"
 RUNTIME = ROOT / "hermes/tests/.runtime"
