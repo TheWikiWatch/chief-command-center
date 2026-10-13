@@ -1182,3 +1182,7 @@ Tailscale name to accept phones for. The app now adopts such an entry at start.
 before). Three advisories with no fix yet, all in build or development tools only (http-cache-semantics and
 sprintf-js inside electron-builder, braces in the lint plugin), are passed over by CI's scan until 2026-11-12 with
 the reason recorded in `apps/*/osv-scanner.toml`; the scan fails again on that date.
+
+**Fix (0.1.43, 2026-10-13): a paired phone was asked to pair again after closing Chief.** The phone's device cookie
+was SameSite=Strict, which a phone doesn't send when it opens Chief from the home screen, a notification or another
+app. It is Lax now; and a paired phone that opens the pairing page goes straight in.

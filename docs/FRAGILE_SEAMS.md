@@ -364,3 +364,5 @@ Two Hermes profile helpers reach outside the profile they are given:
   commit, before it builds.
 - **No `phoneServe` record means no phone access** (proxy.ts needs `CHIEF_PHONE_HOST`). `ensurePhoneHost` adopts a
   Serve entry that points at the dashboard's port; one pointing elsewhere is never adopted.
+- **The phone's device cookie must stay `SameSite=Lax`**: Strict isn't sent when a phone opens Chief from its home
+  screen or a notification, so a paired phone lands on `/pair` again. Changes are guarded by origin, not by the cookie.

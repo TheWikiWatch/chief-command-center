@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { validMutationOrigin } from "@/lib/proxy-policy";
-import { DEVICE_COOKIE, redeemPairingCode } from "@/lib/server/phone-devices";
+import { DEVICE_COOKIE, deviceAllowed, redeemPairingCode } from "@/lib/server/phone-devices";
 
 /*
  * Pairing a phone (lib/server/phone-devices.ts). The only page an unpaired phone can open: it trades the one-time
@@ -37,6 +37,8 @@ ${error ? `<p class="err" role="alert">${escape(error)}</p>` : ""}
 }
 
 export function GET(req: NextRequest) {
+  // Already paired: straight into Chief (an old QR link or a bookmark of this page shouldn't ask again).
+  if (deviceAllowed(req.cookies.get(DEVICE_COOKIE)?.value)) return new NextResponse(null, { status: 303, headers: { location: "/" } });
   return page((req.nextUrl.searchParams.get("code") || "").slice(0, 12));
 }
 
@@ -48,6 +50,9 @@ export async function POST(req: NextRequest) {
   if (!result.ok) return page(code, result.error);
   // Relative, so it stays on whatever origin the phone used (Serve's https in practice).
   const res = new NextResponse(null, { status: 303, headers: { location: "/" } });
-  res.cookies.set(DEVICE_COOKIE, result.cookie, { httpOnly: true, secure: true, sameSite: "strict", path: "/", maxAge: 400 * 24 * 3600 });
+  // Lax, not Strict: opening Chief from the home screen, a notification or another app can count as arriving from
+  // elsewhere, and a Strict cookie isn't sent then (the phone lands on this page again). Changes still need this site
+  // as their origin (validMutationOrigin, Sec-Fetch-Site in proxy.ts).
+  res.cookies.set(DEVICE_COOKIE, result.cookie, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 400 * 24 * 3600 });
   return res;
 }

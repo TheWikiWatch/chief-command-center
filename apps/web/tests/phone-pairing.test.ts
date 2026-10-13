@@ -99,7 +99,16 @@ describe("the gate", () => {
     );
     expect(res.status).toBe(303);
     expect(res.headers.get("location")).toBe("/");
-    expect(res.headers.get("set-cookie")).toMatch(/chief_device=.+HttpOnly/i);
+    const set = res.headers.get("set-cookie") || "";
+    expect(set).toMatch(/chief_device=.+HttpOnly/i);
+    // Lax: a phone opening Chief from its home screen or a notification still sends it.
+    expect(set).toMatch(/SameSite=lax/i);
+    expect(set).toMatch(/Max-Age=34560000/i);
+    // A paired phone that opens the pairing page again goes straight in.
+    const cookie = /chief_device=([^;]+)/.exec(set)![1];
+    const again = await GET(new NextRequest("https://pc.example.ts.net/pair", { headers: { cookie: `chief_device=${cookie}` } }));
+    expect(again.status).toBe(303);
+    expect(again.headers.get("location")).toBe("/");
   });
 
   it("a paired phone still needs phone access on and the allowed account", async () => {
