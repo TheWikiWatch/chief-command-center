@@ -1,0 +1,7 @@
+# Known vulnerabilities CI's dependency scan (OSV-Scanner) may pass over for now, each with why and until when.
+# An entry expires on its date and the scan fails again: look again then (a fix may exist by then).
+
+[[IgnoredVulns]]
+id = "GHSA-vfj7-8cjw-p6xm"
+ignoreUntil = 2026-11-12T00:00:00Z
+reason = "braces: development only (the Next.js lint plugin's file matching); not in the dashboard the app ships. No fixed version yet (2026-10-13)."

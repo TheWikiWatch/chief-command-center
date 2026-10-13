@@ -1177,3 +1177,8 @@ and the platform registers even without it.
 **Fix (2026-10-13): phone access set up outside the app was refused after 0.1.39.** A Tailscale Serve entry for the
 dashboard made by hand (before the app managed phone access) had no record in the app, so the dashboard had no
 Tailscale name to accept phones for. The app now adopts such an entry at start.
+
+**Dependencies (2026-10-13):** KaTeX forced to 0.18.9 (the fix for its prototype-pollution advisory; math renders as
+before). Three advisories with no fix yet, all in build or development tools only (http-cache-semantics and
+sprintf-js inside electron-builder, braces in the lint plugin), are passed over by CI's scan until 2026-11-12 with
+the reason recorded in `apps/*/osv-scanner.toml`; the scan fails again on that date.

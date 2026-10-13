@@ -1,0 +1,12 @@
+# Known vulnerabilities CI's dependency scan (OSV-Scanner) may pass over for now, each with why and until when.
+# An entry expires on its date and the scan fails again: look again then (a fix may exist by then).
+
+[[IgnoredVulns]]
+id = "GHSA-ch52-4w7c-c8xp"
+ignoreUntil = 2026-11-12T00:00:00Z
+reason = "http-cache-semantics: build time only, inside electron-builder's Electron downloader on the release PC (one user, no shared cache); not in the app. No fixed version yet (2026-10-13)."
+
+[[IgnoredVulns]]
+id = "GHSA-hp3w-g68c-fv3c"
+ignoreUntil = 2026-11-12T00:00:00Z
+reason = "sprintf-js: build time only, inside electron-builder's logging; not in the app. No fixed version yet (2026-10-13)."
