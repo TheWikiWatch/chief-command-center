@@ -204,6 +204,26 @@ def gateway_smoke(p: Payload, work: Path) -> tuple[bool, str]:
     return proc.returncode == 0 or "stopped cleanly" in lines[-1], "\n".join(lines)
 
 
+def drop_user_path_under(folder: Path) -> int:
+    """Take the suite's throwaway Hermes homes back off the Windows user PATH (Hermes adds each home's bin folder when
+    it sets up its commands; scripts/user-path.mjs does the same for the smoke test). Returns how many went."""
+    if os.name != "nt":
+        return 0
+    try:
+        import winreg
+
+        under = str(folder.resolve()).rstrip("\\").lower() + "\\"
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment", 0, winreg.KEY_READ | winreg.KEY_SET_VALUE) as key:
+            raw, kind = winreg.QueryValueEx(key, "Path")
+            parts = [p for p in str(raw).split(";") if p]
+            keep = [p for p in parts if not (os.path.expandvars(p).rstrip("\\").lower() + "\\").startswith(under)]
+            if len(keep) != len(parts):
+                winreg.SetValueEx(key, "Path", 0, kind, ";".join(keep))
+            return len(parts) - len(keep)
+    except OSError:
+        return 0
+
+
 def main() -> int:
     # A Windows runner's console is cp1252: the report can hold characters it can't print (box drawing, arrows).
     if hasattr(sys.stdout, "reconfigure"):
@@ -310,6 +330,7 @@ def main() -> int:
     if args.report:
         Path(args.report).write_text(text, encoding="utf-8")
     print(text if not passed else f"all {len(results)} checks passed")
+    drop_user_path_under(work)
     return 0 if passed else 1
 
 

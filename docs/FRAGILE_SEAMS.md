@@ -366,3 +366,6 @@ Two Hermes profile helpers reach outside the profile they are given:
   Serve entry that points at the dashboard's port; one pointing elsewhere is never adopted.
 - **The phone's device cookie must stay `SameSite=Lax`**: Strict isn't sent when a phone opens Chief from its home
   screen or a notification, so a paired phone lands on `/pair` again. Changes are guarded by origin, not by the cookie.
+- **Hermes puts every home's `bin` folder on the Windows user PATH** (`_expose_windows_user_bin`), throwaway test
+  homes included. `smoke-electron.mjs` (scripts/user-path.mjs) and `compat.py` take theirs out at the end; a long PATH
+  makes cmd.exe stop finding programs ("'tsc' is not recognized"), and `scripts/slim-env.mjs` drops missing folders.

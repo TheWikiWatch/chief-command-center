@@ -14,6 +14,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { dropUserPathUnder } from "./user-path.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const desktop = path.join(repo, "apps", "desktop");
@@ -191,6 +192,8 @@ try {
 } catch (error) {
   check("the smoke run", false, error instanceof Error ? error.message : String(error));
 } finally {
+  // The throwaway Hermes home put its bin folder on the user PATH (scripts/user-path.mjs): take it out again.
+  dropUserPathUnder(work);
   if (!flag("--keep") && !option("--work")) rmSync(work, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
 }
 console.log(passed && results.every((r) => r.ok) ? "\nsmoke passed" : `\nsmoke FAILED (${results.filter((r) => !r.ok).length})`);
