@@ -1186,3 +1186,9 @@ the reason recorded in `apps/*/osv-scanner.toml`; the scan fails again on that d
 **Fix (0.1.43, 2026-10-13): a paired phone was asked to pair again after closing Chief.** The phone's device cookie
 was SameSite=Strict, which a phone doesn't send when it opens Chief from the home screen, a notification or another
 app. It is Lax now; and a paired phone that opens the pairing page goes straight in.
+
+**Fix (2026-10-14): the upstream check missed three Hermes releases.** Upstream changed its tags from dates
+(v2026.9.24, which was v0.21.5) to version numbers (v0.21.6, v0.21.7, v0.22.0). Comparing numbers called each of them
+older than 2026.9.24, so the daily check passed over them; the stricter tag check from the security work then made it
+fail outright. Both tag forms are accepted now, and "newer" is decided by history (the release contains the pinned
+commit and adds to it), in the daily check and the nightly drift check.

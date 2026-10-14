@@ -369,3 +369,5 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Hermes puts every home's `bin` folder on the Windows user PATH** (`_expose_windows_user_bin`), throwaway test
   homes included. `smoke-electron.mjs` (scripts/user-path.mjs) and `compat.py` take theirs out at the end; a long PATH
   makes cmd.exe stop finding programs ("'tsc' is not recognized"), and `scripts/slim-env.mjs` drops missing folders.
+- **Upstream's tag scheme changed in October 2026** (dates, then version numbers). `candidate.py` and `drift.py` decide
+  "newer" by git history, never by comparing tag numbers; `TAG_RE` accepts exactly the two shapes.

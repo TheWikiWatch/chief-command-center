@@ -37,9 +37,10 @@ def api(url: str) -> dict:
         return json.loads(res.read())
 
 
-# Upstream's release tags (v2026.9.24). Anything else is refused before it reaches a workflow, a branch name or a PR:
-# a tag is upstream-controlled text, and git allows quotes, `$(...)` and `;` in tag names.
-TAG_RE = re.compile(r"^v?\d{4}\.\d{1,2}\.\d{1,3}$")
+# Upstream's release tags: dates until 2026-09-24 (v2026.9.24, which was v0.21.5), version numbers since (v0.22.0).
+# Anything else is refused before it reaches a workflow, a branch name or a PR: a tag is upstream-controlled text, and
+# git allows quotes, `$(...)` and `;` in tag names.
+TAG_RE = re.compile(r"^v?(?:\d{4}\.\d{1,2}\.\d{1,3}|\d{1,3}\.\d{1,3}\.\d{1,3})$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 
 
@@ -95,7 +96,9 @@ def main() -> int:
     result = {
         "current": {"base_version": pin.get("baseVersion", ""), "commit": pin["commit"]},
         "candidate": {"tag": tag, "commit": ref["sha"], "published": release.get("published_at", ""), "url": release.get("html_url", "")},
-        "newer": version_tuple(tag) > version_tuple(pin.get("baseVersion", "0")),
+        # By history, not by number: the tags changed scheme (2026.9.24, then 0.21.6), so comparing numbers called every
+        # release since then older. Newer means it builds on the commit we ship and adds to it.
+        "newer": rel["contains"] and rel["ahead_by"] > 0,
         "contains_pin": rel["contains"],
         "drops_commits": rel["behind_by"],
         "new_commits": rel["ahead_by"],
