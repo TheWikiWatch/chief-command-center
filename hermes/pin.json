@@ -1,8 +1,8 @@
 {
   "upstream": "https://github.com/NousResearch/hermes-agent.git",
-  "commit": "41cd3117ae62a689c2b37a137e78eee21bc7650c",
-  "baseVersion": "2026.9.24",
-  "note": "main after v2026.9.24 (the version the first app build was validated against)",
+  "commit": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
+  "baseVersion": "0.22.0",
+  "note": "upstream v0.22.0 (candidate from packaging/upstream, compatibility suite passed)",
   "patches": [
     {
       "file": "0001-gateway-windows-start-breakaway.patch",
@@ -22,10 +22,7 @@
     {
       "file": "0004-payload-venv-launchers-on-another-pc.patch",
       "why": "The payload's venv is built on the release PC and its pyvenv.cfg names that PC's folder, so its launchers (venv\\Scripts\\python.exe, which Hermes puts first on PATH) exit 103 on every other PC. When that folder is gone, children get the interpreter itself first on PATH instead.",
-      "upstream": "half upstream since v0.21.6: a sealed payload's venv Scripts no longer go on PATH on Windows. Still ours: the interpreter's own folder goes on PATH, so a child's bare `python` is the bundled one. `.next` is that remainder written for v0.22.0's activate_dependencies.",
-      "next": [
-        "0004-payload-venv-launchers-on-another-pc.next.patch"
-      ]
+      "upstream": "half upstream since v0.21.6: a sealed payload's venv Scripts no longer go on PATH on Windows. Still ours: the interpreter's own folder goes on PATH, so a child's bare `python` is the bundled one. `.next` is that remainder written for v0.22.0's activate_dependencies."
     },
     {
       "file": "0005-edge-tts-7.3.1.patch",
