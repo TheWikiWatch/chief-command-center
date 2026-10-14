@@ -210,5 +210,14 @@ class Handler(BaseHTTPRequestHandler):
         self._reply({"role": "assistant", "content": f"Work finished. Context received: {', '.join(markers) or 'none'}."}, "stop", stream)
 
 
+class Server(ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        # Hermes hangs up mid-stream whenever a reply is stopped or steered: expected, not worth a traceback (they
+        # used to bury the contract's own output in the compatibility report).
+        if isinstance(sys.exc_info()[1], (ConnectionAbortedError, ConnectionResetError, BrokenPipeError)):
+            return
+        super().handle_error(request, client_address)
+
+
 if __name__ == "__main__":
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    Server(("127.0.0.1", PORT), Handler).serve_forever()

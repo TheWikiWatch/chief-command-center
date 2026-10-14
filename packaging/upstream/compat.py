@@ -76,8 +76,10 @@ def run(cmd: list[str], env: dict[str, str], timeout: int = 900, cwd: Path | Non
         proc = subprocess.run(cmd, env=env, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, f"timed out after {timeout}s"
-    out = (proc.stdout + proc.stderr).strip()
-    return proc.returncode == 0, out[-4000:]
+    # The check's own lines (ok / FAIL) are on stdout; stderr is for tracebacks, and a test server's can be long. So
+    # stdout is kept whole (up to a limit) and stderr only as a short tail after it, never crowding stdout out.
+    out, err = proc.stdout.strip(), proc.stderr.strip()
+    return proc.returncode == 0, out[-12000:] + (f"\n--- stderr, last lines ---\n{err[-1500:]}" if err else "")
 
 
 def private_imports() -> list[str]:
