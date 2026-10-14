@@ -135,13 +135,17 @@ class Handler(BaseHTTPRequestHandler):
         if "QUIZME" in opener:
             answered = [m for m in turn if m.get("role") == "tool"]
             if not answered:
-                args = {"question": "Which colour?"} if "FREE" in opener else {"question": "Which colour?", "choices": ["Red", "Blue"]}
-                call = {"id": "call_ask", "type": "function", "function": {"name": "clarify", "arguments": json.dumps(args)}}
+                # The list form: Hermes 0.22 takes only `questions`; 0.21 took it too (and a bare `question`).
+                one = {"question": "Which colour?"} if "FREE" in opener else {"question": "Which colour?", "choices": ["Red", "Blue"]}
+                call = {"id": "call_ask", "type": "function", "function": {"name": "clarify", "arguments": json.dumps({"questions": [one]})}}
                 self._reply({"role": "assistant", "content": None, "tool_calls": [call]}, "tool_calls", stream)
                 return
             try:
-                picked = json.loads(_text(answered[-1].get("content"))).get("user_response")
-            except (ValueError, AttributeError):
+                result = json.loads(_text(answered[-1].get("content")))
+                # 0.22: {"responses": [{"user_response": …}]}; 0.21: {"user_response": …} (or a responses list).
+                responses = result.get("responses") or [result]
+                picked = responses[0].get("user_response")
+            except (ValueError, AttributeError, IndexError):
                 picked = _text(answered[-1].get("content"))
             self._reply({"role": "assistant", "content": f"You picked: {picked}."}, "stop", stream)
             return
