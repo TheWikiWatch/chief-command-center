@@ -222,7 +222,8 @@ jobs:
       - name: Check the inputs
         run: |
           # Shapes only: the candidate job already refused anything else; this job trusts nothing it didn't make.
-          [[ "$TAG" =~ ^v?[0-9]{4}\.[0-9]{1,2}\.[0-9]{1,3}$ ]] || { echo "bad tag"; exit 1; }
+          # Dates until 2026-09 (v2026.9.24), version numbers since (v0.22.0): the same two shapes as candidate.py's TAG_RE.
+          [[ "$TAG" =~ ^v?([0-9]{4}\.[0-9]{1,2}\.[0-9]{1,3}|[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})$ ]] || { echo "bad tag"; exit 1; }
           [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "bad commit"; exit 1; }
           [[ "$ATTEMPT" =~ ^[0-9a-f]{8,64}$ ]] || { echo "bad attempt key"; exit 1; }
       # A PR opened with the workflow's own token doesn't start CI. With a GitHub App configured (variable
