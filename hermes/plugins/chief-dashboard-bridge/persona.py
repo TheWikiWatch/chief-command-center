@@ -252,7 +252,8 @@ def edit_memory(profile: str, target: str, ops: list[dict[str, Any]]) -> dict[st
 def _plain_memory_error(error: str) -> str:
     if "changed since" in error or "no entry matched" in error:
         return "The chief changed this memory while you were editing. Your view is refreshed; make the change again."
-    if "over the limit" in error or "exceed" in error:
+    # Hermes up to 0.21: "over the limit" / "exceed"; 0.22: "would put memory at 2,000/1,375 chars".
+    if "over the limit" in error or "exceed" in error or re.search(r"would put \w+ at [\d,]+/[\d,]+ chars", error):
         return "That would go over this memory's character limit. Shorten or remove something first."
     if "threat" in error.lower() or "injection" in error.lower() or "blocked" in error.lower():
         return "Hermes blocked this text because it looks like an instruction injection or data exfiltration pattern."

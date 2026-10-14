@@ -1192,3 +1192,8 @@ app. It is Lax now; and a paired phone that opens the pairing page goes straight
 older than 2026.9.24, so the daily check passed over them; the stricter tag check from the security work then made it
 fail outright. Both tag forms are accepted now, and "newer" is decided by history (the release contains the pinned
 commit and adds to it), in the daily check and the nightly drift check.
+
+**Hermes patch 0005 (2026-10-14): the free Edge voice works again** once a payload with it ships. Microsoft changed the
+token its Edge speech service requires on 2026-10-13, and edge-tts 7.2.7 (what Hermes pins) gets 403 on every reply;
+7.3.1 works. Reviewed before use: the new token and a progress helper, no new endpoints. Also: the persona page
+explains Hermes 0.22's new memory-limit wording plainly.

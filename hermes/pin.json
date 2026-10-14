@@ -26,6 +26,11 @@
       "next": [
         "0004-payload-venv-launchers-on-another-pc.next.patch"
       ]
+    },
+    {
+      "file": "0005-edge-tts-7.3.1.patch",
+      "why": "Microsoft changed the token its free Edge speech service requires (2026-10-13); edge-tts 7.2.7 gets 403 and every Edge voice reply fails. 7.3.1 (same author, reviewed: the new token and a progress helper, no new endpoints) works. Moves the pin in pyproject.toml and uv.lock.",
+      "upstream": "not upstream; drop when upstream pins edge-tts 7.3.1 or later"
     }
   ]
 }

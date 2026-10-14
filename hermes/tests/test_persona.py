@@ -314,6 +314,8 @@ class MemoryTests(PersonaTestCase):
     def test_other_refusals_are_explained(self):
         cases = [
             ("Memory would be over the limit (2300/2200)", "character limit"),
+            # Hermes 0.22's wording.
+            ("Applying all 1 operations would put memory at 2,000/1,375 chars: free at least 625 chars more.", "character limit"),
             ("Blocked: possible prompt injection", "instruction injection"),
             ("Something else entirely\nwith detail", "Something else entirely"),
         ]
