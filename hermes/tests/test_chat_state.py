@@ -92,6 +92,14 @@ class ChatStateTests(unittest.TestCase):
 
     # ------------------------------------------------------------------ the question
 
+    def test_the_chat_apps_skip_line_stays_out_of_the_question(self):
+        # Hermes 0.22 appends it for chat apps, in the owner's language; the card answers its own way.
+        self.assertEqual(chat_state._without_skip_hint('Which colour?\nReply "skip" to skip this question.'), "Which colour?")
+        self.assertEqual(chat_state._without_skip_hint("Welche Farbe?\nAntworte mit „skip“, um diese Frage zu überspringen."), "Welche Farbe?")
+        self.assertEqual(chat_state._without_skip_hint("Which colour?"), "Which colour?")
+        # A question that happens to mention skipping keeps every line.
+        self.assertEqual(chat_state._without_skip_hint("Plan the week.\nShould we skip Friday?"), "Plan the week.\nShould we skip Friday?")
+
     def test_an_open_question_is_read_and_answered_with_a_choice(self):
         entry = _Entry("c1", "Which inbox?", ["Gmail (Recommended)", "Outlook"])
         with patch.dict(sys.modules, _fake_clarify(entry)):

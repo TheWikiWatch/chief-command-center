@@ -29,6 +29,24 @@ logger = logging.getLogger("chief-dashboard-bridge")
 # ----------------------------------------------------------------------------- question (clarify)
 
 
+def _without_skip_hint(question: str) -> str:
+    """The question without the line Hermes 0.22 adds for chat apps ('Reply "skip" to skip this question.', in the
+    owner's language): the dashboard's card has its own way to answer, so the line would only confuse."""
+    head, sep, last = question.rpartition("\n")
+    if not sep:
+        return question
+    try:
+        from agent.i18n import t
+
+        hint = str(t("gateway.clarify.skip_hint") or "").strip()
+    except Exception:
+        hint = ""
+    # Every translation quotes the word itself ("skip", „skip“, «skip»…): enough when Hermes's own text isn't at hand.
+    if (hint and last.strip() == hint) or re.search(r"[\"'“„«‘]skip[\"'”“»’]", last):
+        return head.rstrip()
+    return question
+
+
 def pending_clarify(session_key: str) -> dict[str, Any] | None:
     """The oldest unanswered question the chief asked in this session, or None."""
     if not session_key:
@@ -43,7 +61,7 @@ def pending_clarify(session_key: str) -> dict[str, Any] | None:
             return None
         return {
             "id": str(entry.clarify_id),
-            "question": str(entry.question or ""),
+            "question": _without_skip_hint(str(entry.question or "")),
             "choices": [str(c) for c in (entry.choices or [])],
             "multi": bool(entry.multi_select),
         }

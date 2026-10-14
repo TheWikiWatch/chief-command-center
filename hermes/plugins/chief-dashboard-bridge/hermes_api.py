@@ -30,6 +30,8 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "questions": {
         "tools.clarify_gateway": ("mark_awaiting_text", "resolve_gateway_clarify", "get_pending_for_session"),
+        # The chat apps' "reply skip" line (0.22), in the owner's language, kept off the question card.
+        "agent.i18n": ("t",),
     },
     "chat platform": {
         "gateway.config": ("Platform", "PlatformConfig"),
