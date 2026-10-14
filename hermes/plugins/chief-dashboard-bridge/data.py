@@ -164,14 +164,27 @@ def profiles_dir(root: Path | None = None) -> Path:
 
 
 _yaml_lock = threading.Lock()
-_yaml_cache: dict[str, tuple[int, dict]] = {}
+_yaml_cache: dict[str, tuple[tuple[int, int], dict]] = {}
+
+
+def forget_yaml(path: Path) -> None:
+    """Drop a cached file after writing it: a rewrite can keep the old timestamp (see load_yaml)."""
+    try:
+        key = str(path.resolve())
+    except OSError:
+        return
+    with _yaml_lock:
+        _yaml_cache.pop(key, None)
 
 
 def load_yaml(path: Path) -> dict:
-    """Preserve the installed bridge's serialized, cached pure-Python loader."""
+    """Preserve the installed bridge's serialized, cached pure-Python loader. The cache is keyed on the file's
+    timestamp and size: Windows' clock moves in steps of about 15 ms, so a file rewritten within one step keeps its
+    timestamp, and a timestamp alone served the old contents (a new bot's title and model read back empty)."""
     try:
         key = str(path.resolve())
-        mtime = path.stat().st_mtime_ns
+        st = path.stat()
+        mtime = (st.st_mtime_ns, st.st_size)
         with _yaml_lock:
             hit = _yaml_cache.get(key)
             if hit and hit[0] == mtime:

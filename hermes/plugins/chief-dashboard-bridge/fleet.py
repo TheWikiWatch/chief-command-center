@@ -63,6 +63,7 @@ def _write_yaml(path: Path, value: dict[str, Any]) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(yaml.safe_dump(value, sort_keys=False, allow_unicode=True), encoding="utf-8")
     os.replace(tmp, path)
+    data.forget_yaml(path)
 
 
 def _worker_dirs() -> list[Path]:

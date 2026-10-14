@@ -940,6 +940,23 @@ class LivePathTests(unittest.TestCase):
         self.assertGreaterEqual(server._SEND_ID_TTL, 24 * 60 * 60)
 
 
+class YamlCacheTests(unittest.TestCase):
+    def test_a_rewrite_that_keeps_the_timestamp_is_still_read_fresh(self):
+        # Windows' clock moves in ~15 ms steps: a quick rewrite can keep the file's timestamp.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "profile.yaml"
+            path.write_text("title: nova\n", encoding="utf-8")
+            stamp = path.stat().st_mtime_ns
+            self.assertEqual(data.load_yaml(path), {"title": "nova"})
+            path.write_text("title: Nova - Planner\n", encoding="utf-8")
+            os.utime(path, ns=(stamp, stamp))  # same timestamp, different content
+            self.assertEqual(data.load_yaml(path), {"title": "Nova - Planner"})
+            path.write_text("title: Nova - Writer\n", encoding="utf-8")  # the same size this time
+            os.utime(path, ns=(stamp, stamp))
+            data.forget_yaml(path)  # what the bridge's own writers do
+            self.assertEqual(data.load_yaml(path), {"title": "Nova - Writer"})
+
+
 class BridgeLogFileTests(unittest.TestCase):
     def test_attaches_one_rotating_file_in_the_profile(self):
         plugin = importlib.import_module("test_bridge_plugin.__init__")

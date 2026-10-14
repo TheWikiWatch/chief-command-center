@@ -1197,3 +1197,8 @@ commit and adds to it), in the daily check and the nightly drift check.
 token its Edge speech service requires on 2026-10-13, and edge-tts 7.2.7 (what Hermes pins) gets 403 on every reply;
 7.3.1 works. Reviewed before use: the new token and a progress helper, no new endpoints. Also: the persona page
 explains Hermes 0.22's new memory-limit wording plainly.
+
+**Fix (2026-10-14): settings could read back stale right after a change.** The bridge's YAML cache trusted a file's
+timestamp alone, and Windows' clock moves in ~15 ms steps, so a file rewritten quickly (a new bot's title and model,
+a rename) could be read as its old contents. The cache now also compares the size, and the bridge's own writes drop
+the cached copy.

@@ -302,6 +302,7 @@ def rename(profile: str, name: str, role: str = "", update_soul: bool = True) ->
     tmp = meta_path.with_suffix(".yaml.tmp")
     tmp.write_text(yaml.safe_dump(meta, sort_keys=False, allow_unicode=True), encoding="utf-8")
     os.replace(tmp, meta_path)
+    data.forget_yaml(meta_path)
 
     soul_note = "unchanged"
     if update_soul and old_name and old_name != name:

@@ -323,8 +323,12 @@ def main() -> int:
     ]
     report += [f"| {name} | {'pass' if ok else '**FAIL**'} | {secs:.0f}s |" for name, ok, secs, _ in results]
     report += ["", "<details><summary>Details</summary>", ""]
-    for name, _ok, _, detail in results:
-        report += [f"### {name}", "", "```", detail[-3000:], "```", ""]
+    for name, ok, _, detail in results:
+        # A failed check's FAIL lines come first, from the whole output: the tail alone can be all noise (a test
+        # server's tracebacks once hid which chat-controls check failed).
+        fails = [] if ok else [line for line in detail.splitlines() if line.lstrip().startswith("FAIL")][:20]
+        head = ["Failed checks:", *fails, "", "Last lines:"] if fails else []
+        report += [f"### {name}", "", "```", *head, detail[-3000:], "```", ""]
     report.append("</details>")
     text = "\n".join(report)
     if args.report:

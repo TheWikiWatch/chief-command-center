@@ -371,3 +371,5 @@ Two Hermes profile helpers reach outside the profile they are given:
   makes cmd.exe stop finding programs ("'tsc' is not recognized"), and `scripts/slim-env.mjs` drops missing folders.
 - **Upstream's tag scheme changed in October 2026** (dates, then version numbers). `candidate.py` and `drift.py` decide
   "newer" by git history, never by comparing tag numbers; `TAG_RE` accepts exactly the two shapes.
+- **A file's timestamp doesn't prove it's unchanged on Windows** (~15 ms clock steps). `data.load_yaml` keys on
+  timestamp and size; anything that writes a YAML the bridge caches calls `data.forget_yaml(path)` after.
