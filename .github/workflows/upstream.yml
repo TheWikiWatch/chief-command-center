@@ -137,7 +137,7 @@ jobs:
         id: build
         if: steps.patches.outputs.code == '0'
         shell: bash
-        run: python packaging/payload/stage.py --hermes-src "$RUNNER_TEMP/hermes-src" --out "$RUNNER_TEMP/payload" --cache "$RUNNER_TEMP/uv-cache"
+        run: python packaging/payload/stage.py --hermes-src "$RUNNER_TEMP/hermes-src" --out "$RUNNER_TEMP/payload" --cache "$RUNNER_TEMP/uv-cache" --upstream-commit "$COMMIT"
       - name: Compatibility suite
         id: compat
         if: steps.build.outcome == 'success'

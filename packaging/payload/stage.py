@@ -62,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", required=True)
     parser.add_argument("--ref", default="HEAD")
     parser.add_argument("--cache", required=True)
+    parser.add_argument(
+        "--upstream-commit", default="", help="the upstream commit the source must sit on (default: hermes/pin.json's); an upgrade candidate names its own"
+    )
     parser.add_argument("--inner", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--finish", action="store_true", help="only assemble an already prepared payload")
     args = parser.parse_args(argv)
@@ -72,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.inner:
         return _inner(args)
     if not args.finish:
-        check_source(Path(args.hermes_src))
+        check_source(Path(args.hermes_src), args.upstream_commit)
 
     # Same isolation as upstream's stage_native: this build never touches the machine's Hermes state.
     work = Path(tempfile.mkdtemp(prefix=".build-", dir=args.out))
@@ -111,13 +114,15 @@ def main(argv: list[str] | None = None) -> int:
     return code
 
 
-def check_source(source: Path) -> None:
-    """Build only from what prepare_source.py leaves: the pinned upstream commit with one commit of patches on top and
-    nothing uncommitted. Checked before the build, which writes into the checkout."""
+def check_source(source: Path, expected: str = "") -> None:
+    """Build only from what prepare_source.py leaves: the expected upstream commit (the pin's, or an upgrade
+    candidate's) with one commit of patches on top and nothing uncommitted. Checked before the build, which writes
+    into the checkout."""
     pin = json.loads((HERE.parents[1] / "hermes" / "pin.json").read_text(encoding="utf-8"))
+    want = (expected or pin["commit"]).strip().lower()
     upstream = subprocess.run(["git", "rev-parse", "HEAD^"], cwd=source, check=True, capture_output=True, text=True).stdout.strip()
-    if upstream != pin["commit"]:
-        raise SystemExit(f"{source} sits on {upstream[:10]}, not the pinned {pin['commit'][:10]}: prepare it again (prepare_source.py).")
+    if upstream != want:
+        raise SystemExit(f"{source} sits on {upstream[:10]}, not the expected {want[:10]}: prepare it again (prepare_source.py).")
     if subprocess.run(["git", "status", "--porcelain"], cwd=source, check=True, capture_output=True, text=True).stdout.strip():
         raise SystemExit(f"{source} has uncommitted changes: prepare it again (prepare_source.py) rather than building from it.")
 
