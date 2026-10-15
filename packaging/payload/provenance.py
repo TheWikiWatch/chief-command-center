@@ -38,7 +38,8 @@ STAMP = Path("hermes-agent") / "install-stamp.json"
 # compatibility suite, the smoke test), naming wherever it ran.
 _SKIP_DIRS = {"__pycache__", "uv-cache", ".hermes"}
 _SKIP_SUFFIXES = (".pyc", ".pyo")
-_SKIP_FILES = {"payload.prepare.lock"}
+# `mtab`: the bundled Git's link to /proc/mounts, made again each time its runtime starts (no content of its own).
+_SKIP_FILES = {"payload.prepare.lock", "mtab"}
 
 
 def sha256_file(path: Path) -> str:

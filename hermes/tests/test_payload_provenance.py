@@ -109,6 +109,13 @@ class ProvenanceTests(unittest.TestCase):
         (self.repo / "packaging" / "payload" / "accepted-trees.json").write_text(json.dumps({"trees": {recorded["tree"]: "shipped"}}), encoding="utf-8")
         self.assertEqual(provenance.check(self.payload, self.repo), [])
 
+    def test_the_bundled_gits_runtime_mount_link_doesnt_count(self):
+        recorded = provenance.record(self.payload, self.repo)
+        etc = self.payload / "tools" / "git" / "etc"
+        etc.mkdir(parents=True)
+        (etc / "mtab").write_text("/proc/mounts", encoding="utf-8")  # what Git's runtime makes when it starts
+        self.assertEqual(provenance.tree_digest(self.payload), recorded["tree"])
+
     def test_the_tree_digest_doesnt_depend_on_where_the_payload_is(self):
         first = provenance.tree_digest(self.payload)
         moved = self.payload.rename(self.payload.with_name("payload-moved"))

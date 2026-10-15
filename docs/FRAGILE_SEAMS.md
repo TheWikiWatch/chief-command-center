@@ -376,3 +376,5 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Running the payload's Git changes the payload** unless `tools/git-*/etc/{hosts,networks,protocols,services}` exist:
   Git for Windows copies the running PC's own there. stage.py writes neutral ones; `release.mjs` refuses a hosts file
   with more than loopback.
+- **The bundled Git remakes `etc/mtab`** (a link to /proc/mounts) whenever its runtime starts: provenance leaves it out
+  of the tree digest and stage.py removes the build's own.

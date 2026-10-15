@@ -142,6 +142,8 @@ def neutral_git_etc(out: Path) -> None:
     for etc in sorted((out / "tools").glob("git-*/etc")):
         for name, text in NEUTRAL_GIT_ETC.items():
             (etc / name).write_text(text, encoding="utf-8", newline="\n")
+        # A link to /proc/mounts the build's own Git run left; Git makes it again wherever it runs.
+        (etc / "mtab").unlink(missing_ok=True)
         print(f"OK neutral Git network files in {etc.relative_to(out)}")
 
 
