@@ -53,6 +53,13 @@ def sha256_file(path: Path) -> str:
 def tree_digest(payload: Path) -> str:
     """One digest over the payload's files, in a stable order; independent of timestamps and of where it lives."""
     digest = hashlib.sha256()
+    for rel, (size, sha) in listing(payload).items():
+        digest.update(f"{rel}\0{size}\0{sha}\n".encode())
+    return digest.hexdigest()
+
+
+def listing(payload: Path) -> dict[str, tuple[int, str]]:
+    """Every file the digest covers, sorted: {relative path: (size, SHA-256)}."""
     stamp = (payload / STAMP).resolve()
     files = []
     for path in payload.rglob("*"):
@@ -62,10 +69,25 @@ def tree_digest(payload: Path) -> str:
         if not path.is_file() or path.suffix in _SKIP_SUFFIXES or path.name in _SKIP_FILES or path.resolve() == stamp:
             continue
         files.append(rel)
-    for rel in sorted(files, key=lambda p: p.as_posix()):
-        full = payload / rel
-        digest.update(f"{rel.as_posix()}\0{full.stat().st_size}\0{sha256_file(full)}\n".encode())
-    return digest.hexdigest()
+    return {rel.as_posix(): ((payload / rel).stat().st_size, sha256_file(payload / rel)) for rel in sorted(files, key=lambda p: p.as_posix())}
+
+
+def listing_file(payload: Path) -> Path:
+    """Where record() keeps the file list: beside the payload (never in it, so it doesn't ship or count)."""
+    return payload.parent / f"{payload.name}.provenance-files.json"
+
+
+def differences(payload: Path, limit: int = 10) -> list[str]:
+    """What changed since the build, when its file list was kept: added, removed or changed paths."""
+    try:
+        then = {k: tuple(v) for k, v in json.loads(listing_file(payload).read_text(encoding="utf-8")).items()}
+    except (OSError, ValueError):
+        return []
+    now = listing(payload)
+    found = [f"removed {p}" for p in sorted(set(then) - set(now))]
+    found += [f"added {p}" for p in sorted(set(now) - set(then))]
+    found += [f"changed {p}" for p in sorted(set(then) & set(now)) if then[p] != now[p]]
+    return found[:limit] + ([f"and {len(found) - limit} more"] if len(found) > limit else [])
 
 
 def expected(repo: Path = REPO) -> dict:
@@ -114,8 +136,17 @@ def record(payload: Path, repo: Path = REPO, after_the_fact: bool = False) -> di
     stamp_path = payload / STAMP
     stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
     made_by = {"commit": "", "recorded_after_the_build": True} if after_the_fact else builder(repo)
-    stamp["provenance"] = {**expected(repo), "builder": made_by, "tree": tree_digest(payload)}
+    files = listing(payload)
+    digest = hashlib.sha256()
+    for rel, (size, sha) in files.items():
+        digest.update(f"{rel}\0{size}\0{sha}\n".encode())
+    stamp["provenance"] = {**expected(repo), "builder": made_by, "tree": digest.hexdigest()}
     stamp_path.write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
+    # The list behind the digest, so a later mismatch can say which files changed (differences()).
+    try:
+        listing_file(payload).write_text(json.dumps(files), encoding="utf-8")
+    except OSError:
+        pass
     return stamp["provenance"]
 
 
@@ -136,7 +167,8 @@ def check(payload: Path, repo: Path = REPO) -> list[str]:
     if have.get("selection") != want["selection"]:
         problems.append("packaging/payload/selection.json changed since the payload was built")
     if have.get("tree") != tree_digest(payload):
-        problems.append("the payload's files changed after it was built (its tree digest doesn't match)")
+        changed = differences(payload)
+        problems.append("the payload's files changed after it was built (its tree digest doesn't match)" + (": " + "; ".join(changed) if changed else ""))
     return problems + builder_problems(have, repo)
 
 

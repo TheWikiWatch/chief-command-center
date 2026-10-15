@@ -109,6 +109,14 @@ class ProvenanceTests(unittest.TestCase):
         (self.repo / "packaging" / "payload" / "accepted-trees.json").write_text(json.dumps({"trees": {recorded["tree"]: "shipped"}}), encoding="utf-8")
         self.assertEqual(provenance.check(self.payload, self.repo), [])
 
+    def test_a_mismatch_names_the_files_that_changed(self):
+        provenance.record(self.payload, self.repo)
+        self.assertTrue(provenance.listing_file(self.payload).is_file())
+        (self.payload / "bin" / "hermes.exe").unlink()
+        (self.payload / "hermes-agent" / "tools" / "new.py").write_text("x = 1\n", encoding="utf-8")
+        problems = provenance.check(self.payload, self.repo)
+        self.assertTrue(any("removed bin/hermes.exe" in p and "added hermes-agent/tools/new.py" in p for p in problems), problems)
+
     def test_the_bundled_gits_runtime_mount_link_doesnt_count(self):
         recorded = provenance.record(self.payload, self.repo)
         etc = self.payload / "tools" / "git" / "etc"
