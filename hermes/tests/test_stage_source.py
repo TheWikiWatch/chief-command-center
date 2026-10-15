@@ -48,5 +48,19 @@ class CheckSourceTests(unittest.TestCase):
         self.assertIn("uncommitted", str(caught.exception))
 
 
+class NeutralGitEtcTests(unittest.TestCase):
+    def test_the_bundled_git_gets_fixed_network_files_never_the_build_pcs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            etc = Path(tmp) / "tools" / "git-2.53.0" / "etc"
+            etc.mkdir(parents=True)
+            (etc / "hosts").write_text("10.1.2.3 nas.home.example\n", encoding="utf-8")  # what Git would have copied
+            stage.neutral_git_etc(Path(tmp))
+            hosts = (etc / "hosts").read_text(encoding="utf-8")
+            self.assertNotIn("10.1.2.3", hosts)
+            addresses = [line.split()[0] for line in hosts.splitlines() if line.strip() and not line.startswith("#")]
+            self.assertEqual(addresses, ["127.0.0.1", "::1"])
+            self.assertEqual(sorted(p.name for p in etc.iterdir()), ["hosts", "networks", "protocols", "services"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -24,7 +24,7 @@
 // This PC's locations (build folder, signing files, releases repository) are in release.local.json at the repo
 // root, which is git-ignored; see release.local.example.json.
 import { spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import path from "node:path";
 
@@ -202,6 +202,19 @@ if (!flag("skip-smoke")) {
   run("npm", ["--prefix", "apps/desktop", "run", "build"], { shell: true, what: "the desktop build" });
   run("node", ["scripts/smoke-electron.mjs", "--payload", local.payloadDir], { what: "the Electron smoke test" });
 }
+
+// The bundled Git's hosts file must be the neutral one stage.py writes: Git for Windows copies the running PC's own
+// when it's missing (this PC's private network names, into every package). Checked after the smoke test, which runs Git.
+const leaks = [];
+for (const dir of existsSync(path.join(local.payloadDir, "tools")) ? readdirSync(path.join(local.payloadDir, "tools")) : []) {
+  const hosts = path.join(local.payloadDir, "tools", dir, "etc", "hosts");
+  if (!dir.startsWith("git-") || !existsSync(hosts)) continue;
+  for (const line of readFileSync(hosts, "utf8").split(/\r?\n/)) {
+    const address = line.replace(/#.*/, "").trim().split(/\s+/)[0];
+    if (address && !/^(127\.\d+\.\d+\.\d+|::1)$/.test(address)) leaks.push(`${dir}/etc/hosts: ${address.replace(/[\d.]+/g, "…")}`);
+  }
+}
+if (leaks.length) fail(`The payload's Git carries a hosts file with more than localhost (a PC's own, copied by Git): ${leaks.join(", ")}. Rebuild the payload (stage.py writes a neutral one).`);
 
 step("Building and signing the package (about 5 minutes)…");
 const password = readFileSync(local.pfxPasswordFile, "utf8").trim();

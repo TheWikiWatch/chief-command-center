@@ -1209,3 +1209,9 @@ is now only its remainder (upstream keeps a sealed payload's venv Scripts off PA
 line kept off the card, and the new memory-limit wording. Found on the way: the daily upstream check had missed every
 release since 2026-09-24 (the tag scheme changed), stage.py refused upgrade candidates, the compatibility report could
 hide a failing check, and a YAML cache could read a quickly rewritten file stale; all fixed.
+
+**Fix (2026-10-14): the payload no longer carries the build PC's hosts file.** Git for Windows copies the running PC's
+hosts, networks, protocols and services files into its own folder on first run; the compatibility suite and the
+release's smoke test ran it, so the package shipped the build PC's hosts (loopback names in the current releases; private
+network names in the first 0.22 build, caught before release). stage.py now writes neutral copies at build time, and
+the release refuses a payload whose hosts names anything but loopback.

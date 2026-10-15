@@ -127,6 +127,24 @@ def check_source(source: Path, expected: str = "") -> None:
         raise SystemExit(f"{source} has uncommitted changes: prepare it again (prepare_source.py) rather than building from it.")
 
 
+# Git for Windows creates these on its first run when they're missing, as copies of the running PC's own: the build
+# PC's hosts file (names from its private network) then ships in every package, and the payload changes after its
+# provenance was recorded. Written at build time with fixed contents instead, so Git finds them and leaves them alone.
+NEUTRAL_GIT_ETC = {
+    "hosts": "# Chief Command Center: the bundled Git's hosts file (fixed at build time).\n127.0.0.1 localhost\n::1 localhost\n",
+    "networks": "# Chief Command Center: the bundled Git's networks file (fixed at build time).\nloopback 127\n",
+    "protocols": "# Chief Command Center: the bundled Git's protocols file (fixed at build time).\nip 0 IP\nicmp 1 ICMP\ntcp 6 TCP\nudp 17 UDP\nipv6 41 IPv6\n",
+    "services": "# Chief Command Center: the bundled Git's services file (fixed at build time).\nssh 22/tcp\nhttp 80/tcp\nhttps 443/tcp\ngit 9418/tcp\n",
+}
+
+
+def neutral_git_etc(out: Path) -> None:
+    for etc in sorted((out / "tools").glob("git-*/etc")):
+        for name, text in NEUTRAL_GIT_ETC.items():
+            (etc / name).write_text(text, encoding="utf-8", newline="\n")
+        print(f"OK neutral Git network files in {etc.relative_to(out)}")
+
+
 def write_install_stamp(out: Path, source: Path) -> None:
     """Declare the app as the payload's steward. Hermes reads this stamp: `hermes update` then refuses to
     touch the tree ("managed by chief-command-center"), and version reports show the pinned commit."""
@@ -148,6 +166,7 @@ def write_install_stamp(out: Path, source: Path) -> None:
     }
     (out / "hermes-agent" / "install-stamp.json").write_text(json.dumps(stamp, indent=2) + "\n", encoding="utf-8")
     print(f"OK install stamp (steward: chief-command-center, {head[:10]})")
+    neutral_git_etc(out)
     # Where it came from: patch and selection digests, this repository's commit, and a digest of every file.
     import provenance
 

@@ -373,3 +373,6 @@ Two Hermes profile helpers reach outside the profile they are given:
   "newer" by git history, never by comparing tag numbers; `TAG_RE` accepts exactly the two shapes.
 - **A file's timestamp doesn't prove it's unchanged on Windows** (~15 ms clock steps). `data.load_yaml` keys on
   timestamp and size; anything that writes a YAML the bridge caches calls `data.forget_yaml(path)` after.
+- **Running the payload's Git changes the payload** unless `tools/git-*/etc/{hosts,networks,protocols,services}` exist:
+  Git for Windows copies the running PC's own there. stage.py writes neutral ones; `release.mjs` refuses a hosts file
+  with more than loopback.
