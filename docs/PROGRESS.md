@@ -1202,3 +1202,10 @@ explains Hermes 0.22's new memory-limit wording plainly.
 timestamp alone, and Windows' clock moves in ~15 ms steps, so a file rewritten quickly (a new bot's title and model,
 a rename) could be read as its old contents. The cache now also compares the size, and the bridge's own writes drop
 the cached copy.
+
+**Hermes 0.22.0 (2026-10-14).** The pin moves from 2026.9.24 (v0.21.5) to v0.22.0, 7,628 upstream commits. Patch 0004
+is now only its remainder (upstream keeps a sealed payload's venv Scripts off PATH), patch 0005 moves edge-tts to 7.3.1
+(the free Edge voice), and the bridge follows 0.22's changes: the question tool's list form, its chat-app "skip"
+line kept off the card, and the new memory-limit wording. Found on the way: the daily upstream check had missed every
+release since 2026-09-24 (the tag scheme changed), stage.py refused upgrade candidates, the compatibility report could
+hide a failing check, and a YAML cache could read a quickly rewritten file stale; all fixed.
