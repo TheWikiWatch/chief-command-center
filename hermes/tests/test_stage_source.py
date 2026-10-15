@@ -54,7 +54,14 @@ class NeutralGitEtcTests(unittest.TestCase):
             etc = Path(tmp) / "tools" / "git-2.53.0" / "etc"
             etc.mkdir(parents=True)
             (etc / "hosts").write_text("10.1.2.3 nas.home.example\n", encoding="utf-8")  # what Git would have copied
+            (etc / "post-install").mkdir()
+            (etc / "post-install" / "06-windows-files.post").write_text("cp /c/Windows/System32/drivers/etc/hosts /etc\n", encoding="utf-8")
+            (etc.parent / "post-install.bat").write_text("@echo first run\n", encoding="utf-8")
             stage.neutral_git_etc(Path(tmp))
+            # Git's first-run scripts are gone (they'd copy the running PC's files into the package later)...
+            self.assertFalse((etc / "post-install").exists())
+            self.assertFalse((etc.parent / "post-install.bat").exists())
+            self.assertTrue((etc.parent / "dev" / "shm").is_dir())
             hosts = (etc / "hosts").read_text(encoding="utf-8")
             self.assertNotIn("10.1.2.3", hosts)
             addresses = [line.split()[0] for line in hosts.splitlines() if line.strip() and not line.startswith("#")]

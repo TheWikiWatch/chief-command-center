@@ -378,3 +378,6 @@ Two Hermes profile helpers reach outside the profile they are given:
   with more than loopback.
 - **The bundled Git remakes `etc/mtab`** (a link to /proc/mounts) whenever its runtime starts: provenance leaves it out
   of the tree digest and stage.py removes the build's own.
+- **Portable Git's first-run scripts never run from the payload**: `stage.py` does their parts itself (neutral network
+  files, `dev/shm`, `dev/mqueue`) and removes `post-install.bat` and `etc/post-install`. Running them at build time
+  isn't safe: on a PC with Git installed they resolve the installed Git as their root and copy this PC's hosts file in.

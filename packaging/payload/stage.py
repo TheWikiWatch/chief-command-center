@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -129,10 +130,12 @@ def check_source(source: Path, expected: str = "") -> None:
 
 # Portable Git for Windows finishes installing itself the first time its shell starts: post-install.bat runs the
 # etc/post-install/*.post scripts (they copy the running PC's hosts, networks, protocols and services files into
-# etc, set up mount links and copy DLLs into git-core), and both then delete themselves. Left for later, that first
-# run happened inside the payload (the compatibility suite, the smoke test): the build PC's hosts file (names from its
-# private network) shipped in the package and the payload changed after its provenance was recorded. So the build runs
-# it once, then replaces the copied files with fixed contents.
+# etc, make /dev/shm and /dev/mqueue, a mount link and DLL copies in git-core), then both delete themselves. Left for
+# later, that first run happened inside the payload (the compatibility suite, the smoke test): the build PC's hosts
+# file (names from its private network) shipped in the package, and the payload changed after its provenance was
+# recorded. Running the scripts at build time isn't reliable either (on a PC with Git installed they resolve the
+# installed Git as their root). So the build does their parts itself, with fixed contents, and removes them; the DLL
+# copies aren't needed (an unrun portable Git works without them).
 NEUTRAL_GIT_ETC = {
     "hosts": "# Chief Command Center: the bundled Git's hosts file (fixed at build time).\n127.0.0.1 localhost\n::1 localhost\n",
     "networks": "# Chief Command Center: the bundled Git's networks file (fixed at build time).\nloopback 127\n",
@@ -142,18 +145,18 @@ NEUTRAL_GIT_ETC = {
 
 
 def neutral_git_etc(out: Path) -> None:
-    for git in sorted((out / "tools").glob("git-*")):
-        if os.name == "nt" and (git / "post-install.bat").is_file():
-            done = subprocess.run(["cmd.exe", "/d", "/c", "post-install.bat"], cwd=git, capture_output=True, text=True, check=False)
-            if done.returncode != 0 or (git / "post-install.bat").exists():
-                raise SystemExit(f"Git's first-run setup didn't finish in {git} (exit {done.returncode}): {(done.stdout + done.stderr)[-400:]}")
-            print(f"OK Git's first-run setup done in {git.relative_to(out)}")
-    for etc in sorted((out / "tools").glob("git-*/etc")):
+    for git in sorted(p for p in (out / "tools").glob("git-*") if (p / "etc").is_dir()):
+        etc = git / "etc"
         for name, text in NEUTRAL_GIT_ETC.items():
             (etc / name).write_text(text, encoding="utf-8", newline="\n")
-        # A link to /proc/mounts the build's own Git run left; Git makes it again wherever it runs.
+        for name in ("shm", "mqueue"):
+            (git / "dev" / name).mkdir(parents=True, exist_ok=True)
+        # The first-run scripts, so they never run later (inside a package, on someone else's PC).
+        shutil.rmtree(etc / "post-install", ignore_errors=True)
+        (git / "post-install.bat").unlink(missing_ok=True)
+        # A link to /proc/mounts a Git run during the build left; Git makes it again wherever it runs.
         (etc / "mtab").unlink(missing_ok=True)
-        print(f"OK neutral Git network files in {etc.relative_to(out)}")
+        print(f"OK the bundled Git's first-run setup done with fixed contents in {git.relative_to(out)}")
 
 
 def write_install_stamp(out: Path, source: Path) -> None:
