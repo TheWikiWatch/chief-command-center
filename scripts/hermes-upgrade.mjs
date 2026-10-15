@@ -15,7 +15,7 @@
 // <build> is the folder holding the current payloadDir. Re-running continues: a prepared source or a finished payload
 // for the same commit is reused.
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const repo = path.resolve(import.meta.dirname, "..");
@@ -87,7 +87,10 @@ if (!built) {
 
 step("Running the compatibility suite…");
 const report = path.join(build, `compat-${version}.md`);
-const compat = run("python", ["packaging/upstream/compat.py", "--payload", payload, "--work", path.join(build, `compat-${version}`), "--report", report], "compat.py", { allowFail: true });
+// A fresh work folder each run: the contracts assume a new home and a new Second Brain folder.
+const work = path.join(build, `compat-${version}`);
+rmSync(work, { recursive: true, force: true, maxRetries: 3, retryDelay: 500 });
+const compat = run("python", ["packaging/upstream/compat.py", "--payload", payload, "--work", work, "--report", report], "compat.py", { allowFail: true });
 if (compat.status !== 0 && !flag("keep-going")) fail(`The compatibility suite failed: ${report}. Fix it before releasing (or --keep-going to point at the payload anyway).`);
 
 step("Pointing release.local.json at the new payload…");
