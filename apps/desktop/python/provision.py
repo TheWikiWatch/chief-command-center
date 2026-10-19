@@ -14,6 +14,7 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
 - Stamps a new profile's config with Hermes's current schema version before writing anything else.
 - Marks the profile's gateway as standalone (`gateway.standalone: true`): the app runs it, and Hermes otherwise
   refuses a named profile's own gateway on a PC where no Hermes launcher is registered for that profile.
+- Keeps local models on the catalog the release shipped (`local_runtime.catalog_refresh: false`, patch 0006).
 - Gives the chief twice Hermes's default memory (4400 / 2750 characters) unless the owner set their own.
 - Gives the chief the `kanban` toolset (delegating to workers) and the bridge's `fleet` toolset (mint, re-pin,
   retire and restore workers), and, unless the owner chose otherwise,
@@ -315,6 +316,13 @@ def main() -> int:
         if key not in memory:
             save_config_value(f"memory.{key}", value)
             changed.append(f"memory.{key}")
+
+    # Local models: the catalog the release shipped (Hermes otherwise swaps in upstream main's newest list every
+    # six hours, unsigned; `catalog_refresh` is the app's patch 0006), unless the owner chose.
+    local_runtime = raw.get("local_runtime") if isinstance(raw.get("local_runtime"), dict) else {}
+    if "catalog_refresh" not in local_runtime:
+        save_config_value("local_runtime.catalog_refresh", False)
+        changed.append("local models: the shipped catalog")
 
     env = load_env()
     for key, value in (("COMMAND_CENTER_ENABLED", "true"), ("COMMAND_CENTER_ALLOW_ALL_USERS", "true"), ("CHIEF_DASHBOARD_PORT", str(args.bridge_port))):
