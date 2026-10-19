@@ -14,6 +14,7 @@ import { AboutGroup } from "@/components/settings/about";
 import { BackupGroup, UpdatesGroup } from "@/components/settings/backup";
 import { AppGroup, ChiefNameGroup, IdentityGroup, LookGroup, RepliesGroup } from "@/components/settings/general";
 import { ConnectionGroup, ModelsKeysGroup } from "@/components/settings/models";
+import { LocalModelsGroup } from "@/components/settings/local-models";
 import { HapticsGroup, NotificationsGroup, SoundGroup } from "@/components/settings/notifications";
 import { SecondBrainGroup } from "@/components/settings/second-brain";
 import { VoiceGroup } from "@/components/settings/voice";
@@ -254,6 +255,7 @@ function CategoryPage({
         <>
           <ConnectionGroup />
           <ModelsKeysGroup />
+          <LocalModelsGroup />
         </>
       ) : id === "connections" ? (
         <ConnectionsPage />

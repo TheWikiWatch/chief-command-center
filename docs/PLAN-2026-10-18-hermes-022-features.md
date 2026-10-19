@@ -1,6 +1,10 @@
 # Plan: seven features from Hermes 0.22.0
 
-Status: **in progress** (2026-10-18). The owner picked the top seven of the 0.22.0 review. Decisions: local models
+Status: **built, one early release to go** (2026-10-18). Every part below is in, tested, and checked live on the e2e
+home on Hermes 0.22 except a local-model download (it waits on the owner's OK for a multi-GB download). Where the
+build differs from the plan: the failure card reads Hermes's own failure sentences (the `api_request_error` hook
+wasn't needed); local models use Hermes's one-job `quickstart` (engine, download, server, default) for "Set it up";
+helpers are matched to tasks by their live log's name. The owner picked the top seven of the 0.22.0 review. Decisions: local models
 go in a folder the owner chooses (default on E: on the owner's PC); Chief may change the accent and light/dark/system
 mode; everything ships in **one early release at the end**, then a promote after use.
 

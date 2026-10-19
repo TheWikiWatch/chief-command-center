@@ -81,6 +81,7 @@ def build(bridge) -> list[Route]:
     from . import (
         app_look,
         connections,
+        local_ai,
         data,
         fleet,
         hermes_api,
@@ -484,6 +485,19 @@ def build(bridge) -> list[Route]:
             limit=4 * KB,
             **A,
         ),
+        # Local models: Hermes's managed llama.cpp runtime (local_ai.py)
+        Route(G, "/local-models", lambda r: local_ai.call(local_ai.status)),
+        Route(G, "/local-models/catalog", lambda r: local_ai.call(local_ai.catalog)),
+        Route(G, "/local-models/job/{id}", lambda r: local_ai.call(lambda: local_ai.job(r.seg(3)))),
+        Route(P, "/local-models/folder", lambda r: local_ai.call(lambda: local_ai.set_folder(r.b("path"))), limit=4 * KB, **A),
+        Route(P, "/local-models/engine", lambda r: local_ai.call(local_ai.install_engine), limit=4 * KB, **A),
+        Route(P, "/local-models/quickstart", lambda r: local_ai.call(lambda: local_ai.quickstart(r.b("model"))), limit=4 * KB, **A),
+        Route(P, "/local-models/download", lambda r: local_ai.call(lambda: local_ai.download(r.b("model"))), limit=4 * KB, **A),
+        Route(P, "/local-models/pause", lambda r: local_ai.call(lambda: local_ai.pause(r.b("job"))), limit=4 * KB, **A),
+        Route(P, "/local-models/resume", lambda r: local_ai.call(lambda: local_ai.resume(r.b("job"))), limit=4 * KB, **A),
+        Route(P, "/local-models/remove", lambda r: local_ai.call(lambda: local_ai.remove(r.b("model"))), limit=4 * KB, **A),
+        Route(P, "/local-models/activate", lambda r: local_ai.call(lambda: local_ai.activate(r.b("model"), r.b("profile", "chief"))), limit=4 * KB, **A),
+        Route(P, "/local-models/server", lambda r: local_ai.call(lambda: local_ai.server(r.b("action"))), limit=4 * KB, **A),
         # Connections: email, calendars, documents and work tools (connections.py)
         Route(G, "/connections", lambda r: connections.call(lambda: connections.overview(refresh=_flag(r.qs, "refresh")))),
         Route(

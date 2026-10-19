@@ -320,6 +320,13 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The bridge answers before Hermes attaches the chat.** On a busy PC the gap was 17 s. A send waits through the
   start-up minute (`_attached_adapter`, at most 45 s) and otherwise answers 503 so the dashboard's outbox retries;
   never answer it 200 with `ok: false`, which the dashboard treats as final.
+- **Since Hermes 0.22, `managed_client()` makes a Nous guest identity** for any hosted connector action. Status reads
+  must never go through it (`_quick_status` checks `guest_identity_pending()` and uses its own `ConnectorClient`):
+  opening the page would sign the owner up. Only a connect may, attributed `DESKTOP_PAGE`.
+- **A second account of a service needs a name.** Without one, connecting a service that already has an account just
+  reports it connected. Names are `^[a-z0-9][a-z0-9-]{0,31}$`; a reconnect retires the old account (`disabled`), which
+  stays in the portal's list and must be left out.
+- **A catalog entry that pins its OAuth client to `${VARS}`** (Asana) needs a developer app: never offered directly.
 
 ## Security (2026-10-13)
 
@@ -381,3 +388,23 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Portable Git's first-run scripts never run from the payload**: `stage.py` does their parts itself (neutral network
   files, `dev/shm`, `dev/mqueue`) and removes `post-install.bat` and `etc/post-install`. Running them at build time
   isn't safe: on a PC with Git installed they resolve the installed Git as their root and copy this PC's hosts file in.
+
+## Hermes 0.22 features (2026-10-18)
+
+- **Reasoning effort per model lives under `agent.reasoning_overrides`, keyed by model names with dots.** Hermes's
+  dotted-key writer would split them: the bridge rewrites the whole file (`atomic_config_replace`, comments kept).
+- **A helper's task index is only in its live log's name** (`cache/delegation/live/<batch>/task-<n>.log`), and a split
+  batch's units are `<batch>-<k>`: `chat_state._child_for` joins on both. Steering and stopping check that the helper
+  belongs to the asking thread's conversation; `steer_subagent` without owner arguments is Hermes's in-process path.
+- **A failed turn reaches the app only as text**: the card parses Hermes's own sentences ("Limit resets at 15:00 (in
+  2h 05m)", "usage limit resets in ~9h", the exhausted-retries leads). If upstream rewords them the card quietly
+  becomes an ordinary notice; the compatibility suite should keep a sample.
+- **Routine pins are explicit model + provider.** Hermes's `pinned=True` reads the process's config, which is the
+  chief's even for a bot's store. `failure_deliver: local` mutes alerts; the relay skips a muted bot routine's errors.
+- **The app's look is one file on the bridge** (`chief_app_look.json`), applied before paint from this device's copy
+  (the boot script in `app/layout.tsx`, which accepts only `--c-accent*` tokens of three numbers). Every white overlay
+  is `--c-ink` (white in dark, black in light): a new `rgb(255 255 255 / x)` or `bg-white/x` is a light-mode bug.
+- **Local models need patch 0006** for the folder and the pinned catalog. Without it the page still works but models
+  go under Hermes's root on the system drive. Model downloads aren't hash-checked by Hermes (the engine is). The
+  server is started by the bridge when the gateway starts (`local_ai.boot_with_gateway`): the gateway alone doesn't,
+  and the first message would fail while it boots.

@@ -1252,3 +1252,12 @@ follow. Light mode is new: every fill, line and hover is now a mode token, and e
 text and buttons in it stay readable (4.5:1). Checked live on the e2e home on Hermes 0.22, with the model picker
 (real plan usage, favourites, thinking level written by Hermes's config writer), helpers (a note reached lane one,
 lane two stopped, a foreign helper id refused) and routine options (paused, pinned, muted, then changed back).
+
+**Hermes 0.22 features, part 4 (2026-10-18): models on this PC.** Settings → Models & keys → Models on this PC runs a
+model on the PC's graphics card with Hermes's managed llama.cpp runtime: the machine (GPU and memory), each model
+with its size and whether it fits, and "Set it up" for this machine's build of the recommended one (the engine, the
+download, the server and Chief on it, in one job with progress, pause and resume). A downloaded model is used for
+Chief or removed; the server can be stopped to free graphics memory. The folder is chosen first (the suggestion is the
+roomiest drive that isn't the system drive; on the owner's PC `E:\Chief models`): Hermes patch 0006 adds that setting
+(with download partials beside the models) and keeps the catalog the release shipped instead of upstream's newest,
+unsigned list. The bridge starts the local server with the gateway when local models are on.

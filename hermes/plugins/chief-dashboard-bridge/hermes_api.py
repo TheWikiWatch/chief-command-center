@@ -116,6 +116,32 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         ),
         "tools.tool_backend_helpers": ("resolve_provider_secret",),
     },
+    "local models": {
+        # Hermes's managed llama.cpp runtime: its dashboard handlers and their request bodies (local_ai.py).
+        "hermes_cli.web_routers.local_models": (
+            "JobIdBody",
+            "ModelActivateBody",
+            "ModelDownloadBody",
+            "QuickstartBody",
+            "RuntimeInstallBody",
+            "ServerActionBody",
+            "local_models_activate",
+            "local_models_catalog",
+            "local_models_delete",
+            "local_models_download",
+            "local_models_download_pause",
+            "local_models_download_resume",
+            "local_models_hardware",
+            "local_models_job",
+            "local_models_jobs",
+            "local_models_quickstart",
+            "local_models_runtime_install",
+            "local_models_server",
+            "local_models_status",
+        ),
+        "hermes_cli.local_runtime.bootstrap": ("ensure_local_runtime", "models_dir"),
+        "hermes_cli.config": ("atomic_config_replace", "get_config_path", "load_config", "load_config_readonly", "read_user_config_raw"),
+    },
     "failed turns": {
         # Hermes's closing line for a failed turn, shown as a marker under the app's failure card.
         "agent.turn_failure_copy": ("untyped_failed_turn_display_kind",),
