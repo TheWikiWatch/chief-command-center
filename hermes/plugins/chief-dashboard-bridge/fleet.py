@@ -232,6 +232,20 @@ def set_model(profile: str, provider: str, model: str, *, confirm_expensive: boo
     return result
 
 
+def _model_home(profile: str) -> Path | None:
+    profile = (profile or "chief").strip().lower()
+    return None if profile == "chief" else persona.profile_home(profile)
+
+
+def effort(profile: str) -> dict[str, Any]:
+    """How hard the profile's current model thinks, and the levels it takes."""
+    return providers.effort(_model_home(profile))
+
+
+def set_effort(profile: str, value: str) -> dict[str, Any]:
+    return providers.set_effort(value, _model_home(profile))
+
+
 # ---------------------------------------------------------------- retire / restore
 
 

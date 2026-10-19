@@ -1182,6 +1182,12 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                 "tools": names,
                 "attachments": attachments,
             }
+            # Hermes's closing line for a failed turn: the chat shows it as a quiet marker under the failure card.
+            if role == "assistant" and not names:
+                from .chat_state import failed_turn_boundary
+
+                if failed_turn_boundary(role, content):
+                    item["failedTurn"] = True
             # A compaction copy of a row the reader has already seen: history, never a new reply.
             if any(row["id"] > w[0] and (w[1] is None or row["id"] < w[1]) for w in windows):
                 item["replay"] = True

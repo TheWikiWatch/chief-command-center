@@ -251,6 +251,55 @@ def unwrap_cron_failure(text: str) -> tuple[str, dict[str, str] | None, dict[str
     return error, routine, {"error": error, "streak": int(streak.group("n")) if streak else 1, "detail": text.strip()}
 
 
+# A turn that failed once Hermes's retries and fallbacks ran out (agent/turn_failure_copy.py): its leads, and the reset
+# line Hermes appends when the provider says when a limit lifts (agent/turn_recovery.py::_stamp_limit_reset).
+_TURN_LIMIT = re.compile(r"rate-limited every one of \d+ attempts|is rate-limiting requests right now|usage limit resets in|Limit resets at")
+_TURN_DOWN = re.compile(
+    r"reported it was overloaded on all \d+ attempts|returned a server error on all \d+ attempts|didn't respond in time on any of \d+ attempts|didn't answer after \d+ attempts"
+)
+_RESET_AT = re.compile(r"Limit resets at \d{1,2}:\d{2} \(in (?:(?P<h>\d+)h )?(?P<m>\d+)m\)")
+_RESET_IN = re.compile(r"usage limit resets in ~(?P<n>\d+) ?(?P<unit>h|min)")
+_PROVIDER_SAID = "Provider said:"
+
+
+def turn_failure(text: str, at: float) -> dict[str, Any] | None:
+    """A chat turn that failed after Hermes's retries, in the app's words: {code, resetsAt, detail}. `limit` is a
+    usage or rate limit (with when it lifts, when the provider said: Hermes's "Limit resets at 15:00 (in 2h 05m)",
+    counted from when the message came, or "resets in ~9h"); `down` is a provider that was busy or didn't answer.
+    Hermes's full text stays as `detail`. Anything else is None."""
+    body = str(text or "")
+    if _PROVIDER_SAID not in body and "Limit resets at" not in body:
+        return None
+    if _TURN_LIMIT.search(body):
+        code = "limit"
+    elif _TURN_DOWN.search(body):
+        code = "down"
+    else:
+        return None
+    resets: float | None = None
+    if m := _RESET_AT.search(body):
+        resets = at + int(m.group("h") or 0) * 3600 + int(m.group("m")) * 60
+    elif m := _RESET_IN.search(body):
+        resets = at + int(m.group("n")) * (3600 if m.group("unit") == "h" else 60)
+    return {"code": code, "resetsAt": resets, "detail": body.strip()}
+
+
+_FAILED_TURN_FALLBACK = (
+    "Your request was not processed. Send it again if you still want me to carry it out.",
+    "This turn did not complete. Some actions may already have run; verify their effects before resending.",
+)
+
+
+def failed_turn_boundary(role: str, content: str) -> bool:
+    """Hermes's own closing line for a failed turn ("Your request was not processed…"): a marker, not a reply."""
+    try:
+        from agent.turn_failure_copy import untyped_failed_turn_display_kind
+
+        return bool(untyped_failed_turn_display_kind(role, content))
+    except Exception:
+        return role == "assistant" and str(content or "").strip() in _FAILED_TURN_FALLBACK
+
+
 _APPROVAL_HEADER_FALLBACK = "Hermes wants to run a command that needs your OK"
 _approval_header: str | None = None
 
@@ -317,6 +366,8 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
             item["routine"] = routine
         if failure:
             item["failure"] = failure
+        elif not routine and (turn := turn_failure(stripped, item["at"])):
+            item["turnFailure"] = turn
         if attachments:
             item["attachments"] = attachments
         out.append(item)
@@ -382,15 +433,20 @@ def background(session_key: str) -> list[dict[str, Any]]:
     except Exception:
         logger.debug("background work unreadable", exc_info=True)
         return []
+    live = _live_children()
     out: list[dict[str, Any]] = []
     for unit in units:
         status = str(unit.get("status") or "")
         if status not in _LIVE or str(unit.get("session_key") or "") != session_key:
             continue
+        unit_id = str(unit.get("delegation_id") or "")
         goals = unit.get("goals") if isinstance(unit.get("goals"), list) else [unit.get("goal")]
         indexes = unit.get("task_indexes")
+        positions = list(range(len(goals)))  # each task's index in the batch, which names its live log
         if isinstance(indexes, list):
-            goals = [goals[i] for i in indexes if isinstance(i, int) and 0 <= i < len(goals)] or goals
+            picked = [i for i in indexes if isinstance(i, int) and 0 <= i < len(goals)]
+            if picked:
+                goals, positions = [goals[i] for i in picked], picked
         activity = unit.get("children_activity") if isinstance(unit.get("children_activity"), list) else []
         tasks = []
         for i, goal in enumerate(goals):
@@ -399,10 +455,117 @@ def background(session_key: str) -> list[dict[str, Any]]:
             step = "Wrapping up" if status == "finalizing" else step_label(tool, {}) if tool else "Thinking it over"
             if status == "stalling":
                 step = "Quiet for a while"
-            tasks.append({"goal": _goal_line(goal), "step": step})
+            task: dict[str, Any] = {"goal": _goal_line(goal), "step": step}
+            child = _child_for(live, unit_id, positions[i] if i < len(positions) else i)
+            if child:
+                # The helper itself, live: it can be watched, steered and stopped.
+                task.update(id=child["id"], startedAt=child["startedAt"], toolCount=child["toolCount"], steer=child["steer"])
+            tasks.append(task)
         out.append({"id": str(unit.get("delegation_id") or ""), "status": status, "since": float(unit.get("dispatched_at") or 0), "tasks": tasks})
     out.sort(key=lambda u: u["since"])
     return out
+
+
+_LOG_NAME = re.compile(r"^task-(\d+)\.log$")
+TAIL_BYTES = 16 * 1024
+
+
+def _live_children() -> dict[tuple[str, int], dict[str, Any]]:
+    """Hermes's running helpers (its delegate registry), by (the batch's delegation id, task index). The index comes
+    from the helper's live log (`cache/delegation/live/<batch>/task-<n>.log`), the one place it is recorded."""
+    try:
+        from tools.delegate_tool_registry import _active_subagents, _active_subagents_lock
+    except Exception:
+        return {}
+    with _active_subagents_lock:
+        records = list(_active_subagents.values())
+    out: dict[tuple[str, int], dict[str, Any]] = {}
+    for r in records:
+        path = str(getattr(r.get("agent"), "_live_transcript_path", "") or "")
+        match = _LOG_NAME.match(Path(path).name) if path else None
+        batch = str(r.get("delegation_id") or "")
+        if not match or not batch or not r.get("subagent_id"):
+            continue
+        started = r.get("started_at")
+        out[(batch, int(match.group(1)))] = {
+            "id": str(r["subagent_id"]),
+            "startedAt": float(started) if isinstance(started, (int, float)) else None,
+            "toolCount": int(r.get("tool_count") or 0),
+            "steer": bool(r.get("accepting_steer", False)),
+            "log": path,
+        }
+    return out
+
+
+def _child_for(live: dict[tuple[str, int], dict[str, Any]], unit_id: str, index: int) -> dict[str, Any] | None:
+    """A unit is its batch (one unit) or `<batch>-<k>` (Hermes splits a batch into completion units)."""
+    if not unit_id:
+        return None
+    found = live.get((unit_id, index))
+    if found is None and re.fullmatch(r".+-\d+", unit_id):
+        found = live.get((unit_id.rsplit("-", 1)[0], index))
+    return found
+
+
+def _owned_child(session_key: str, task_id: str) -> dict[str, Any]:
+    """The live helper `task_id` if it works for this conversation, else HelperError: a chat can only see and
+    control its own helpers."""
+    task_id = str(task_id or "").strip()
+    if not session_key or not task_id or len(task_id) > 128:
+        raise HelperError("That helper isn't running any more.")
+    live = {c["id"]: c for c in _live_children().values()}
+    child = live.get(task_id)
+    mine = any(t.get("id") == task_id for unit in background(session_key) for t in unit["tasks"])
+    if child is None or not mine:
+        raise HelperError("That helper isn't running any more.")
+    return child
+
+
+class HelperError(ValueError):
+    pass
+
+
+def helper_tail(session_key: str, task_id: str) -> dict[str, Any]:
+    """The end of a helper's live log (Hermes redacts every line it writes there)."""
+    child = _owned_child(session_key, task_id)
+    path = Path(child["log"])
+    if not _LOG_NAME.match(path.name) or path.parent.parent.name != "live" or not path.is_file():
+        raise HelperError("This helper has no log to show.")
+    with path.open("rb") as fh:
+        size = fh.seek(0, 2)
+        fh.seek(max(0, size - TAIL_BYTES))
+        raw = fh.read()
+    text = raw.decode("utf-8", errors="replace")
+    if size > TAIL_BYTES:
+        text = text.split("\n", 1)[1] if "\n" in text else ""  # drop the cut first line
+    return {"ok": True, "id": child["id"], "text": text, "truncated": size > TAIL_BYTES, "toolCount": child["toolCount"]}
+
+
+def helper_steer(session_key: str, task_id: str, text: str) -> dict[str, Any]:
+    """Add a note to a running helper: it reads it after its current step (the step itself isn't cut)."""
+    text = " ".join(str(text or "").split())
+    if not text:
+        raise HelperError("Write what the helper should know.")
+    if len(text) > 2000:
+        raise HelperError("Keep it short (up to 2,000 characters).")
+    child = _owned_child(session_key, task_id)
+    if not child["steer"]:
+        raise HelperError("This helper is finishing and can't take notes now.")
+    from tools.delegate_tool_registry import steer_subagent
+
+    if not steer_subagent(child["id"], text):
+        raise HelperError("The helper finished before it could read that.")
+    return {"ok": True}
+
+
+def helper_stop(session_key: str, task_id: str) -> dict[str, Any]:
+    """Stop one helper after its current step; what it found so far still comes back to the chat."""
+    child = _owned_child(session_key, task_id)
+    from tools.delegate_tool_registry import interrupt_subagent
+
+    if not interrupt_subagent(child["id"]):
+        raise HelperError("The helper had already finished.")
+    return {"ok": True}
 
 
 def _goal_line(goal: Any) -> str:

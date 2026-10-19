@@ -10,7 +10,11 @@ Every provider fact comes from Hermes itself, never from a list kept here:
   guard, credential pointers);
 - custom and local OpenAI-compatible endpoints: the dashboard's custom-endpoint handlers (probe /models,
   save under `providers:`, keys in .env by reference);
-- the live test: ``agent.auxiliary_client.call_llm``, which speaks every provider's API style.
+- the live test: ``agent.auxiliary_client.call_llm``, which speaks every provider's API style;
+- what each model can do (reasoning, fast), how much of a plan is left and when a rate limit lifts: the same catalog
+  payload (Hermes 0.22: ``capabilities``, ``usage`` from its usage cache, ``limit`` from the credential pool);
+- reasoning effort: ``agent.reasoning_overrides`` per model (dotted names, so written as a whole mapping) over
+  ``agent.reasoning_effort``, the levels from ``agent.reasoning_effort.route_supported_efforts``.
 
 Everything runs in the chief profile's scope. Keys are accepted, never returned or logged. A contract test
 (hermes/tests/contract) exercises these imports against each Hermes pin before it ships.
@@ -19,12 +23,14 @@ Everything runs in the chief profile's scope. Keys are accepted, never returned 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
-from .data import chief_config_scope
+from .data import chief_config_scope, chief_home
 from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
@@ -96,7 +102,66 @@ def _row(raw: dict[str, Any]) -> dict[str, Any]:
         "models": [str(m) for m in (raw.get("models") or [])][:200],
         "featured": [str(m) for m in (raw.get("featured_models") or [])][:12],
         "warning": str(raw.get("warning") or ""),
+        "caps": _caps(raw),
+        "usage": _usage(raw.get("usage")),
+        "limit": _limit(raw.get("limit")),
     }
+
+
+def _caps(raw: dict[str, Any]) -> dict[str, dict[str, bool]]:
+    """model -> {reasoning, fast, canDisable} for the listed models (Hermes's catalog says; reasoning defaults on)."""
+    caps = subdict(raw, "capabilities")
+    out: dict[str, dict[str, bool]] = {}
+    for model in [str(m) for m in (raw.get("models") or [])][:200]:
+        entry = subdict(caps, model)
+        out[model] = {"reasoning": bool(entry.get("reasoning", True)), "fast": bool(entry.get("fast")), "canDisable": bool(entry.get("can_disable_reasoning"))}
+    return out
+
+
+def _tightest(windows: Any) -> dict[str, Any] | None:
+    best: tuple[float, dict] | None = None
+    for w in windows or []:
+        if not isinstance(w, dict):
+            continue
+        try:
+            used = float(w.get("used_percent"))  # type: ignore[arg-type]  # None raises, and is skipped
+        except (TypeError, ValueError):
+            continue
+        if best is None or used > best[0]:
+            best = (used, w)
+    if best is None:
+        return None
+    used, w = best
+    return {"left": max(0, min(100, round(100 - used))), "resetsAt": str(w.get("resets_at") or "") or None, "window": str(w.get("label") or "")}
+
+
+def _usage(raw: Any) -> dict[str, Any] | None:
+    """A plan in one line: how much of its tightest window is left and when that resets (Hermes's usage cache; None
+    when it can't say). With several accounts, the one with the most left, since Hermes moves on to it."""
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("windows"):
+        return _tightest(raw["windows"])
+    accounts = [a for a in raw.get("accounts") or [] if isinstance(a, dict)]
+    shown = [t for t in (_tightest(a.get("windows")) for a in accounts) if t]
+    if shown:
+        return {**max(shown, key=lambda t: t["left"]), "accounts": len(accounts)}
+    if accounts and all(a.get("state") == "limited" for a in accounts):
+        resets = sorted(str(a.get("resets_at")) for a in accounts if a.get("resets_at"))
+        return {"left": 0, "resetsAt": resets[0] if resets else None, "window": "", "accounts": len(accounts)}
+    return None
+
+
+def _limit(raw: Any) -> dict[str, Any] | None:
+    """A rate limit Hermes's credential pool is sitting out: the whole account until a time, or some models."""
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("scope") == "account" and raw.get("resets_at"):
+        return {"scope": "account", "until": str(raw["resets_at"])}
+    models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    if raw.get("scope") == "models" and models:
+        return {"scope": "models", "models": {str(m): str(t) for m, t in list(models.items())[:200]}}
+    return None
 
 
 def catalog(refresh: bool = False) -> dict[str, Any]:
@@ -268,9 +333,138 @@ def connected_models(refresh: bool = False) -> dict[str, Any]:
         models = row["models"] or row["featured"]
         if not models:
             continue
-        groups.append({"provider": row["slug"], "name": row["name"], "kind": row["kind"], "models": models})
+        groups.append(
+            {
+                "provider": row["slug"],
+                "name": row["name"],
+                "kind": row["kind"],
+                "models": models,
+                "caps": {m: c for m, c in row["caps"].items() if m in models},
+                "usage": row["usage"],
+                "limit": row["limit"],
+            }
+        )
     groups.sort(key=lambda g: (g["provider"] != data["provider"], g["name"].lower()))
-    return {"ok": True, "contract": CONTRACT, "current": {"provider": data["provider"], "model": data["model"]}, "groups": groups}
+    return {
+        "ok": True,
+        "contract": CONTRACT,
+        "current": {"provider": data["provider"], "model": data["model"]},
+        "groups": groups,
+        "favorites": favorites(),
+    }
+
+
+# ----------------------------------------------------------------------------- favourites
+
+
+_FAVORITES_FILE = "chief_model_favorites.json"
+_FAVORITES_MAX = 40
+_favorites_lock = threading.Lock()
+
+
+def favorites() -> list[dict[str, str]]:
+    """The owner's starred models ({provider, model}), for every bot's picker. Hermes keeps its own only in its
+    desktop app's browser storage, so the bridge keeps these in the chief's profile."""
+    try:
+        doc = json.loads((chief_home() / _FAVORITES_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    out = []
+    for item in doc.get("favorites") or [] if isinstance(doc, dict) else []:
+        if isinstance(item, dict) and _SLUG.match(str(item.get("provider") or "").lower()) and 0 < len(str(item.get("model") or "")) <= 200:
+            out.append({"provider": str(item["provider"]), "model": str(item["model"])})
+    return out[:_FAVORITES_MAX]
+
+
+def set_favorite(provider: str, model: str, on: bool) -> dict[str, Any]:
+    provider, model = (provider or "").strip(), (model or "").strip()
+    if not _SLUG.match(provider.lower()) or not model or len(model) > 200:
+        return {"ok": False, "error": "Choose a provider and a model."}
+    with _favorites_lock:
+        current = [f for f in favorites() if (f["provider"], f["model"]) != (provider, model)]
+        if on:
+            if len(current) >= _FAVORITES_MAX:
+                return {"ok": False, "error": f"Up to {_FAVORITES_MAX} favourites. Unstar one first."}
+            current.insert(0, {"provider": provider, "model": model})
+        path = chief_home() / _FAVORITES_FILE
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"favorites": current}, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    return {"ok": True, "favorites": current}
+
+
+# ----------------------------------------------------------------------------- reasoning effort
+
+
+# Hermes's ladder without its internal "ultra" step (a Codex harness mode, sent as max elsewhere).
+EFFORTS = ("none", "minimal", "low", "medium", "high", "xhigh", "max")
+
+
+def _effort_text(value: Any) -> str:
+    if value is False:
+        return "none"
+    text = str(value or "").strip().lower()
+    return "none" if text in ("false", "disabled", "off") else text
+
+
+def effort(home: Path | None = None) -> dict[str, Any]:
+    """How hard a profile's current model thinks: its own setting (per model), else the profile's, else the
+    provider's default; and the levels its route takes."""
+    with _scope(home):
+        from hermes_cli.config import load_config
+
+        cfg = load_config() or {}
+        model_cfg = subdict(cfg, "model")
+        provider = str(model_cfg.get("provider") or "").strip()
+        model = str(model_cfg.get("default") or model_cfg.get("model") or "").strip()
+        agent = subdict(cfg, "agent")
+        overrides = subdict(agent, "reasoning_overrides")
+        try:
+            from agent.reasoning_effort import route_supported_efforts
+
+            levels = [lvl for lvl in route_supported_efforts(provider, model) if lvl in EFFORTS]
+        except Exception:
+            levels = list(EFFORTS)
+    own = _effort_text(overrides.get(model)) if model in overrides else ""
+    general = _effort_text(agent.get("reasoning_effort"))
+    return {
+        "ok": True,
+        "provider": provider,
+        "model": model,
+        "effort": own if own in EFFORTS else "",
+        "general": general if general in EFFORTS else "",
+        "levels": levels or list(EFFORTS),
+    }
+
+
+def set_effort(value: str, home: Path | None = None) -> dict[str, Any]:
+    """Set (or with "" clear) the effort for the profile's current model. Hermes reads it on every turn."""
+    value = (value or "").strip().lower()
+    current = effort(home)
+    model = current["model"]
+    if not model:
+        return {"ok": False, "error": "Choose a model first."}
+    if value and value not in current["levels"]:
+        return {"ok": False, "error": "That model doesn't take that level."}
+    with _scope(home):
+        from hermes_cli.config import atomic_config_replace, get_config_path, read_user_config_raw
+
+        path = get_config_path()
+        raw = read_user_config_raw(path)
+        agent = raw.get("agent") if isinstance(raw.get("agent"), dict) else {}
+        overrides = dict(agent.get("reasoning_overrides") or {}) if isinstance(agent.get("reasoning_overrides"), dict) else {}
+        if value:
+            overrides[model] = value
+        else:
+            overrides.pop(model, None)
+        agent["reasoning_overrides"] = overrides
+        raw["agent"] = agent
+        # Model names have dots, which Hermes's dotted-key writer would split: the whole file, comments kept.
+        atomic_config_replace(path, raw)
+    from .data import forget_yaml
+
+    forget_yaml(path)
+    return effort(home)
 
 
 def grant_provider(slug: str, home: Path) -> dict[str, Any]:

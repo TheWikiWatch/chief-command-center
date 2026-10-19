@@ -337,6 +337,11 @@ def build(bridge) -> list[Route]:
         ),  # in step with lib/upload-limits.ts (55 MB of files is ~73 MB of base64 JSON)
         Route(P, "/stop", lambda r: bridge.control("stop", r.b("text"), _thread_body(r.body)), **A),
         Route(P, "/steer", lambda r: bridge.control("steer", r.b("text"), _thread_body(r.body)), **A),
+        Route(P, "/retry", lambda r: bridge.control("retry", "", _thread_body(r.body)), **A),
+        # One helper (a delegated task) at a time: its live log, a note, or stop (chat_state.helper_*).
+        Route(G, "/background/tail", lambda r: bridge.helper("tail", r.q("task"), thread=_thread_param(r.qs))),
+        Route(P, "/background/steer", lambda r: bridge.helper("steer", r.b("task"), r.b("text"), _thread_body(r.body)), limit=8 * KB, **A),
+        Route(P, "/background/stop", lambda r: bridge.helper("stop", r.b("task"), thread=_thread_body(r.body)), limit=4 * KB, **A),
         Route(P, "/queue", lambda r: bridge.control("queue", r.b("text"), _thread_body(r.body)), **A),
         Route(P, "/clarify", clarify, **A),
         Route(
@@ -500,6 +505,15 @@ def build(bridge) -> list[Route]:
             P,
             "/fleet/model",
             lambda r: _guarded(lambda: fleet.set_model(profile(r), r.b("provider"), r.b("model"), confirm_expensive=bool(r.body.get("confirm")))),
+            **A,
+        ),
+        Route(G, "/fleet/effort", lambda r: _guarded(lambda: fleet.effort(r.q("profile", "chief")))),
+        Route(P, "/fleet/effort", lambda r: _guarded(lambda: fleet.set_effort(profile(r), r.b("effort"))), limit=4 * KB, **A),
+        Route(
+            P,
+            "/fleet/favorite",
+            lambda r: _guarded(lambda: providers.set_favorite(r.b("provider"), r.b("model"), r.body.get("on") is not False)),
+            limit=4 * KB,
             **A,
         ),
         # The dashboard asks the owner before calling this; the request itself is the go-ahead.

@@ -149,6 +149,114 @@ class CatalogTests(ProviderTestCase):
         self.assertEqual(aurora["models"], ["aurora-1"], "featured models stand in when no full list is known")
 
 
+class PickerFactsTests(CatalogTests):
+    """What Hermes 0.22's catalog adds for a picker: capabilities, plan usage and rate limits."""
+
+    def test_capabilities_usage_and_limits_reach_the_picker(self):
+        nova = self.payload["providers"][0]
+        nova["models"] = ["nova-think", "nova-quick"]
+        nova["capabilities"] = {
+            "nova-think": {"reasoning": True, "fast": False, "can_disable_reasoning": True},
+            "nova-quick": {"reasoning": False, "fast": True},
+        }
+        nova["usage"] = {
+            "windows": [
+                {"label": "5h", "used_percent": 40.0, "resets_at": "2026-10-18T15:00:00+00:00"},
+                {"label": "week", "used_percent": 83.4, "resets_at": "2026-10-20T00:00:00+00:00"},
+            ]
+        }
+        nova["limit"] = {"scope": "models", "models": {"nova-think": "2026-10-18T16:00:00+00:00"}}
+        group = providers.connected_models()["groups"][0]
+        self.assertEqual(group["caps"]["nova-think"], {"reasoning": True, "fast": False, "canDisable": True})
+        self.assertEqual(group["caps"]["nova-quick"], {"reasoning": False, "fast": True, "canDisable": False})
+        self.assertEqual(group["usage"], {"left": 17, "resetsAt": "2026-10-20T00:00:00+00:00", "window": "week"})  # the tightest window
+        self.assertEqual(group["limit"], {"scope": "models", "models": {"nova-think": "2026-10-18T16:00:00+00:00"}})
+
+    def test_several_accounts_show_the_one_with_most_left_and_all_limited_says_so(self):
+        accounts = [
+            {"id": "a", "windows": [{"used_percent": 95.0, "resets_at": "2026-10-18T15:00:00+00:00"}], "state": "ready"},
+            {"id": "b", "windows": [{"used_percent": 20.0, "resets_at": "2026-10-18T18:00:00+00:00"}], "state": "ready"},
+        ]
+        self.assertEqual(providers._usage({"accounts": accounts}), {"left": 80, "resetsAt": "2026-10-18T18:00:00+00:00", "window": "", "accounts": 2})
+        limited = [{"id": "a", "windows": [], "state": "limited", "resets_at": "2026-10-18T19:00:00+00:00"}]
+        self.assertEqual(providers._usage({"accounts": limited}), {"left": 0, "resetsAt": "2026-10-18T19:00:00+00:00", "window": "", "accounts": 1})
+        self.assertIsNone(providers._usage({"accounts": [{"id": "a", "state": "unknown"}]}))
+        self.assertEqual(
+            providers._limit({"scope": "account", "resets_at": "2026-10-18T16:00:00+00:00"}), {"scope": "account", "until": "2026-10-18T16:00:00+00:00"}
+        )
+
+
+class FavoriteTests(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        home = patch.object(providers, "chief_home", lambda: Path(tmp.name))
+        home.start()
+        self.addCleanup(home.stop)
+
+    def test_star_and_unstar_newest_first(self):
+        self.assertEqual(providers.favorites(), [])
+        providers.set_favorite("nova", "nova-think", True)
+        providers.set_favorite("orbit", "orbit-large", True)
+        providers.set_favorite("nova", "nova-think", True)  # starring again moves it to the top, once
+        self.assertEqual(providers.favorites(), [{"provider": "nova", "model": "nova-think"}, {"provider": "orbit", "model": "orbit-large"}])
+        providers.set_favorite("orbit", "orbit-large", False)
+        self.assertEqual(providers.favorites(), [{"provider": "nova", "model": "nova-think"}])
+        self.assertFalse(providers.set_favorite("../x", "m", True)["ok"])
+
+
+class EffortTests(ProviderTestCase):
+    def setUp(self):
+        super().setUp()
+        self.raw = {
+            "model": {"provider": "nova", "default": "nova.think-2"},
+            "agent": {"reasoning_effort": "medium", "reasoning_overrides": {"other.model": "low"}},
+        }
+        self.config = self.raw
+        self.written: list[dict] = []
+        fake_module(
+            self,
+            "hermes_cli.config",
+            load_config=lambda: json.loads(json.dumps(self.raw)),
+            read_user_config_raw=lambda path: json.loads(json.dumps(self.raw)),
+            get_config_path=lambda: Path("config.yaml"),
+            atomic_config_replace=self.replace,
+        )
+        fake_module(self, "agent")
+        fake_module(
+            self,
+            "agent.reasoning_effort",
+            route_supported_efforts=lambda provider, model: ("none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"),
+        )
+        forget = patch.object(providers, "_scope", lambda home: contextlib.nullcontext())
+        forget.start()
+        self.addCleanup(forget.stop)
+
+    def replace(self, path, data):
+        self.written.append(data)
+        self.raw = data
+
+    def test_reads_the_models_own_level_over_the_profiles(self):
+        now = providers.effort()
+        self.assertEqual((now["model"], now["effort"], now["general"]), ("nova.think-2", "", "medium"))
+        self.assertNotIn("ultra", now["levels"])  # Hermes's internal step isn't offered
+
+    def test_set_and_clear_for_a_dotted_model_name_keeps_the_rest(self):
+        after = providers.set_effort("high")
+        self.assertEqual(after["effort"], "high")
+        self.assertEqual(self.written[-1]["agent"]["reasoning_overrides"], {"other.model": "low", "nova.think-2": "high"})  # one key, dots and all
+        self.assertEqual(self.written[-1]["agent"]["reasoning_effort"], "medium")
+        providers.set_effort("")
+        self.assertEqual(self.written[-1]["agent"]["reasoning_overrides"], {"other.model": "low"})
+        self.assertFalse(providers.set_effort("loud")["ok"])
+
+    def test_yaml_false_reads_as_off(self):
+        self.raw["agent"]["reasoning_overrides"]["nova.think-2"] = False
+        self.assertEqual(providers.effort()["effort"], "none")
+
+
 class KeyTests(ProviderTestCase):
     def test_save_key_refuses_bad_input_before_touching_hermes(self):
         long_key = "k" * 4097

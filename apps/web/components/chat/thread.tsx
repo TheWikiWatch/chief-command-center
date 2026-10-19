@@ -551,6 +551,15 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
     );
   }
 
+  if (m.failedTurn) {
+    // Hermes's closing line for a failed turn: the failure card above says what happened.
+    return (
+      <motion.div {...motionProps} className={`${first ? "mt-3" : "mt-1.5"} pl-9`}>
+        <p className="text-caption text-fg-3">Not answered</p>
+      </motion.div>
+    );
+  }
+
   if (tone === "background") {
     // The results of background work Hermes handed the chief: one collapsed line, not a wall of text.
     return (

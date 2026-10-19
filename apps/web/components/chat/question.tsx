@@ -12,8 +12,9 @@ import type { AskedQuestion, ChatNotice, PendingQuestion, Person } from "@/lib/t
 import { linkifyVaultRefs } from "@/lib/vault-client";
 import { field as fieldClass } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
-import { openTeam } from "@/lib/settings-nav";
+import { openSettings, openTeam } from "@/lib/settings-nav";
 import { routinesApi } from "@/lib/routines-client";
+import { retryTurn } from "@/lib/bridge";
 
 /** Hermes appends this to the choice it recommends; the card shows it as a badge instead. */
 const RECOMMENDED = /\s*\(recommended\)\s*$/i;
@@ -284,6 +285,115 @@ function RoutineFailure({ notice }: { notice: ChatNotice }) {
   );
 }
 
+/** "15:00" today, "Mon 15:00" within a week, else the date. */
+function resetLabel(epoch: number): string {
+  const at = new Date(epoch * 1000);
+  const time = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+  const days = Math.round((new Date(at).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days === 0) return time;
+  if (days === 1) return `tomorrow ${time}`;
+  return `${at.toLocaleDateString([], days < 7 ? { weekday: "short" } : { day: "numeric", month: "short" })} ${time}`;
+}
+
+// A scheduled retry waits a little past the reset (the provider's clock and ours differ by seconds).
+const RETRY_GRACE_S = 30;
+
+/**
+ * A chat turn that failed after Hermes's retries, said plainly: a usage limit (and when it lifts) or a provider
+ * that was down. "Retry at 15:00" waits here and sends Hermes's /retry once (it resends the last message itself);
+ * it's dropped when anything newer arrives in the chat, or with Cancel. Hermes's full text is a tap away.
+ */
+export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: boolean }) {
+  const failure = notice.turnFailure!;
+  const assistant = useAssistantName();
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<"" | "sending" | "sent" | "waiting">("");
+  const [error, setError] = useState("");
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const resets = failure.resetsAt && failure.resetsAt > now ? failure.resetsAt : null;
+
+  useEffect(() => {
+    if (!resets) return undefined;
+    const tick = setInterval(() => setNow(Date.now() / 1000), 30_000);
+    return () => clearInterval(tick);
+  }, [resets]);
+
+  async function retry() {
+    setState("sending");
+    setError("");
+    try {
+      const res = await retryTurn();
+      if (!res.ok) throw new Error(res.error || "That didn't send.");
+      setState("sent");
+    } catch (e) {
+      setState("");
+      setError(e instanceof Error ? e.message : "That didn't send.");
+    }
+  }
+
+  // The scheduled retry: only while this is the newest thing in the chat (anything newer drops it).
+  const waiting = state === "waiting" && latest;
+  useEffect(() => {
+    if (!waiting) return undefined;
+    const wait = Math.max(0, ((failure.resetsAt || 0) + RETRY_GRACE_S) * 1000 - Date.now());
+    const timer = setTimeout(() => void retry(), wait);
+    return () => clearTimeout(timer);
+  }, [waiting, failure.resetsAt]);
+
+  const title = failure.code === "limit" ? "Usage limit reached" : "The model didn't answer";
+  const sentence =
+    failure.code === "limit"
+      ? resets
+        ? `${assistant}'s model has used up its plan for now. It resets at ${resetLabel(resets)}.`
+        : `${assistant}'s model is turning requests away for now (a usage or rate limit).`
+      : `${assistant}'s model service was busy or down, so this message wasn't answered.`;
+
+  return (
+    <div className="rounded-card border border-warn/30 bg-warn/[0.07] px-3.5 py-2.5">
+      <p className="flex items-start gap-1.5 text-callout font-medium text-fg">
+        <CircleAlertIcon size={15} className="mt-0.5 shrink-0 text-warn" />
+        <span className="min-w-0 flex-1">{title}</span>
+      </p>
+      <p className="mt-1 text-callout text-fg-2">{sentence}</p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        {state === "sent" ? (
+          <span className="text-caption text-fg-2">Sent again.</span>
+        ) : waiting ? (
+          <>
+            <span className="text-caption text-fg-2">Retrying at {resetLabel((failure.resetsAt || 0) + RETRY_GRACE_S)}. Keep this open.</span>
+            <button type="button" onClick={() => setState("")} className={btn("ghost", "sm")}>
+              Cancel
+            </button>
+          </>
+        ) : (
+          <>
+            {resets && latest ? (
+              <button type="button" onClick={() => setState("waiting")} className={btn("secondary", "sm")}>
+                Retry at {resetLabel(resets + RETRY_GRACE_S)}
+              </button>
+            ) : null}
+            <button type="button" disabled={state === "sending"} onClick={() => void retry()} className={btn(resets ? "ghost" : "secondary", "sm")}>
+              {state === "sending" ? "Sending…" : "Retry now"}
+            </button>
+            <button type="button" onClick={() => openSettings("models")} className={btn("ghost", "sm")}>
+              Switch model
+            </button>
+          </>
+        )}
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="press rounded-full px-2 py-1 text-caption text-fg-3 hover:text-fg-2">
+          {open ? "Hide details" : "Details"}
+        </button>
+      </div>
+      {open ? <p className="mt-2 whitespace-pre-wrap font-mono text-micro text-fg-3">{failure.detail}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-caption text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** A scheduled job's result or a gateway notice: not a reply to anything you said. A notice that asks for
  * an answer (Hermes's text fallback, e.g. confirming /new) gets its answers as buttons while it is the newest
  * thing in the chat. */
@@ -295,6 +405,7 @@ export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQui
   // A scheduled job's output is whatever its run wrote: never buttons.
   const replies = onQuickReply && !scheduled ? quickReplies(notice.text) : [];
   if (notice.failure) return <RoutineFailure notice={notice} />;
+  if (notice.turnFailure) return <TurnFailure notice={notice} latest={!!onQuickReply} />;
   // A gateway notice (a restart, a reminder that it is busy) is a quiet line; it opens to the full text.
   if (!scheduled && !replies.length) {
     const times = notice.repeat && notice.until ? `${notice.repeat}× · until ${new Date(notice.until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "";

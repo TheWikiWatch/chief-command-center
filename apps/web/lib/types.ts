@@ -110,6 +110,8 @@ export type ChatMessage = {
   connect?: ConnectRequest[];
   /** Client-only: a gateway notice or scheduled-job message shown in the thread (not a transcript row). */
   notice?: ChatNotice;
+  /** Bridge: Hermes's closing line for a failed turn ("Your request was not processed…"), shown as a quiet marker. */
+  failedTurn?: boolean;
 };
 
 export type ConnectRequest = { service: string; label: string; why: string };
@@ -129,6 +131,9 @@ export type ChatNotice = {
   routine?: { name: string; jobId: string; profile?: string };
   /** A scheduled job that failed, in the app's words: the error, how many runs in a row, and Hermes's full text. */
   failure?: { error: string; streak: number; detail: string };
+  /** A chat turn that failed after Hermes's retries: a usage or rate limit (with when it lifts, epoch seconds, when
+   * the provider said) or a provider that was down. Hermes's full text is `detail`. */
+  turnFailure?: { code: "limit" | "down"; resetsAt: number | null; detail: string };
   /** Files it carried (an image a routine made, or one handed over after a reply's text). */
   attachments?: ChatAttachment[];
   /** Client-only: the same notice repeated this many times in a row (restarts), and when the last one came. */
@@ -143,7 +148,8 @@ export type TurnActivity = { since: number; steps: number; label: string };
 export type ReplyDraft = { id: number; text: string; at: number };
 
 /** Work the chief handed to helpers that is still running after its turn ended (Hermes's background delegations). */
-export type BackgroundTask = { goal: string; step: string };
+/** One delegated task. With `id`, it's a live helper: its log can be read, and it can be sent a note (`steer`) or stopped. */
+export type BackgroundTask = { goal: string; step: string; id?: string; startedAt?: number | null; toolCount?: number; steer?: boolean };
 export type BackgroundUnit = { id: string; status: "running" | "stalling" | "finalizing" | string; since: number; tasks: BackgroundTask[] };
 
 /** A thread's earlier conversation (before a fresh start). Times are epoch seconds. */

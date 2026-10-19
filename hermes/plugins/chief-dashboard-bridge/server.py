@@ -650,18 +650,36 @@ class BridgeServer:
             time.sleep(0.25)
         return self.command_center_adapter
 
-    def control(self, action: str, text: str = "", thread: str = threads.MAIN) -> dict[str, Any]:
-        """Stop the chief's current turn, add context to it (steer), or queue a message for after it.
+    def helper(self, action: str, task: str, text: str = "", thread: str = threads.MAIN) -> dict[str, Any]:
+        """Watch, steer or stop one of the chief's helpers in this thread (chat_state.helper_*): only a helper that
+        works for this thread's conversation."""
+        try:
+            bind, _chat = self.thread_bind(thread)
+            sk = bind.get("sessionKey") or ""
+            if action == "tail":
+                return chat_state.helper_tail(sk, task)
+            if action == "steer":
+                return chat_state.helper_steer(sk, task, text)
+            if action == "stop":
+                result = chat_state.helper_stop(sk, task)
+                self.broadcast({"type": "helper_stop", "at": time.time()})
+                return result
+            return {"ok": False, "error": "Unknown control."}
+        except (threads.ThreadError, chat_state.HelperError) as exc:
+            return {"ok": False, "error": str(exc)}
 
-        These are Hermes's own chat commands (`/stop`, `/steer <text>`, `/queue <text>`), sent into the chief's
+    def control(self, action: str, text: str = "", thread: str = threads.MAIN) -> dict[str, Any]:
+        """Stop the chief's current turn, add context to it (steer), queue a message for after it, or retry the last one.
+
+        These are Hermes's own chat commands (`/stop`, `/steer <text>`, `/queue <text>`, `/retry`), sent into the chief's
         Command Center chat, so Hermes applies its own rules: a steer lands at the next safe point and falls
         back to the queue when the turn has already ended; nothing is lost.
         """
         action = str(action or "").strip().lower()
         text = " ".join(str(text or "").split())
-        if action not in ("stop", "steer", "queue"):
+        if action not in ("stop", "steer", "queue", "retry"):
             return {"ok": False, "error": "Unknown control."}
-        if action != "stop" and not text:
+        if action not in ("stop", "retry") and not text:
             return {"ok": False, "error": "Message is empty."}
         if len(text) > 8000:
             return {"ok": False, "error": "That message is too long to add mid-turn; send it as a message instead."}
@@ -680,7 +698,8 @@ class BridgeServer:
                 return {"ok": False, "code": "mode", "error": "Adding to running work needs the chief's busy mode set to steer."}
             command = text
         else:
-            command = "/stop" if action == "stop" else f"/queue {text}"
+            # /retry: Hermes resends the conversation's last message itself (after a failed turn, e.g. a usage limit).
+            command = {"stop": "/stop", "retry": "/retry"}.get(action) or f"/queue {text}"
         try:
             accepted = _queue_inbound(cc, command, chat_id=chat)
         except Exception as exc:

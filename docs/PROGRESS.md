@@ -1228,3 +1228,17 @@ the release refuses a payload whose hosts names anything but loopback.
 - Routines: a new routine can start paused, follow the bot's model or be pinned to the one it has now (a bot's pin is
   its own model, never the chief's), and have its failure alerts muted; the editor shows a run of failures. A bot
   that sends a routine's failure alerts outside the app now asks first, as for its results.
+
+**Hermes 0.22 features, part 2 (2026-10-18).**
+
+- Model picker (each bot's Look drawer, and Settings → Models for the chief): favourites first (star a model; the
+  owner's list, kept by the bridge), each provider's plan ("17% left · resets today 15:00", amber under 10%, from
+  Hermes's usage cache) and rate limits ("rate limited until …"), which models think and which have a fast mode, and
+  a Thinking level for a model that reasons, kept per model in the bot's own config (Hermes reads it every turn).
+- Helpers: each running task in Background work opens to the helper's live log (Hermes redacts it), takes a short
+  note ("focus on prices"; it reads it after its current step) and can be stopped; what it found so far still
+  comes back. Only a thread's own helpers.
+- A message that hits a usage limit gets a card instead of Hermes's raw text: what happened, when the limit resets,
+  "Retry at 15:00" (sends Hermes's /retry once; anything newer in the chat drops it), Retry now, Switch model, and
+  the details. A provider that was down gets Retry now. Hermes's "Your request was not processed" line is a quiet
+  "Not answered" marker.

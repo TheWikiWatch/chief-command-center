@@ -6,6 +6,7 @@ import { Group, Row } from "@/components/ui/settings-group";
 import { useAssistantName } from "@/lib/identity";
 import { ConnectModel } from "@/components/onboarding/connect-model";
 import { ModelsKeys } from "@/components/fleet/models-keys";
+import { ModelPicker } from "@/components/fleet/model-picker";
 import { setup, type SetupStatus } from "@/lib/setup-client";
 import { LoadingLine } from "@/components/ui/surface";
 
@@ -42,6 +43,10 @@ export function ConnectionGroup() {
               setStatus(s);
             }}
           />
+        </div>
+      ) : status?.ready ? (
+        <div className="px-3.5 py-3">
+          <ModelPicker profile="chief" provider={status.provider} model={status.model} onChanged={load} />
         </div>
       ) : (
         <Row label={status?.model || (status ? "No model chosen" : <LoadingLine className="w-36" />)} hint={error || (status ? (status.ready ? `via ${status.provider}` : status.error || "Not connected") : "")}>

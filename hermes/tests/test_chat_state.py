@@ -270,6 +270,79 @@ class ChatStateTests(unittest.TestCase):
         with patch.dict(sys.modules, {"tools.async_delegation": broken}):
             self.assertEqual(chat_state.background("session"), [])  # an older Hermes: nothing, never an error
 
+    def test_each_running_helper_can_be_watched_steered_and_stopped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            live = Path(tmp) / "cache" / "delegation" / "live" / "deleg_x"
+            live.mkdir(parents=True)
+            (live / "task-1.log").write_text("=== header ===\n" + "x" * 20000 + "\n[12:00:01] tool web_search: lanes\n", encoding="utf-8", newline="\n")
+            (live / "task-2.log").write_text("[12:00:00] kickoff\n", encoding="utf-8", newline="\n")
+            agents = {i: types.SimpleNamespace(_live_transcript_path=str(live / f"task-{i}.log")) for i in (1, 2)}
+            records = {
+                "sa-1": {"subagent_id": "sa-1", "delegation_id": "deleg_x", "started_at": 300.0, "tool_count": 4, "agent": agents[1], "accepting_steer": True},
+                "sa-2": {"subagent_id": "sa-2", "delegation_id": "deleg_x", "started_at": 301.0, "tool_count": 0, "agent": agents[2], "accepting_steer": False},
+                "sa-9": {"subagent_id": "sa-9", "delegation_id": "deleg_other", "agent": types.SimpleNamespace(_live_transcript_path=str(live / "task-0.log"))},
+            }
+            steered, stopped = [], []
+            registry = types.ModuleType("tools.delegate_tool_registry")
+            registry._active_subagents = records
+            registry._active_subagents_lock = threading.Lock()
+            registry.steer_subagent = lambda sid, text: steered.append((sid, text)) or True
+            registry.interrupt_subagent = lambda sid: stopped.append(sid) or True
+            units = [
+                {
+                    "delegation_id": "deleg_x-2",
+                    "status": "running",
+                    "session_key": "session",
+                    "dispatched_at": 1.0,
+                    "goals": ["A", "B", "C"],
+                    "task_indexes": [1, 2],
+                },
+                {"delegation_id": "deleg_other", "status": "running", "session_key": "another", "dispatched_at": 2.0, "goal": "not ours"},
+            ]
+            delegations = types.ModuleType("tools.async_delegation")
+            delegations.list_async_delegations = lambda: units
+            with patch.dict(sys.modules, {"tools.async_delegation": delegations, "tools.delegate_tool_registry": registry}):
+                tasks = chat_state.background("session")[0]["tasks"]
+                self.assertEqual(
+                    [(t["goal"], t.get("id"), t.get("toolCount"), t.get("steer")) for t in tasks], [("B", "sa-1", 4, True), ("C", "sa-2", 0, False)]
+                )
+                tail = chat_state.helper_tail("session", "sa-1")
+                self.assertTrue(tail["truncated"])
+                self.assertTrue(tail["text"].endswith("tool web_search: lanes\n"))
+                self.assertLessEqual(len(tail["text"]), chat_state.TAIL_BYTES)
+                self.assertFalse(tail["text"].startswith("x" * 100) and len(tail["text"]) == chat_state.TAIL_BYTES)  # the cut line is dropped
+
+                chat_state.helper_steer("session", "sa-1", "  Focus on   lane B only ")
+                self.assertEqual(steered, [("sa-1", "Focus on lane B only")])
+                with self.assertRaisesRegex(chat_state.HelperError, "finishing"):
+                    chat_state.helper_steer("session", "sa-2", "late")
+                chat_state.helper_stop("session", "sa-2")
+                self.assertEqual(stopped, ["sa-2"])
+                for other in ("sa-9", "nobody", ""):
+                    with self.assertRaisesRegex(chat_state.HelperError, "isn't running"):
+                        chat_state.helper_stop("session", other)  # another conversation's helper, or none
+                with self.assertRaises(chat_state.HelperError):
+                    chat_state.helper_tail("another", "sa-1")
+
+    def test_a_usage_limit_failure_says_when_it_resets(self):
+        limit = (
+            "Nous rate-limited every one of 3 attempts — its usage limit resets in ~3h. Send /retry after that, or switch "
+            "models with /model. To avoid this in future, add a backup provider with `hermes fallback add`.\n\n"
+            "Provider said: 429 quota exceeded\n\nLimit resets at 15:00 (in 2h 05m)."
+        )
+        found = chat_state.turn_failure(limit, 1000.0)
+        self.assertEqual((found["code"], found["resetsAt"]), ("limit", 1000.0 + 2 * 3600 + 5 * 60))  # the exact line wins over "~3h"
+        self.assertEqual(found["detail"], limit)
+        rough = chat_state.turn_failure("Nous is rate-limiting requests right now — its usage limit resets in ~45 min. Send /retry.\n\nProvider said: 429", 0.0)
+        self.assertEqual((rough["code"], rough["resetsAt"]), ("limit", 45 * 60.0))
+        down = chat_state.turn_failure("OpenRouter returned a server error on all 3 attempts — it looks temporarily unavailable.\n\nProvider said: 502", 5.0)
+        self.assertEqual((down["code"], down["resetsAt"]), ("down", None))
+        for other in ("All done: three new papers.", "Provider said: hello", "The limit resets at noon, I think."):
+            self.assertIsNone(chat_state.turn_failure(other, 0.0))
+        self.assertTrue(chat_state.failed_turn_boundary("assistant", "Your request was not processed. Send it again if you still want me to carry it out."))
+        self.assertFalse(chat_state.failed_turn_boundary("user", "Your request was not processed. Send it again if you still want me to carry it out."))
+        self.assertFalse(chat_state.failed_turn_boundary("assistant", "Here is the plan."))
+
     def test_no_outbox_means_no_notices(self):
         self.assertEqual(chat_state.notices("session"), [])
         self.assertEqual(chat_state.notice_head(), "")

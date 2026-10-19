@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { ModelPicker } from "@/components/fleet/model-picker";
@@ -40,15 +40,21 @@ const MODELS = {
   ],
 };
 
+const EFFORT = { ok: true, provider: "openrouter", model: "deepseek/deepseek-chat", effort: "", general: "medium", levels: ["none", "low", "medium", "high", "max"] };
+
+async function openPicker() {
+  const trigger = await screen.findByRole("button", { name: "Model" });
+  await waitFor(() => expect(trigger).not.toBeDisabled());
+  fireEvent.click(trigger);
+}
+
 it("the model picker lists every connected provider's models and re-pins the bot", async () => {
   const changed = vi.fn();
-  const calls = route({ "fleet/models": () => MODELS, "fleet/model": () => ({ ok: true }) });
+  const calls = route({ "fleet/models": () => MODELS, "fleet/model": () => ({ ok: true }), "fleet/effort": () => EFFORT });
   render(<ModelPicker profile="research-desk" provider="openrouter" model="deepseek/deepseek-chat" onChanged={changed} />);
-  const select = await screen.findByLabelText("Model");
-  await waitFor(() => expect(select).not.toBeDisabled());
-  expect(screen.getByRole("option", { name: "tiny-local" })).toBeInTheDocument();
-  expect(screen.getByRole("group", { name: "Local model" })).toBeInTheDocument();
-  fireEvent.change(select, { target: { value: "local-model\u0001tiny-local" } });
+  await openPicker();
+  const local = screen.getByRole("group", { name: "Local model" });
+  fireEvent.click(within(local).getByRole("button", { name: /^tiny-local/ }));
   await screen.findByText("Saved. It answers with this model from the next message.");
   expect(calls.find((c) => c.path === "fleet/model")?.body).toEqual({ profile: "research-desk", provider: "local-model", model: "tiny-local", confirm: false });
   expect(changed).toHaveBeenCalled();
@@ -58,15 +64,51 @@ it("an expensive model asks first and only pins on 'Use it anyway'", async () =>
   const calls = route({
     "fleet/models": () => MODELS,
     "fleet/model": (b) => (b.confirm ? { ok: true } : { ok: false, confirm: "This model costs about $75 per million output tokens." }),
+    "fleet/effort": () => EFFORT,
   });
   render(<ModelPicker profile="chief" provider="openrouter" model="deepseek/deepseek-chat" />);
-  const select = await screen.findByLabelText("Model");
-  await waitFor(() => expect(select).not.toBeDisabled());
-  fireEvent.change(select, { target: { value: "openrouter\u0001anthropic/claude-opus" } });
+  await openPicker();
+  fireEvent.click(screen.getByRole("button", { name: /^anthropic\/claude-opus/ }));
   await screen.findByText(/costs about \$75/);
   fireEvent.click(screen.getByRole("button", { name: "Use it anyway" }));
   await screen.findByText("Saved. It answers with this model from the next message.");
   expect(calls.filter((c) => c.path === "fleet/model").map((c) => c.body.confirm)).toEqual([false, true]);
+});
+
+it("favourites come first, plans say what's left, and a thinking model gets a level", async () => {
+  const models = {
+    ...MODELS,
+    groups: [
+      {
+        ...MODELS.groups[0],
+        caps: { "deepseek/deepseek-chat": { reasoning: true, fast: false, canDisable: false }, "anthropic/claude-opus": { reasoning: true, fast: true, canDisable: true } },
+        usage: { left: 8, resetsAt: null, window: "week" },
+      },
+      { ...MODELS.groups[1], limit: { scope: "account", until: "2099-01-01T15:00:00Z" } },
+    ],
+    favorites: [{ provider: "openrouter", model: "anthropic/claude-opus" }],
+  };
+  const calls = route({
+    "fleet/models": () => models,
+    "fleet/effort": () => EFFORT,
+    "fleet/favorite": (b) => ({ ok: true, favorites: b.on ? [{ provider: b.provider, model: b.model }] : [] }),
+  });
+  render(<ModelPicker profile="chief" provider="openrouter" model="deepseek/deepseek-chat" />);
+  await openPicker();
+  expect(screen.getAllByText("8% left")[0]).toBeInTheDocument(); // under 10%: shown on the trigger too
+  const favs = screen.getByRole("group", { name: "Favourites" });
+  expect(within(favs).getByRole("button", { name: /^anthropic\/claude-opus/ })).toBeInTheDocument();
+  expect(within(screen.getByRole("group", { name: "Local model" })).getByText(/rate limited until/)).toBeInTheDocument();
+  fireEvent.click(within(favs).getByRole("button", { name: "Unstar anthropic/claude-opus" }));
+  await waitFor(() => expect(calls.find((c) => c.path === "fleet/favorite")?.body).toEqual({ provider: "openrouter", model: "anthropic/claude-opus", on: false }));
+  await waitFor(() => expect(screen.queryByRole("group", { name: "Favourites" })).toBeNull());
+
+  const thinking = await screen.findByLabelText("Thinking");
+  expect(within(thinking).getByRole("option", { name: "Default (Medium, the bot's general level)" })).toBeInTheDocument();
+  expect(within(thinking).queryByRole("option", { name: "Off" })).toBeNull(); // this model can't switch reasoning off
+  route({ "fleet/models": () => models, "fleet/effort": (b) => ({ ...EFFORT, effort: String(b.effort ?? "") }) });
+  fireEvent.change(thinking, { target: { value: "high" } });
+  await waitFor(() => expect((screen.getByLabelText("Thinking") as HTMLSelectElement).value).toBe("high"));
 });
 
 it("Team: retired bots restore, and removing for good needs a second confirmation", async () => {

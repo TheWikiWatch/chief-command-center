@@ -1,5 +1,5 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { BackgroundWork, backgroundTaskCount, elapsedLabel } from "@/components/chat/background-work";
 import type { BackgroundUnit } from "@/lib/types";
@@ -33,4 +33,29 @@ it("shows nothing when no work is running", () => {
 it("counts tasks across units and labels the time plainly", () => {
   expect(backgroundTaskCount(units)).toBe(3);
   expect([elapsedLabel(7), elapsedLabel(187), elapsedLabel(3725)]).toEqual(["0:07", "3:07", "1:02:05"]);
+});
+
+it("a live helper opens to its log, takes a note and stops after asking", async () => {
+  const calls: { path: string; body?: Record<string, unknown> }[] = [];
+  vi.stubGlobal("fetch", async (input: string, init?: RequestInit) => {
+    const url = new URL(input, "http://127.0.0.1");
+    const path = url.pathname.replace("/api/bridge/", "");
+    calls.push({ path: `${path}${url.search}`, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (path === "background/tail") return Response.json({ ok: true, id: "sa-1", text: "[12:00:01] tool web_search: prices\n", truncated: false });
+    return Response.json({ ok: true });
+  });
+  const live: BackgroundUnit[] = [{ id: "d1", status: "running", since: now - 20, tasks: [{ goal: "Compare prices", step: "Searching the web", id: "sa-1", toolCount: 3, steer: true }] }];
+  render(<BackgroundWork units={live} assistant="Chief" />);
+  fireEvent.click(screen.getByRole("button", { name: /1 task in the background/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Compare prices/ }));
+  expect(await screen.findByText(/tool web_search: prices/)).toBeTruthy();
+  expect(calls[0].path).toBe("background/tail?task=sa-1");
+  fireEvent.change(screen.getByLabelText("A note for this helper"), { target: { value: "Only shops in town" } });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  expect(await screen.findByText(/reads it after its current step/)).toBeTruthy();
+  expect(calls.find((c) => c.path === "background/steer")?.body).toEqual({ task: "sa-1", text: "Only shops in town" });
+  fireEvent.click(screen.getByRole("button", { name: "Stop this helper" }));
+  fireEvent.click(screen.getByRole("button", { name: "Stop it" }));
+  await waitFor(() => expect(calls.find((c) => c.path === "background/stop")?.body).toEqual({ task: "sa-1" }));
+  vi.unstubAllGlobals();
 });

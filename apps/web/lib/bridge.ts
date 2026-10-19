@@ -216,6 +216,13 @@ export const draftReport = (body: { message: string; previous?: string; note?: s
 /** Stop what the chief is doing now (Hermes's own /stop for this chat). */
 export const stopTurn = () => write<{ ok: boolean; error?: string; generating?: boolean }>("stop", withThread({}), 15_000);
 /** Queue a message for after the current turn (Hermes's /queue). */
+export type HelperTail = { ok: boolean; error?: string; id?: string; text?: string; truncated?: boolean; toolCount?: number };
+/** One helper's live log (Hermes redacts it), a note to it, or stopping it: only helpers of the current thread. */
+export const helperTail = (task: string, signal?: AbortSignal) => get<HelperTail>(`background/tail?task=${encodeURIComponent(task)}${threadQuery()}`, signal);
+export const steerHelper = (task: string, text: string) => write<{ ok: boolean; error?: string }>("background/steer", withThread({ task, text }), 15_000);
+export const stopHelper = (task: string) => write<{ ok: boolean; error?: string }>("background/stop", withThread({ task }), 15_000);
+/** Hermes's /retry: it resends the conversation's last message itself (after a failed turn). */
+export const retryTurn = () => write<{ ok: boolean; error?: string }>("retry", withThread({}), 15_000);
 export const queueTurn = (text: string) => write<{ ok: boolean; error?: string }>("queue", withThread({ text }), 15_000);
 export const transcribeAudio = (dataUrl: string, mimeType: string) =>
   write<{ ok: boolean; transcript?: string; error?: string; code?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);

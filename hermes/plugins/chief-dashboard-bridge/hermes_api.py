@@ -54,7 +54,18 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
     },
     "models and keys": {
         "hermes_cli.auth": ("PROVIDER_REGISTRY", "has_usable_secret"),
-        "hermes_cli.config": ("custom_endpoint_key_env", "load_config", "load_env", "read_user_config_raw", "remove_env_value", "save_env_value"),
+        "hermes_cli.config": (
+            "atomic_config_replace",
+            "custom_endpoint_key_env",
+            "get_config_path",
+            "load_config",
+            "load_env",
+            "read_user_config_raw",
+            "remove_env_value",
+            "save_env_value",
+        ),
+        # Reasoning effort per model: the levels a route takes.
+        "agent.reasoning_effort": ("route_supported_efforts",),
         "hermes_cli.credential_lifecycle": ("remove_provider_env_credential", "save_provider_env_credential"),
         "hermes_cli.inventory": ("build_model_options_payload", "load_picker_context"),
         "hermes_cli.runtime_provider": ("resolve_runtime_provider",),
@@ -105,8 +116,14 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         ),
         "tools.tool_backend_helpers": ("resolve_provider_secret",),
     },
+    "failed turns": {
+        # Hermes's closing line for a failed turn, shown as a marker under the app's failure card.
+        "agent.turn_failure_copy": ("untyped_failed_turn_display_kind",),
+    },
     "background work": {
         "tools.async_delegation": ("list_async_delegations",),
+        # Each running helper: its record (live log, tool count), a note to it, stopping it.
+        "tools.delegate_tool_registry": ("_active_subagents", "_active_subagents_lock", "interrupt_subagent", "steer_subagent"),
     },
     "critical facts": {
         # The plugin API behind ctx.register_system_prompt_section (the owner's facts in each conversation).
