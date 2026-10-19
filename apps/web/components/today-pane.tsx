@@ -306,7 +306,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
             <>
               <StatTiles open={meta?.open_total} overdue={meta?.overdue_total} waiting={meta ? waitingTotal : undefined} animate={morning} />
 
-              <label className="mb-4 mt-4 flex min-h-11 items-center gap-2.5 rounded-full border border-line-2 bg-card px-4 text-body text-fg-3 focus-within:border-[rgb(255_255_255/0.26)]">
+              <label className="mb-4 mt-4 flex min-h-11 items-center gap-2.5 rounded-full border border-line-2 bg-card px-4 text-body text-fg-3 focus-within:border-[rgb(var(--c-ink)/0.26)]">
                 <SearchIcon size={17} />
                 <input
                   id="ops-search"

@@ -103,6 +103,8 @@ export type EngineState = { gateway: EnginePart; web: EnginePart; external: bool
 
 export type ChiefDesktop = {
   updates?: DesktopUpdates;
+  /** The app's look's mode, for the window's colours; older shells lack it. */
+  setThemeMode?: (mode: "dark" | "light" | "system") => Promise<boolean>;
   /** Older shells lack it. */
   phone?: DesktopPhone;
   /** A native folder picker; resolves to the chosen folder, or null when cancelled. */

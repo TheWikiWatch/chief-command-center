@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { SlidersHorizontalIcon, BotIcon, MessageCircleIcon, PencilIcon } from "@/components/icons";
+import { SlidersHorizontalIcon, BotIcon, CheckIcon, MessageCircleIcon, PaletteIcon, PencilIcon } from "@/components/icons";
+import { MODE_LABEL, SWATCHES, accentHex, useAppLook, type LookMode } from "@/lib/app-look";
 import { fetchSettings, patchSettings } from "@/lib/bridge";
 import { Group, Row } from "@/components/ui/settings-group";
 import { Segmented } from "@/components/ui/controls";
@@ -128,6 +129,81 @@ export function RepliesGroup() {
 }
 
 /* ------------------------------------------------------------------ this device */
+
+/** The app's look: accent and light/dark, the same on every window and the phone (the chief can change it too). */
+export function LookGroup() {
+  const { look, error, setAccent, setMode, undo, reset } = useAppLook();
+  const custom = /^#[0-9a-f]{6}$/i.test(look.accent);
+  const byBot = look.by && look.by !== "owner";
+  return (
+    <Group icon={<PaletteIcon className="size-4" />} title="Appearance" hint="Every window and your phone follow this.">
+      {byBot || look.canUndo ? (
+        <div className="flex items-center gap-2 px-3.5 py-2.5">
+          <p className="min-w-0 flex-1 text-callout text-fg-2">{byBot ? `Changed by ${look.by}.` : "Changed."}</p>
+          {look.canUndo ? (
+            <button type="button" onClick={() => void undo()} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+              Undo
+            </button>
+          ) : null}
+          {look.accent !== "theme" || look.mode !== "dark" ? (
+            <button type="button" onClick={() => void reset()} className="press min-h-9 rounded-full px-3 text-callout text-fg-3 hover:text-fg">
+              Reset
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <Row label="Mode" stacked>
+        <Segmented<LookMode>
+          label="Mode"
+          value={look.mode}
+          options={(["dark", "light", "system"] as LookMode[]).map((m) => [m, m === "system" ? "System" : MODE_LABEL[m]])}
+          onChange={(mode) => void setMode(mode)}
+        />
+      </Row>
+      <Row label="Accent" hint="Buttons, highlights and links." stacked>
+        <div role="radiogroup" aria-label="Accent" className="flex flex-wrap items-center gap-2">
+          {SWATCHES.filter((s) => s.id !== "red").map((s) => {
+            const on = look.accent === s.id;
+            return (
+              <button
+                key={s.id}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                aria-label={s.label}
+                title={s.label}
+                onClick={() => void setAccent(s.id)}
+                className={`press grid size-9 place-items-center rounded-full ring-offset-2 ring-offset-card transition-shadow ${on ? "ring-2 ring-fg" : "hover:ring-2 hover:ring-line-3"}`}
+                style={{ backgroundColor: s.hex }}
+              >
+                {on ? <CheckIcon className="size-4 text-white" strokeWidth={3} /> : null}
+              </button>
+            );
+          })}
+          <label
+            title="Your own colour"
+            className={`press relative grid size-9 cursor-pointer place-items-center overflow-hidden rounded-full border border-line-2 ring-offset-2 ring-offset-card ${custom ? "ring-2 ring-fg" : ""}`}
+            style={custom ? { backgroundColor: accentHex(look.accent) } : undefined}
+          >
+            <span className="sr-only">Your own colour</span>
+            {custom ? null : <span aria-hidden className="text-callout text-fg-3">+</span>}
+            <input
+              type="color"
+              value={custom ? accentHex(look.accent) : "#8e4ec6"}
+              onChange={(e) => void setAccent(e.target.value)}
+              className="absolute inset-0 cursor-pointer opacity-0"
+            />
+          </label>
+        </div>
+      </Row>
+      {error ? (
+        <p role="alert" className="px-3.5 pb-3 text-callout text-danger">
+          {error}
+        </p>
+      ) : null}
+    </Group>
+  );
+}
 
 export function AppGroup({ phone }: { phone: boolean }) {
   const assistant = useAssistantName();

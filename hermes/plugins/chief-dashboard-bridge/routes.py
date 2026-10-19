@@ -79,6 +79,7 @@ def find(routes: list[Route], method: str, path: str) -> Route | None:
 def build(bridge) -> list[Route]:
     """The table, bound to one BridgeServer."""
     from . import (
+        app_look,
         connections,
         data,
         fleet,
@@ -465,6 +466,24 @@ def build(bridge) -> list[Route]:
         Route(G, "/pet/{id}/sheet", pet_sheet),
         Route(G, "/pets/catalog", lambda r: looks.call(looks.catalog)),
         Route(G, "/pets/thumb/{id}", pet_thumb),
+        # The app's look: accent and light/dark/system, for every window (app_look.py)
+        Route(G, "/app-look", lambda r: app_look.get()),
+        Route(
+            P,
+            "/app-look",
+            lambda r: app_look.call(
+                lambda: app_look.undo()
+                if r.body.get("undo") is True
+                else app_look.reset()
+                if r.body.get("reset") is True
+                else app_look.set_look(
+                    r.body.get("accent") if isinstance(r.body.get("accent"), str) else None,
+                    r.body.get("mode") if isinstance(r.body.get("mode"), str) else None,
+                )
+            ),
+            limit=4 * KB,
+            **A,
+        ),
         # Connections: email, calendars, documents and work tools (connections.py)
         Route(G, "/connections", lambda r: connections.call(lambda: connections.overview(refresh=_flag(r.qs, "refresh")))),
         Route(

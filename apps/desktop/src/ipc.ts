@@ -5,7 +5,7 @@ import { app, dialog, ipcMain, safeStorage, shell } from "electron";
 
 import { createDiagnostics } from "./diagnostics";
 import { bridgeHealth, profileHome } from "./gateway";
-import { BOOT_URL, dialogOptions, fileFilters, originOf, senderAllowed, validFeed, validServePort } from "./guards";
+import { BOOT_URL, dialogOptions, fileFilters, originOf, senderAllowed, validFeed, validServePort, validThemeMode } from "./guards";
 import { type Confirm, confirmFeed, confirmForcedRestart, confirmInstall, confirmPhoneAccess, confirmPhoneEnable, confirmRestore, confirmRollback, skipAllowed } from "./owner-confirm";
 import { disablePhone, enablePhone, OPENABLE, phoneState, setPhoneAccess } from "./phone";
 import { RELEASE_KEYS } from "./release-key";
@@ -17,7 +17,7 @@ import { readUpdateKey, saveUpdateKey } from "./secrets";
 import { ctx, log, uiOrigin, uiUrl } from "./state";
 import type { Supervisor } from "./supervisor";
 import type { UpdateState } from "./updater";
-import { currentWork } from "./window";
+import { applyThemeMode, currentWork } from "./window";
 
 /* What the dashboard (and the boot page) may ask of the shell. */
 
@@ -250,6 +250,13 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
     { boot: true },
   );
   handle("desktop:openLogs", () => shell.openPath(ctx.paths.logs));
+  // The app's look changed (or the page loaded with one): the window follows, and remembers it for the next start.
+  handle("desktop:setThemeMode", (mode: unknown) => {
+    if (!validThemeMode(mode)) return false;
+    applyThemeMode(mode);
+    if (ctx.store.value.themeMode !== mode) ctx.store.save({ themeMode: mode });
+    return true;
+  });
   // Settings → About: the third-party notices shipped in the package (empty string when this build has none).
   handle("desktop:openNotices", async () => (existsSync(ctx.paths.notices) ? shell.openPath(ctx.paths.notices) : "missing"));
   handle("desktop:diagnostics", () => makeDiagnostics());

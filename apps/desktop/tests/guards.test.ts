@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { actionFromArgv, BOOT_URL, dialogOptions, fileFilters, isBootPage, navigateDecision, permissionAllowed, permissionCheckAllowed, sameOrigin, senderAllowed, validFeed, validServePort, windowOpenDecision } from "../src/guards";
+import { actionFromArgv, BOOT_URL, dialogOptions, fileFilters, isBootPage, navigateDecision, permissionAllowed, permissionCheckAllowed, sameOrigin, senderAllowed, validFeed, validServePort, validThemeMode, windowColors, windowOpenDecision } from "../src/guards";
 
 const ORIGIN = "http://127.0.0.1:3000";
 // User-info look-alike (`origin` + "@" + another host), assembled so the privacy scan doesn't read it as an address.
@@ -134,5 +134,16 @@ describe("jump-list actions", () => {
     expect(actionFromArgv(["chief.exe", "--action=rm-rf"])).toBeNull();
     expect(actionFromArgv(["chief.exe", "--action=voice;calc"])).toBeNull();
     expect(actionFromArgv(["chief.exe"])).toBeNull();
+  });
+});
+
+describe("the window follows the app's look", () => {
+  it("takes only dark, light or system, and picks its colours from the mode (system asks Windows)", () => {
+    expect(["dark", "light", "system"].every(validThemeMode)).toBe(true);
+    for (const bad of ["", "sepia", null, 3, { mode: "dark" }]) expect(validThemeMode(bad)).toBe(false);
+    expect(windowColors("light", true).background).toBe("#f6f6f8");
+    expect(windowColors("dark", false).background).toBe("#09090b");
+    expect(windowColors("system", false)).toEqual(windowColors("light", true));
+    expect(windowColors("system", true)).toEqual(windowColors("dark", true));
   });
 });

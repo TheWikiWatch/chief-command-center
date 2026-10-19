@@ -3,13 +3,16 @@
 import { MotionConfig } from "motion/react";
 import { useEffect, type ReactNode } from "react";
 
+import { useAppLook } from "@/lib/app-look";
 import { fx, unlockFx } from "@/lib/fx";
 import { UI_SCALE, useFxPrefs } from "@/lib/fx-prefs";
 import { useReducedMotion } from "@/lib/motion";
 
-/** Applies motion, ambient and interface-size preferences to the whole document. */
+/** Applies the app's look and the motion, ambient and interface-size preferences to the whole document. */
 export function FxRoot({ children }: { children: ReactNode }) {
   const prefs = useFxPrefs();
+  // The app's look (accent, light or dark), the same on every window: kept current from the bridge.
+  useAppLook();
   const reduced = useReducedMotion();
 
   useEffect(() => {

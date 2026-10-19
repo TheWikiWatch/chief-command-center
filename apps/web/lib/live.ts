@@ -44,6 +44,8 @@ function open() {
     // The bridge's own events (approved, outbox, clarify…) are changes too; "hello" confirms the channel.
     retryMs = 2000;
     setConnected(true);
+    // The app's look changed (app_look.py): lib/app-look.ts reads it again.
+    if (String(e.data).includes('"cc_app_look"')) window.dispatchEvent(new Event("chief:app-look"));
     if (!String(e.data).includes('"hello"')) notify();
   };
   es.addEventListener("change", () => {

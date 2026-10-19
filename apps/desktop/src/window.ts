@@ -1,10 +1,10 @@
 import path from "node:path";
 
-import { app, BrowserWindow, dialog, Menu, nativeImage, Notification, session, shell, Tray } from "electron";
+import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, Notification, session, shell, Tray } from "electron";
 
 import { activeWork, fromBridgeSnapshot } from "./active-work";
 import { waitFor } from "./gateway";
-import { BOOT_URL, DESKTOP_ACTIONS, navigateDecision, sameOrigin, windowOpenDecision, type DesktopAction } from "./guards";
+import { BOOT_URL, DESKTOP_ACTIONS, navigateDecision, sameOrigin, windowColors, windowOpenDecision, type DesktopAction, type ThemeMode } from "./guards";
 import { pauseServe } from "./phone";
 import { logLine } from "./runtime";
 import { openTicket, sessionCookieName, sessionCookieValue } from "./session";
@@ -106,20 +106,34 @@ const RELOADS = 3;
 const RELOAD_WINDOW_MS = 5 * 60_000;
 const reloads: number[] = [];
 
+/** Follow the app's look: Electron's own theme (dialogs, "system"), the window's background and title-bar symbols. */
+export function applyThemeMode(mode: ThemeMode) {
+  nativeTheme.themeSource = mode;
+  const colors = windowColors(mode, nativeTheme.shouldUseDarkColors);
+  const window = ctx.window;
+  if (window && !window.isDestroyed()) {
+    window.setBackgroundColor(colors.background);
+    window.setTitleBarOverlay({ color: "#00000000", symbolColor: colors.symbols, height: 60 });
+  }
+}
+
 export function createWindow() {
+  const mode = ctx.store.value.themeMode;
+  nativeTheme.themeSource = mode;
+  const colors = windowColors(mode, nativeTheme.shouldUseDarkColors);
   const window = new BrowserWindow({
     width: 1280,
     height: 860,
     minWidth: 380,
     minHeight: 560,
     show: !hiddenLaunch(),
-    backgroundColor: "#09090b",
+    backgroundColor: colors.background,
     title: "Chief Command Center",
     // No grey Windows title bar: minimize, maximize and close are drawn over the top-right of the app's own
     // header (Window Controls Overlay), which is a drag region and keeps clear of them (globals.css --wco).
     // Snap layouts and the window shadow stay, as with a normal frame.
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: "#00000000", symbolColor: "#a1a1aa", height: 60 },
+    titleBarOverlay: { color: "#00000000", symbolColor: colors.symbols, height: 60 },
     // Electron 44 remembers the window's size, position and maximized state between starts (by this name).
     name: "chief-main",
     windowStatePersistence: true,

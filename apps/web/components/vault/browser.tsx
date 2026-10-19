@@ -39,7 +39,7 @@ export function Browser({
   return (
     <>
       <div className="shrink-0 px-3 pb-2 pt-3">
-        <label className="flex min-h-11 items-center gap-2.5 rounded-full border border-line-2 bg-card px-4 text-body text-fg-3 focus-within:border-[rgb(255_255_255/0.26)]">
+        <label className="flex min-h-11 items-center gap-2.5 rounded-full border border-line-2 bg-card px-4 text-body text-fg-3 focus-within:border-[rgb(var(--c-ink)/0.26)]">
           <SearchIcon size={17} />
           <input
             value={query}

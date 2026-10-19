@@ -1242,3 +1242,13 @@ the release refuses a payload whose hosts names anything but loopback.
   "Retry at 15:00" (sends Hermes's /retry once; anything newer in the chat drops it), Retry now, Switch model, and
   the details. A provider that was down gets Retry now. Hermes's "Your request was not processed" line is a quiet
   "Not answered" marker.
+
+**Hermes 0.22 features, part 3 (2026-10-18): the app's look.** Settings → General → Appearance: Dark, Light or
+System, and an accent (Hermes's swatch names, or any colour). One choice for every window and the phone, kept by the
+bridge; the chief can change it too ("make it violet", the `set_app_look` tool: Hermes's own `set_theme` works only
+in Hermes's desktop app), and Settings says "Changed by Chief" with Undo and Reset. Open windows restyle at once, a
+reload paints in the last look before the page loads, and the desktop window's background and title-bar buttons
+follow. Light mode is new: every fill, line and hover is now a mode token, and each accent is adjusted per mode so
+text and buttons in it stay readable (4.5:1). Checked live on the e2e home on Hermes 0.22, with the model picker
+(real plan usage, favourites, thinking level written by Hermes's config writer), helpers (a note reached lane one,
+lane two stopped, a foreign helper id refused) and routine options (paused, pinned, muted, then changed back).

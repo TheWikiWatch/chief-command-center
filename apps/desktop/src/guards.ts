@@ -167,3 +167,13 @@ export function actionFromArgv(argv: readonly string[]): DesktopAction | null {
   }
   return null;
 }
+
+const THEME_MODES = ["dark", "light", "system"] as const;
+export type ThemeMode = (typeof THEME_MODES)[number];
+export const validThemeMode = (value: unknown): value is ThemeMode => THEME_MODES.includes(value as ThemeMode);
+
+/** The window's colours for the app's look's mode: the canvas behind the page and the title-bar buttons' symbols. */
+export function windowColors(mode: ThemeMode, systemDark: boolean): { background: string; symbols: string } {
+  const light = mode === "light" || (mode === "system" && !systemDark);
+  return light ? { background: "#f6f6f8", symbols: "#52525b" } : { background: "#09090b", symbols: "#a1a1aa" };
+}

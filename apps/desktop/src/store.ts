@@ -49,6 +49,8 @@ export type DesktopSettings = {
   /** Phone access while it's on: Serve's port, the dashboard port it points at, and this PC's Tailscale name (the
    * only Host the dashboard accepts phone requests for). */
   phoneServe: { port: number; uiPort: number; host?: string } | null;
+  /** The app's look's mode (the dashboard says it, app_look.py): the window's background and title-bar symbols at the next start. */
+  themeMode: "dark" | "light" | "system";
 };
 
 export const DEFAULTS: DesktopSettings = {
@@ -68,6 +70,7 @@ export const DEFAULTS: DesktopSettings = {
   skippedVersions: [],
   prepareUpdates: true,
   earlyUpdates: false,
+  themeMode: "dark",
   lastVersion: "",
   dataSchema: 0,
   lastHermes: "",

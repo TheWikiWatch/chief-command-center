@@ -243,6 +243,14 @@ def _register(ctx):
     except Exception:
         logger.warning("chief-dashboard-bridge: connections tool unavailable", exc_info=True)
 
+    try:
+        from . import app_look
+
+        schema = app_look.TOOL_SCHEMA
+        ctx.register_tool(name=schema["name"], toolset="fleet", schema=schema, handler=app_look.tool_handler, emoji="🎨", description=schema["description"])
+    except Exception:
+        logger.warning("chief-dashboard-bridge: app look tool unavailable", exc_info=True)
+
     thread = threading.Thread(target=bridge.serve_forever, name="chief-dashboard-bridge", daemon=True)
     thread.start()
     _server = bridge

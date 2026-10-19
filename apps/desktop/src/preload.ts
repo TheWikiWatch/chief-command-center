@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
   applyRestore: () => ipcRenderer.invoke("desktop:applyRestore"),
   openLogs: () => ipcRenderer.invoke("desktop:openLogs"),
   openNotices: () => ipcRenderer.invoke("desktop:openNotices"),
+  /** The app's look's mode (dark, light, system): the window's colours and Electron's own theme follow it. */
+  setThemeMode: (mode: string) => ipcRenderer.invoke("desktop:setThemeMode", mode),
   /** Settings → About: logs, crash dumps and versions in a zip the owner saves and sends themselves. */
   diagnostics: () => ipcRenderer.invoke("desktop:diagnostics"),
   /** Report a problem: the same zip, saved straight to Downloads with Explorer opened on it. */

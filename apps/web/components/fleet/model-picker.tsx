@@ -179,6 +179,9 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
   );
 }
 
+/** "today 15:00", "tomorrow 09:00", "Wed 11:59": a time inside a sentence. */
+const when = (iso: string) => whenLabel(iso).replace(/^(Today|Tomorrow|Yesterday)\b/, (w) => w.toLowerCase());
+
 const same = (a: FavoriteModel, b: FavoriteModel) => a.provider === b.provider && a.model === b.model;
 
 function Section({ title, aside, children }: { title: string; aside?: React.ReactNode; children: React.ReactNode }) {
@@ -221,7 +224,7 @@ function ModelRow({
           <span className={`block truncate text-callout ${selected ? "font-medium text-fg" : "text-fg-2"}`}>{model}</span>
           {providerName || limited ? (
             <span className="block truncate text-caption text-fg-3">
-              {[providerName, limited ? `rate limited until ${whenLabel(limited).toLowerCase()}` : ""].filter(Boolean).join(" · ")}
+              {[providerName, limited ? `rate limited until ${when(limited)}` : ""].filter(Boolean).join(" · ")}
             </span>
           ) : null}
         </span>
@@ -251,10 +254,10 @@ function ModelRow({
 /** "17% left · resets today 15:00" (amber under 10%), or "Rate limited until …". Quiet: only when it matters (under 20%, or limited). */
 export function UsageChip({ usage, limit, model, quiet }: { usage?: PlanUsage | null; limit?: RateLimit | null; model?: string; quiet?: boolean }) {
   const until = limit?.scope === "account" ? limit.until : limit?.scope === "models" && model ? limit.models[model] : "";
-  if (until) return <span className="shrink-0 rounded-chip bg-warn/15 px-1.5 py-px text-micro text-warn">rate limited until {whenLabel(until).toLowerCase()}</span>;
+  if (until) return <span className="shrink-0 rounded-chip bg-warn/15 px-1.5 py-px text-micro text-warn">rate limited until {when(until)}</span>;
   if (!usage || (quiet && usage.left >= 20)) return null;
   const low = usage.left < 10;
-  const resets = usage.resetsAt ? ` · resets ${whenLabel(usage.resetsAt).toLowerCase()}` : "";
+  const resets = usage.resetsAt ? ` · resets ${when(usage.resetsAt)}` : "";
   return (
     <span title={usage.window ? `The ${usage.window} window` : undefined} className={`shrink-0 rounded-chip px-1.5 py-px text-micro ${low ? "bg-warn/15 text-warn" : "bg-fill-2 text-fg-3"}`}>
       {usage.left}% left{resets}

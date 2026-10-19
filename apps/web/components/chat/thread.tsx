@@ -581,7 +581,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
     return (
       <motion.div {...motionProps} style={{ originX: 1, originY: 1 }} className={`flex flex-col items-end ${first ? "mt-4" : "mt-1"}`}>
         <div
-          className={`max-w-[82%] rounded-sheet bg-well px-3.5 py-2 text-fg shadow-[inset_0_0_0_1px_rgb(255_255_255/0.04)] [overflow-wrap:anywhere] ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
+          className={`max-w-[82%] rounded-sheet bg-well px-3.5 py-2 text-fg shadow-[inset_0_0_0_1px_rgb(var(--c-ink)/0.04)] [overflow-wrap:anywhere] ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
         >
           {text ? <EmojiText text={text} /> : null}
           <MessageMedia attachments={m.attachments} />
