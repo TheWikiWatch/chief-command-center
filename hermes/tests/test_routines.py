@@ -39,6 +39,7 @@ class FakeJobs:
         self.stores: dict[Path, dict[str, dict]] = {}
         self.current: Path | None = None
         self.calls: list[tuple] = []
+        self.extras: list[dict] = []
         self.next_id = 0
 
     @contextlib.contextmanager
@@ -65,10 +66,14 @@ class FakeJobs:
     def get_job(self, job_id):
         return self._store().get(job_id)
 
-    def create_job(self, prompt, schedule, name, deliver):
+    def create_job(self, prompt, schedule, name, deliver, **extra):
         self.calls.append(("create", self.current.name, name, schedule, deliver))
+        self.extras.append(extra)
         self.next_id += 1
         job = {"id": f"job{self.next_id}", "name": name, "prompt": prompt, "schedule": {"kind": "cron", "expr": schedule}, "deliver": deliver, "enabled": True}
+        if extra.pop("paused", False):
+            job.update(enabled=False, state="paused")
+        job.update(extra)
         self._store()[job["id"]] = job
         return job
 
@@ -287,6 +292,57 @@ class CreateTests(RoutineTestCase):
         self.assertEqual(self.mapping(routines._RELAYED_FILE), {key: ""})
 
 
+class OptionsTests(RoutineTestCase):
+    """Hermes 0.22's routine options: made paused, pinned to a model, failure alerts muted."""
+
+    def setUp(self):
+        super().setUp()
+        (self.ada / "config.yaml").write_text("model:\n  provider: openrouter\n  default: example/model-a\n", encoding="utf-8")
+        (self.chief / "config.yaml").write_text("model:\n  provider: anthropic\n  default: example/chief-model\n", encoding="utf-8")
+        data.forget_yaml(self.ada / "config.yaml")
+        data.forget_yaml(self.chief / "config.yaml")
+
+    def test_a_routine_follows_the_bots_model_unless_pinned(self):
+        made = routines.create("ada", "Papers", "Find papers.", {"kind": "daily", "time": "08:00"})["routine"]
+        self.assertEqual(self.jobs.extras[-1], {})
+        self.assertEqual(made["model"], {"pinned": False, "model": "example/model-a", "provider": "openrouter"})
+        self.assertEqual((made["enabled"], made["failureAlerts"]), (True, "on"))
+
+    def test_a_bots_routine_pins_the_bots_own_model_not_the_chiefs(self):
+        made = routines.create("ada", "Papers", "Find papers.", {"kind": "daily", "time": "08:00"}, paused=True, pin=True, alerts="muted")["routine"]
+        extra = self.jobs.extras[-1]
+        self.assertEqual((extra["model"], extra["provider"], extra["failure_deliver"]), ("example/model-a", "openrouter", "local"))
+        self.assertIn("start it when you're ready", extra["paused_reason"])
+        self.assertEqual(made["model"], {"pinned": True, "model": "example/model-a", "provider": "openrouter"})
+        self.assertEqual((made["enabled"], made["failureAlerts"]), (False, "muted"))
+        self.assertIn("start it", made["pausedReason"])
+
+    def test_pin_release_and_alerts_change_later(self):
+        job = routines.create("ada", "Papers", "Find papers.", {"kind": "daily", "time": "08:00"})["routine"]
+        pinned = routines.update("ada", job["id"], pin=True)["routine"]
+        self.assertEqual(self.jobs.calls[-1], ("update", job["id"], {"model": "example/model-a", "provider": "openrouter"}))
+        self.assertTrue(pinned["model"]["pinned"])
+        routines.update("ada", job["id"], pin=False, alerts="muted")
+        self.assertEqual(self.jobs.calls[-1], ("update", job["id"], {"model": None, "provider": None, "failure_deliver": "local"}))
+        routines.update("ada", job["id"], alerts="on")
+        self.assertEqual(self.jobs.calls[-1], ("update", job["id"], {"failure_deliver": None}))
+        with self.assertRaises(routines.RoutineError):
+            routines.update("ada", job["id"], alerts="loud")
+
+    def test_nothing_to_pin_without_a_model(self):
+        (self.ada / "config.yaml").write_text("model: {}\n", encoding="utf-8")
+        data.forget_yaml(self.ada / "config.yaml")
+        with self.assertRaisesRegex(routines.RoutineError, "nothing to pin"):
+            routines.create("ada", "Papers", "Find papers.", {"kind": "daily", "time": "08:00"}, pin=True)
+
+    def test_the_failure_streak_and_alerts_a_bot_sent_elsewhere_show(self):
+        job = self.jobs.add(
+            self.chief, name="Digest", prompt="p", schedule={"expr": "0 8 * * *"}, deliver="command_center", failure_deliver="telegram:5", failure_streak=3
+        )
+        shown = next(r for r in routines.list_routines()["routines"] if r["id"] == job["id"])
+        self.assertEqual((shown["failureAlerts"], shown["failureStreak"]), ("elsewhere", 3))
+
+
 class ListAndChangeTests(RoutineTestCase):
     def setUp(self):
         super().setUp()
@@ -401,6 +457,15 @@ class RelayTests(RoutineTestCase):
         self.assertEqual({r["source"] for r in rows}, {"cron"})
         self.assertEqual(routines.relay(), 0, "already relayed")
 
+    def test_a_muted_routine_relays_its_answers_but_not_its_failures(self):
+        thread = self.thread()
+        routines._set_bot_thread("ada", self.job["id"], thread)
+        self.job["failure_deliver"] = "local"
+        self.run_file("2026-10-01_08-00-00.md", "## Error\nboom")
+        self.run_file("2026-10-02_08-00-00.md", "## Response\nTwo new papers.")
+        self.assertEqual(routines.relay(), 1)
+        self.assertTrue(outbox.read_outbox()[0]["message"].endswith("Two new papers."))
+
     def test_a_deleted_thread_falls_back_to_the_main_chat(self):
         routines._set_bot_thread("ada", self.job["id"], "t-0000ffff")
         self.run_file("2026-10-01_08-00-00.md", "## Response\nHello.")
@@ -437,6 +502,9 @@ class RoutineSafetyTests(unittest.TestCase):
         self.assertIn("sends its results to telegram:555", out["message"])
         self.assertIn("Summarize the inbox", out["message"])
         self.assertTrue(out["rule_key"].startswith("chief:routine:"))
+        alerts = routines.approval_for("cronjob_manage", {"action": "update", "job_id": "j1", "failure_deliver": "discord:42"})
+        self.assertIn("sends its failure alerts to discord:42", alerts["message"])
+        self.assertIsNone(routines.approval_for("cronjob_manage", {"action": "update", "job_id": "j1", "failure_deliver": "local"}))  # muting stays in the app
         scripted = routines.approval_for("cronjob_manage", {"action": "update", "job_id": "j1", "script": "collect.py"})
         self.assertIn("runs the script collect.py", scripted["message"])
         self.assertIsNone(routines.approval_for("terminal", reminder))

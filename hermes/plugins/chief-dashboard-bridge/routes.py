@@ -270,6 +270,8 @@ def build(bridge) -> list[Route]:
                 schedule=schedule if isinstance(schedule, dict) else None,
                 thread=b.get("thread") if isinstance(b.get("thread"), str) else None,
                 enabled=enabled if isinstance(enabled, bool) else None,
+                pin=b.get("pin") if isinstance(b.get("pin"), bool) else None,
+                alerts=b.get("alerts") if isinstance(b.get("alerts"), str) else None,
             )
         )
 
@@ -359,7 +361,14 @@ def build(bridge) -> list[Route]:
             "/routines",
             lambda r: _guarded(
                 lambda: routines.create(
-                    profile(r), r.b("name"), r.b("prompt"), r.body["schedule"] if isinstance(r.body.get("schedule"), dict) else {}, _thread_body(r.body)
+                    profile(r),
+                    r.b("name"),
+                    r.b("prompt"),
+                    r.body["schedule"] if isinstance(r.body.get("schedule"), dict) else {},
+                    _thread_body(r.body),
+                    paused=r.body.get("paused") is True,
+                    pin=r.body.get("pin") is True,
+                    alerts="muted" if r.body.get("alerts") == "muted" else "on",
                 )
             ),
             **A,
@@ -457,7 +466,9 @@ def build(bridge) -> list[Route]:
             P,
             "/connections/connect",
             lambda r: connections.call(
-                lambda: connections.connect(r.b("service"), r.b("backend"), r.body.get("env") if isinstance(r.body.get("env"), dict) else None)
+                lambda: connections.connect(
+                    r.b("service"), r.b("backend"), r.body.get("env") if isinstance(r.body.get("env"), dict) else None, r.b("name"), r.b("account")
+                )
             ),
             limit=16 * KB,
             **A,
@@ -465,6 +476,20 @@ def build(bridge) -> list[Route]:
         Route(G, "/connections/op/{id}", lambda r: connections.call(lambda: connections.op_status(r.seg(3)))),
         Route(P, "/connections/cancel", lambda r: connections.call(lambda: connections.op_cancel(r.b("op"))), limit=4 * KB, **A),
         Route(P, "/connections/disconnect", lambda r: connections.call(lambda: connections.disconnect(r.b("service"))), limit=4 * KB, **A),
+        Route(
+            P,
+            "/connections/account/rename",
+            lambda r: connections.call(lambda: connections.rename_account(r.b("service"), r.b("account"), r.b("name"))),
+            limit=4 * KB,
+            **A,
+        ),
+        Route(
+            P,
+            "/connections/account/remove",
+            lambda r: connections.call(lambda: connections.remove_account(r.b("service"), r.b("account"))),
+            limit=4 * KB,
+            **A,
+        ),
         Route(P, "/connections/nous/start", lambda r: connections.call(connections.nous_start), limit=4 * KB, **A),
         Route(G, "/connections/nous/{id}", lambda r: connections.call(lambda: connections.nous_poll(r.seg(3)))),
         Route(P, "/connections/nous/cancel", lambda r: connections.call(lambda: connections.nous_cancel(r.b("session"))), limit=4 * KB, **A),

@@ -17,6 +17,7 @@ const svc = (id: string, label: string, extra: Partial<ConnectionService> = {}):
   state: "not_connected",
   via: null,
   account: null,
+  accounts: [],
   backends: [],
   needsNous: false,
   ...extra,
@@ -80,8 +81,8 @@ it("lists email first and the featured work tools, with Nous offered for one-cli
   expect(await screen.findByText("Gmail")).toBeTruthy();
   expect(screen.getByText("Needs a free Nous account.")).toBeTruthy();
   expect(screen.getByText("Notion")).toBeTruthy();
-  expect(screen.queryByText("Deepwiki")).toBeNull(); // not featured: under "All work tools"
-  fireEvent.click(screen.getByRole("button", { name: /All work tools/ }));
+  expect(screen.queryByText("Deepwiki")).toBeNull(); // not featured: under "All apps"
+  fireEvent.click(screen.getByRole("button", { name: /All apps/ }));
   expect(screen.getByText("Deepwiki")).toBeTruthy();
   fireEvent.change(screen.getByLabelText("Find a work tool"), { target: { value: "notion" } });
   expect(screen.queryByText("Deepwiki")).toBeNull();
@@ -118,6 +119,49 @@ it("asks which way when a service has more than one, Quick first", async () => {
   expect(within(row).getByRole("button", { name: /On this PC/ })).toBeTruthy();
   fireEvent.click(quick);
   await waitFor(() => expect(calls.find((c) => c.path === "/connections/connect")?.body).toEqual({ service: "googlecalendar", backend: "quick" }));
+});
+
+it("a quick service lists its accounts: name one, add another by name, remove one", async () => {
+  view = {
+    ...view,
+    nous: { signedIn: false, guest: true, account: null, connectors: true },
+    services: view.services.map((s) =>
+      s.id === "gmail"
+        ? {
+            ...s,
+            state: "connected",
+            via: "quick",
+            account: "work",
+            accounts: [
+              { id: "c1", name: null, label: "me@example.com", status: "active", default: false },
+              { id: "c2", name: "work", label: "work@example.com", status: "active", default: true },
+            ],
+          }
+        : s,
+    ),
+  };
+  render(<ConnectionsPage />);
+  expect(await screen.findByText(/guest identity on this PC/)).toBeTruthy();
+  const list = screen.getByRole("group", { name: "Gmail accounts" });
+  expect(screen.getByText("Quick · 2 accounts")).toBeTruthy();
+  expect(within(list).getByText("default")).toBeTruthy();
+
+  fireEvent.click(within(list).getByRole("button", { name: "Name" }));
+  fireEvent.change(within(list).getByLabelText("Name for me@example.com"), { target: { value: "Work" } });
+  expect(within(list).getByText("Another Gmail account is already called work.")).toBeTruthy();
+  fireEvent.change(within(list).getByLabelText("Name for me@example.com"), { target: { value: "Home Mail" } });
+  fireEvent.click(within(list).getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(calls.find((c) => c.path === "/connections/account/rename")?.body).toEqual({ service: "gmail", account: "c1", name: "home-mail" }));
+
+  fireEvent.click(within(list).getByRole("button", { name: /Add another Gmail account/ }));
+  fireEvent.change(within(list).getByLabelText("Name for the new Gmail account"), { target: { value: "side project" } });
+  fireEvent.click(within(list).getByRole("button", { name: "Connect" }));
+  await waitFor(() => expect(calls.find((c) => c.path === "/connections/connect")?.body).toEqual({ service: "gmail", backend: "quick", name: "side-project" }));
+
+  fireEvent.click(within(list).getAllByRole("button", { name: "Remove" })[1]);
+  expect(within(list).getByText(/Disconnect work\? The other Gmail accounts stay/)).toBeTruthy();
+  fireEvent.click(within(list).getAllByRole("button", { name: "Remove" }).at(-1)!);
+  await waitFor(() => expect(calls.find((c) => c.path === "/connections/account/remove")?.body).toEqual({ service: "gmail", account: "c2" }));
 });
 
 it("signs in to Nous with a code and the portal's page", async () => {

@@ -10,6 +10,11 @@ bot's routine reports to, and the last run relayed, live in the chief's profile.
 
 Built-in routines (`Second Brain: …`, `Fleet: …`) are the app's: they can be retimed, moved to another
 thread and switched off, but not deleted or rewritten, because the app would arm them again.
+
+Options (Hermes 0.22): a routine can be made paused (started later); it follows the bot's model when it fires, or
+is pinned to the model it has now (written as an explicit model and provider: Hermes's own `pinned=True` reads the
+process's config, which is the chief's even for a bot's store); and its failure alerts can be muted
+(`failure_deliver: local`, which the relay honours for a bot's routine too).
 """
 
 from __future__ import annotations
@@ -21,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from . import data, threads
+from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -233,10 +239,12 @@ def approval_for(tool_name: str, args: Any) -> dict[str, Any] | None:
     if str(args.get("action") or "").strip().lower() not in ("create", "update"):
         return None
     reasons = []
-    if args.get("deliver"):
-        where, external = destination(args.get("deliver"))
-        if external:
-            reasons.append(f"sends its results to {where}")
+    # Failure alerts (Hermes 0.22's failure_deliver) take the same lanes as results, so they leave the app the same way.
+    for key, what in (("deliver", "sends its results to"), ("failure_deliver", "sends its failure alerts to")):
+        if args.get(key):
+            where, external = destination(args.get(key))
+            if external:
+                reasons.append(f"{what} {where}")
     for key, what in (("script", "runs the script"), ("monitor_script", "runs the script"), ("monitor_url", "watches")):
         value = str(args.get(key) or "").strip()
         if value:
@@ -263,6 +271,24 @@ def pre_tool_call(tool_name: str = "", args: Any = None, **_kw: Any) -> dict[str
         if str(tool_name or "") == "cronjob_manage":
             return {"action": "approve", "message": "Schedule or change a job", "rule_key": "chief:routine-unknown"}
         return None
+
+
+def _profile_model(home: Path) -> tuple[str, str]:
+    """(provider, model) the profile runs on now, from its own config.yaml."""
+    model = subdict(data.load_yaml(home / "config.yaml"), "model")
+    return str(model.get("provider") or "").strip(), str(model.get("default") or model.get("model") or "").strip()
+
+
+def _muted(job: dict[str, Any]) -> bool:
+    return str(job.get("failure_deliver") or "").strip() == "local"
+
+
+def _model_view(home: Path, job: dict[str, Any]) -> dict[str, Any]:
+    pinned = str(job.get("model") or "").strip()
+    provider, current = _profile_model(home)
+    if pinned:
+        return {"pinned": True, "model": pinned, "provider": str(job.get("provider") or "")}
+    return {"pinned": False, "model": current, "provider": provider}
 
 
 def _describe(profile: str, home: Path, job: dict[str, Any], jobs: Any) -> dict[str, Any]:
@@ -299,6 +325,13 @@ def _describe(profile: str, home: Path, job: dict[str, Any], jobs: Any) -> dict[
         "kind": "script" if job.get("no_agent") else "agent",
         "builtIn": built_in,
         "skills": list(job.get("skills") or []),
+        # Follows the bot's model when it fires, or pinned to one.
+        "model": _model_view(home, job),
+        "pausedReason": str(job.get("paused_reason") or "") if job.get("state") == "paused" else "",
+        # Failure alerts: "on" (where results go), "muted", or "elsewhere" (a bot sent them outside the app).
+        "failureAlerts": "muted" if _muted(job) else ("elsewhere" if destination(job.get("failure_deliver"))[1] and job.get("failure_deliver") else "on"),
+        "failureStreak": int(job.get("failure_streak") or 0),
+        "lastFailure": (job.get("last_failure") or {}).get("at") if isinstance(job.get("last_failure"), dict) else None,
     }
 
 
@@ -330,7 +363,27 @@ def _find(profile: str, routine_id: str) -> tuple[Path, dict[str, Any]]:
 # ---------------------------------------------------------------- changing
 
 
-def create(profile: str, name: str, prompt: str, schedule: dict[str, Any], thread: str = threads.MAIN) -> dict[str, Any]:
+def _pin_fields(home: Path, pin: bool) -> dict[str, Any]:
+    """The job fields that pin it to the profile's model now (or release it to follow the model when it fires)."""
+    if not pin:
+        return {"model": None, "provider": None}
+    provider, model = _profile_model(home)
+    if not model:
+        raise RoutineError("This bot has no model chosen yet, so there's nothing to pin.")
+    return {"model": model, "provider": provider or None}
+
+
+def create(
+    profile: str,
+    name: str,
+    prompt: str,
+    schedule: dict[str, Any],
+    thread: str = threads.MAIN,
+    *,
+    paused: bool = False,
+    pin: bool = False,
+    alerts: str = "on",
+) -> dict[str, Any]:
     home = _home(profile)
     name, prompt = " ".join(str(name or "").split()), str(prompt or "").strip()
     if not name or len(name) > 60:
@@ -342,9 +395,16 @@ def create(profile: str, name: str, prompt: str, schedule: dict[str, Any], threa
     expr = schedule_expr(schedule)
     deliver = _deliver_for(thread)
     profile = home.name if home != data.chief_home() else "chief"
+    if alerts not in ("on", "muted"):
+        raise RoutineError("Failure alerts are on or muted.")
+    extra: dict[str, Any] = {k: v for k, v in _pin_fields(home, True).items() if v} if pin else {}
+    if paused:
+        extra.update(paused=True, paused_reason="Made paused in the app: start it when you're ready.")
+    if alerts == "muted":
+        extra["failure_deliver"] = "local"
     jobs = _cron()
     with jobs.use_cron_store(home):
-        job = jobs.create_job(prompt, expr, name=name, deliver=deliver if profile == "chief" else "local")
+        job = jobs.create_job(prompt, expr, name=name, deliver=deliver if profile == "chief" else "local", **extra)
     if profile != "chief":
         _set_bot_thread(profile, job["id"], thread or threads.MAIN)
     logger.info("routines: %s created for %s (%s)", name, profile, expr)
@@ -360,6 +420,8 @@ def update(
     schedule: dict[str, Any] | None = None,
     thread: str | None = None,
     enabled: bool | None = None,
+    pin: bool | None = None,
+    alerts: str | None = None,
 ) -> dict[str, Any]:
     home, job = _find(profile, routine_id)
     profile = home.name if home != data.chief_home() else "chief"
@@ -383,6 +445,14 @@ def update(
             changes["deliver"] = deliver
         else:
             _set_bot_thread(profile, job["id"], thread or threads.MAIN)
+    if pin is not None and not job.get("no_agent"):
+        if pin != bool(str(job.get("model") or "").strip()):
+            changes.update(_pin_fields(home, pin))
+    if alerts is not None:
+        if alerts not in ("on", "muted"):
+            raise RoutineError("Failure alerts are on or muted.")
+        # On: follow where results go (no override). Muted: Hermes's own opt-out.
+        changes["failure_deliver"] = "local" if alerts == "muted" else None
     jobs = _cron()
     with jobs.use_cron_store(home):
         if changes:
@@ -465,7 +535,10 @@ def relay(limit: int = 5) -> int:
             continue
         fresh = [p for p in files if p.name > str(relayed.get(key) or "")][-limit:]
         for path in fresh:
-            answer = _answer(path.read_text(encoding="utf-8", errors="replace"))
+            text = path.read_text(encoding="utf-8", errors="replace")
+            answer = _answer(text)
+            if answer and _muted(job) and "## Response" not in text:
+                answer = None  # a failure, and its alerts are muted
             if answer:
                 chat = threads.chat_id(thread if threads.exists(thread) else threads.MAIN)
                 head = f"Routine: {job.get('name') or 'Routine'} ({_bot_name(profile, home)})"

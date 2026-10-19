@@ -8,12 +8,16 @@ import { field } from "@/components/ui/field";
 import { Group } from "@/components/ui/settings-group";
 import {
   BACKEND_LABEL,
+  accountName,
+  accountTitle,
   cancelNousSignIn,
   disconnectService,
   fetchConnections,
   onThisPc,
   openSignIn,
   pollNousSignIn,
+  removeAccount,
+  renameAccount,
   signInUrl,
   signOutNous,
   startNousSignIn,
@@ -23,6 +27,7 @@ import {
   type ConnectionsView,
   type KeyNeed,
   type NousStart,
+  type ServiceAccount,
 } from "@/lib/connections";
 import { useAssistantName } from "@/lib/identity";
 
@@ -30,7 +35,9 @@ import { useAssistantName } from "@/lib/identity";
  * Settings → Connections: the services the chief can use (worker bots get them once the mail guard runs in their
  * processes too: docs/PLAN-2026-10-07-connections.md §2.5). Each row is a service, whatever carries it (connections.py):
  * Quick (Nous Connectors), On this PC (Google, kept between this PC and Google) or Direct (Hermes's catalog). The
- * Nous sign-in at the top turns Quick on. Reading is free; sending, deleting and moving mail asks first.
+ * Nous sign-in at the top turns Quick on (since Hermes 0.22 the first quick connect makes a free guest identity by
+ * itself, so a sign-in is optional). A quick service can hold several accounts, each named so bots can pick one.
+ * Reading is free; sending, deleting and moving mail asks first.
  */
 
 export function ConnectionsPage() {
@@ -181,7 +188,11 @@ function NousGroup({ view, signin, action }: { view: ConnectionsView; signin: No
     ? nous.connectors
       ? `Signed in${nous.account ? ` as ${nous.account}` : ""}. Quick connections are on.`
       : `Signed in${nous.account ? ` as ${nous.account}` : ""}, but this account doesn’t offer quick connections yet.`
-    : "One free Nous account turns on one-click Gmail, Outlook, Calendar, Drive and more. No developer accounts or keys.";
+    : nous.connectors
+      ? nous.guest
+        ? "Quick connections are on with a guest identity on this PC. Sign in to Nous to keep them with your own account."
+        : "Quick connections work without an account: the first one sets up a free Nous guest identity on this PC. Sign in to Nous to keep them with your account."
+      : "One free Nous account turns on one-click Gmail, Outlook, Calendar, Drive and more. No developer accounts or keys.";
 
   return (
     <Group icon={<ZapIcon className="size-4" />} title="Quick connections" action={action}>
@@ -247,11 +258,11 @@ function WorkGroup({ services, featured, view, onChange }: { services: Connectio
   const shown = useMemo(() => {
     if (!all) return top;
     const q = query.trim().toLowerCase();
-    return q ? services.filter((s) => s.label.toLowerCase().includes(q) || s.blurb.toLowerCase().includes(q)) : services;
+    return q ? services.filter((s) => [s.label, s.blurb, s.category || ""].some((t) => t.toLowerCase().includes(q))) : services;
   }, [all, query, services, top]);
   const rest = services.length - top.length;
   return (
-    <Group icon={<BriefcaseIcon className="size-4" />} title="Work tools" hint="Each opens its own sign-in page; nothing to register. These connect directly from this PC.">
+    <Group icon={<BriefcaseIcon className="size-4" />} title="Work tools" hint="Each opens its own sign-in page; nothing to register.">
       {all ? (
         <div className="p-2.5">
           <label className="relative block">
@@ -259,7 +270,7 @@ function WorkGroup({ services, featured, view, onChange }: { services: Connectio
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Find a tool"
+              placeholder="Find an app, like CRM or design"
               aria-label="Find a work tool"
               className={field({ extra: "w-full pl-9" })}
             />
@@ -280,7 +291,7 @@ function WorkGroup({ services, featured, view, onChange }: { services: Connectio
           }}
           className="press flex min-h-11 w-full items-center justify-center gap-1.5 text-callout text-fg-3 hover:bg-fill-1 hover:text-fg"
         >
-          {all ? "Fewer tools" : `All work tools (${services.length})`}
+          {all ? "Fewer tools" : `All apps (${services.length})`}
           <ChevronDownIcon className={`size-4 transition-transform duration-fast ${all ? "rotate-180" : ""}`} />
         </button>
       ) : null}
@@ -325,8 +336,9 @@ export function ServiceRow({ service, view, onChange, onNous }: { service: Conne
     void start(service.backends[0]);
   }
 
+  const accounts = service.via === "quick" ? service.accounts : [];
   const sub = connected
-    ? [service.via ? BACKEND_LABEL[service.via] : "", service.account || ""].filter(Boolean).join(" · ")
+    ? [service.via ? BACKEND_LABEL[service.via] : "", accounts.length > 1 ? `${accounts.length} accounts` : service.account || ""].filter(Boolean).join(" · ")
     : service.state === "reconnect"
       ? "The sign-in expired. Reconnect to keep using it."
       : service.needsNous
@@ -368,7 +380,8 @@ export function ServiceRow({ service, view, onChange, onNous }: { service: Conne
       {confirm ? (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-ctl bg-fill-1 px-3 py-2.5">
           <p className="min-w-0 flex-1 text-callout text-fg-2">
-            Disconnect {service.label}? Bots lose access{otherGoogle.length ? `, and ${otherGoogle.join(" and ")} on this PC go too` : ""}.
+            Disconnect {accounts.length > 1 ? `all ${accounts.length} ${service.label} accounts` : service.label}? Bots lose access
+            {otherGoogle.length ? `, and ${otherGoogle.join(" and ")} on this PC go too` : ""}.
           </p>
           <Button variant="danger" size="sm" disabled={busy} onClick={() => void disconnect()}>
             {busy ? "Disconnecting…" : "Disconnect"}
@@ -378,6 +391,8 @@ export function ServiceRow({ service, view, onChange, onNous }: { service: Conne
           </Button>
         </div>
       ) : null}
+
+      {connected && accounts.length ? <AccountList service={service} accounts={accounts} onChange={onChange} /> : null}
 
       {choosing && !connected && flow.step === "idle" ? (
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
@@ -403,6 +418,170 @@ export function ServiceRow({ service, view, onChange, onNous }: { service: Conne
       ) : null}
 
       <FlowNote flow={flow} label={service.label} onCancel={cancel} onRetry={connect} onKeys={(env, backend) => void start(backend, env)} />
+      {error ? (
+        <p role="alert" className="mt-2 text-callout text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ a service's accounts */
+
+const BROKEN = new Set(["expired", "revoked", "failed"]);
+
+/** A quick service's accounts: each can be renamed, signed in again or removed, and another one added by name. */
+function AccountList({ service, accounts, onChange }: { service: ConnectionService; accounts: ServiceAccount[]; onChange: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [text, setText] = useState("");
+  const add = useConnectFlow(service.id, () => {
+    setAdding(false);
+    setText("");
+    onChange();
+  });
+  const name = accountName(text);
+  const taken = !!name && accounts.some((a) => a.name === name);
+  const many = accounts.length > 1;
+
+  return (
+    <div className="mt-3 overflow-hidden rounded-ctl border border-line" role="group" aria-label={`${service.label} accounts`}>
+      {accounts.map((a) => (
+        <AccountRow key={a.id} service={service} account={a} many={many} names={accounts} onChange={onChange} />
+      ))}
+      <div className="border-t border-line px-3 py-2.5">
+        {adding && (add.flow.step === "idle" || add.flow.step === "failed") ? (
+          <form
+            className="space-y-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (name && !taken) void add.start("quick", undefined, { name });
+            }}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                placeholder="Name it, like work or personal"
+                aria-label={`Name for the new ${service.label} account`}
+                aria-invalid={!!text.trim() && (!name || taken)}
+                className={field({ extra: "min-w-0 flex-1" })}
+              />
+              <Button type="submit" variant="primary" size="sm" disabled={!name || taken}>
+                Connect
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => (setAdding(false), setText(""), add.reset())}>
+                Cancel
+              </Button>
+            </div>
+            <p className={`text-caption ${text.trim() && (!name || taken) ? "text-danger" : "text-fg-3"}`}>
+              {taken
+                ? `Another ${service.label} account is already called ${name}.`
+                : text.trim() && !name
+                  ? "Use up to 32 letters, numbers or dashes."
+                  : "Bots use this name to pick the account; you sign in to it next."}
+            </p>
+          </form>
+        ) : add.flow.step === "idle" ? (
+          <Button variant="ghost" size="sm" onClick={() => setAdding(true)}>
+            + Add another {service.label} account
+          </Button>
+        ) : null}
+        <FlowNote flow={add.flow} label={name ? `${service.label} (${name})` : service.label} onCancel={add.cancel} onRetry={() => void add.start("quick", undefined, { name })} onKeys={() => undefined} />
+      </div>
+    </div>
+  );
+}
+
+function AccountRow({ service, account, many, names, onChange }: { service: ConnectionService; account: ServiceAccount; many: boolean; names: ServiceAccount[]; onChange: () => void }) {
+  const [mode, setMode] = useState<"" | "rename" | "remove">("");
+  const [text, setText] = useState(account.name || "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const again = useConnectFlow(service.id, onChange);
+  const broken = BROKEN.has(account.status);
+  const title = accountTitle(account);
+  const name = accountName(text);
+  const taken = !!name && name !== account.name && names.some((a) => a.name === name);
+
+  async function act(run: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    try {
+      await run();
+      setMode("");
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "That didn't work");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="border-t border-line px-3 py-2.5 first:border-t-0">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <div className="min-w-0 flex-1">
+          <p className="flex items-center gap-1.5 text-callout text-fg">
+            <span className="truncate">{title}</span>
+            {account.default && many ? <span className="shrink-0 rounded-chip bg-fill-2 px-1.5 py-px text-micro text-fg-3">default</span> : null}
+          </p>
+          {broken ? (
+            <p className="text-caption text-warn">The sign-in expired. Reconnect to keep using it.</p>
+          ) : account.name && account.label ? (
+            <p className="truncate text-caption text-fg-3">{account.label}</p>
+          ) : !account.name ? (
+            <p className="text-caption text-fg-3">No name yet. Name it so bots can pick it.</p>
+          ) : null}
+        </div>
+        {broken && again.flow.step === "idle" ? (
+          <Button variant="primary" size="sm" onClick={() => void again.start("quick", undefined, { account: account.id })}>
+            Reconnect
+          </Button>
+        ) : null}
+        <Button variant="ghost" size="sm" disabled={busy} aria-expanded={mode === "rename"} onClick={() => (setMode(mode === "rename" ? "" : "rename"), setText(account.name || ""), setError(""))}>
+          {account.name ? "Rename" : "Name"}
+        </Button>
+        {many ? (
+          <Button variant="ghost" size="sm" disabled={busy} aria-expanded={mode === "remove"} onClick={() => (setMode(mode === "remove" ? "" : "remove"), setError(""))}>
+            Remove
+          </Button>
+        ) : null}
+      </div>
+      {mode === "rename" ? (
+        <form
+          className="mt-2 flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (name && !taken && name !== account.name) void act(() => renameAccount(service.id, account.id, name));
+          }}
+        >
+          <input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="work, personal…"
+            aria-label={`Name for ${title}`}
+            aria-invalid={!!text.trim() && (!name || taken)}
+            className={field({ extra: "min-w-0 flex-1" })}
+          />
+          <Button type="submit" variant="primary" size="sm" disabled={busy || !name || taken || name === account.name}>
+            {busy ? "Saving…" : "Save"}
+          </Button>
+          {taken ? <p className="w-full text-caption text-danger">Another {service.label} account is already called {name}.</p> : null}
+        </form>
+      ) : null}
+      {mode === "remove" ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-ctl bg-fill-1 px-3 py-2">
+          <p className="min-w-0 flex-1 text-callout text-fg-2">Disconnect {title}? The other {service.label} accounts stay.</p>
+          <Button variant="danger" size="sm" disabled={busy} onClick={() => void act(() => removeAccount(service.id, account.id))}>
+            {busy ? "Removing…" : "Remove"}
+          </Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => setMode("")}>
+            Keep
+          </Button>
+        </div>
+      ) : null}
+      <FlowNote flow={again.flow} label={title} onCancel={again.cancel} onRetry={() => void again.start("quick", undefined, { account: account.id })} onKeys={() => undefined} />
       {error ? (
         <p role="alert" className="mt-2 text-callout text-danger">
           {error}

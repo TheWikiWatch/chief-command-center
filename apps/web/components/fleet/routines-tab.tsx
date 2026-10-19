@@ -197,6 +197,8 @@ function RoutineList({
                   {label.group ? `${label.group} · ` : ""}
                   {r.schedule.text}
                   {next ? ` · next ${next}` : r.enabled ? "" : " · off"}
+                  {r.model?.pinned ? ` · pinned to ${r.model.model}` : ""}
+                  {r.failureAlerts === "muted" ? " · failure alerts muted" : ""}
                   {r.thread && r.thread !== "main" ? ` · ${threads.find((t) => t.id === r.thread)?.title || "a thread"}` : ""}
                 </span>
                 {result?.bad ? (
@@ -297,8 +299,12 @@ function RoutineEditor({
   const [schedule, setSchedule] = useState<RoutineSchedule>(() => initialSchedule(routine?.schedule));
   const [profile, setProfile] = useState(routine?.profile || "chief");
   const [thread, setThread] = useState(routine?.thread ?? "main");
+  const [pin, setPin] = useState(!!routine?.model?.pinned);
+  const [alerts, setAlerts] = useState<"on" | "muted">(routine?.failureAlerts === "muted" ? "muted" : "on");
+  const [startNow, setStartNow] = useState(true);
   const [saving, setSaving] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [touchedAlerts, setTouchedAlerts] = useState(false);
   const [note, setNote] = useState<Note | null>(null);
 
   const changes: Record<string, unknown> = {};
@@ -307,6 +313,8 @@ function RoutineEditor({
     if (!locked && prompt.trim() !== routine.prompt.trim()) changes.prompt = prompt.trim();
     if (!sameSchedule(schedule, routine.schedule)) changes.schedule = scheduleBody(schedule);
     if (routine.kind !== "script" && thread !== (routine.thread ?? "main")) changes.thread = thread;
+    if (routine.kind !== "script" && pin !== !!routine.model?.pinned) changes.pin = pin;
+    if (alerts !== (routine.failureAlerts === "muted" ? "muted" : "on") || (routine.failureAlerts === "elsewhere" && alerts === "on" && touchedAlerts)) changes.alerts = alerts;
   }
   const dirty = creating ? !!(name.trim() && prompt.trim()) : Object.keys(changes).length > 0;
 
@@ -329,9 +337,9 @@ function RoutineEditor({
       "save",
       () =>
         creating
-          ? routinesApi.create({ profile, name: name.trim(), prompt: prompt.trim(), schedule: scheduleBody(schedule), thread })
+          ? routinesApi.create({ profile, name: name.trim(), prompt: prompt.trim(), schedule: scheduleBody(schedule), thread, paused: !startNow, pin, alerts })
           : routinesApi.update(routine.profile, routine.id, changes),
-      () => onDone(creating ? `${name.trim()} is scheduled.` : "Saved."),
+      () => onDone(creating ? (startNow ? `${name.trim()} is scheduled.` : `${name.trim()} is saved, paused. Switch it on when you're ready.`) : "Saved."),
     );
 
   const result = routine ? lastResult(routine) : null;
@@ -357,7 +365,14 @@ function RoutineEditor({
           <Stat
             label="Last run"
             value={routine.lastRun ? `${whenLabel(routine.lastRun)}` : "Not yet"}
-            extra={result ? <span className={`text-caption ${result.bad ? "text-danger" : "text-ok"}`}>{result.text}</span> : null}
+            extra={
+              result ? (
+                <span className={`text-caption ${result.bad ? "text-danger" : "text-ok"}`}>
+                  {result.text}
+                  {result.bad && (routine.failureStreak || 0) > 1 ? ` · ${routine.failureStreak} times in a row` : ""}
+                </span>
+              ) : null
+            }
           />
         </dl>
       ) : null}
@@ -528,6 +543,17 @@ function RoutineEditor({
         </Labeled>
       )}
 
+      <RoutineOptionsBox
+        routine={routine}
+        bot={creating ? bots.find((b) => b.id === profile)?.name || "the bot" : routine.bot}
+        pin={pin}
+        onPin={setPin}
+        alerts={alerts}
+        onAlerts={(next) => (setAlerts(next), setTouchedAlerts(true))}
+        startNow={creating ? startNow : undefined}
+        onStartNow={setStartNow}
+      />
+
       {note ? <NoteLine note={note} /> : null}
 
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-4">
@@ -587,6 +613,75 @@ function RoutineEditor({
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Hermes 0.22's routine options: which model it runs on, its failure alerts, and (new) whether it starts now. */
+function RoutineOptionsBox({
+  routine,
+  bot,
+  pin,
+  onPin,
+  alerts,
+  onAlerts,
+  startNow,
+  onStartNow,
+}: {
+  routine?: TeamRoutine;
+  bot: string;
+  pin: boolean;
+  onPin: (pin: boolean) => void;
+  alerts: "on" | "muted";
+  onAlerts: (alerts: "on" | "muted") => void;
+  startNow?: boolean;
+  onStartNow: (now: boolean) => void;
+}) {
+  const script = routine?.kind === "script";
+  const model = routine?.model?.model || "";
+  const pinnedTo = routine?.model?.pinned ? model : "";
+  const modelHint = pin
+    ? pinnedTo
+      ? `Always runs on ${pinnedTo}, even when ${bot}'s model changes.`
+      : `Keeps the model ${bot} has now${model ? ` (${model})` : ""}, even when ${bot}'s model changes.`
+    : `Runs on whatever model ${bot} has when it fires${model ? ` (now ${model})` : ""}.`;
+  return (
+    <fieldset className="space-y-3">
+      <legend className="mb-1.5 px-1 text-caption font-medium text-fg-3">Options</legend>
+      {script ? null : (
+        <div className="space-y-1.5">
+          <Segmented
+            label="Model"
+            value={pin ? "pinned" : "follows"}
+            options={[
+              ["follows", `Follows ${bot}`],
+              ["pinned", "Pinned"],
+            ]}
+            onChange={(v) => onPin(v === "pinned")}
+          />
+          <p className="px-1 text-caption text-fg-3">{modelHint}</p>
+        </div>
+      )}
+      <Row title="Tell me when it fails" hint={routine?.failureAlerts === "elsewhere" && alerts === "on" ? "Its failure alerts go outside the app (set from a chat). Switch this off to mute them, or off and on to keep them here." : alerts === "muted" ? "Failures stay on this page only." : "A failed run says so where its results go."}>
+        <Switch label="Tell me when it fails" checked={alerts === "on"} onChange={(on) => onAlerts(on ? "on" : "muted")} />
+      </Row>
+      {startNow === undefined ? null : (
+        <Row title="Start the schedule now" hint={startNow ? "Its first run is the next time on the schedule." : "Saved paused: switch it on in the list when you're ready."}>
+          <Switch label="Start the schedule now" checked={startNow} onChange={onStartNow} />
+        </Row>
+      )}
+    </fieldset>
+  );
+}
+
+function Row({ title, hint, children }: { title: string; hint: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 rounded-card border border-line bg-card px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-callout text-fg">{title}</p>
+        <p className="text-caption text-fg-3">{hint}</p>
+      </div>
+      {children}
     </div>
   );
 }

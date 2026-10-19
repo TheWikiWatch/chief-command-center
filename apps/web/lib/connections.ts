@@ -16,6 +16,9 @@ import { requestJson } from "@/lib/request";
 export type Backend = "quick" | "local" | "mcp";
 export type ServiceState = "connected" | "not_connected" | "reconnect";
 
+/** One quick account of a service: `name` is what bots pick it by (unnamed until renamed); `default` is the one used without a name. */
+export type ServiceAccount = { id: string; name: string | null; label: string; status: string; default: boolean };
+
 export type ConnectionService = {
   id: string;
   label: string;
@@ -24,8 +27,10 @@ export type ConnectionService = {
   state: ServiceState;
   via: Backend | null;
   account: string | null;
+  accounts: ServiceAccount[];
   backends: Backend[];
   needsNous: boolean;
+  category?: string;
 };
 
 export type ConnectionsView = {
@@ -55,11 +60,27 @@ function must<T extends { ok: boolean; error?: string }>(data: T, fallback: stri
 }
 
 export const fetchConnections = async (refresh = false) => must(await get<ConnectionsView>(refresh ? "?refresh=1" : ""), "Couldn't read your connections");
-export const startConnect = async (service: string, backend?: Backend, env?: Record<string, string>) =>
-  must(await post<ConnectStart>("/connect", { service, backend: backend || "", ...(env ? { env } : {}) }, 80_000), "Couldn't start that connection");
+/** Quick only: `name` connects another account under that name; `account` signs that account in again. */
+export type AccountChoice = { name?: string; account?: string };
+export const startConnect = async (service: string, backend?: Backend, env?: Record<string, string>, choice?: AccountChoice) =>
+  must(
+    await post<ConnectStart>("/connect", { service, backend: backend || "", ...(env ? { env } : {}), ...(choice?.name ? { name: choice.name } : {}), ...(choice?.account ? { account: choice.account } : {}) }, 80_000),
+    "Couldn't start that connection",
+  );
 export const connectStatus = async (op: string) => must(await get<OpStatus>(`/op/${encodeURIComponent(op)}`), "Couldn't check the sign-in");
 export const cancelConnect = (op: string) => post<{ ok: boolean }>("/cancel", { op }).catch(() => undefined);
 export const disconnectService = async (service: string) => must(await post<{ ok: boolean; error?: string; also?: string[] }>("/disconnect", { service }), "Couldn't disconnect");
+export const renameAccount = async (service: string, account: string, name: string) =>
+  must(await post<{ ok: boolean; error?: string; name?: string }>("/account/rename", { service, account, name }), "Couldn't rename that account");
+export const removeAccount = async (service: string, account: string) =>
+  must(await post<{ ok: boolean; error?: string }>("/account/remove", { service, account }), "Couldn't disconnect that account");
+/** What an account is called on the page: its name, else the sign-in's own label (usually the address). */
+export const accountTitle = (a: ServiceAccount) => a.name || a.label || "Account";
+/** The form Nous takes for an account name (1-32 lowercase letters, digits or dashes), or "" when it can't be one. */
+export function accountName(text: string): string {
+  const name = text.trim().toLowerCase().replace(/[\s_]+/g, "-");
+  return /^[a-z0-9][a-z0-9-]{0,31}$/.test(name) ? name : "";
+}
 export const startNousSignIn = async () => must(await post<NousStart>("/nous/start", {}, 45_000), "Couldn't start the Nous sign-in");
 export const pollNousSignIn = async (session: string) => must(await get<NousPoll>(`/nous/${encodeURIComponent(session)}`), "Couldn't check the Nous sign-in");
 export const cancelNousSignIn = (session: string) => post<{ ok: boolean }>("/nous/cancel", { session }).catch(() => undefined);
@@ -150,14 +171,14 @@ export function useConnectFlow(service: string, onDone?: () => void) {
   );
 
   const start = useCallback(
-    async (backend?: Backend, env?: Record<string, string>) => {
+    async (backend?: Backend, env?: Record<string, string>, choice?: AccountChoice) => {
       if ((backend === "local" || backend === "mcp") && !onThisPc()) {
         setFlow({ step: "pc-only", backend });
         return;
       }
       setFlow({ step: "starting", backend });
       try {
-        const res = await startConnect(service, backend, env);
+        const res = await startConnect(service, backend, env, choice);
         if (res.needs?.length) return setFlow({ step: "keys", backend: backend || "mcp", needs: res.needs });
         if (res.state === "connected" || !res.op || !res.url) {
           setFlow({ step: "done" });

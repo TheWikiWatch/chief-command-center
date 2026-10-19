@@ -391,7 +391,9 @@ class OverviewTests(unittest.TestCase):
             _Entry("gitstuff", install=object()),
             _Entry("localthing", transport="stdio"),
             _Entry("deepwiki", auth="none"),
+            _Entry("asana", slug="asana"),
         ]
+        catalog[-1].auth.oauth = {"client_id": "${ASANA_CLIENT_ID}", "redirect_port": 27890}
         fake_module(self, "hermes_cli.mcp_catalog", list_catalog=lambda: catalog, installed_servers=lambda: self.installed)
         for p in (
             patch.object(connections, "chief_scope", _noscope),
@@ -414,6 +416,13 @@ class OverviewTests(unittest.TestCase):
         for hidden in ("stripe", "gitstuff", "localthing"):
             self.assertNotIn(hidden, rows)  # money tools and anything that installs software aren't offered
         self.assertLess(list(rows).index("notion"), list(rows).index("deepwiki"))  # featured first
+
+    def test_a_tool_that_needs_a_developer_app_is_quick_only(self):
+        asana = self.rows()["asana"]
+        self.assertEqual((asana["backends"], asana["needsNous"]), ([], True))  # never "register an app" first
+        self.nous = {"signedIn": True, "guest": False, "account": None, "connectors": True}
+        with patch.object(connections, "_quick_status", return_value={}):
+            self.assertEqual(self.rows()["asana"]["backends"], ["quick"])
 
     def test_with_nous_quick_comes_first_for_google_and_carries_outlook(self):
         self.nous = {"signedIn": True, "guest": False, "account": "o@example.com", "connectors": True}
@@ -514,18 +523,34 @@ class QuickConnectTests(unittest.TestCase):
                 }
 
         self.Operation = Operation
+        self.targets = []
+
+        def target(name, kind, action, alias=None, repair_id=None):
+            made = types.SimpleNamespace(name=name, kind=kind, action=action, alias=alias, repair_id=repair_id)
+            self.targets.append(made)
+            return made
+
+        self.target = target
         fake_module(self, "tools.connectors.live", open=lambda op: self.opened.append(op))
-        fake_module(self, "tools.connectors.operation", ConnectionOperation=Operation, Target=lambda name, kind, action: types.SimpleNamespace(name=name))
-        fake_module(self, "tools.connectors.managed", managed_kind=lambda client, action, force: None, managed_client=lambda: None, WATCH_TICK_SECONDS=1.0)
+        fake_module(self, "tools.connectors.operation", ConnectionOperation=Operation, Target=self.target)
+        self.kinds = []
+        fake_module(
+            self,
+            "tools.connectors.managed",
+            managed_kind=lambda client, action, force: self.kinds.append((client, action)),
+            managed_client=lambda initiator=None: f"client:{initiator}",
+            WATCH_TICK_SECONDS=1.0,
+            DESKTOP_PAGE="desktop_page",
+        )
         if "tools.connectors" not in sys.modules:
             fake_module(self, "tools.connectors")
         p = patch.object(connections, "chief_scope", _noscope)
         p.start()
         self.addCleanup(p.stop)
 
-    def run_with(self, drive):
+    def run_with(self, drive, **kw):
         fake_module(self, "tools.connectors.run", drive_operation=drive)
-        return connections._quick_connect("outlook")
+        return connections._quick_connect("outlook", **kw)
 
     def test_a_refusal_says_why(self):
         class GatewayUnavailable(RuntimeError):
@@ -559,6 +584,144 @@ class QuickConnectTests(unittest.TestCase):
         operation, url = self.run_with(drive)
         self.assertEqual(url, "https://connect.example.com/link/1")
         self.assertIsInstance(operation, self.Operation)
+        self.assertEqual(self.kinds, [("client:desktop_page", "connect")])  # attributed to the page
+
+    def test_another_account_by_name_and_one_account_signed_in_again(self):
+        def drive(op, kind, connection_callback, **kw):
+            op.url = "https://connect.example.com/link/2"
+            connection_callback({})
+
+        self.run_with(drive, name="work")
+        self.run_with(drive, repair_id="conn-2")
+        self.assertEqual([(t.action, t.alias, t.repair_id) for t in self.targets], [("connect", "work", None), ("reconnect", None, "conn-2")])
+        self.assertEqual([a for _, a in self.kinds], ["connect", "reconnect"])
+
+    def test_a_guest_identity_nous_wont_make_says_why(self):
+        class ToolGatewayError(RuntimeError):
+            code = "GUEST_SETUP_FAILED"
+
+        reason = connections._gateway_reason(ToolGatewayError("Hosted connectors could not be set up. Try again in 5 minutes."))
+        self.assertEqual(reason, "Hosted connectors could not be set up. Try again in 5 minutes.")
+
+
+class _Portal:
+    """A fake Nous portal and connector gateway: renames and removals recorded."""
+
+    def __init__(self, accounts, apps=()):
+        self.accounts = accounts
+        self.apps = list(apps)
+        self.renamed, self.removed, self.clients = [], [], []
+
+    def install(self, test, pending=False):
+        portal = self
+
+        class ConnectorClient:
+            def __init__(self, initiator=None):
+                portal.clients.append(initiator)
+
+            def list_connectors(self):
+                return [{"connector": "gmail", "connected": True, "connectionStatus": "active"}, {"connector": "notion", "connected": False}]
+
+        class IdempotencyConflict(RuntimeError):
+            pass
+
+        class PortalConnectorClient:
+            def list_accounts(self):
+                return [dict(a) for a in portal.accounts]
+
+            def rename_account(self, cid, alias):
+                if any(a.get("alias") == alias for a in portal.accounts):
+                    raise IdempotencyConflict("taken")
+                portal.renamed.append((cid, alias))
+                return {}
+
+            def delete_account(self, cid):
+                portal.removed.append(cid)
+                return {}
+
+            def catalog(self):
+                return types.SimpleNamespace(connectors=[types.SimpleNamespace(**a) for a in portal.apps])
+
+        for name in ("tools", "tools.connectors", "tools.connectors.gateway", "tools.connectors.portal"):
+            if name not in sys.modules:
+                fake_module(test, name)
+        fake_module(test, "tools.connectors.gateway.config", guest_identity_pending=lambda: pending, connectors_available=lambda: True)
+        fake_module(test, "tools.connectors.gateway.client", ConnectorClient=ConnectorClient)
+        fake_module(test, "tools.connectors.managed", DESKTOP_PAGE="desktop_page")
+        fake_module(test, "tools.connectors.portal.client", PortalConnectorClient=PortalConnectorClient)
+        return self
+
+
+GMAIL_ACCOUNTS = [
+    {"connectionId": "c1", "connector": "gmail", "status": "active", "label": "owner@example.com", "alias": None, "active": False},
+    {"connectionId": "c2", "connector": "gmail", "status": "active", "label": "work@example.com", "alias": "work", "active": True},
+    {"connectionId": "c0", "connector": "gmail", "status": "revoked", "label": "old@example.com", "alias": None, "active": False, "disabled": True},
+]
+
+
+class QuickAccountsTests(unittest.TestCase):
+    def setUp(self):
+        connections._invalidate()
+        connections._forget_directory()
+        self.addCleanup(connections._invalidate)
+        self.addCleanup(connections._forget_directory)
+        p = patch.object(connections, "chief_scope", _noscope)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_reading_status_never_makes_a_nous_identity(self):
+        portal = _Portal(GMAIL_ACCOUNTS).install(self, pending=True)
+        self.assertEqual(connections._quick_status(), {})
+        self.assertEqual(connections._hosted_directory(), [])
+        self.assertEqual(portal.clients, [])  # no gateway client at all, so no guest identity
+
+    def test_each_account_is_listed_with_its_name_and_the_default(self):
+        portal = _Portal(GMAIL_ACCOUNTS).install(self)
+        status = connections._quick_status()
+        self.assertEqual(portal.clients, ["desktop_page"])
+        self.assertEqual(status["gmail"]["account"], "work")
+        self.assertEqual(
+            [(a["id"], a["name"], a["label"], a["default"]) for a in status["gmail"]["accounts"]],
+            [("c1", None, "owner@example.com", False), ("c2", "work", "work@example.com", True)],  # the retired one is left out
+        )
+        self.assertEqual(status["notion"]["accounts"], [])
+
+    def test_rename_and_remove_one_account(self):
+        portal = _Portal(GMAIL_ACCOUNTS).install(self)
+        fake_module(self, "hermes_cli.mcp_catalog", list_catalog=lambda: [], installed_servers=lambda: {})
+        self.assertEqual(connections.rename_account("gmail", "c1", "  Personal Mail "), {"ok": True, "name": "personal-mail"})
+        self.assertEqual(portal.renamed, [("c1", "personal-mail")])
+        with self.assertRaisesRegex(connections.ConnectionsError, "already called work"):
+            connections.rename_account("gmail", "c1", "work")
+        with self.assertRaisesRegex(connections.ConnectionsError, "up to 32 letters"):
+            connections.rename_account("gmail", "c1", "-nope!")
+        with self.assertRaisesRegex(connections.ConnectionsError, "isn't connected any more"):
+            connections.remove_account("outlook", "c1")  # an id from another service is refused
+        connections.remove_account("gmail", "c2")
+        self.assertEqual(portal.removed, ["c2"])
+
+    def test_the_bots_tool_names_the_accounts(self):
+        _Portal(GMAIL_ACCOUNTS).install(self)
+        nous = {"signedIn": True, "guest": False, "account": None, "connectors": True}
+        local = {"available": False, "connected": False, "account": None, "services": []}
+        fake_module(self, "hermes_cli.mcp_catalog", list_catalog=lambda: [], installed_servers=lambda: {})
+        with patch.object(connections, "_nous_state", lambda: dict(nous)), patch.object(connections.google_local, "status", lambda home: dict(local)):
+            status = json.loads(connections.tool_handler({"action": "status"}))
+        gmail = next(c for c in status["connected"] if c["id"] == "gmail")
+        self.assertEqual(gmail["accounts"], [{"name": "owner@example.com", "default": False}, {"name": "work", "default": True}])
+        self.assertIn("connector_alias", status["how"])
+
+    def test_the_directory_adds_apps_nothing_else_carries(self):
+        apps = [
+            {"slug": "gmail", "name": "Gmail", "description": "Mail.", "category": "Email"},
+            {"slug": "hubspot", "name": "HubSpot", "description": "Contacts and deals via the HubSpot MCP server", "category": "CRM"},
+            {"slug": "stripe", "name": "Stripe", "description": "Payments.", "category": "Finance"},
+        ]
+        _Portal([], apps).install(self)
+        fake_module(self, "hermes_cli.mcp_catalog", list_catalog=lambda: [], installed_servers=lambda: {})
+        work = [s for s in connections.services() if s.group == "work"]
+        self.assertEqual([(s.id, s.label, s.quick, s.mcp, s.category) for s in work], [("hubspot", "HubSpot", "hubspot", "", "crm")])
+        self.assertEqual(work[0].blurb, "Contacts and deals.")
 
 
 class FileApiTests(unittest.TestCase):

@@ -1215,3 +1215,16 @@ hosts, networks, protocols and services files into its own folder on first run; 
 release's smoke test ran it, so the package shipped the build PC's hosts (loopback names in the current releases; private
 network names in the first 0.22 build, caught before release). stage.py now writes neutral copies at build time, and
 the release refuses a payload whose hosts names anything but loopback.
+
+**Hermes 0.22 features, part 1 (2026-10-18; plan: `docs/PLAN-2026-10-18-hermes-022-features.md`).**
+
+- Fix: opening Settings → Connections created a Nous guest identity. Since 0.22 Hermes makes one for any hosted
+  connector action; the page's status read was one. Reads now never make an identity (nothing to read without one);
+  the first quick connect makes it, attributed to the page. Quick connections now work without signing in to Nous.
+- Connections: a quick service lists each of its accounts. Name one (bots pick it by that name), add another under a
+  name, sign one in again, or remove one while the others stay. The bots' `connections` tool names the accounts and
+  tells them to pass `connector_alias`. "All apps" now includes Nous's app directory (services Hermes's own catalog
+  doesn't list), searchable by category. Asana isn't offered directly any more: it needs a developer app first.
+- Routines: a new routine can start paused, follow the bot's model or be pinned to the one it has now (a bot's pin is
+  its own model, never the chief's), and have its failure alerts muted; the editor shows a run of failures. A bot
+  that sends a routine's failure alerts outside the app now asks first, as for its results.

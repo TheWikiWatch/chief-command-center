@@ -136,8 +136,11 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "hermes_cli.auth": ("clear_provider_auth", "invalidate_nous_auth_status_cache"),
         "hermes_cli.nous_account": ("get_nous_portal_account_info",),
         # Quick connections (Nous Connectors).
-        "tools.connectors.gateway.config": ("connectors_available",),
-        "tools.connectors.managed": ("managed_client", "managed_kind", "WATCH_TICK_SECONDS"),
+        # Status reads never create the guest identity (guest_identity_pending, a ConnectorClient of our own);
+        # a connect does, through managed_client, attributed to the page.
+        "tools.connectors.gateway.config": ("connectors_available", "guest_identity_pending"),
+        "tools.connectors.gateway.client": ("ConnectorClient",),
+        "tools.connectors.managed": ("managed_client", "managed_kind", "WATCH_TICK_SECONDS", "DESKTOP_PAGE"),
         "tools.connectors.live": ("open",),
         "tools.connectors.operation": ("ConnectionOperation", "Target"),
         "tools.connectors.run": ("drive_operation",),

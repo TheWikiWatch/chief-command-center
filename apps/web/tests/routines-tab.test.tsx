@@ -106,10 +106,40 @@ it("creates a weekly routine for a bot that reports into a thread", async () => 
   await waitFor(() =>
     expect(posts[0]).toEqual({
       path: "routines",
-      body: { profile: "research-desk", name: "Friday review", prompt: "Review the week.", schedule: { kind: "weekly", time: "16:00", days: [5] }, thread: "t-1234abcd" },
+      body: { profile: "research-desk", name: "Friday review", prompt: "Review the week.", schedule: { kind: "weekly", time: "16:00", days: [5] }, thread: "t-1234abcd", paused: false, pin: false, alerts: "on" },
     }),
   );
   expect(await screen.findByText("Friday review is scheduled.")).toBeInTheDocument();
+});
+
+it("a new routine can start paused, pinned to the bot's model, with failure alerts muted", async () => {
+  const posts = route();
+  render(<RoutinesTab people={[]} />);
+  fireEvent.click(await screen.findByRole("button", { name: "New routine" }));
+  fireEvent.change(await screen.findByLabelText("Name"), { target: { value: "Digest" } });
+  fireEvent.change(screen.getByLabelText("What it should do"), { target: { value: "Digest the news." } });
+  fireEvent.click(screen.getByRole("radio", { name: "Sam" }));
+  expect(screen.getByRole("radio", { name: "Follows Sam" })).toBeChecked();
+  fireEvent.click(screen.getByRole("radio", { name: "Pinned" }));
+  expect(screen.getByText(/Keeps the model Sam has now/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("switch", { name: "Tell me when it fails" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Start the schedule now" }));
+  fireEvent.click(screen.getByRole("button", { name: "Create routine" }));
+  await waitFor(() => expect(posts[0]?.body).toMatchObject({ profile: "research-desk", paused: true, pin: true, alerts: "muted" }));
+  expect(await screen.findByText(/saved, paused/)).toBeInTheDocument();
+});
+
+it("pinning or muting a routine later sends only that", async () => {
+  ROUTINES[0].model = { pinned: false, model: "example/model-a", provider: "openrouter" };
+  const posts = route();
+  render(<RoutinesTab people={[]} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Morning brief/ }));
+  expect(await screen.findByText(/now example\/model-a/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("radio", { name: "Pinned" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Tell me when it fails" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(posts[0]).toEqual({ path: "routines/update", body: { profile: "chief", id: "a1", pin: true, alerts: "muted" } }));
+  delete ROUTINES[0].model;
 });
 
 it("a built-in routine keeps its words; only what changed is sent", async () => {

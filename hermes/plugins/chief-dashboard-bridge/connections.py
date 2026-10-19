@@ -30,6 +30,7 @@ import re
 import secrets
 import threading
 import time
+import types
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from pathlib import Path
@@ -60,6 +61,7 @@ class Service:
     quick: str = ""  # Nous Connectors slug
     local: bool = False  # Google on this PC
     mcp: str = ""  # MCP catalog entry
+    category: str = ""  # the hosted directory's (for search)
 
 
 # Email and calendar first, always shown. Work tools come from the catalog (below).
@@ -168,6 +170,7 @@ def nous_poll(sid: str) -> dict[str, Any]:
     status = str(sess.get("status") or "pending")
     if status != "pending":
         _invalidate()
+        _forget_directory()
     out: dict[str, Any] = {"ok": True, "status": status}
     if status == "error":
         out["error"] = _plain(str(sess.get("error_message") or ""), "The Nous sign-in didn't finish.")
@@ -195,6 +198,7 @@ def nous_sign_out() -> dict[str, Any]:
         clear_provider_auth("nous")
         invalidate_nous_auth_status_cache()
     _invalidate()
+    _forget_directory()
     return {"ok": True}
 
 
@@ -202,29 +206,69 @@ def nous_sign_out() -> dict[str, Any]:
 
 
 def _quick_status() -> dict[str, dict[str, Any]]:
-    """slug -> {connected, status, account}, from the connector gateway and the portal's accounts."""
-    from tools.connectors.managed import managed_client
+    """slug -> {connected, status, account, accounts}, from the connector gateway and the portal's accounts.
+
+    Reading never creates a Nous identity. Hermes's `managed_client()` makes a guest one for any hosted action
+    (since 0.22), which is right for a connect and wrong for opening a page: with no identity yet there is nothing
+    to read, and the first connect makes it."""
+    from tools.connectors.gateway.config import guest_identity_pending
+
+    if guest_identity_pending():
+        return {}
+    from tools.connectors.gateway.client import ConnectorClient
+    from tools.connectors.managed import DESKTOP_PAGE
 
     out: dict[str, dict[str, Any]] = {}
-    for item in managed_client().list_connectors():
+    for item in ConnectorClient(initiator=DESKTOP_PAGE).list_connectors():
         if not isinstance(item, dict):
             continue
         slug = str(item.get("connector") or "").lower()
-        out[slug] = {"connected": bool(item.get("connected")), "status": str(item.get("connectionStatus") or ""), "account": None}
+        out[slug] = {"connected": bool(item.get("connected")), "status": str(item.get("connectionStatus") or ""), "account": None, "accounts": []}
     with suppress(Exception):
         from tools.connectors.portal.client import PortalConnectorClient
 
         for acct in PortalConnectorClient().list_accounts():
             slug = str(acct.get("connector") or "").lower()
-            if slug in out and acct.get("active"):
-                out[slug]["account"] = str(acct.get("alias") or acct.get("label") or "") or None
+            # A reconnect retires the account it replaced; the portal keeps it, never selectable.
+            if slug not in out or acct.get("disabled") or not acct.get("connectionId"):
+                continue
+            name = str(acct.get("alias") or "") or None
+            label = str(acct.get("label") or "")
+            out[slug]["accounts"].append(
+                {"id": str(acct["connectionId"]), "name": name, "label": label, "status": str(acct.get("status") or ""), "default": bool(acct.get("active"))}
+            )
+            if acct.get("active"):
+                out[slug]["account"] = name or label or None
     return out
+
+
+def _account_name(name: str) -> str:
+    """A name for one of a service's accounts ("Work", "side project"), in the form Nous accepts: 1-32 lowercase
+    letters, digits or dashes."""
+    text = re.sub(r"[\s_]+", "-", str(name or "").strip().lower())
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,31}", text):
+        raise ConnectionsError("Name an account with up to 32 letters, numbers or dashes, like work or personal.")
+    return text
+
+
+def _quick_account(slug: str, account_id: str) -> dict[str, Any]:
+    from tools.connectors.portal.client import PortalConnectorClient
+
+    with chief_scope():
+        rows = PortalConnectorClient().list_accounts()
+    for acct in rows:
+        if str(acct.get("connectionId") or "") == account_id and str(acct.get("connector") or "").lower() == slug:
+            return acct
+    raise ConnectionsError("That account isn't connected any more. Check again.")
 
 
 def _gateway_reason(exc: BaseException) -> str:
     """Why the connector gateway refused, in a sentence, from Hermes's own error types (never its raw text)."""
     name = type(exc).__name__
     code = str(getattr(exc, "code", "") or "")
+    if code == "GUEST_SETUP_FAILED":
+        # Hermes's own sentence (a refusal, a rate limit, an unreachable portal, with the wait when there is one).
+        return _plain(str(exc), "Nous couldn't set up quick connections. Try again shortly.")
     if name == "GatewayAuthError" or code in ("NO_TOKEN", "UNAUTHORIZED") or getattr(exc, "status", 0) in (401, 403):
         return "Nous didn't accept this app's sign-in. Sign out of Nous above and sign in again."
     if name == "RateLimited" or getattr(exc, "status", 0) == 429:
@@ -236,9 +280,11 @@ def _gateway_reason(exc: BaseException) -> str:
     return f"Nous couldn't start that sign-in ({code or name})."
 
 
-def _quick_connect(slug: str) -> tuple[Any, str]:
+def _quick_connect(slug: str, *, name: str | None = None, repair_id: str | None = None) -> tuple[Any, str]:
     """A connect operation driven by Hermes's own runner and watcher (the same calls as its account-owned
-    `tools.connectors.account`, which swallows errors): the service's sign-in link, or the gateway's reason."""
+    `tools.connectors.account`, which swallows errors): the service's sign-in link, or the gateway's reason.
+    `name` connects another account under that name; `repair_id` signs one existing account in again. The first
+    connect creates the Nous guest identity when there is none (Hermes's `managed_client`)."""
     import contextvars
     import uuid
 
@@ -246,7 +292,9 @@ def _quick_connect(slug: str) -> tuple[Any, str]:
     from tools.connectors.operation import ConnectionOperation, Target
     from tools.connectors.run import drive_operation
 
-    operation = ConnectionOperation([Target(slug, "connector", "connect")], session_key=f"account:{uuid.uuid4().hex}")
+    action = "reconnect" if repair_id else "connect"
+    target = Target(slug, "connector", action, alias=name or None, repair_id=repair_id or None)
+    operation = ConnectionOperation([target], session_key=f"account:{uuid.uuid4().hex}")
     ready = threading.Event()
     failure: list[BaseException] = []
 
@@ -254,7 +302,7 @@ def _quick_connect(slug: str) -> tuple[Any, str]:
         try:
             drive_operation(
                 operation,
-                managed.managed_kind(managed.managed_client(), "connect", force=False),
+                managed.managed_kind(managed.managed_client(initiator=managed.DESKTOP_PAGE), action, force=False),
                 connection_callback=lambda _payload: ready.set(),
                 tick_seconds=managed.WATCH_TICK_SECONDS,
                 with_urls_in_result=False,
@@ -299,6 +347,54 @@ def _quick_disconnect(slug: str) -> None:
                 client.delete_account(str(acct["connectionId"]))
 
 
+def _portal_refusal(exc: BaseException, what: str) -> ConnectionsError:
+    """Why renaming or removing one account didn't work, in a sentence (Hermes's own error types)."""
+    name = type(exc).__name__
+    code = str(getattr(exc, "code", "") or "")
+    if name == "GatewayUnavailable" and code == "connection_not_found":
+        return ConnectionsError("That account isn't connected any more. Check again.")
+    if getattr(exc, "status", 0) == 405 or name == "GatewayUnavailable":
+        return ConnectionsError(f"Nous can't {what} accounts for this service yet.")
+    return ConnectionsError(_gateway_reason(exc))
+
+
+def rename_account(service_id: str, account_id: str, name: str) -> dict[str, Any]:
+    """Give one of a service's quick accounts a name (bots pick it by that name)."""
+    svc = _find(service_id)
+    if not svc.quick:
+        raise ConnectionsError(f"{svc.label} accounts can't be named.")
+    new = _account_name(name)
+    acct = _quick_account(svc.quick, str(account_id or ""))
+    from tools.connectors.portal.client import PortalConnectorClient
+
+    try:
+        with chief_scope():
+            PortalConnectorClient().rename_account(str(acct["connectionId"]), new)
+    except Exception as exc:
+        if type(exc).__name__ == "IdempotencyConflict":
+            raise ConnectionsError(f"Another {svc.label} account is already called {new}.") from exc
+        raise _portal_refusal(exc, "rename") from exc
+    _invalidate()
+    return {"ok": True, "name": new}
+
+
+def remove_account(service_id: str, account_id: str) -> dict[str, Any]:
+    """Disconnect one of a service's quick accounts (the others stay)."""
+    svc = _find(service_id)
+    if not svc.quick:
+        raise ConnectionsError(f"{svc.label} can't be disconnected that way.")
+    acct = _quick_account(svc.quick, str(account_id or ""))
+    from tools.connectors.portal.client import PortalConnectorClient
+
+    try:
+        with chief_scope():
+            PortalConnectorClient().delete_account(str(acct["connectionId"]))
+    except Exception as exc:
+        raise _portal_refusal(exc, "remove") from exc
+    _invalidate()
+    return {"ok": True}
+
+
 # ----------------------------------------------------------------------------- mcp (the catalog)
 
 
@@ -314,10 +410,64 @@ def _offered(entry: Any) -> bool:
     )
 
 
+def _direct(entry: Any) -> bool:
+    """The entry connects directly with nothing to register. One that pins its OAuth client to the person's own
+    variables (`client_id: "${ASANA_CLIENT_ID}"`) needs a developer app made first: Quick only."""
+    oauth = getattr(getattr(entry, "auth", None), "oauth", None) or {}
+    return not any("${" in str(v) for v in (oauth.values() if isinstance(oauth, dict) else ()))
+
+
 def _catalog() -> list[Any]:
     from hermes_cli.mcp_catalog import list_catalog
 
     return [e for e in list_catalog() if _offered(e)]
+
+
+_DIRECTORY_S = 6 * 3600.0
+_DIRECTORY_RETRY_S = 300.0
+_directory_lock = threading.Lock()
+_directory: tuple[float, list[dict[str, str]]] | None = None
+
+
+def _hosted_directory() -> list[dict[str, str]]:
+    """Nous's app directory ({slug, name, description, category}): every service quick connections carry for this
+    account, including ones Hermes's MCP catalog doesn't list. Read only with a Nous identity (never makes one)."""
+    global _directory
+    with _directory_lock:
+        if _directory and time.time() < _directory[0]:
+            return _directory[1]
+    from tools.connectors.gateway.config import guest_identity_pending
+    from tools.connectors.portal.client import PortalConnectorClient
+
+    with chief_scope():
+        if guest_identity_pending():
+            return []  # not kept: the first connect makes the identity
+        try:
+            rows = PortalConnectorClient().catalog().connectors
+        except Exception as exc:
+            logger.debug("chief-dashboard-bridge: Nous app directory unavailable: %s", type(exc).__name__)
+            rows, ttl = [], _DIRECTORY_RETRY_S
+        else:
+            ttl = _DIRECTORY_S
+    apps = [
+        {
+            "slug": str(r.slug).lower(),
+            "name": " ".join(str(r.name or "").split())[:60],
+            "description": " ".join(str(r.description or "").split()),
+            "category": str(r.category or "").lower(),
+        }
+        for r in rows
+        if str(getattr(r, "slug", "") or "")
+    ]
+    with _directory_lock:
+        _directory = (time.time() + ttl, apps)
+    return apps
+
+
+def _forget_directory() -> None:
+    global _directory
+    with _directory_lock:
+        _directory = None
 
 
 def _title(name: str) -> str:
@@ -518,20 +668,44 @@ def _row(svc: Service, *, nous: dict[str, Any], quick: dict[str, dict[str, Any]]
         "state": state,
         "via": via,
         "account": account,
+        # Quick accounts, each its own sign-in: bots pick one by name; the default is the newest.
+        "accounts": list(quick.get(svc.quick, {}).get("accounts") or []) if svc.quick and via in ("quick", None) else [],
         "backends": backends,
         # A service Nous carries that this account can't use yet: the page offers the sign-in.
         "needsNous": bool(svc.quick) and not nous.get("connectors") and not backends,
+        **({"category": svc.category} if svc.category else {}),
     }
     return row
 
 
 def _work_services() -> list[Service]:
     entries = {e.name: e for e in _catalog()}
-    order = [n for n in FEATURED_WORK if n in entries] + sorted(n for n in entries if n not in FEATURED_WORK)
-    return [
-        Service(n, _title(n), "work", _blurb(entries[n]) or f"{_title(n)} for the chief.", quick=str(getattr(entries[n], "connector_slug", "") or ""), mcp=n)
-        for n in order
-    ]
+    found = []
+    for n, e in entries.items():
+        slug = str(getattr(e, "connector_slug", "") or "")
+        direct = _direct(e)
+        if direct or slug:
+            found.append(Service(n, _title(n), "work", _blurb(e) or f"{_title(n)} for the chief.", quick=slug, mcp=n if direct else ""))
+    return found
+
+
+def _hosted_services(known: set[str]) -> list[Service]:
+    """The directory's services that nothing above carries already (by service id or quick slug)."""
+    try:
+        apps = _hosted_directory()
+    except Exception as exc:
+        logger.debug("chief-dashboard-bridge: Nous app directory unavailable: %s", exc)
+        return []
+    out = []
+    for app in apps:
+        slug = app["slug"]
+        if slug in known or slug in _NOT_OFFERED or not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", slug):
+            continue
+        known.add(slug)
+        text = _blurb(types.SimpleNamespace(name=slug, description=app["description"]))
+        name = app["name"] or _title(slug)
+        out.append(Service(slug, name, "work", text or f"{name} for the chief.", quick=slug, category=app["category"]))
+    return out
 
 
 def services() -> list[Service]:
@@ -540,6 +714,10 @@ def services() -> list[Service]:
     except Exception as exc:
         logger.warning("chief-dashboard-bridge: MCP catalog unavailable: %s", exc)
         work = []
+    known = {s.id for s in (*MAIL_SERVICES, *work)} | {s.quick for s in (*MAIL_SERVICES, *work) if s.quick}
+    work += _hosted_services(known)
+    rank = {n: i for i, n in enumerate(FEATURED_WORK)}
+    work.sort(key=lambda s: (rank.get(s.id, len(rank)), s.label.lower()))
     return [*MAIL_SERVICES, *work]
 
 
@@ -598,12 +776,20 @@ def _listed(view: dict[str, Any], svc: Service) -> dict[str, Any]:
     return row
 
 
-def connect(service_id: str, backend: str = "", env: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Start connecting a service: {op, url} to open (or {needs} for keys, or {state: connected} at once)."""
+def connect(service_id: str, backend: str = "", env: dict[str, Any] | None = None, name: str = "", account: str = "") -> dict[str, Any]:
+    """Start connecting a service: {op, url} to open (or {needs} for keys, or {state: connected} at once).
+    Quick only: `name` adds another account under that name; `account` (an id from the row) signs that one in again."""
     svc = _find(service_id)
     view = overview()
     row = _listed(view, svc)
     allowed = row["backends"]
+    if name or account:
+        backend = backend or "quick"
+        if backend != "quick" or "quick" not in allowed:
+            raise ConnectionsError(f"Only quick connections can have more than one {svc.label} account.")
+        name = _account_name(name) if name else ""
+        if account:
+            _quick_account(svc.quick, account)
     backend = backend or (allowed[0] if allowed else "")
     if backend not in allowed:
         if svc.quick and not view["nous"].get("connectors"):
@@ -626,7 +812,8 @@ def connect(service_id: str, backend: str = "", env: dict[str, Any] | None = Non
             return {"ok": True, "state": "connected"}
         op = _keep(Op(op_id, svc.id, "mcp", attempt, url, time.time()))
     else:
-        operation, url = _quick_connect(svc.quick)
+        operation, url = _quick_connect(svc.quick, name=name or None, repair_id=account or None)
+        _forget_directory()  # the first connect may have just made the Nous identity the directory needs
         if not url:
             _invalidate()
             return {"ok": True, "state": "connected"}
@@ -708,7 +895,14 @@ TOOL_SCHEMA = {
 
 def tool_status() -> dict[str, Any]:
     view = overview()
-    connected = [{"id": r["id"], "label": r["label"], "via": r["via"]} for r in view["services"] if r["state"] == "connected"]
+    connected = []
+    for r in view["services"]:
+        if r["state"] != "connected":
+            continue
+        item: dict[str, Any] = {"id": r["id"], "label": r["label"], "via": r["via"]}
+        if len(r.get("accounts") or []) > 1:
+            item["accounts"] = [{"name": a["name"] or a["label"], "default": a["default"]} for a in r["accounts"]]
+        connected.append(item)
     offered = [
         {"id": r["id"], "label": r["label"]} for r in view["services"] if r["state"] != "connected" and (r["group"] == "mail" or r["id"] in view["featured"])
     ]
@@ -730,6 +924,11 @@ def _how(connected: list[dict[str, Any]]) -> str:
         )
     if "quick" in vias:
         tips.append("Quick connections: find the service's tools with tool_search, then tool_describe / tool_call.")
+    if any(c.get("accounts") for c in connected):
+        tips.append(
+            "A service with several accounts: pass connector_alias=<the account's name> to use one; without it the "
+            "default account is used. Ask the owner which account when it isn't clear."
+        )
     if "mcp" in vias:
         tips.append("Work tools: their mcp__<service>__* tools are available directly.")
     tips.append("Sending, replying, forwarding, deleting or moving mail asks the owner first; that is expected, not an error.")

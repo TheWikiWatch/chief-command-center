@@ -48,9 +48,18 @@ export type TeamRoutine = {
   /** The app's own (Second Brain, Fleet Health): retime, move and switch off only. */
   builtIn: boolean;
   skills: string[];
+  /** The model it runs on: the bot's own when it fires, or pinned to one. */
+  model?: { pinned: boolean; model: string; provider: string };
+  /** Why it's paused, when it is (e.g. made paused to start later). */
+  pausedReason?: string;
+  /** "on": failures are reported where its results go; "muted"; "elsewhere": a bot sent them outside the app. */
+  failureAlerts?: "on" | "muted" | "elsewhere";
+  /** Runs that failed in a row (0 after a good one). */
+  failureStreak?: number;
 };
 export type RoutineBot = { id: string; name: string };
-export type RoutineDraft = { profile: string; name: string; prompt: string; schedule: RoutineSchedule; thread: string };
+export type RoutineOptions = { paused?: boolean; pin?: boolean; alerts?: "on" | "muted" };
+export type RoutineDraft = { profile: string; name: string; prompt: string; schedule: RoutineSchedule; thread: string } & RoutineOptions;
 
 type One = { ok: boolean; error?: string; routine?: TeamRoutine };
 const post = <T>(path: string, body: unknown) =>
@@ -59,7 +68,7 @@ const post = <T>(path: string, body: unknown) =>
 export const routinesApi = {
   list: () => requestJson<{ ok: boolean; error?: string; routines: TeamRoutine[]; bots: RoutineBot[] }>("/api/bridge/routines", { cache: "no-store" }, 15_000),
   create: (draft: RoutineDraft) => post<One>("routines", draft),
-  update: (profile: string, id: string, changes: Partial<Pick<RoutineDraft, "name" | "prompt" | "schedule" | "thread">> & { enabled?: boolean }) =>
+  update: (profile: string, id: string, changes: Partial<Pick<RoutineDraft, "name" | "prompt" | "schedule" | "thread" | "pin" | "alerts">> & { enabled?: boolean }) =>
     post<One>("routines/update", { profile, id, ...changes }),
   run: (profile: string, id: string) => post<One>("routines/run", { profile, id }),
   remove: (profile: string, id: string) => post<{ ok: boolean; error?: string }>("routines/delete", { profile, id }),
