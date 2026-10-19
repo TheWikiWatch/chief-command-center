@@ -91,32 +91,36 @@ def folder_supported() -> bool:
 
 
 def _drives() -> list[Path]:
+    """This PC's fixed drives (not removable, optical or network: a model there would vanish with the drive)."""
     if os.name != "nt":
         return []
+    import ctypes
+
     out = []
-    for letter in string.ascii_uppercase[2:]:  # C: onward; C: is filtered by the caller
+    for letter in string.ascii_uppercase[2:]:  # C: onward; the system drive is filtered by the caller
         root = Path(f"{letter}:\\")
         try:
-            if root.exists():
+            if ctypes.windll.kernel32.GetDriveTypeW(str(root)) == 3 and root.exists():  # DRIVE_FIXED
                 out.append(root)
-        except OSError:
+        except (OSError, AttributeError):
             continue
     return out
 
 
 def suggested_folder(default: Path) -> Path:
-    """The roomiest drive other than the system drive, when it has room for a few models; else Hermes's folder."""
+    """The biggest fixed drive other than the system drive (a PC's storage drive, usually) that has room for a few
+    models; else Hermes's own folder."""
     system = Path(os.environ.get("SystemDrive", "C:") + "\\").resolve().drive.upper()
     best: tuple[int, Path] | None = None
     for root in _drives():
         if root.drive.upper() == system:
             continue
         try:
-            free = shutil.disk_usage(root).free
+            usage = shutil.disk_usage(root)
         except OSError:
             continue
-        if free >= _SUGGEST_MIN_FREE and (best is None or free > best[0]):
-            best = (free, root)
+        if usage.free >= _SUGGEST_MIN_FREE and (best is None or usage.total > best[0]):
+            best = (usage.total, root)
     return best[1] / FOLDER_NAME if best else default
 
 

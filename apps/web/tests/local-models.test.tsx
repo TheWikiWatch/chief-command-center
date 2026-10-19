@@ -89,6 +89,18 @@ it("uses a downloaded model for the chief and asks before removing it", async ()
   await waitFor(() => expect(posts.at(-1)).toEqual({ path: "local-models/remove", body: { model: "qwen-x-Q4" } }));
 });
 
+it("with no recommendation for this card, offers the smallest model that runs, and says it's slower", async () => {
+  status = { ...status, folder: { ...status.folder, chosen: true } };
+  catalog = [
+    { id: "big", display_name: "Big", fits: true, size_bytes: 22e9, size_label: "21.9 GB", spilled: true },
+    { id: "small", display_name: "Small", fits: true, size_bytes: 16e9, size_label: "16.2 GB", spilled: true },
+  ];
+  render(<LocalModelsGroup />);
+  expect(await screen.findByText(/Set up Small \(16.2 GB\).*answers slower than a cloud model/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Set it up" }));
+  await waitFor(() => expect(posts[0]).toEqual({ path: "local-models/quickstart", body: { model: "small" } }));
+});
+
 it("says progress plainly and the proxy forwards the routes", () => {
   expect(progressLine({ job_id: "j", kind: "x", target: "t", status: "running", phase: "p", detail: "", total_bytes: 2 * 1024 ** 3, done_bytes: 1024 ** 3, eta_seconds: 4000 })).toBe(
     "1.0 GB of 2.0 GB · about 1 h 7 min left",

@@ -192,16 +192,20 @@ class LocalModelsTests(unittest.TestCase):
 
 
 class SuggestTests(unittest.TestCase):
-    def test_the_roomiest_other_drive_with_space_else_hermess_folder(self):
+    def test_the_biggest_other_fixed_drive_with_room_else_hermess_folder(self):
         drives = [Path("C:\\"), Path("D:\\"), Path("E:\\")]
-        free = {"C:\\": 900 << 30, "D:\\": 10 << 30, "E:\\": 120 << 30}
+        # D: is small and empty, E: is the big storage drive: models go on E: (the owner's own choice too).
+        disks = {"C:\\": (237, 24), "D:\\": (238, 238), "E:\\": (1625, 113)}
+        usage = lambda p: types.SimpleNamespace(total=disks[str(p)][0] << 30, free=disks[str(p)][1] << 30)  # noqa: E731
         with (
             patch.object(local_ai, "_drives", lambda: drives),
-            patch.object(local_ai.shutil, "disk_usage", lambda p: types.SimpleNamespace(free=free[str(p)])),
+            patch.object(local_ai.shutil, "disk_usage", usage),
             patch.dict(local_ai.os.environ, {"SystemDrive": "C:"}),
         ):
             self.assertEqual(local_ai.suggested_folder(Path("C:/hermes/models")), Path("E:\\") / "Chief models")
-            free["E:\\"] = 5 << 30
+            disks["E:\\"] = (1625, 5)
+            self.assertEqual(local_ai.suggested_folder(Path("C:/hermes/models")), Path("D:\\") / "Chief models")
+            disks["D:\\"] = (238, 1)
             self.assertEqual(local_ai.suggested_folder(Path("C:/hermes/models")), Path("C:/hermes/models"))
 
 

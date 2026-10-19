@@ -85,7 +85,9 @@ export function LocalModelsGroup() {
   }
 
   const needsFolder = state.folder.supported && !state.folder.chosen;
+  // Hermes's recommendation, or (it makes none when every model is bigger than the graphics card) the smallest that runs.
   const recommended = models?.find((m) => m.recommended && m.fits);
+  const pick = recommended || [...(models || [])].filter((m) => m.fits && !m.needs_engine).sort((a, b) => (a.size_bytes || 0) - (b.size_bytes || 0))[0];
   const anyDownloaded = state.models.length > 0;
   const lastError = state.jobs.find((j) => j.status === "error" && j.error);
 
@@ -121,12 +123,13 @@ export function LocalModelsGroup() {
           </p>
         ) : null}
 
-        {!anyDownloaded && !running && recommended ? (
+        {!anyDownloaded && !running && pick ? (
           <div className="flex flex-wrap items-center gap-2 rounded-ctl bg-fill-1 px-3 py-2.5">
             <p className="min-w-0 flex-1 text-callout text-fg-2">
-              Set up {recommended.display_name} ({recommended.size_label}) for {chief}: the engine, the download, and {chief} on it.
+              Set up {pick.display_name} ({pick.size_label}) for {chief}: the engine, the download, and {chief} on it.
+              {pick.spilled ? " It’s bigger than this graphics card’s memory, so it answers slower than a cloud model." : ""}
             </p>
-            <Button variant="primary" size="sm" disabled={needsFolder || !!busy} onClick={() => void act("quickstart", () => localModels.quickstart())}>
+            <Button variant="primary" size="sm" disabled={needsFolder || !!busy} onClick={() => void act("quickstart", () => localModels.quickstart(recommended ? "" : pick.id))}>
               {busy === "quickstart" ? "Starting…" : "Set it up"}
             </Button>
           </div>
