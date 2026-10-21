@@ -408,3 +408,7 @@ Two Hermes profile helpers reach outside the profile they are given:
   go under Hermes's root on the system drive. Model downloads aren't hash-checked by Hermes (the engine is). The
   server is started by the bridge when the gateway starts (`local_ai.boot_with_gateway`): the gateway alone doesn't,
   and the first message would fail while it boots.
+- **The window buttons' room (`--wco`) is set from JavaScript** (`lib/window-controls.ts`): Chromium's
+  `env(titlebar-area-*)` alone went stale or missing in the desktop app. A header in the top-right corner must keep
+  its row inside its content box: overflowing flex items paint into the padding (where the buttons are) without
+  counting as scroll overflow, so the chat header measures its descendants' right edges and folds (`useHeaderFold`).

@@ -142,7 +142,7 @@ export function ThreadSwitcher({
   );
 
   return (
-    <div ref={root} className="relative flex min-w-19">
+    <div ref={root} className="thread-switcher relative flex min-w-19">
       <button
         type="button"
         aria-haspopup="menu"
@@ -154,7 +154,7 @@ export function ThreadSwitcher({
         }}
         className="press flex min-h-8 min-w-19 max-w-44 items-center gap-1.5 rounded-full border border-line-2 bg-fill-1 py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-48"
       >
-        <span className="truncate">{title}</span>
+        <span className="thread-switcher-title truncate">{title}</span>
         {elsewhere ? <Dot kind={elsewhere} /> : null}
         <ChevronDownIcon size={14} className={`shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>

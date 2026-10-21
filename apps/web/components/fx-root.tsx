@@ -7,12 +7,15 @@ import { useAppLook } from "@/lib/app-look";
 import { fx, unlockFx } from "@/lib/fx";
 import { UI_SCALE, useFxPrefs } from "@/lib/fx-prefs";
 import { useReducedMotion } from "@/lib/motion";
+import { useWindowControlsGap } from "@/lib/window-controls";
 
 /** Applies the app's look and the motion, ambient and interface-size preferences to the whole document. */
 export function FxRoot({ children }: { children: ReactNode }) {
   const prefs = useFxPrefs();
   // The app's look (accent, light or dark), the same on every window: kept current from the bridge.
   useAppLook();
+  // The desktop app's window buttons: headers in the top-right corner keep clear of them (lib/window-controls.ts).
+  useWindowControlsGap();
   const reduced = useReducedMotion();
 
   useEffect(() => {

@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from "motion/react";
 import dynamic from "next/dynamic";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { BotFace, FaceRing } from "@/components/bot-face";
 import { HeaderStatus, useLinkLabel } from "@/components/connection-status";
@@ -18,6 +18,72 @@ import type { Person } from "@/lib/types";
 import { useAssistantName } from "@/lib/identity";
 
 // The phone header's menu (Base UI) loads with the phone header, not with the first screen.
+// The header's row must end before its padding: in the desktop app that padding is where Windows draws minimize,
+// maximize and close (globals.css --wco), and in a narrow chat column the row didn't fit and slid under them. So it
+// folds, a step at a time, until it fits: 1 voice, status and settings (and Pause/Stop's words) go into "More", 2 the
+// face goes, 3 the thread chip keeps only its arrow. It unfolds a step once the header is wider than that step needed
+// (plus a margin, so it doesn't flicker at the edge).
+export const MAX_FOLD = 3;
+const UNFOLD_MARGIN_PX = 16;
+
+/** How much the row overflows the header's content box, in CSS pixels (0 when it fits). */
+export function rowOverflow(el: HTMLElement): number {
+  const box = el.getBoundingClientRect();
+  const limit = box.right - parseFloat(getComputedStyle(el).paddingRight || "0");
+  let right = box.left;
+  // Every element in the row, not just its parts: a group can shrink to nothing while its buttons stick out of it,
+  // and a tooltip wrapper has no box of its own.
+  for (const child of Array.from(el.querySelectorAll("*"))) {
+    const r = child.getBoundingClientRect();
+    if (r.width > 0 && r.height > 0) right = Math.max(right, r.right);
+  }
+  return Math.max(0, right - limit);
+}
+
+/** The fold step (0 to MAX_FOLD) that keeps the header's row inside it, measured as it or anything in it resizes. */
+function useHeaderFold(ref: React.RefObject<HTMLElement | null>) {
+  const [fold, setFold] = useState(0);
+  const state = useRef<{ fold: number; need: number[] }>({ fold: 0, need: [] });
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    let frame = 0;
+    const measure = () => {
+      const now = state.current;
+      const over = rowOverflow(el);
+      if (over > 0.5 && now.fold < MAX_FOLD) {
+        // The width this step needed to fit: unfold only past it.
+        now.need[now.fold] = el.clientWidth + over;
+        now.fold += 1;
+        setFold(now.fold);
+        // A step may change nothing this header shows (the phone layout already has "More"): look again once React
+        // has drawn it (two frames: the first can come before the new step is on screen).
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => (frame = requestAnimationFrame(measure)));
+      } else if (now.fold > 0 && el.clientWidth >= (now.need[now.fold - 1] || Infinity) + UNFOLD_MARGIN_PX) {
+        now.fold -= 1;
+        setFold(now.fold);
+      }
+    };
+    // The header and each part of it: a part growing (a longer status, Pause and Stop appearing) can overflow it too.
+    const sizes = new ResizeObserver(measure);
+    const watch = () => {
+      sizes.disconnect();
+      sizes.observe(el);
+      for (const child of Array.from(el.children)) sizes.observe(child);
+    };
+    const parts = new MutationObserver(watch);
+    parts.observe(el, { childList: true });
+    watch();
+    return () => {
+      cancelAnimationFrame(frame);
+      parts.disconnect();
+      sizes.disconnect();
+    };
+  }, [ref]);
+  return fold;
+}
+
 const ActionMenu = dynamic(() => import("@/components/ui/action-menu").then((m) => m.ActionMenu), { ssr: false });
 
 export type ChiefMood = "online" | "thinking" | "preparing" | "speaking" | "paused" | "listening" | "approval" | "offline";
@@ -74,6 +140,9 @@ export function ChatHeader({
   switcher?: ReactNode;
 }) {
   const thinkingFor = useSince(mood === "thinking");
+  const headerRef = useRef<HTMLElement>(null);
+  const fold = useHeaderFold(headerRef);
+  const tight = fold > 0;
   const fallbackName = useAssistantName();
   const name = splitTitle(chief?.name).name || fallbackName;
   const speakingish = mood === "speaking" || mood === "paused";
@@ -108,8 +177,8 @@ export function ChatHeader({
                 : { text: voiceLabel || "Online", tone: "text-fg-3" });
 
   return (
-    <header className="chat-header app-drag titlebar-clear relative z-20 flex items-center gap-2 border-b border-line px-3 py-2">
-      <div className="shrink-0 pl-2 pr-1">
+    <header ref={headerRef} data-fold={fold} className="chat-header app-drag titlebar-clear relative z-20 flex items-center gap-2 border-b border-line px-3 py-2">
+      <div className="chat-header-face shrink-0 pl-2 pr-1">
         {face ??
           (chief ? (
             <div className={mood === "thinking" || speakingish ? "await-pulse" : undefined}>
@@ -149,7 +218,7 @@ export function ChatHeader({
           </motion.p>
         </AnimatePresence>
       </div>
-      {switcher ? <div className="flex min-w-19 shrink items-center">{switcher}</div> : null}
+      {switcher ? <div className="chat-header-switcher flex min-w-19 shrink items-center">{switcher}</div> : null}
       <AnimatePresence initial={false}>
         {speakingish || mood === "preparing" ? (
           <motion.div
@@ -168,7 +237,7 @@ export function ChatHeader({
               onClick={onPauseToggle}
             >
               {mood === "paused" ? <PlayIcon size={15} /> : <PauseIcon size={15} />}
-              {compact ? null : <span>{mood === "paused" ? "Resume" : "Pause"}</span>}
+              {compact || tight ? null : <span>{mood === "paused" ? "Resume" : "Pause"}</span>}
             </button>
             ) : null}
             <button
@@ -178,13 +247,13 @@ export function ChatHeader({
               onClick={onStop}
             >
               <SquareIcon size={13} />
-              {compact ? null : <span>Stop</span>}
+              {compact || tight ? null : <span>Stop</span>}
             </button>
           </motion.div>
         ) : null}
       </AnimatePresence>
-      {compact ? (
-        // The phone: presence, name, state and one overflow. The connection's words are on the state line.
+      {compact || tight ? (
+        // The phone (or a narrow chat column): presence, name, state and one overflow.
         <ActionMenu
           trigger={
             <button type="button" aria-label="More" className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">

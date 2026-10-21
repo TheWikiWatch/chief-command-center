@@ -674,6 +674,21 @@ body {
   }
 }
 
+/* The chat header folds until its row fits beside the window buttons (chat-header.tsx useHeaderFold): step 2 drops
+   the face, step 3 leaves the thread chip its arrow (the name and the arrow still say which thread it is). */
+.chat-header[data-fold="2"] .chat-header-face,
+.chat-header[data-fold="3"] .chat-header-face {
+  display: none;
+}
+.chat-header[data-fold="3"] .chat-header-switcher,
+.chat-header[data-fold="3"] .thread-switcher,
+.chat-header[data-fold="3"] .thread-switcher > button {
+  min-width: 0;
+}
+.chat-header[data-fold="3"] .thread-switcher-title {
+  display: none;
+}
+
 /* A companion pet's frames (components/look/pet-sprite.tsx): one row of the sheet, stepped; still when motion is reduced. */
 .pet-sprite {
   image-rendering: pixelated;

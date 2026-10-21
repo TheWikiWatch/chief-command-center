@@ -1261,3 +1261,11 @@ Chief or removed; the server can be stopped to free graphics memory. The folder 
 roomiest drive that isn't the system drive; on the owner's PC `E:\Chief models`): Hermes patch 0006 adds that setting
 (with download partials beside the models) and keeps the catalog the release shipped instead of upstream's newest,
 unsigned list. The bridge starts the local server with the gateway when local models are on.
+
+**Fix (2026-10-21): the chat header's buttons no longer slide under the window's minimize, maximize and close.** Two
+causes. The room kept for those buttons came only from Chromium's `env(titlebar-area-*)`, which in the desktop app
+could be stale or missing after a resize, maximize or snap (so it was sometimes 0). It is now measured from the
+window-controls overlay on every geometry change and resize, and never less than the three caption buttons. And in a
+narrower chat column the row didn't fit: it now folds a step at a time until it does (voice, status and settings
+into "More", then the face, then the thread chip's name) and unfolds as the window widens. Checked in the real
+desktop window at eight sizes from 380 px wide to maximized: nothing reaches the window buttons.
