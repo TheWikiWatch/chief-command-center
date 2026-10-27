@@ -238,7 +238,7 @@ function DesktopOrbit({
   return (
     <div
       ref={container}
-      className="relative isolate h-full overflow-hidden bg-canvas"
+      className="orbit-night relative isolate h-full overflow-hidden bg-canvas"
       onPointerOver={(e) => {
         spin.current.hover = !!(e.target as Element | null)?.closest?.("[data-orbit-seat]");
       }}

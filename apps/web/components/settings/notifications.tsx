@@ -121,7 +121,7 @@ export function EventRow({ kind, event, checked, disabled }: { kind: "sound" | "
 export function NotificationsGroup() {
   const assistant = useAssistantName();
   const fx = useFxPrefs();
-  const [pushMsg, setPushMsg] = useState("");
+  const [pushMsg, setPushMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [pushBusy, setPushBusy] = useState(false);
   const [pushAvailable, setPushAvailable] = useState(false);
   const [device, setDevice] = useState<PushStatus | null>(null);
@@ -142,19 +142,19 @@ export function NotificationsGroup() {
     device === "on"
       ? "On for this device."
       : device === "blocked"
-        ? "Notifications are blocked for this site. Allow them in the browser's site settings, then enable here."
+        ? "Notifications are blocked for this site. Allow them in the browser's site settings, then come back here."
         : device === "unsupported"
-          ? "This browser can't receive phone alerts. On Android, add the app to the home screen from Chrome."
+          ? "This browser can't get alerts. On Android, add the app to the home screen from Chrome first."
           : "";
 
   return (
     <Group icon={<BellIcon className="size-4" />} title="Notifications">
       <Row
-        label="Phone alerts (Web Push)"
+        label="Alerts on this device"
         hint={
           !pushAvailable
-            ? "Phone alerts are unavailable on this bridge. Keep the dashboard open to see replies and approvals."
-            : deviceNote || "Enable supported background alerts on this device."
+            ? `Alerts aren't available from the PC right now. Keep the app open to see ${assistant}'s replies and questions.`
+            : deviceNote || `${assistant}'s replies and questions reach this device even when the app is closed.`
         }
         stacked
       >
@@ -163,24 +163,24 @@ export function NotificationsGroup() {
           disabled={pushBusy || !pushAvailable || device === "blocked" || device === "unsupported"}
           onClick={() => {
             setPushBusy(true);
-            setPushMsg("");
+            setPushMsg(null);
             void enableWebPush()
-              .then((r) => setPushMsg(r.ok ? "Push enabled on this device." : r.error || "Failed"))
+              .then((r) => setPushMsg(r.ok ? { ok: true, text: "Alerts are on for this device." } : { ok: false, text: r.error || "Alerts weren't turned on. Try again." }))
               .then(() => pushStatus().then(setDevice))
               .finally(() => setPushBusy(false));
           }}
           className={btn("primary", "md")}
         >
-          {pushBusy ? "Enabling…" : device === "on" ? "Re-register this device" : "Enable notifications"}
+          {pushBusy ? "Turning on…" : device === "on" ? "Set up this device again" : "Turn on alerts"}
         </button>
         {pushMsg ? (
-          <p role="status" className="mt-2 text-caption text-fg-2">
-            {pushMsg}
+          <p role={pushMsg.ok ? "status" : "alert"} className={`mt-2 text-caption ${pushMsg.ok ? "text-fg-2" : "text-danger"}`}>
+            {pushMsg.text}
           </p>
         ) : null}
       </Row>
       <SwitchRow
-        label="Fleet change toasts"
+        label="Bot changes"
         hint={`A small card when ${assistant} adds or retires a bot.`}
         checked={fx.fleetToasts}
         onChange={(fleetToasts) => updateFx((p) => ({ ...p, fleetToasts }))}
@@ -200,5 +200,3 @@ export function NotificationsGroup() {
     </Group>
   );
 }
-
-/* ------------------------------------------------------------------ Voice providers */

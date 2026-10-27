@@ -83,7 +83,7 @@ export function ApprovalSheet({
               </button>
               {approval.allowSession !== false ? (
                 <button type="button" className="approve-session press" disabled={resolving} onClick={() => onChoose("session")}>
-                  This session
+                  Allow for now
                 </button>
               ) : null}
               {always ? (
@@ -106,7 +106,7 @@ export function ApprovalSheet({
                 {mail ? `Press and hold “Always allow” to let your bots ${mail.always} from now on.` : "Press and hold “Always allow” to trust this command pattern from now on."}
               </p>
             ) : mail ? (
-              <p className="text-caption text-fg-3">This couldn’t be read exactly, so it can only be allowed one time at a time. Check the exact call above.</p>
+              <p className="text-caption text-fg-3">This couldn’t be read exactly, so it can only be allowed once. Check the exact call above.</p>
             ) : null}
           </div>
         ) : null}
@@ -117,13 +117,13 @@ export function ApprovalSheet({
             key="approval-mini"
             type="button"
             onClick={onExpand}
-            className="mx-3 mb-2 flex min-h-11 items-center gap-2 rounded-full border border-warn/40 bg-warn/10 px-4 text-callout font-medium text-warn"
+            className="press mx-3 mb-2 flex min-h-11 items-center gap-2 rounded-full border border-warn/40 bg-warn/10 px-4 text-callout font-medium text-warn"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0, transition: SPRING.bouncy }}
             exit={{ opacity: 0, y: 8, transition: { duration: 0.14 } }}
           >
             <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inset-0 animate-ping rounded-full bg-warn opacity-70" />
+              <span className="absolute inset-0 animate-ping rounded-full bg-warn opacity-70 motion-reduce:animate-none" />
               <span className="relative h-2.5 w-2.5 rounded-full bg-warn" />
             </span>
             Approval needed · Review

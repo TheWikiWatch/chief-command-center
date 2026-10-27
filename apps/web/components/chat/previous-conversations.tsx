@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { Thread } from "@/components/chat/thread";
 import { ChevronRightIcon, ClockIcon } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
 import { fetchPreviousConversation } from "@/lib/bridge";
+import { friendlyError } from "@/lib/request";
 import type { ChatMessage, Person, PreviousConversation } from "@/lib/types";
 
 function when(epoch: number) {
@@ -23,6 +24,8 @@ export function PreviousConversations({ items, chief, phone }: { items: Previous
   const [rows, setRows] = useState<ChatMessage[] | null>(null);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
+  // Which conversation the sheet shows: a slow answer for one opened earlier doesn't fill it.
+  const showing = useRef("");
   if (!items.length) return null;
   const shown = expanded ? items : items.slice(0, 2);
 
@@ -30,9 +33,10 @@ export function PreviousConversations({ items, chief, phone }: { items: Previous
     setOpen(item);
     setRows(null);
     setError("");
+    showing.current = item.id;
     fetchPreviousConversation(item.id)
-      .then((t) => setRows(t.messages))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "That conversation couldn't be read."));
+      .then((t) => showing.current === item.id && setRows(t.messages))
+      .catch((e: unknown) => showing.current === item.id && setError(friendlyError(e, "That conversation couldn't be read.")));
   };
 
   return (
@@ -61,7 +65,7 @@ export function PreviousConversations({ items, chief, phone }: { items: Previous
           {expanded ? "Show fewer" : `Show all ${items.length}`}
         </button>
       ) : null}
-      <Sheet open={!!open} onClose={() => setOpen(null)} title={open?.title || "Previous conversation"} subtitle={open ? `${when(open.started)} · read only` : undefined} side={phone ? "bottom" : "right"} tall>
+      <Sheet open={!!open} onClose={() => setOpen(null)} title={open?.title || "Previous conversation"} subtitle={open ? `${when(open.ended || open.started)} · read only` : undefined} side={phone ? "bottom" : "right"} tall>
         <div className="flex min-h-0 flex-1 flex-col">
           {error ? <p className="px-4 py-3 text-callout text-danger">{error}</p> : null}
           {!rows && !error ? <p className="px-4 py-3 text-callout text-fg-3">Reading…</p> : null}

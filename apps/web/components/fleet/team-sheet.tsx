@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
@@ -22,7 +23,30 @@ const TAB_KEY = "chief-team-tab";
  * for your sign-off before minting), and the retired bots, which can be restored or removed for good.
  * Routines: every scheduled routine, for the chief and every bot.
  */
-export function TeamButton({ phone, people = [], onAskChief }: { phone: boolean; people?: Person[]; onAskChief: (text: string) => Promise<void> }) {
+export function TeamButton({ phone }: { phone: boolean }) {
+  // No tab: the sheet opens on the one used last.
+  const open = () => window.dispatchEvent(new CustomEvent(OPEN_TEAM_EVENT));
+  return phone ? (
+    <button type="button" aria-label="Team & Routines" title="Team & Routines" onClick={open} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
+      <UsersIcon size={19} />
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={open}
+      className="press flex min-h-11 items-center gap-2 rounded-full border border-line-2 bg-pane/90 px-4 text-callout font-medium text-fg shadow-e3 backdrop-blur-sm hover:border-line-3"
+    >
+      <UsersIcon size={17} />
+      Team &amp; Routines
+    </button>
+  );
+}
+
+/**
+ * The sheet itself, mounted once by the shell so `openTeam()` works from anywhere (a routine card's Manage in the
+ * chat, the palette), not only while the Fleet pane and its button are on screen.
+ */
+export function TeamSheet({ phone, people = [], onAskChief }: { phone: boolean; people?: Person[]; onAskChief: (text: string) => Promise<void> }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<TeamTab>("team");
   const [mounted, setMounted] = useState(false);
@@ -53,21 +77,7 @@ export function TeamButton({ phone, people = [], onAskChief }: { phone: boolean;
   }
   return (
     <>
-      {phone ? (
-        <button type="button" aria-label="Team & Routines" title="Team & Routines" onClick={() => setOpen(true)} className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg">
-          <UsersIcon size={19} />
-        </button>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="press flex min-h-11 items-center gap-2 rounded-full border border-line-2 bg-pane/90 px-4 text-callout font-medium text-fg shadow-e3 backdrop-blur-sm hover:border-line-3"
-        >
-          <UsersIcon size={17} />
-          Team &amp; Routines
-        </button>
-      )}
-      {/* The button sits inside the Fleet pane's header layer; the sheet goes to the body so it covers the whole window. */}
+      {/* The sheet goes to the body so it covers the whole window, whatever layer the shell renders it in. */}
       {!mounted
         ? null
         : createPortal(
@@ -122,7 +132,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
     fleetApi
       .roster()
       .then((r) => (r.ok ? setArchives(r.archives) : setNote({ tone: "error", text: r.error || "Couldn't read the team." })))
-      .catch((e: unknown) => setNote({ tone: "error", text: e instanceof Error ? e.message : "Couldn't read the team." }));
+      .catch((e: unknown) => setNote({ tone: "error", text: friendlyError(e, "Couldn't read the team.") }));
   }, []);
   useEffect(load, [load]);
 
@@ -134,7 +144,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
       setNote(res.ok ? { tone: "ok", text: done } : { tone: "error", text: res.error || "That didn't work." });
       load();
     } catch (e) {
-      setNote({ tone: "error", text: e instanceof Error ? e.message : "That didn't work." });
+      setNote({ tone: "error", text: friendlyError(e, "That didn't work.") });
     } finally {
       setBusyId("");
       setConfirmRemove("");
@@ -171,7 +181,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
               await onAskChief(`I'd like a new specialist for this: ${need.trim()}\n\nPlease use your fleet-builder skill: interview me, then draft the SOUL for me to sign before you mint anything.`);
               setNeed("");
             } catch (e) {
-              setNote({ tone: "error", text: e instanceof Error ? e.message : `Couldn't reach ${assistant}.` });
+              setNote({ tone: "error", text: friendlyError(e, `Couldn't reach ${assistant}.`) });
             } finally {
               setAsking(false);
             }
@@ -227,14 +237,7 @@ export function TeamBody({ onAskChief }: { onAskChief: (text: string) => Promise
 
 function Small({ children, onClick, disabled, subtle, danger }: { children: ReactNode; onClick: () => void; disabled?: boolean; subtle?: boolean; danger?: boolean }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`press min-h-10 shrink-0 rounded-full px-3.5 text-callout font-medium disabled:opacity-50 ${
-        danger ? "bg-danger text-white" : subtle ? "border border-line-2 text-fg-2 hover:text-fg" : "bg-fg text-canvas"
-      }`}
-    >
+    <button type="button" disabled={disabled} onClick={onClick} className={btn(danger ? "danger" : subtle ? "secondary" : "primary", "sm", "shrink-0 [@media(hover:none)]:min-h-11")}>
       {children}
     </button>
   );

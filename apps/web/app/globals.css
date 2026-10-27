@@ -81,8 +81,10 @@
   --radius-capsule: 24px;
   --radius-dock: 28px;
 
-  --shadow-e3: 0 8px 32px rgb(0 0 0 / 0.45), 0 1px 0 rgb(var(--c-ink) / 0.04) inset;
-  --shadow-e4: 0 -12px 48px rgb(0 0 0 / 0.6);
+  /* Elevation: the values live in --elev-* (:root and light mode below), because Tailwind writes these
+     straight into the shadow-e3 / shadow-e4 classes. */
+  --shadow-e3: var(--elev-3);
+  --shadow-e4: var(--elev-4);
 
   --ease-enter: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-exit: cubic-bezier(0.3, 0, 0.8, 0.15);
@@ -150,6 +152,10 @@
   --glass: rgb(22 22 26 / 0.72);
   --glass-blur: blur(20px) saturate(140%);
   --scrim: rgb(0 0 0 / 0.55);
+  --elev-3: 0 8px 32px rgb(0 0 0 / 0.45), 0 1px 0 rgb(255 255 255 / 0.04) inset;
+  --elev-4: 0 -12px 48px rgb(0 0 0 / 0.6);
+  /* Small lifts: a switch's knob, a segmented control's thumb. */
+  --elev-1: 0 1px 3px rgb(0 0 0 / 0.4);
 
 
   /* The same durations as the `duration-*` utilities (defined once, in @theme above). */
@@ -200,12 +206,62 @@
   --line-3: rgb(0 0 0 / 0.2);
   --glass: rgb(255 255 255 / 0.78);
   --scrim: rgb(20 20 24 / 0.32);
-  --shadow-e3: 0 8px 32px rgb(0 0 0 / 0.12), 0 1px 0 rgb(255 255 255 / 0.7) inset;
-  --shadow-e4: 0 -12px 48px rgb(0 0 0 / 0.16);
+  --elev-3: 0 8px 32px rgb(0 0 0 / 0.12), 0 1px 0 rgb(255 255 255 / 0.7) inset;
+  --elev-4: 0 -12px 48px rgb(0 0 0 / 0.16);
+  --elev-1: 0 1px 3px rgb(0 0 0 / 0.18);
 }
 :root[data-theme="light"][data-ambient="low"],
 :root[data-theme="light"][data-ambient="off"] {
   --glass: rgb(255 255 255 / 0.97);
+}
+
+/* Light mode's softer glows: the aurora and the presence bloom were tuned against near-black, and on paper the
+   same strength reads as a smudge. The celebration sparks, white on dark, take the chief's colour instead. */
+:root[data-theme="light"] .chat-aurora {
+  opacity: calc(var(--au) * 0.6);
+}
+:root[data-theme="light"] .pr-orbit i {
+  background: var(--chief, rgb(var(--c-accent)));
+}
+
+/* The Fleet orbit is space, a night sky in either mode: its shader, stars and the names' shadows are drawn for
+   it. In light mode the region takes the dark tokens again, and the Tailwind colours that read them are
+   recomputed here (a custom property inherits its computed value, so they'd keep the light ones). */
+:root[data-theme="light"] .orbit-night {
+  color-scheme: dark;
+  --c-ink: 255 255 255;
+  --c-canvas: 9 9 11;
+  --c-pane: 15 15 18;
+  --c-card: 21 21 24;
+  --c-raised: 27 27 31;
+  --c-well: 35 35 40;
+  --c-fg: 237 237 239;
+  --c-fg-2: 161 161 170;
+  --c-fg-3: 144 144 153;
+  --c-fg-4: 90 90 99;
+  --line-1: rgb(255 255 255 / 0.06);
+  --line-2: rgb(255 255 255 / 0.1);
+  --line-3: rgb(255 255 255 / 0.16);
+  --glass: rgb(22 22 26 / 0.72);
+  --elev-3: 0 8px 32px rgb(0 0 0 / 0.45), 0 1px 0 rgb(255 255 255 / 0.04) inset;
+  --elev-1: 0 1px 3px rgb(0 0 0 / 0.4);
+  --color-canvas: rgb(var(--c-canvas));
+  --color-pane: rgb(var(--c-pane));
+  --color-card: rgb(var(--c-card));
+  --color-raised: rgb(var(--c-raised));
+  --color-well: rgb(var(--c-well));
+  --color-fg: rgb(var(--c-fg));
+  --color-fg-2: rgb(var(--c-fg-2));
+  --color-fg-3: rgb(var(--c-fg-3));
+  --color-fg-4: rgb(var(--c-fg-4));
+  --color-line: var(--line-1);
+  --color-line-2: var(--line-2);
+  --color-line-3: var(--line-3);
+  --color-fill-1: rgb(var(--c-ink) / 0.04);
+  --color-fill-2: rgb(var(--c-ink) / 0.06);
+  --color-fill-3: rgb(var(--c-ink) / 0.1);
+  --color-fill-4: rgb(var(--c-ink) / 0.16);
+  color: rgb(var(--c-fg));
 }
 
 html,
@@ -323,7 +379,7 @@ body {
   --spin: 18s;
   --orbit: 7s;
   /* The chief's color pair (lib/color.ts): its glow, ring and orbit; crimson only for "you're talking" (listening). */
-  --chief-deep: color-mix(in srgb, var(--chief, rgb(var(--c-accent))) 55%, #09090b);
+  --chief-deep: color-mix(in srgb, var(--chief, rgb(var(--c-accent))) 55%, rgb(var(--c-canvas)));
 }
 
 .pr-layer {
@@ -1093,8 +1149,8 @@ body {
   width: 1.05rem;
   height: 1.05rem;
   border-radius: 999px;
-  border: 2px solid rgba(255, 255, 255, 0.2);
-  border-top-color: #fff;
+  border: 2px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
   animation: mic-spin 0.7s linear infinite;
 }
 
@@ -1158,7 +1214,7 @@ body {
 /* Chat aurora (§4.4): two slow gradient clouds behind the top of the thread, in the chief's colors. */
 .chat-aurora {
   --au: 0.1;
-  --chief-deep: color-mix(in srgb, var(--chief, rgb(var(--c-accent))) 50%, #09090b);
+  --chief-deep: color-mix(in srgb, var(--chief, rgb(var(--c-accent))) 50%, rgb(var(--c-canvas)));
   position: absolute;
   inset: 0 0 auto 0;
   height: min(46%, 380px);

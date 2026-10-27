@@ -9,6 +9,7 @@ import { MessageMedia } from "@/components/message-media";
 import { Field, Select } from "@/components/ui/field";
 import { fetchTools, patchTools, testTool, type ToolName, type ToolService, type ToolsState, type ToolTestResult } from "@/lib/bridge";
 import { useAssistantName } from "@/lib/identity";
+import { friendlyError } from "@/lib/request";
 
 /*
  * Settings → Tools: the service the chief uses to make images and to search the web. The rows, readiness and
@@ -30,7 +31,7 @@ export function ToolsPage() {
     try {
       setData(await fetchTools());
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't read the tools from Hermes");
+      setError(friendlyError(err, "Couldn't read the tools."));
     } finally {
       setLoading(false);
     }
@@ -41,7 +42,7 @@ export function ToolsPage() {
     let live = true;
     fetchTools()
       .then((next) => live && setData(next))
-      .catch((err) => live && setError(err instanceof Error ? err.message : "Couldn't read the tools from Hermes"))
+      .catch((err) => live && setError(friendlyError(err, "Couldn't read the tools.")))
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
@@ -60,8 +61,8 @@ export function ToolsPage() {
   const refresh = (
     <button
       type="button"
-      aria-label="Refresh"
-      title="Refresh from Hermes"
+      aria-label="Read the tools again"
+      title="Read again"
       className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg disabled:opacity-40"
       disabled={loading || !!saving}
       onClick={() => void load()}
@@ -82,7 +83,7 @@ export function ToolsPage() {
         ) : (
           <div className="flex items-center gap-3 rounded-ctl bg-fill-1 px-3 py-2.5">
             <p role="alert" className="min-w-0 flex-1 text-callout text-fg-2">
-              {error || "Couldn't read the tools from Hermes."}
+              {error || "Couldn't read the tools."}
             </p>
             {refresh}
           </div>
@@ -107,7 +108,7 @@ function ImageTool({ data, saving, disabled, apply, action }: { data: ToolsState
     <Group
       icon={<ImageIcon className="size-4" />}
       title="Making images"
-      hint={`The service ${chief} uses when you ask for a picture. Keys are saved to ${chief}’s own profile on this PC.`}
+      hint={`The service ${chief} uses when you ask for a picture. Keys are saved on this PC.`}
       action={action}
     >
       <div className="space-y-4 p-3">
@@ -181,6 +182,7 @@ function Summary({ ok, children }: { ok: boolean; children: ReactNode }) {
 function ServiceList({ label, services, saving, disabled, apply }: { label: string; services: ToolService[]; saving: boolean; disabled: boolean; apply: Apply }) {
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [picked, setPicked] = useState("");
   const [error, setError] = useState("");
   const main = services.filter((s) => s.active || s.recommended);
   const rest = services.filter((s) => !s.active && !s.recommended);
@@ -188,11 +190,12 @@ function ServiceList({ label, services, saving, disabled, apply }: { label: stri
 
   async function pick(service: ToolService, keys?: Record<string, string>) {
     setError("");
+    setPicked(service.name);
     try {
       await apply({ provider: service.name, ...(keys ? { keys } : {}) });
       setOpen(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save");
+      setError(friendlyError(err, "That wasn't saved. Try again."));
       throw err;
     }
   }
@@ -236,7 +239,7 @@ function ServiceList({ label, services, saving, disabled, apply }: { label: stri
                     <span className="mt-0.5 block text-caption text-fg-3">{s.hint}</span>
                   )}
                 </span>
-                <Status service={s} saving={saving && open === s.name} />
+                <Status service={s} saving={saving && picked === s.name} />
               </button>
               {expanded ? <KeyBox service={s} disabled={disabled} onSave={(keys) => pick(s, keys)} /> : null}
             </div>
@@ -264,10 +267,10 @@ function ServiceList({ label, services, saving, disabled, apply }: { label: stri
 }
 
 function Status({ service, saving }: { service: ToolService; saving: boolean }) {
-  if (saving) return <span className="shimmer-text shrink-0 text-caption">saving…</span>;
-  if (service.active) return <span className="shrink-0 rounded-chip bg-ok/15 px-1.5 py-0.5 text-caption font-medium text-ok">in use</span>;
-  if (service.status === "ready") return <span className="shrink-0 text-caption text-fg-3">{service.searchOnly ? "search only" : "ready"}</span>;
-  if (service.status === "needs_keys") return <span className="shrink-0 rounded-chip bg-warn/15 px-1.5 py-0.5 text-caption text-warn">add key</span>;
+  if (saving) return <span className="shimmer-text shrink-0 text-caption">Saving…</span>;
+  if (service.active) return <span className="shrink-0 rounded-chip bg-ok/15 px-1.5 py-0.5 text-caption font-medium text-ok">In use</span>;
+  if (service.status === "ready") return <span className="shrink-0 text-caption text-fg-3">{service.searchOnly ? "Search only" : "Ready"}</span>;
+  if (service.status === "needs_keys") return <span className="shrink-0 rounded-chip bg-warn/15 px-1.5 py-0.5 text-caption text-warn">Needs a key</span>;
   return null;
 }
 
@@ -291,7 +294,7 @@ function KeyBox({ service, disabled, onSave }: { service: ToolService; disabled:
   }
 
   return (
-    <div className="space-y-2 border-t border-line bg-black/20 px-3 py-3">
+    <div className="space-y-2 border-t border-line bg-fill-1 px-3 py-3">
       {asked.map((k) => {
         const address = /URL$/.test(k.key);
         return (
@@ -353,7 +356,7 @@ function TryIt({ tool, enabled, label, busy, note }: { tool: ToolName; enabled: 
     try {
       setResult(await testTool(tool));
     } catch (err) {
-      setResult({ ok: false, error: err instanceof Error ? err.message : "The test couldn't run" });
+      setResult({ ok: false, error: friendlyError(err, "The test couldn't run. Try again.") });
     } finally {
       setRunning(false);
     }

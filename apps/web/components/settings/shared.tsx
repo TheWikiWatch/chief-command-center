@@ -43,3 +43,16 @@ export function SwitchRow({
 }
 
 export { Switch };
+
+/** What Settings → Voice sends to save a voice setup. */
+export type ApplyBody = {
+  stt?: { provider?: string; model?: string; api_key?: string };
+  tts?: { provider?: string; voice?: string; api_key?: string };
+  secrets?: Record<string, string>;
+};
+
+/** How the Second Brain folder is laid out, in words. */
+export const BRAIN_MODE_LABEL: Record<string, string> = { new: "The Second Brain layout", keep: "Your own folders", reorganize: "Being reorganized" };
+
+/** One short line, addressed to the owner when their name is known. */
+export const previewLine = (owner: string) => (owner ? `Hi ${owner}. This is how I'll sound.` : "Hi. This is how I'll sound.");

@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { ArrowLeftIcon, BotIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, FolderIcon, FolderOpenIcon, LibraryIcon, PlusIcon } from "@/components/icons";
@@ -113,7 +114,7 @@ export function SecondBrainSetup({
       if (!value.ok) setError(value.error || "That didn't work.");
       else next(value);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't work.");
+      setError(friendlyError(e, "That didn't work."));
     } finally {
       setBusy(false);
     }

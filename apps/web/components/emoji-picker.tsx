@@ -24,6 +24,7 @@ export function EmojiPicker({
     }
     document.addEventListener("pointerdown", onDoc);
     window.addEventListener("keydown", onKey);
+    box.current?.querySelector<HTMLButtonElement>("button")?.focus();
     return () => {
       document.removeEventListener("pointerdown", onDoc);
       window.removeEventListener("keydown", onKey);

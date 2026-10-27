@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { friendlyError } from "@/lib/request";
 
 import { MicIcon } from "@/components/icons";
 import { micConstraints } from "@/lib/mic-device";
@@ -70,17 +71,17 @@ export function MicButton({
       const result = await transcribeAudio(dataUrl, mime || blob.type || "audio/webm");
       if (!mounted.current || id !== session.current) return;
       if (!result.ok) {
-        onError(result.error || "Could not hear that.");
+        onError(result.error || "Couldn't hear that. Try again.");
         return;
       }
       const text = (result.transcript || "").trim();
       if (!text || result.filtered || result.no_speech) {
-        onError("No speech detected.");
+        onError("No speech heard. Hold the mic and talk.");
         return;
       }
       await onTranscript(text);
     } catch (err) {
-      if (mounted.current && id === session.current) onError(err instanceof Error ? err.message : "Transcription failed");
+      if (mounted.current && id === session.current) onError(friendlyError(err, "Couldn't turn that into text. Try again."));
     } finally {
       if (id === session.current) setMic("idle");
     }

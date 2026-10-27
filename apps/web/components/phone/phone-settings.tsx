@@ -9,8 +9,10 @@ import { Group, PillButton, Row } from "@/components/ui/settings-group";
 import { desktop, type PhoneResult, type PhoneState } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
 import { canPromptInstall, isStandalone, onInstallPromptChange, phonePlatform, promptInstall } from "@/lib/install-prompt";
-import { disableWebPush, enableWebPush, pushCapability, pushDeviceCount, pushStatus, sendTestPush, type PushStatus } from "@/lib/web-push";
+import { disableWebPush, enableWebPush, PUSH_DENIED, pushCapability, pushDeviceCount, pushStatus, sendTestPush, type PushStatus } from "@/lib/web-push";
 import { btn } from "@/components/ui/button";
+import { ConfirmRow } from "@/components/ui/confirm-row";
+import { friendlyError } from "@/lib/request";
 
 const LINKS = {
   windows: "https://tailscale.com/download/windows",
@@ -27,12 +29,13 @@ const isLoopback = () => typeof window !== "undefined" && /^(localhost|127\.0\.0
  * alerts. Elsewhere (a development browser on the PC): what to use instead.
  */
 export function PhoneSettings() {
+  const assistant = useAssistantName();
   const pc = desktop()?.phone;
   if (pc) return <PcSetup />;
   if (!isLoopback()) return <ThisPhone />;
   return (
     <Group icon={<SmartphoneIcon className="size-4" />} title="Phone access" hint="Set up phone access from the installed desktop app (Settings → Phone). This browser window can't change Tailscale.">
-      <Row label="Using the app on your phone" hint="Your PC and phone join a private Tailscale network; the app adds a private https:// address for Chief that only your account can open." />
+      <Row label="Using the app on your phone" hint={`Your PC and phone join a private Tailscale network; the app adds a private https:// address for ${assistant} that only your account can open.`} />
     </Group>
   );
 }
@@ -48,6 +51,7 @@ function PcSetup() {
   const [busy, setBusy] = useState<"" | "on" | "off" | "access">("");
   const [error, setError] = useState("");
   const [consent, setConsent] = useState("");
+  const [confirmOff, setConfirmOff] = useState(false);
 
   const load = useCallback(() => {
     void api
@@ -80,7 +84,7 @@ function PcSetup() {
     setBusy("on");
     setError("");
     setConsent("");
-    const r: PhoneResult = await api.enable(state?.port ?? undefined).catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : String(e), consentUrl: "" }));
+    const r: PhoneResult = await api.enable(state?.port ?? undefined).catch((e: unknown) => ({ ok: false, error: friendlyError(e, "Phone access couldn't be turned on. Try again."), consentUrl: "" }));
     if (!r.ok && !r.cancelled) {
       setError(r.error || "Phone access couldn't be turned on.");
       setConsent(r.consentUrl || "");
@@ -89,9 +93,10 @@ function PcSetup() {
     load();
   };
   const turnOff = async () => {
+    setConfirmOff(false);
     setBusy("off");
     setError("");
-    const r = await api.disable();
+    const r: PhoneResult = await api.disable().catch((e: unknown) => ({ ok: false, error: friendlyError(e, "Phone access couldn't be turned off. Try again.") }));
     if (!r.ok) setError(r.error || "Phone access couldn't be turned off.");
     setBusy("");
     load();
@@ -100,7 +105,7 @@ function PcSetup() {
     if (state?.access === mode) return;
     setBusy("access");
     setError("");
-    const r = await api.setAccess(mode);
+    const r: PhoneResult = await api.setAccess(mode).catch((e: unknown) => ({ ok: false, error: friendlyError(e, "That wasn't changed. Try again.") }));
     if (!r.ok && !r.cancelled) setError(r.error || "That couldn't be changed.");
     // The dashboard server restarted to read it: give it a moment, then look again.
     await new Promise((res) => setTimeout(res, 1500));
@@ -171,11 +176,18 @@ function PcSetup() {
               {busy === "on" ? "Fixing…" : "Fix it"}
             </Action>
           ) : s3 === "done" ? (
-            <Action disabled={!!busy} onClick={() => void turnOff()}>
+            <Action disabled={!!busy || confirmOff} onClick={() => setConfirmOff(true)}>
               {busy === "off" ? "Turning off…" : "Turn off"}
             </Action>
           ) : null}
         </Step>
+        {confirmOff ? (
+          <div className="px-3.5 py-3">
+            <ConfirmRow confirm="Turn off access" busy={busy === "off"} busyLabel="Turning off…" onConfirm={() => void turnOff()} onCancel={() => setConfirmOff(false)}>
+              Turn off phone access? Your phones can&apos;t reach {assistant} until you turn it on again here.
+            </ConfirmRow>
+          </div>
+        ) : null}
         {error ? (
           <div className="px-3.5 py-3" role="alert">
             <p className="flex items-start gap-2 text-callout text-danger">
@@ -384,7 +396,7 @@ function ThisPhone() {
               : push === "on"
                 ? "On."
                 : push === "blocked"
-                  ? "Notifications are blocked for Chief. Allow them in the phone's settings for this app, then turn alerts on."
+                  ? `Notifications are blocked for ${assistant}. Allow them in the phone's settings for this app, then turn alerts on.`
                   : needsHomeScreen
                     ? "Add it to the home screen first (above), then open it from there."
                     : push === "unsupported"
@@ -414,7 +426,7 @@ function ThisPhone() {
                   setBusy(true);
                   setNote("");
                   void enableWebPush()
-                    .then((r) => setNote(r.ok ? "Alerts are on. Send a test below." : r.error === "notification permission denied" ? "Permission wasn't given. Allow notifications for Chief, then try again." : r.error || "Couldn't turn them on."))
+                    .then((r) => setNote(r.ok ? "Alerts are on. Send a test below." : r.error === PUSH_DENIED ? `Permission wasn't given. Allow notifications for ${assistant}, then try again.` : r.error || "Couldn't turn them on."))
                     .then(() => pushStatus().then(setPush))
                     .finally(() => setBusy(false));
                 }}
@@ -474,7 +486,7 @@ function Action({ children, onClick, disabled, primary, icon }: { children: Reac
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={btn(primary ? "primary" : "secondary", "sm")}
+      className={btn(primary ? "primary" : "secondary", "sm", "[@media(hover:none)]:min-h-11")}
     >
       {children}
       {icon}

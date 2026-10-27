@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import { desktop } from "@/lib/desktop";
 import { splitTitle } from "@/lib/names";
 
 /**
@@ -67,6 +68,9 @@ function emit(next: Identity) {
   for (const listener of listeners) listener();
 }
 
+/** The name the desktop app was last told, so a roster poll with the same name doesn't ask it again. */
+let shellName = "";
+
 /** Set the chief's display name from its roster title (for example "Nova - Chief of Staff" → "Nova"). */
 export function setAssistantTitle(title: string | undefined | null) {
   const name = splitTitle(title).name.trim();
@@ -75,6 +79,13 @@ export function setAssistantTitle(title: string | undefined | null) {
     localStorage.setItem(NAME_KEY, name);
   } catch {
     /* private mode */
+  }
+  // The desktop app names the chief in its tray, notifications and boot screen too (older shells lack this).
+  if (name !== shellName) {
+    shellName = name;
+    void desktop()
+      ?.setAssistantName?.(name)
+      .catch(() => undefined);
   }
   emit({ ...state, assistant: name });
 }

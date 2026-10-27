@@ -7,7 +7,7 @@ afterEach(cleanup);
 
 const params = (url: string) => new URL(url.replace(/^mailto:/, "mailto://x/")).searchParams;
 
-it("writes the e-mail: the tester's words, the versions and the file to attach", () => {
+it("writes the email: the tester's words, the versions and the file to attach", () => {
   const url = reportMail({
     to: "dev@example.com",
     what: "The chat froze after I sent a photo\nand never came back",
@@ -25,7 +25,7 @@ it("writes the e-mail: the tester's words, the versions and the file to attach",
   expect(body).toContain("What I expected:\nThe photo to show");
   expect(body).toContain("App 0.1.22 · Hermes 2026.9.24");
   expect(body).toContain("Desktop app on Windows · 2026-10-03 15:12 UTC");
-  expect(body).toContain("Diagnostics: chief-diagnostics-2026-10-03-15-12.zip (in the Downloads folder; attach it to this e-mail)");
+  expect(body).toContain("Diagnostics: chief-diagnostics-2026-10-03-15-12.zip (in the Downloads folder; attach it to this email)");
 });
 
 it("keeps a long report within what mail apps accept, and says when nothing is attached", () => {
@@ -36,12 +36,24 @@ it("keeps a long report within what mail apps accept, and says when nothing is a
   expect(body).toContain("Diagnostics: not attached");
 });
 
-it("is hidden without a built-in address, and asks for what happened before it opens the e-mail", () => {
+it("says so when the diagnostics file couldn't be made, and still opens the email", async () => {
+  (window as unknown as { chiefDesktop?: unknown }).chiefDesktop = { reportDiagnostics: async () => ({ ok: false, error: "zip failed" }) };
+  try {
+    render(<ReportProblemGroup email="dev@example.com" versions={{ app: "1", hermes: "2" }} />);
+    fireEvent.change(screen.getByPlaceholderText(/What you did/), { target: { value: "It broke" } });
+    fireEvent.click(screen.getByRole("button", { name: "Write the email" }));
+    expect((await screen.findByRole("alert")).textContent).toMatch(/diagnostics file couldn't be made, so your email app is opening without it/);
+  } finally {
+    delete (window as unknown as { chiefDesktop?: unknown }).chiefDesktop;
+  }
+});
+
+it("is hidden without a built-in address, and asks for what happened before it opens the email", () => {
   const { container } = render(<ReportProblemGroup email="" versions={{ app: "1", hermes: "2" }} />);
   expect(container.innerHTML).toBe("");
   cleanup();
   render(<ReportProblemGroup email="dev@example.com" versions={{ app: "1", hermes: "2" }} />);
-  const write = screen.getByRole("button", { name: "Write the e-mail" }) as HTMLButtonElement;
+  const write = screen.getByRole("button", { name: "Write the email" }) as HTMLButtonElement;
   expect(write.disabled).toBe(true);
   fireEvent.change(screen.getByPlaceholderText(/What you did/), { target: { value: "It broke" } });
   expect(write.disabled).toBe(false);

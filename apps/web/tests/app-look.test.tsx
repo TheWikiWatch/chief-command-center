@@ -72,7 +72,7 @@ it("the boot script ignores a tampered copy", () => {
 it("Appearance: mode and accent save for every window; a look the chief made says so and undoes", async () => {
   look = { ...look, accent: "pink", mode: "light", by: "Chief", canUndo: true };
   render(<LookGroup />);
-  expect(await screen.findByText("Changed by Chief.")).toBeTruthy();
+  expect(await screen.findByText("Chief changed this. Undo puts back what you had.")).toBeTruthy();
   await waitFor(() => expect(document.documentElement.dataset.theme).toBe("light"));
   fireEvent.click(screen.getByRole("radio", { name: "System" }));
   fireEvent.click(screen.getByRole("radio", { name: "Violet" }));

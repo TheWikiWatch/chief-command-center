@@ -9,7 +9,7 @@ import { CheckMySystem } from "@/components/voice/check-my-system";
 import { RestoreFlow } from "@/components/backup/restore-flow";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
-import { secondBrain, type SetupStatus } from "@/lib/setup-client";
+import { secondBrain, setup, type SetupStatus } from "@/lib/setup-client";
 import { useModal } from "@/lib/use-modal";
 import { btn } from "@/components/ui/button";
 
@@ -80,6 +80,11 @@ export function Onboarding({
     if (last) onFinished(connected ?? { ready: true, provider: "", model: "", error: "" });
     else setIndex((i) => i + 1);
   };
+  // A restored setup usually brings its model: when it does, the connect step is already done.
+  const afterRestore = async () => {
+    const status = await setup.status().catch(() => null);
+    if (status?.ready) setConnected(status);
+  };
   return (
     // The dialog itself keeps Tab inside it (lib/use-modal.ts).
     // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
@@ -114,7 +119,7 @@ export function Onboarding({
             animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE.enter } }}
             exit={{ opacity: 0, y: -6, transition: { duration: 0.14, ease: EASE.exit } }}
           >
-            {restoring ? <RestoreFlow onClose={() => setRestoring(false)} /> : step.render(complete(step.id))}
+            {restoring ? <RestoreFlow onClose={() => setRestoring(false)} onRestored={() => void afterRestore()} /> : step.render(complete(step.id))}
           </motion.div>
         </AnimatePresence>
         <footer className="mt-6 flex items-center justify-between gap-3">

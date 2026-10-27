@@ -224,7 +224,6 @@ export function Thread({
   onRetryQueued,
   earlier,
   onLoadEarlier,
-  footer,
   header,
   notices,
   activity,
@@ -251,7 +250,6 @@ export function Thread({
   /** Load earlier at the top of the thread: whether older messages remain, and its progress. */
   earlier?: { more: boolean; loading: boolean; error: string };
   onLoadEarlier?: () => void;
-  footer?: ReactNode;
   /** Shown at the top of the thread, empty or not (the thread's earlier conversations). */
   header?: ReactNode;
   /** Scheduled-job results and gateway notices, shown in time order. */
@@ -338,7 +336,7 @@ export function Thread({
       toBottom(el, newOnes.length > 0);
       setUnread(0);
     } else {
-      const incoming = messages.filter((m) => fresh.has(m.id) && m.role !== "user").length;
+      const incoming = messages.filter((m) => fresh.has(m.id) && m.role === "assistant" && chatTone(m) === "reply" && !!m.content?.trim()).length;
       if (incoming) setUnread((n) => n + incoming);
     }
     for (const id of newOnes) seen.current?.add(id);
@@ -448,7 +446,6 @@ export function Thread({
             </AnimatePresence>
           </div>
         )}
-        {footer}
       </div>
       <div role="status" aria-live="polite" className="sr-only">
         {announce}
@@ -478,7 +475,7 @@ export function Thread({
 }
 
 function EarlierRow({ state, onLoad }: { state: { more: boolean; loading: boolean; error: string }; onLoad: () => void }) {
-  if (!state.more) return <p className="mb-3 text-center text-caption text-fg-4">Start of the conversation</p>;
+  if (!state.more) return <p className="mb-3 text-center text-caption text-fg-3">Start of the conversation</p>;
   return (
     <div className="mb-3 flex flex-col items-center gap-1">
       <button
@@ -648,12 +645,12 @@ function QueuedFooter({ m, onCancel, onRetry }: { m: ChatMessage; onCancel?: (qu
         {files}
       </span>
       {onRetry && m.queueNote ? (
-        <button type="button" className="press min-h-8 font-medium text-fg-2 underline hover:text-fg" onClick={onRetry}>
+        <button type="button" className="press min-h-11 font-medium text-fg-2 underline hover:text-fg" onClick={onRetry}>
           Retry now
         </button>
       ) : null}
       {onCancel && m.queueId ? (
-        <button type="button" className="press min-h-8 font-medium text-fg-2 underline hover:text-fg" onClick={() => onCancel(m.queueId!)}>
+        <button type="button" className="press min-h-11 font-medium text-fg-2 underline hover:text-fg" onClick={() => onCancel(m.queueId!)}>
           Cancel
         </button>
       ) : null}
@@ -662,7 +659,7 @@ function QueuedFooter({ m, onCancel, onRetry }: { m: ChatMessage; onCancel?: (qu
 }
 
 const ACTION =
-  "press grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast hover:bg-fill-2 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-70";
+  "press relative grid size-7 place-items-center rounded-full text-fg-3 transition-opacity duration-fast after:absolute after:-inset-2 after:content-[''] hover:bg-fill-2 hover:text-fg focus-visible:opacity-100 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-70";
 
 /**
  * A reply's actions: copy its text (as written, markdown included) and read it aloud. They show on hover and
@@ -706,11 +703,11 @@ function ReplyActions({ text, onReport }: { text: string; onReport?: () => void 
 }
 
 const NOTE: Record<Exclude<ChatTone, "reply">, { name: string; Icon: (p: IconProps) => React.ReactElement; tone: string }> = {
-  tool: { name: "Tool", Icon: WrenchIcon, tone: "text-fg-3" },
-  kanban: { name: "Kanban", Icon: ListChecksIcon, tone: "text-ok" },
-  system: { name: "System note", Icon: ShieldAlertIcon, tone: "text-warn" },
-  compaction: { name: "Context compacted", Icon: SparklesIcon, tone: "text-fg-3" },
-  origin: { name: "Origin", Icon: BotIcon, tone: "text-fg-3" },
+  tool: { name: "Step", Icon: WrenchIcon, tone: "text-fg-3" },
+  kanban: { name: "Task board", Icon: ListChecksIcon, tone: "text-ok" },
+  system: { name: "Note", Icon: ShieldAlertIcon, tone: "text-warn" },
+  compaction: { name: "Memory tidied", Icon: SparklesIcon, tone: "text-fg-3" },
+  origin: { name: "Where it came from", Icon: BotIcon, tone: "text-fg-3" },
   error: { name: "Error", Icon: CircleAlertIcon, tone: "text-danger" },
   background: { name: "Background work", Icon: ListChecksIcon, tone: "text-fg-3" },
 };
@@ -878,7 +875,6 @@ function ThinkingRow({ chief, waitingApproval, since, step }: { chief: Person | 
   return (
     <motion.div
       className="mt-5 flex items-center gap-2.5"
-      aria-live="polite"
       initial={{ opacity: 0, y: 6 }}
       animate={{ opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE.enter } }}
       exit={{ opacity: 0, transition: { duration: 0.14 } }}
@@ -888,11 +884,11 @@ function ThinkingRow({ chief, waitingApproval, since, step }: { chief: Person | 
           <BotFace {...faceProps(chief)} mood={waitingApproval ? "waiting" : "thinking"} size={28} />
         ) : null}
       </div>
-      <span className={`text-body font-medium ${waitingApproval ? "text-warn" : "shimmer-text"}`}>
+      <span aria-live="polite" className={`text-body font-medium ${waitingApproval ? "text-warn" : "shimmer-text"}`}>
         {waitingApproval ? "Waiting for your approval" : doing}
       </span>
       {!waitingApproval && seconds >= 5 ? (
-        <span className="font-mono text-code tabular text-fg-3">
+        <span aria-hidden className="font-mono text-code tabular text-fg-3">
           {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, "0")}
         </span>
       ) : null}
@@ -928,18 +924,18 @@ function ChatEmptyState({
       ) : null}
       {authFailed ? (
         <>
-          <h2 className="mt-6 text-title text-fg">{assistant} can&apos;t let this window in</h2>
-          <p className="mt-2 max-w-xs text-body text-fg-3">Bridge token does not match the plugin.</p>
+          <h2 className="mt-6 text-title text-fg">This window isn&apos;t connected to {assistant}</h2>
+          <p className="mt-2 max-w-xs text-body text-fg-3">Restart the app on your PC to connect it again.</p>
         </>
       ) : !connected ? (
         <>
-          <h2 className="mt-6 text-title text-fg">{assistant}&apos;s gateway is offline</h2>
-          <p className="mt-2 max-w-xs text-body text-fg-3">Cannot reach {assistant} until the bridge is up. It will reconnect on its own.</p>
+          <h2 className="mt-6 text-title text-fg">Can&apos;t reach {assistant} right now</h2>
+          <p className="mt-2 max-w-xs text-body text-fg-3">{assistant} may be starting or restarting on your PC. This reconnects on its own.</p>
         </>
       ) : (
         <>
           <h2 className="mt-6 text-title text-fg">Say hi to {assistant}</h2>
-          <p className="mt-2 max-w-xs text-body text-fg-3">No messages in this session yet. Ask for a brief, hand over a task, or hold the mic and talk.</p>
+          <p className="mt-2 max-w-xs text-body text-fg-3">Nothing here yet. Ask for a brief, hand over a task, or hold the mic and talk.</p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             {SUGGESTIONS.map((s, i) => (
               <motion.button

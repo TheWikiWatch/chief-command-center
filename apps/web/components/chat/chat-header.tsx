@@ -159,7 +159,7 @@ export function ChatHeader({
           : "bg-danger"
       : "";
 
-  const line: { text: string; tone: string } = status ?? linkLine ??
+  const line: { text: string; tone: string; timer?: string } = status ?? linkLine ??
     (mood === "approval"
       ? { text: "Needs your approval", tone: "text-warn" }
       : mood === "listening"
@@ -171,7 +171,7 @@ export function ChatHeader({
           : mood === "speaking"
             ? { text: "Speaking…", tone: "text-accent-text" }
             : mood === "thinking"
-              ? { text: thinkingFor >= 5 ? `Thinking… ${Math.floor(thinkingFor / 60)}:${String(thinkingFor % 60).padStart(2, "0")}` : "Thinking…", tone: "text-fg-2" }
+              ? { text: "Thinking…", tone: "text-fg-2", timer: thinkingFor >= 5 ? `${Math.floor(thinkingFor / 60)}:${String(thinkingFor % 60).padStart(2, "0")}` : "" }
               : mood === "offline"
                 ? { text: "Offline", tone: "text-fg-3" }
                 : { text: voiceLabel || "Online", tone: "text-fg-3" });
@@ -215,6 +215,11 @@ export function ChatHeader({
             {mood === "speaking" ? <SpeakingBars /> : null}
             {presence ? <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${presence}`} /> : null}
             <span className="truncate">{line.text}</span>
+            {line.timer ? (
+              <span aria-hidden className="shrink-0 tabular-nums">
+                {line.timer}
+              </span>
+            ) : null}
           </motion.p>
         </AnimatePresence>
       </div>

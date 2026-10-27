@@ -30,7 +30,9 @@ it("keeps playing when a reused player aborts the previous clip",async()=>{
   expect(await job).toEqual({status:"played"});
 });
 it("reports synthesis failure and cancels pending jobs on Stop",async()=>{
-  expect(await enqueueSpeechTask(async()=>{throw new Error("provider down");})).toEqual({status:"failed",reason:"provider down"});
+  // A service's own code ("provider down") is said plainly; a sentence it wrote is kept.
+  expect(await enqueueSpeechTask(async()=>{throw new Error("provider down");})).toEqual({status:"failed",reason:"Couldn't reach the voice service"});
+  expect(await enqueueSpeechTask(async()=>{throw new Error("The voice service is busy.");})).toEqual({status:"failed",reason:"The voice service is busy."});
   const a=enqueueSpeechTask(()=>new Promise(()=>{}));const b=enqueueSpeechTask(async()=>"second");stopSpeech();
   expect(await a).toEqual({status:"cancelled"});expect(await b).toEqual({status:"cancelled"});
 });

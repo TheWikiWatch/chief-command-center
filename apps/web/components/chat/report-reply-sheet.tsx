@@ -13,7 +13,7 @@ import { useAssistantName } from "@/lib/identity";
 /**
  * The flag under a reply: tell the developer this went wrong, in two taps. The chief writes a short summary from
  * the reply, the message before it and the recent errors in its logs; the tester sees all of it, adds a note if
- * they like, and their own e-mail app opens with the report (nothing is sent by the app).
+ * they like, and their own email app opens with the report (nothing is sent by the app).
  */
 export function ReportReplySheet({
   open,
@@ -53,10 +53,12 @@ export function ReportReplySheet({
   async function write() {
     setBusy(true);
     let file = "";
+    let missed = false;
     try {
       if (api?.reportDiagnostics && withDiagnostics) {
-        const made = await api.reportDiagnostics();
+        const made = await api.reportDiagnostics().catch(() => ({ ok: false as const, name: "" }));
         if (made.ok) file = made.name || "";
+        else missed = true;
       }
       window.location.href = reportMail({
         to: email,
@@ -69,12 +71,16 @@ export function ReportReplySheet({
         reply,
         errors: draft?.errors,
       });
-      setDone({
-        tone: "ok",
-        text: file ? `Your e-mail app is opening with the report. Attach ${file} (its folder just opened), then send.` : "Your e-mail app is opening with the report. Check it, then send.",
-      });
+      setDone(
+        missed
+          ? { tone: "error", text: "The diagnostics file couldn't be made, so your email app is opening without it. Check the report, then send." }
+          : {
+              tone: "ok",
+              text: file ? `Your email app is opening with the report. Attach ${file} (its folder just opened), then send.` : "Your email app is opening with the report. Check it, then send.",
+            },
+      );
     } catch {
-      setDone({ tone: "error", text: "The e-mail couldn't be opened." });
+      setDone({ tone: "error", text: "The email couldn't be opened." });
     } finally {
       setBusy(false);
     }
@@ -83,7 +89,7 @@ export function ReportReplySheet({
   const writing = draft === null;
   const errors = draft?.errors?.length ?? 0;
   return (
-    <Sheet open={open} onClose={onClose} title="Report a problem" subtitle="With this reply, to the developer by e-mail">
+    <Sheet open={open} onClose={onClose} title="Report a problem" subtitle="With this reply, to the developer by email">
       <div className="space-y-4 p-4">
         <section>
           <h3 className="mb-1.5 px-1 text-caption font-medium text-fg-3">{assistant}&apos;s summary</h3>
@@ -120,7 +126,7 @@ export function ReportReplySheet({
         ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" className={btn("primary", "md")} disabled={busy || writing} onClick={() => void write()}>
-            {busy ? "Preparing…" : writing ? "Writing the summary…" : "Write the e-mail"}
+            {busy ? "Preparing…" : writing ? "Writing the summary…" : "Write the email"}
           </button>
           <span className="text-caption text-fg-3">To {email}</span>
         </div>

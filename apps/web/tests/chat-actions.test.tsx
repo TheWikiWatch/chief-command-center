@@ -20,7 +20,7 @@ it("keeps the draft and re-enables sending after rejection",async()=>{
   fireEvent.click(screen.getByRole("button",{name:"Send"}));await screen.findByText("Sent to Nova.");expect(api.send).toHaveBeenCalledTimes(2);
 });
 it("sends several files with the caption and keeps them when Nova rejects",async()=>{
-  api.send.mockRejectedValueOnce(refused("network lost"));
+  api.send.mockRejectedValueOnce(refused("The network was lost."));
   render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
   const input=document.querySelector("input[type=file]") as HTMLInputElement;
   const file=new File(["hello"],"notes.txt",{type:"text/plain"});
@@ -28,14 +28,14 @@ it("sends several files with the caption and keeps them when Nova rejects",async
   expect(await screen.findByLabelText("Remove notes.txt")).toBeInTheDocument();
   fireEvent.change(screen.getByRole("textbox", { name: "Message Nova" }),{target:{value:"see this"}});
   fireEvent.click(screen.getByRole("button",{name:"Send"}));
-  await screen.findByText(/network lost/);
+  await screen.findByText(/The network was lost/);
   expect(await screen.findByLabelText("Remove notes.txt")).toBeInTheDocument();
   expect(api.send).toHaveBeenCalledWith("see this", [expect.objectContaining({name:"notes.txt",mime:"text/plain"})], expect.any(String));
 });
 it("recovers approval buttons after a failed request and reports stale approval",async()=>{
-  api.approve.mockRejectedValueOnce(new Error("network lost")).mockResolvedValue({ok:true,resolved:0});
+  api.approve.mockRejectedValueOnce(new Error("The network was lost.")).mockResolvedValue({ok:true,resolved:0});
   render(<ChiefChat chief={undefined} lookAtEl={null} connected approval={{requestId:"id",command:"synthetic",reason:"test",allowSession:true,allowPermanent:true}}/>);
-  fireEvent.click(screen.getByText("Allow once"));await screen.findByText("network lost");expect(screen.getByText("Deny")).toBeEnabled();
+  fireEvent.click(screen.getByText("Allow once"));await screen.findByText("The network was lost.");expect(screen.getByText("Deny")).toBeEnabled();
   fireEvent.click(screen.getByText("Deny"));await screen.findByText(/no longer pending/);expect(screen.getByText("Allow once")).toBeEnabled();
 });
 it("needs a full press-and-hold before permanently allowing a command",async()=>{
@@ -78,7 +78,7 @@ it("a send that fails on the network waits in the outbox and retries with the sa
 it("while Nova is offline a message queues, survives a reload, and goes when it is back",async()=>{
   api.send.mockResolvedValue({ok:true});
   const view=render(<ChiefChat chief={undefined} lookAtEl={null} connected={false} compact/>);
-  const input=screen.getByRole("textbox", { name: "Nova is offline · it will wait" });
+  const input=screen.getByRole("textbox", { name: "Nova is offline. Messages wait and go when they're back." });
   fireEvent.change(input,{target:{value:"for later"}});
   fireEvent.click(screen.getByRole("button",{name:"Queue for Nova"}));
   expect(await screen.findByText("Queued · sends when Nova is back")).toBeInTheDocument();
@@ -90,7 +90,7 @@ it("while Nova is offline a message queues, survives a reload, and goes when it 
 });
 it("Cancel takes a queued message back into the draft",async()=>{
   render(<ChiefChat chief={undefined} lookAtEl={null} connected={false} compact/>);
-  const input=screen.getByRole("textbox", { name: "Nova is offline · it will wait" });
+  const input=screen.getByRole("textbox", { name: "Nova is offline. Messages wait and go when they're back." });
   fireEvent.change(input,{target:{value:"never mind"}});
   fireEvent.click(screen.getByRole("button",{name:"Queue for Nova"}));
   fireEvent.click(await screen.findByRole("button",{name:"Cancel"}));

@@ -1,6 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
+import { SHOW_APPROVAL_EVENT } from "@/lib/open-target";
 import { useEffect, useRef, type CSSProperties } from "react";
 
 import type { ChiefMood } from "@/components/chat/chat-header";
@@ -22,6 +23,7 @@ export function VoiceMode({
   onClose,
   chief,
   mood,
+  asking = false,
   micStatus,
   connected,
   busy,
@@ -41,6 +43,8 @@ export function VoiceMode({
   onClose: () => void;
   chief: Person | undefined;
   mood: ChiefMood;
+  /** The chief waits on a question, not an approval: same face, different words. */
+  asking?: boolean;
   micStatus: MicStatus;
   connected: boolean;
   busy: boolean;
@@ -81,7 +85,9 @@ export function VoiceMode({
           ? "Release to cancel"
           : "Listening…"
         : mood === "approval"
-          ? "Needs your approval"
+          ? asking
+            ? "Has a question for you"
+            : "Needs your approval"
           : mood === "thinking"
             ? "Thinking…"
             : mood === "preparing"
@@ -162,8 +168,16 @@ export function VoiceMode({
           <div className="relative flex flex-col items-center gap-4 px-6 pt-2">
             <div className="flex min-h-10 flex-wrap items-center justify-center gap-2">
               {mood === "approval" ? (
-                <button type="button" className="press flex min-h-10 items-center gap-2 rounded-full bg-warn/15 px-4 text-callout font-medium text-warn" onClick={onClose}>
-                  <ShieldAlertIcon size={16} /> Review in chat
+                <button
+                  type="button"
+                  className="press flex min-h-11 items-center gap-2 rounded-full bg-warn/15 px-4 text-callout font-medium text-warn"
+                  onClick={() => {
+                    // A minimized approval comes back up as a sheet, not just the pill.
+                    if (!asking) window.dispatchEvent(new CustomEvent(SHOW_APPROVAL_EVENT));
+                    onClose();
+                  }}
+                >
+                  <ShieldAlertIcon size={16} /> {asking ? "Answer in chat" : "Review in chat"}
                 </button>
               ) : null}
               {!speakOn ? (

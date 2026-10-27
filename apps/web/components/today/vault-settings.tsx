@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useEffect, useState } from "react";
 import { Sheet } from "@/components/ui/sheet";
 import { ops } from "@/lib/ops";
@@ -38,7 +39,7 @@ export function VaultBody({ onSaved }: { onSaved: () => void }) {
       await ops.saveSettings({ vault_path: vaultPath.trim() });
       onSaved();
     } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not save settings.");
+      setErr(friendlyError(e, "Couldn't save the settings."));
     } finally {
       setBusy(false);
     }

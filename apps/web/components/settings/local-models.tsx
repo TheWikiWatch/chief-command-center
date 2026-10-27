@@ -4,11 +4,14 @@ import { useCallback, useEffect, useState } from "react";
 
 import { CheckIcon, CircleAlertIcon, HardDriveIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
+import { ConfirmRow } from "@/components/ui/confirm-row";
 import { field } from "@/components/ui/field";
 import { Group } from "@/components/ui/settings-group";
+import { modelsChanged } from "@/lib/app-events";
 import { desktop } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
-import { localModels, progressLine, type LocalJob, type LocalModel, type LocalStatus } from "@/lib/local-models";
+import { jobFailure, localModels, progressLine, type LocalJob, type LocalModel, type LocalStatus } from "@/lib/local-models";
+import { friendlyError } from "@/lib/request";
 
 /*
  * Settings → Models & keys → Models on this PC: Hermes's managed llama.cpp runtime (local_ai.py). One click sets up
@@ -19,20 +22,25 @@ import { localModels, progressLine, type LocalJob, type LocalModel, type LocalSt
 const POLL_MS = 2000;
 const gb = (n: number | null | undefined) => (n ? `${Math.round(n / 1024 ** 3)} GB` : "");
 
+/** A failed action, kept beside the control that started it ("dl:<id>", "server", "folder", …). */
+type Failure = { label: string; text: string };
+
 export function LocalModelsGroup() {
   const chief = useAssistantName();
   const [state, setState] = useState<LocalStatus | null>(null);
   const [models, setModels] = useState<LocalModel[] | null>(null);
   const [error, setError] = useState("");
+  const [failed, setFailed] = useState<Failure | null>(null);
   const [busy, setBusy] = useState("");
 
   const load = useCallback(async (withCatalog = false) => {
     try {
       const next = await localModels.status();
       setState(next);
+      setError("");
       if (withCatalog) setModels((await localModels.catalog()).models);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't read local models");
+      setError(friendlyError(e, "Couldn't read the models on this PC."));
     }
   }, []);
 
@@ -44,40 +52,56 @@ export function LocalModelsGroup() {
         setState(next);
         setModels(list.models);
       })
-      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : "Couldn't read local models"));
+      .catch((e: unknown) => live && setError(friendlyError(e, "Couldn't read the models on this PC.")));
     return () => {
       live = false;
     };
   }, []);
 
   const running = state?.jobs.find((j) => j.status === "running" || j.status === "paused");
-  // While something runs, follow it; when it ends, read the catalog again (downloaded, active).
+  // While something runs, follow just that job (the full status probes the graphics card each time); when it ends,
+  // read everything again (downloaded, active) and tell the rest of the page the model may have changed.
   useEffect(() => {
     if (!running) return undefined;
-    const timer = setInterval(() => void load(false), POLL_MS);
+    const id = running.job_id;
+    let live = true;
+    const timer = setInterval(() => {
+      localModels
+        .job(id)
+        .then((res) => {
+          if (!live) return;
+          if (!res.job) return void load(false);
+          const job = res.job;
+          setState((s) => (s ? { ...s, jobs: s.jobs.map((j) => (j.job_id === id ? job : j)) } : s));
+        })
+        .catch(() => live && void load(false));
+    }, POLL_MS);
     return () => {
+      live = false;
       clearInterval(timer);
-      void load(true);
+      void load(true).then(modelsChanged);
     };
   }, [running?.job_id, load]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function act(label: string, fn: () => Promise<unknown>) {
+  async function act(label: string, fn: () => Promise<unknown>, fallback: string, after?: () => void) {
     setBusy(label);
-    setError("");
+    setFailed(null);
     try {
       await fn();
       await load(true);
+      after?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't work.");
+      setFailed({ label, text: friendlyError(e, fallback) });
     } finally {
       setBusy("");
     }
   }
+  const failure = (label: string) => (failed?.label === label ? failed.text : "");
 
   if (!state) {
     return (
       <Group icon={<HardDriveIcon className="size-4" />} title="Models on this PC">
-        <p className="px-3.5 py-3 text-callout text-fg-3" role="status">
+        <p className="px-3.5 py-3 text-callout text-fg-3" role={error ? "alert" : "status"}>
           {error || "Reading this PC…"}
         </p>
       </Group>
@@ -90,6 +114,7 @@ export function LocalModelsGroup() {
   const pick = recommended || [...(models || [])].filter((m) => m.fits && !m.needs_engine).sort((a, b) => (a.size_bytes || 0) - (b.size_bytes || 0))[0];
   const anyDownloaded = state.models.length > 0;
   const lastError = state.jobs.find((j) => j.status === "error" && j.error);
+  const engineName = [state.engine.version, state.engine.backend].filter(Boolean).join(", ");
 
   return (
     <Group
@@ -100,12 +125,13 @@ export function LocalModelsGroup() {
       <div className="space-y-3 px-3.5 py-3">
         <p className="text-callout text-fg-2">
           {state.machine.gpu ? `${state.machine.gpu}${state.machine.vram ? ` · ${state.machine.vram}` : ""}` : "No graphics card found: models would run on the processor, slowly."}
-          {state.engine.installed ? ` · engine ${state.engine.version || ""} (${state.engine.backend})` : ""}
-          {state.engine.installed ? (state.server.running ? " · running" : " · stopped") : ""}
+          {state.engine.installed ? (
+            <span title={engineName ? `llama.cpp ${engineName}` : undefined}>{state.server.running ? " · Local engine on" : " · Local engine off"}</span>
+          ) : null}
         </p>
 
         {needsFolder ? (
-          <FolderChoice state={state} busy={!!busy} onChoose={(path) => void act("folder", () => localModels.setFolder(path))} />
+          <FolderChoice state={state} busy={!!busy} error={failure("folder")} onChoose={(path) => void act("folder", () => localModels.setFolder(path), "That folder can't be used. Pick another.")} />
         ) : (
           <p className="text-caption text-fg-3">
             Models go in {state.folder.path}
@@ -113,27 +139,32 @@ export function LocalModelsGroup() {
           </p>
         )}
 
-        {running ? <JobLine job={running} busy={busy} onPause={() => void act("pause", () => localModels.pause(running.job_id))} onResume={() => void act("resume", () => localModels.resume(running.job_id))} /> : null}
-        {!running && lastError ? (
-          <p role="alert" className="flex items-start gap-1.5 text-callout text-danger">
-            <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />
-            <span>
-              {lastError.target}: {lastError.error}
-            </span>
-          </p>
+        {running ? (
+          <JobLine
+            job={running}
+            busy={busy}
+            error={failure("pause") || failure("resume")}
+            onPause={() => void act("pause", () => localModels.pause(running.job_id), "Couldn't pause it. Try again.")}
+            onResume={() => void act("resume", () => localModels.resume(running.job_id), "Couldn't carry on. Try again.")}
+          />
         ) : null}
+        {!running && lastError ? <Problem text={jobFailure(lastError)} /> : null}
 
         {!anyDownloaded && !running && pick ? (
-          <div className="flex flex-wrap items-center gap-2 rounded-ctl bg-fill-1 px-3 py-2.5">
-            <p className="min-w-0 flex-1 text-callout text-fg-2">
-              Set up {pick.display_name} ({pick.size_label}) for {chief}: the engine, the download, and {chief} on it.
-              {pick.spilled ? " It’s bigger than this graphics card’s memory, so it answers slower than a cloud model." : ""}
-            </p>
-            <Button variant="primary" size="sm" disabled={needsFolder || !!busy} onClick={() => void act("quickstart", () => localModels.quickstart(recommended ? "" : pick.id))}>
-              {busy === "quickstart" ? "Starting…" : "Set it up"}
-            </Button>
+          <div className="space-y-2 rounded-ctl bg-fill-1 px-3 py-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="min-w-0 flex-1 text-callout text-fg-2">
+                Set up {pick.display_name} ({pick.size_label}) for {chief}: the engine, the download, and {chief} on it.
+                {pick.spilled ? " It’s bigger than this graphics card’s memory, so it answers slower than a cloud model." : ""}
+              </p>
+              <Button variant="primary" size="sm" disabled={needsFolder || !!busy} onClick={() => void act("quickstart", () => localModels.quickstart(recommended ? "" : pick.id), "The setup didn't start. Try again.")}>
+                {busy === "quickstart" ? "Starting…" : "Set it up"}
+              </Button>
+            </div>
+            {failure("quickstart") ? <Problem text={failure("quickstart")} /> : null}
           </div>
         ) : null}
+        {error ? <Problem text={error} /> : null}
       </div>
 
       {(models || []).map((m) => (
@@ -144,33 +175,46 @@ export function LocalModelsGroup() {
           disabled={!!busy || !!running || needsFolder}
           busy={busy}
           chief={chief}
-          onDownload={() => void act(`dl:${m.id}`, () => localModels.download(m.id))}
-          onUse={() => void act(`use:${m.id}`, () => localModels.activate(m.downloaded_model_id || m.id))}
-          onRemove={() => void act(`rm:${m.id}`, () => localModels.remove(m.downloaded_model_id || m.id))}
+          error={failure(`dl:${m.id}`) || failure(`use:${m.id}`) || failure(`rm:${m.id}`)}
+          onDownload={() => void act(`dl:${m.id}`, () => localModels.download(m.id), "The download didn't start. Try again.")}
+          onUse={() => void act(`use:${m.id}`, () => localModels.activate(m.downloaded_model_id || m.id), `Couldn't switch ${chief} to it. Try again.`, modelsChanged)}
+          onRemove={() => void act(`rm:${m.id}`, () => localModels.remove(m.downloaded_model_id || m.id), "It wasn't removed. Try again.")}
         />
       ))}
 
       {state.engine.installed ? (
-        <div className="flex items-center gap-3 px-3.5 py-3">
-          <p className="min-w-0 flex-1 text-caption text-fg-3">
-            {state.server.running ? "The local server holds graphics memory while a model is loaded." : "The local server is off: nothing local runs until it starts."}
-          </p>
-          <Button variant="ghost" size="sm" disabled={!!busy} onClick={() => void act("server", () => localModels.server(state.server.running ? "stop" : "start"))}>
-            {busy === "server" ? "…" : state.server.running ? "Stop server" : "Start server"}
-          </Button>
+        <div className="space-y-2 px-3.5 py-3">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <p className="min-w-0 flex-1 basis-48 text-caption text-fg-3">
+              {state.server.running ? "The local engine holds graphics memory while a model is loaded." : "The local engine is off: nothing runs on this PC until it starts."}
+              {state.engine.updateAvailable ? " A newer engine is ready to install." : ""}
+            </p>
+            {state.engine.updateAvailable ? (
+              <Button variant="secondary" size="sm" disabled={!!busy || !!running} onClick={() => void act("engine", () => localModels.installEngine(), "The engine wasn't updated. Try again.")}>
+                {busy === "engine" ? "Updating…" : "Update engine"}
+              </Button>
+            ) : null}
+            <Button variant="ghost" size="sm" disabled={!!busy} onClick={() => void act("server", () => localModels.server(state.server.running ? "stop" : "start"), state.server.running ? "The engine didn't stop. Try again." : "The engine didn't start. Try again.")}>
+              {busy === "server" ? (state.server.running ? "Stopping…" : "Starting…") : state.server.running ? "Stop engine" : "Start engine"}
+            </Button>
+          </div>
+          {failure("server") || failure("engine") ? <Problem text={failure("server") || failure("engine")} /> : null}
         </div>
-      ) : null}
-
-      {error ? (
-        <p role="alert" className="px-3.5 pb-3 text-callout text-danger">
-          {error}
-        </p>
       ) : null}
     </Group>
   );
 }
 
-function FolderChoice({ state, busy, onChoose }: { state: LocalStatus; busy: boolean; onChoose: (path: string) => void }) {
+function Problem({ text }: { text: string }) {
+  return (
+    <p role="alert" className="flex items-start gap-1.5 text-callout text-danger">
+      <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />
+      <span>{text}</span>
+    </p>
+  );
+}
+
+function FolderChoice({ state, busy, error, onChoose }: { state: LocalStatus; busy: boolean; error: string; onChoose: (path: string) => void }) {
   const [path, setPath] = useState(state.folder.suggested);
   const pick = desktop()?.pickFolder;
   return (
@@ -197,35 +241,37 @@ function FolderChoice({ state, busy, onChoose }: { state: LocalStatus; busy: boo
           Use this folder
         </Button>
       </div>
+      {error ? <Problem text={error} /> : null}
     </div>
   );
 }
 
-function JobLine({ job, busy, onPause, onResume }: { job: LocalJob; busy: string; onPause: () => void; onResume: () => void }) {
+function JobLine({ job, busy, error, onPause, onResume }: { job: LocalJob; busy: string; error: string; onPause: () => void; onResume: () => void }) {
   const line = progressLine(job);
   return (
-    <div className="space-y-1.5 rounded-ctl bg-fill-1 px-3 py-2.5" role="status" aria-live="polite">
+    <div className="space-y-1.5 rounded-ctl bg-fill-1 px-3 py-2.5">
       <div className="flex items-center gap-2">
-        <p className="min-w-0 flex-1 truncate text-callout text-fg">
+        <p className="min-w-0 flex-1 truncate text-callout text-fg" role="status">
           {job.status === "paused" ? "Paused" : job.detail || "Working…"} <span className="text-fg-3">· {job.target}</span>
         </p>
         {job.can_pause ? (
           <Button variant="ghost" size="sm" disabled={!!busy} onClick={onPause}>
-            Pause
+            {busy === "pause" ? "Pausing…" : "Pause"}
           </Button>
         ) : null}
         {job.can_resume ? (
           <Button variant="secondary" size="sm" disabled={!!busy} onClick={onResume}>
-            Resume
+            {busy === "resume" ? "Resuming…" : "Resume"}
           </Button>
         ) : null}
       </div>
       {typeof job.percent === "number" ? (
-        <div className="h-1.5 overflow-hidden rounded-full bg-fill-3" aria-hidden>
+        <div className="h-1.5 overflow-hidden rounded-full bg-fill-3" role="progressbar" aria-label={job.target} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(job.percent)}>
           <div className="h-full rounded-full bg-accent transition-[width] duration-base" style={{ width: `${job.percent}%` }} />
         </div>
       ) : null}
       {line ? <p className="text-caption tabular-nums text-fg-3">{line}</p> : null}
+      {error ? <Problem text={error} /> : null}
     </div>
   );
 }
@@ -236,6 +282,7 @@ function ModelRow({
   disabled,
   busy,
   chief,
+  error,
   onDownload,
   onUse,
   onRemove,
@@ -245,22 +292,23 @@ function ModelRow({
   disabled: boolean;
   busy: string;
   chief: string;
+  error: string;
   onDownload: () => void;
   onUse: () => void;
   onRemove: () => void;
 }) {
   const [confirm, setConfirm] = useState(false);
   return (
-    <div className="border-t border-line px-3.5 py-3">
+    <div data-model={model.id} className="px-3.5 py-3">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <div className="min-w-0 flex-1">
           <p className="flex flex-wrap items-center gap-1.5 text-body text-fg">
             {model.display_name}
-            {model.recommended ? <span className="rounded-chip bg-accent/15 px-1.5 py-px text-micro text-accent-text">recommended</span> : null}
-            {model.vision ? <span className="rounded-chip bg-fill-2 px-1.5 py-px text-micro text-fg-3">sees images</span> : null}
+            {model.recommended ? <span className="rounded-chip bg-accent/15 px-1.5 py-px text-micro text-accent-text">Recommended</span> : null}
+            {model.vision ? <span className="rounded-chip bg-fill-2 px-1.5 py-px text-micro text-fg-3">Sees images</span> : null}
             {active ? (
               <span className="inline-flex items-center gap-1 rounded-chip bg-ok/15 px-1.5 py-px text-micro text-ok">
-                <CheckIcon className="size-3" strokeWidth={3} /> {chief} uses it
+                <CheckIcon className="size-3" strokeWidth={3} /> In use by {chief}
               </span>
             ) : null}
           </p>
@@ -276,7 +324,7 @@ function ModelRow({
                 {busy === `use:${model.id}` ? "Switching…" : `Use for ${chief}`}
               </Button>
             )}
-            <Button variant="ghost" size="sm" disabled={disabled || active} onClick={() => setConfirm((v) => !v)}>
+            <Button variant="ghost" size="sm" disabled={disabled || active} title={active ? `Switch ${chief} to another model first` : undefined} onClick={() => setConfirm((v) => !v)}>
               Remove
             </Button>
           </>
@@ -289,16 +337,13 @@ function ModelRow({
         )}
       </div>
       {confirm ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-ctl bg-fill-1 px-3 py-2">
-          <p className="min-w-0 flex-1 text-callout text-fg-2">
-            Remove {model.display_name}? It frees {model.size_label}; downloading it again takes a while.
-          </p>
-          <Button variant="danger" size="sm" disabled={disabled} onClick={() => (setConfirm(false), onRemove())}>
-            Remove
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setConfirm(false)}>
-            Keep
-          </Button>
+        <ConfirmRow className="mt-2" confirm="Remove" busy={busy === `rm:${model.id}`} busyLabel="Removing…" onConfirm={() => (setConfirm(false), onRemove())} onCancel={() => setConfirm(false)}>
+          Remove {model.display_name}? It frees {model.size_label}; downloading it again takes a while.
+        </ConfirmRow>
+      ) : null}
+      {error ? (
+        <div className="mt-2">
+          <Problem text={error} />
         </div>
       ) : null}
     </div>

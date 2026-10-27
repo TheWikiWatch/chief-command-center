@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { poll } from "@/lib/poll";
@@ -128,7 +129,7 @@ function OpsTodayPane({ surface, onSurface, onSendToChief, hideTabs = false, tra
       if (signal.aborted) return;
       resourceHealth.failure(e);
       setOnline(false);
-      setError(e instanceof Error ? e.message : "Could not read the vault.");
+      setError(friendlyError(e, "Couldn't read the vault."));
     }
   }, [builtin, resourceHealth]);
 

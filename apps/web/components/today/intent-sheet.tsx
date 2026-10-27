@@ -1,7 +1,8 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { CircleCheckIcon } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
 import { field as fieldClass } from "@/components/ui/field";
@@ -25,19 +26,23 @@ export function IntentSheet({
   open?: boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  // A bare sheet has no title of its own: the task's heading names the dialog.
+  const titleId = useId();
   return (
-    <Sheet open={open} onClose={onClose} bare scope="container" zIndex={LAYER.paneSheet} closeDisabled={busy}>
-      <IntentBody target={target} onClose={onClose} onSent={onSent} onBusy={setBusy} />
+    <Sheet open={open} onClose={onClose} bare scope="container" zIndex={LAYER.paneSheet} closeDisabled={busy} labelledBy={titleId}>
+      <IntentBody titleId={titleId} target={target} onClose={onClose} onSent={onSent} onBusy={setBusy} />
     </Sheet>
   );
 }
 
 export function IntentBody({
+  titleId,
   target,
   onClose,
   onSent,
   onBusy,
 }: {
+  titleId?: string;
   target: LaunchTarget;
   onClose: () => void;
   onSent: (text: string) => Promise<void>;
@@ -86,7 +91,7 @@ export function IntentBody({
       setPrepared({ key, text: kickoff });
       await onSent(kickoff);
     } catch (e) {
-      setErr(e instanceof Error ? e.message : `Could not send to ${assistant}.`);
+      setErr(friendlyError(e, `Couldn't send to ${assistant}.`));
     } finally {
       setBusy(false);
     }
@@ -100,7 +105,9 @@ export function IntentBody({
             <span className="h-1.5 w-1.5 rounded-full" style={{ background: target.color }} />
             {target.kicker}
           </p>
-          <h3 className="text-title text-fg">{target.title}</h3>
+          <h3 id={titleId} className="text-title text-fg">
+            {target.title}
+          </h3>
         </div>
         <button
           type="button"
@@ -137,7 +144,7 @@ export function IntentBody({
               value={due}
               min={new Date().toLocaleDateString("en-CA")}
               onChange={(e) => setDue(e.target.value)}
-              className={fieldClass({ extra: "mt-1.5 w-full py-2 scheme-dark" })}
+              className={fieldClass({ extra: "mt-1.5 w-full py-2" })}
             />
           </motion.label>
         ) : null}

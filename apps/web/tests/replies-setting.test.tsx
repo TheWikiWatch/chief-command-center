@@ -17,7 +17,7 @@ it("the replies-as-written switch reads and writes Hermes's streaming setting, a
   fireEvent.click(toggle);
   await waitFor(() => expect(api.patchSettings).toHaveBeenCalledWith({ streaming: false }));
   expect(toggle).not.toBeChecked();
-  expect(await screen.findByText(/takes effect the next time Nova starts/i)).toBeInTheDocument();
+  expect(await screen.findByText(/takes effect when Nova next starts/i)).toBeInTheDocument();
 });
 
 it("a failed save puts the switch back and says why", async () => {

@@ -7,8 +7,10 @@ import { CircleAlertIcon, CircleCheckIcon } from "@/components/icons";
 import { agoLabel, backups, sizeLabel, type BackupFile, type BackupParts, type BackupStatus } from "@/lib/backup-client";
 import { desktop } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
+import { btn } from "@/components/ui/button";
 import { field } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/surface";
+import { friendlyError } from "@/lib/request";
 
 const PARTS: { id: BackupParts; label: string; hint: string }[] = [
   { id: "everything", label: "Everything", hint: "Your setup and your Second Brain" },
@@ -30,6 +32,7 @@ export function BackupPanel() {
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
   const [saving, setSaving] = useState(false);
+  const [starting, setStarting] = useState(false);
   const [files, setFiles] = useState<BackupFile[]>([]);
   const [restoring, setRestoring] = useState<string | null>(null);
   const folderId = useId();
@@ -51,7 +54,7 @@ export function BackupPanel() {
         if (listed?.ok) setFiles(listed.backups);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Backups aren't available right now.");
+      setError(friendlyError(e, "Backups aren't available right now."));
     }
   }, []);
 
@@ -74,27 +77,35 @@ export function BackupPanel() {
       if (!res.ok) setError(res.error || "Couldn't save.");
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't save.");
+      setError(friendlyError(e, "Couldn't save. Try again."));
     } finally {
       setSaving(false);
     }
   }
 
   async function runNow() {
+    if (starting) return;
     setError("");
     if (encrypt && (pass1.length < 8 || pass1 !== pass2)) {
       setError(pass1.length < 8 ? "Use a passphrase of at least 8 characters." : "The passphrases don't match.");
       return;
     }
-    const res = await backups.run(parts, encrypt ? pass1 : "").catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : "" }));
-    if (!res.ok) setError(res.error || "The backup didn't start.");
-    setPass1("");
-    setPass2("");
-    await load();
+    setStarting(true);
+    try {
+      const res = await backups.run(parts, encrypt ? pass1 : "").catch((e: unknown) => ({ ok: false, error: friendlyError(e, "") }));
+      if (!res.ok) setError(res.error || "The backup didn't start. Try again.");
+      else {
+        setPass1("");
+        setPass2("");
+      }
+      await load();
+    } finally {
+      setStarting(false);
+    }
   }
 
   if (restoring !== null) {
-    return <RestoreFlow initialFile={restoring} secondBrain={status?.secondBrain || ""} onClose={() => setRestoring(null)} />;
+    return <RestoreFlow initialFile={restoring} secondBrain={status?.secondBrain || ""} onClose={() => setRestoring(null)} onRestored={() => void load()} />;
   }
   if (!status) {
     return error ? <Note tone="warn">{error}</Note> : <Skeleton lines={3} label="Loading backups" />;
@@ -163,7 +174,7 @@ export function BackupPanel() {
           Back up automatically every week
         </label>
         <label className="flex items-center gap-2">
-          keep the last
+          Keep the last
           <select value={status.settings.keep} onChange={(e) => void save({ keep: Number(e.target.value) })} className={field({ extra: "min-w-0" })}>
             {[2, 3, 4, 6, 8, 12].map((n) => (
               <option key={n} value={n}>
@@ -171,6 +182,7 @@ export function BackupPanel() {
               </option>
             ))}
           </select>
+          backups
         </label>
       </div>
       {status.settings.schedule === "weekly" && !chosen ? <p className="text-caption text-fg-3">Automatic backups start once a folder is saved.</p> : null}
@@ -213,8 +225,8 @@ export function BackupPanel() {
         </label>
         {encrypt ? (
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            <input type="password" autoComplete="new-password" placeholder="Passphrase" value={pass1} onChange={(e) => setPass1(e.target.value)} className={field()} />
-            <input type="password" autoComplete="new-password" placeholder="Again" value={pass2} onChange={(e) => setPass2(e.target.value)} className={field()} />
+            <input type="password" autoComplete="new-password" aria-label="Passphrase" placeholder="Passphrase (8 or more characters)" value={pass1} onChange={(e) => setPass1(e.target.value)} className={field()} />
+            <input type="password" autoComplete="new-password" aria-label="Passphrase again" placeholder="The same passphrase again" value={pass2} onChange={(e) => setPass2(e.target.value)} className={field()} />
           </div>
         ) : null}
       </div>
@@ -227,8 +239,8 @@ export function BackupPanel() {
           </div>
         </div>
       ) : (
-        <SmallButton primary disabled={!chosen || saving} onClick={() => void runNow()}>
-          Back up now
+        <SmallButton primary disabled={!chosen || saving || starting} onClick={() => void runNow()}>
+          {starting ? "Starting…" : "Back up now"}
         </SmallButton>
       )}
       {job?.state === "done" && job.result ? (
@@ -277,12 +289,7 @@ function Note({ tone, children }: { tone: "ok" | "warn" | "error" | "idle"; chil
 
 function SmallButton({ children, onClick, disabled, primary }: { children: ReactNode; onClick: () => void; disabled?: boolean; primary?: boolean }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={`press min-h-10 shrink-0 rounded-full px-4 text-callout font-medium disabled:opacity-50 ${primary ? "bg-fg text-canvas" : "border border-line-2 text-fg-2 hover:text-fg"}`}
-    >
+    <button type="button" disabled={disabled} onClick={onClick} className={btn(primary ? "primary" : "secondary", "sm", "shrink-0 [@media(hover:none)]:min-h-11")}>
       {children}
     </button>
   );

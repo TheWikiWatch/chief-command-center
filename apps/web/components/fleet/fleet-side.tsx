@@ -15,7 +15,7 @@ import type { Person } from "@/lib/types";
 /** Ideas for a first specialist; picking one fills the message box (never sends). */
 export const SPECIALIST_IDEAS = [
   { label: "A researcher", ask: "Bring on a researcher who digs into questions for me and reports back with sources." },
-  { label: "A writer", ask: "Bring on a writer who drafts my e-mails, posts and replies in my voice." },
+  { label: "A writer", ask: "Bring on a writer who drafts my emails, posts and replies in my voice." },
   { label: "A planner", ask: "Bring on a planner who keeps an eye on my week and tells me what to do first." },
 ] as const;
 

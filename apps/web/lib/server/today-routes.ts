@@ -1,3 +1,4 @@
+import { friendlyError } from "@/lib/request";
 import { promises as fs } from "node:fs";
 
 import {
@@ -66,7 +67,7 @@ export async function vaultToday(req: Request, path: string[], root: string, for
       try {
         return json({ ok: true, kickoff: kickoff(body, boards, today) });
       } catch (e) {
-        return json({ ok: false, error: e instanceof Error ? e.message : "Could not prepare that." }, 409);
+        return json({ ok: false, error: friendlyError(e, "Could not prepare that.") }, 409);
       }
     }
     default:

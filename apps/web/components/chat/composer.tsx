@@ -35,6 +35,7 @@ export function Composer({
   working = false,
   answering = false,
   onStop,
+  stopping = false,
   onSendAfter,
 }: {
   /** The chief is mid-turn: Enter adds to that work (steer), Stop / Esc ends it, Alt+Enter sends after it. */
@@ -42,6 +43,8 @@ export function Composer({
   /** The chief asked a question and waits: what you type answers it. */
   answering?: boolean;
   onStop?: () => void;
+  /** Stop was pressed and the chief hasn't stopped yet: the button stays, busy, instead of vanishing. */
+  stopping?: boolean;
   onSendAfter?: () => void;
   /** Phone keyboards: Enter adds a line and the arrow sends (desktop: Enter sends, Shift+Enter adds a line). */
   phone?: boolean;
@@ -75,6 +78,7 @@ export function Composer({
   const [picker, setPicker] = useState(false);
   const [dragX, setDragX] = useState(0);
   const menuBox = useRef<HTMLDivElement>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
 
   const hasContent = !!text.trim() || pendingFiles.length > 0;
   const writable = connected || offline;
@@ -112,16 +116,36 @@ export function Composer({
         ? `Add to what ${assistant} is doing…`
         : `Message ${assistant}`
     : offline
-      ? `${assistant} is offline · it will wait`
-      : "Gateway down";
+      ? `${assistant} is offline. Messages wait and go when they're back.`
+      : `Can't connect to ${assistant}. Open Connection status.`;
 
   useEffect(() => {
     if (!menu) return;
     const close = (e: PointerEvent) => {
       if (!menuBox.current?.contains(e.target as Node)) setMenu(false);
     };
+    // Escape closes it and gives the keyboard back to "+"; arrow keys move between its items.
+    const keys = (e: KeyboardEvent) => {
+      const items = [...(menuBox.current?.querySelectorAll<HTMLButtonElement>("[role='menuitem']") || [])];
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setMenu(false);
+        menuButton.current?.focus();
+      } else if ((e.key === "ArrowDown" || e.key === "ArrowUp") && items.length) {
+        e.preventDefault();
+        const at = items.indexOf(document.activeElement as HTMLButtonElement);
+        items[(at + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+      }
+    };
     document.addEventListener("pointerdown", close);
-    return () => document.removeEventListener("pointerdown", close);
+    document.addEventListener("keydown", keys);
+    // Focus goes into the menu when it opens, so the keyboard can use it.
+    const first = requestAnimationFrame(() => menuBox.current?.querySelector<HTMLButtonElement>("[role='menuitem']")?.focus());
+    return () => {
+      cancelAnimationFrame(first);
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", keys);
+    };
   }, [menu]);
 
   function insertEmoji(emoji: string) {
@@ -174,7 +198,7 @@ export function Composer({
                   )}
                   <button
                     type="button"
-                    className="press absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-line-2 bg-raised text-fg-2 shadow-e3 hover:text-fg"
+                    className="press absolute -right-1.5 -top-1.5 flex h-6 w-6 items-center justify-center rounded-full border border-line-2 bg-raised text-fg-2 shadow-e3 after:absolute after:-inset-2.5 after:content-[''] hover:text-fg"
                     aria-label={`Remove ${file.name}`}
                     onClick={() => onRemoveFile(file.id)}
                   >
@@ -191,9 +215,11 @@ export function Composer({
         <div className="glass relative flex transition-[border-color] duration-fast focus-within:border-[rgb(var(--c-ink)/0.26)]! min-h-12 min-w-0 flex-1 items-end rounded-capsule pl-1 pr-1">
           <div ref={menuBox} className="relative shrink-0 self-end pb-1">
             <button
+              ref={menuButton}
               type="button"
               className={`press flex h-10 w-10 items-center justify-center rounded-full text-fg-2 hover:bg-fill-2 hover:text-fg disabled:opacity-40 ${menu ? "bg-fill-3 text-fg" : ""}`}
               aria-label="Add attachment or emoji"
+              aria-haspopup="menu"
               aria-expanded={menu}
               disabled={!writable}
               onClick={() => {
@@ -225,7 +251,7 @@ export function Composer({
                       type="button"
                       role="menuitem"
                       aria-label={label}
-                      className="flex min-h-11 w-full items-center gap-3 rounded-ctl px-3 text-body text-fg hover:bg-fill-2"
+                      className="press flex min-h-11 w-full items-center gap-3 rounded-ctl px-3 text-body text-fg outline-hidden hover:bg-fill-2 focus-visible:bg-fill-2"
                       initial={{ opacity: 0, x: -6 }}
                       animate={{ opacity: 1, x: 0, transition: { delay: i * 0.03, duration: 0.18 } }}
                       onClick={() => {
@@ -249,7 +275,7 @@ export function Composer({
             onKeyDown={(e) => {
               // Enter while an input method is composing (accents, predictive text) only confirms it.
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;
-              if (e.key === "Escape" && working && onStop) {
+              if (e.key === "Escape" && working && onStop && !stopping) {
                 e.preventDefault();
                 onStop();
                 return;
@@ -307,10 +333,12 @@ export function Composer({
             <motion.button
               key="stop"
               type="button"
-              aria-label={`Stop ${assistant}`}
-              title={`Stop ${assistant} (Esc)`}
+              aria-label={stopping ? `Stopping ${assistant}…` : `Stop ${assistant}`}
+              aria-busy={stopping}
+              title={stopping ? `Stopping ${assistant}…` : `Stop ${assistant} (Esc)`}
+              disabled={stopping}
               onClick={onStop}
-              className="press flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-full border border-line-2 bg-raised text-fg hover:border-line-3"
+              className={`press flex h-11 w-11 shrink-0 items-center justify-center self-center rounded-full border border-line-2 bg-raised text-fg hover:border-line-3 disabled:cursor-default ${stopping ? "animate-pulse opacity-60" : ""}`}
               initial={{ opacity: 0, scale: 0.6 }}
               animate={{ opacity: 1, scale: 1, transition: SPRING.snappy }}
               exit={{ opacity: 0, scale: 0.6, transition: { duration: 0.12 } }}

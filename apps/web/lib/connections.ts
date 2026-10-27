@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { requestJson } from "@/lib/request";
+import { requestJson, friendlyError } from "@/lib/request";
 
 /*
  * Connections (bridge contract `chief.connections.v1`, connections.py): email, calendars, documents and work tools
@@ -195,7 +195,7 @@ export function useConnectFlow(service: string, onDone?: () => void) {
         openSignIn(res.url);
         setFlow({ step: "waiting", op: res.op, url: res.url, backend: used, finishOnPc: !!res.finishOnPc });
       } catch (err) {
-        setFlow({ step: "failed", error: err instanceof Error ? err.message : "Couldn't start that connection" });
+        setFlow({ step: "failed", error: friendlyError(err, "Couldn't start that connection") });
       }
     },
     [service],

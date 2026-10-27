@@ -128,7 +128,7 @@ export type ChatNotice = {
   text: string;
   source: "scheduled" | "notice";
   /** A scheduled job's answer, unwrapped by the bridge: which routine it came from (and whose it is). */
-  routine?: { name: string; jobId: string; profile?: string };
+  routine?: { name: string; jobId: string; profile?: string; bot?: string };
   /** A scheduled job that failed, in the app's words: the error, how many runs in a row, and Hermes's full text. */
   failure?: { error: string; streak: number; detail: string };
   /** A chat turn that failed after Hermes's retries: a usage or rate limit (with when it lifts, epoch seconds, when

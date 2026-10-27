@@ -47,14 +47,14 @@ export function Switch({
       aria-label={label}
       disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors duration-base disabled:cursor-not-allowed ${
+      className={`press relative flex h-7 w-12 shrink-0 items-center rounded-full p-0.5 transition-colors duration-base disabled:cursor-not-allowed ${
         checked ? "justify-end bg-accent-solid" : "justify-start bg-fill-4"
       }`}
     >
       <motion.span
         layout
         transition={SPRING.snappy}
-        className="block size-6 rounded-full bg-white shadow-[0_1px_3px_rgb(0_0_0/0.4)]"
+        className="block size-6 rounded-full bg-white shadow-[var(--elev-1)]"
       />
     </button>
   );
@@ -85,7 +85,7 @@ export function Segmented<T extends string>({
             tabIndex={radioTabIndex(active)}
             onKeyDown={radioKeys(options.map(([k]) => k), value, onChange)}
             onClick={() => onChange(key)}
-            className={`relative min-h-9 flex-1 rounded-full px-2 text-callout font-medium transition-colors duration-fast ${
+            className={`press relative min-h-9 flex-1 rounded-full px-2 text-callout font-medium transition-colors duration-fast ${
               active ? "text-fg" : "text-fg-3 hover:text-fg-2"
             }`}
           >
@@ -93,7 +93,7 @@ export function Segmented<T extends string>({
               <motion.span
                 layoutId={`seg-${id}`}
                 transition={SPRING.snappy}
-                className="absolute inset-0 rounded-full bg-raised shadow-[0_1px_2px_rgb(0_0_0/0.35),inset_0_0_0_1px_var(--line-2)]"
+                className="absolute inset-0 rounded-full bg-raised shadow-[var(--elev-1),inset_0_0_0_1px_var(--line-2)]"
               />
             ) : null}
             <span className="relative">{text}</span>
@@ -139,7 +139,7 @@ export function ViewSwitch<T extends string>({
             tabIndex={radioTabIndex(active)}
             onKeyDown={radioKeys(options.map(([k]) => k), value, onChange)}
             onClick={() => onChange(key)}
-            className={`relative min-h-9 rounded-full px-3 text-callout font-medium transition-colors duration-fast ${active ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
+            className={`press relative min-h-9 rounded-full px-3 text-callout font-medium transition-colors duration-fast ${active ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
           >
             {active ? <motion.span layoutId={`view-${id}`} className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
             <span className="relative inline-flex items-center">{text}</span>

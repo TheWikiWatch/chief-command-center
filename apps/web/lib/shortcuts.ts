@@ -10,7 +10,7 @@ export const isMac = () => typeof navigator !== "undefined" && /Mac|iPhone|iPad/
 
 export const SHORTCUTS: Shortcut[] = [
   { id: "palette", keys: ["mod", "K"], label: "Search commands and places" },
-  { id: "composer", keys: ["/"], label: "Write to the chief" },
+  { id: "composer", keys: ["/"], label: "Write a message" },
   { id: "newThread", keys: ["mod", "Alt", "N"], label: "New thread" },
   { id: "voice", keys: ["mod", "Shift", "V"], label: "Voice mode" },
   { id: "surface1", keys: ["mod", "1"], label: "Fleet", desktopOnly: true },
@@ -32,14 +32,21 @@ export function shortcutText(id: ShortcutId): string {
   return s ? s.keys.map(keyLabel).join(isMac() ? "" : "+") : "";
 }
 
-/** Which shortcut a key press is, if any. Single keys don't count while typing in a field. */
+/**
+ * Which shortcut a key press is, if any. Single keys don't count while typing in a field, and neither does
+ * mod+Shift+V there (it pastes as plain text).
+ */
 export function matchShortcut(e: KeyboardEvent, typing: boolean): ShortcutId | null {
-  const mod = isMac() ? e.metaKey : e.ctrlKey;
+  const mac = isMac();
+  const mod = mac ? e.metaKey : e.ctrlKey;
   const key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+  // On a Mac, Option changes the letter (⌘⌥N gives "˜"), so the key's place counts. On Windows, AltGr is Ctrl+Alt
+  // and types letters on many keyboards (AltGr+N is "ń"): only the letter N itself is the shortcut there.
+  const altN = key === "N" || (mac && e.code === "KeyN");
   if (mod && !e.altKey && !e.shiftKey && key === "K") return "palette";
   if (mod && !e.altKey && !e.shiftKey && e.key === ",") return "settings";
-  if (mod && e.altKey && !e.shiftKey && (key === "N" || e.code === "KeyN")) return "newThread";
-  if (mod && e.shiftKey && !e.altKey && (key === "V" || e.code === "KeyV")) return "voice";
+  if (mod && e.altKey && !e.shiftKey && altN) return "newThread";
+  if (mod && e.shiftKey && !e.altKey && !typing && (key === "V" || e.code === "KeyV")) return "voice";
   if (mod && !e.altKey && !e.shiftKey && /^[1-4]$/.test(e.key)) return `surface${e.key}` as ShortcutId;
   if (typing || mod || e.altKey) return null;
   if (e.key === "/") return "composer";

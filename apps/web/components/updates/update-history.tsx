@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useCallback, useEffect, useState } from "react";
 
 import { CircleAlertIcon, SparklesIcon, XIcon } from "@/components/icons";
@@ -66,7 +67,7 @@ export function UpdateHistorySheet({ open, onClose }: { open: boolean; onClose: 
       .catch(() => undefined)
       .then(() => loadUpdateHistory(true))
       .then((h) => alive && setHistory(h))
-      .catch((e: unknown) => alive && setError(e instanceof Error ? e.message : "Couldn't read the update history."));
+      .catch((e: unknown) => alive && setError(friendlyError(e, "Couldn't read the update history.")));
     return () => {
       alive = false;
     };
@@ -148,7 +149,7 @@ function InstallThisVersion({ version, onStarted }: { version: string; onStarted
   };
   return (
     <div className="mt-2">
-      <button type="button" disabled={busy} onClick={() => void go()} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg disabled:opacity-60">
+      <button type="button" disabled={busy} onClick={() => void go()} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11 disabled:opacity-60">
         Install this version
       </button>
       {error ? (

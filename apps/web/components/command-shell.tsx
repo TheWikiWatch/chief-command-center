@@ -28,7 +28,7 @@ import { SurfaceErrorBoundary } from "@/components/ui/error-boundary";
 import { useVaultOpenSignal } from "@/lib/vault-client";
 import { TodayPane } from "@/components/today-pane";
 import { WorkforcePane } from "@/components/workforce-pane";
-import { TeamButton } from "@/components/fleet/team-sheet";
+import { TeamButton, TeamSheet } from "@/components/fleet/team-sheet";
 import { fetchApprovals, fetchHealth, fetchSnapshot, subscribeBridge } from "@/lib/bridge";
 import { liveConnected, liveInterval, liveWake, useLiveConnected } from "@/lib/live";
 import { useDashboardPrefs } from "@/lib/dashboard-prefs";
@@ -503,13 +503,15 @@ export function CommandShell() {
     ...(desktop()?.updates ? [{ id: "updates", label: "Check for updates", group: "App" as const, icon: <RefreshCwIcon size={17} />, keywords: "new version upgrade", run: () => { openSettingsAt("backup"); void desktop()?.updates?.check(); } }] : []),
     ...(desktop()?.openLogs ? [{ id: "logs", label: "Open logs folder", group: "App" as const, icon: <FileTextIcon size={17} />, keywords: "debug diagnostics troubleshoot", run: () => void desktop()?.openLogs?.() }] : []),
     ...paletteThreads.map((t) => ({ id: `thread:${t.id}`, label: t.title || "Untitled thread", group: "Threads" as const, icon: <MessageCircleIcon size={17} />, keywords: "thread conversation", run: () => { changeThread(t.id); goToPlace("chat"); } })),
-    ...people.filter((p) => !p.isChief).map((p) => ({ id: `bot:${p.id}`, label: splitTitle(p.name).name || p.name, group: "Fleet" as const, icon: <BotIcon size={17} />, keywords: `${splitTitle(p.name).role} bot specialist ${p.jobTitle}`, run: () => { goToPlace("fleet"); setLooking(p); } })),
+    ...people.filter((p) => !p.isChief).map((p) => ({ id: `bot:${p.id}`, label: splitTitle(p.name).name || p.name, group: "Fleet" as const, icon: <BotIcon size={17} />, keywords: `${splitTitle(p.name).role} bot specialist ${p.jobTitle}`, run: () => { goToPlace("fleet"); changeFleetView("crew"); setLooking(p); } })),
   ];
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (onboarding.needed) return;
+      if (onboarding.needed || e.defaultPrevented) return;
       const id = matchShortcut(e, isTyping(e.target));
       if (!id) return;
+      // An open dialog owns the keyboard: nothing behind it changes, except the palette closing itself.
+      if (document.querySelector('[aria-modal="true"]') && !(id === "palette" && paletteOpen)) return;
       e.preventDefault();
       if (id === "palette") setPaletteOpen((v) => !v);
       else if (id === "settings") openSettingsAt();
@@ -518,7 +520,7 @@ export function CommandShell() {
       else if (id === "newThread") void newThread();
       else if (id === "voice") openVoice();
       else if (id === "surface1") phone ? changePhoneTab("chat") : goToPlace("fleet");
-      else if (id === "surface2") goToPlace(phone ? "today" : "today");
+      else if (id === "surface2") goToPlace("today");
       else if (id === "surface3") goToPlace(phone ? "fleet" : "vault");
       else if (id === "surface4") goToPlace("vault");
     };
@@ -597,7 +599,7 @@ export function CommandShell() {
           {viewSwitch}
           <div className="flex-1" />
           {fleetView === "health" ? null : usageToggle}
-          <TeamButton phone people={people} onAskChief={sendFromToday} />
+          <TeamButton phone />
           {headerStatus}
         </header>
       ) : (
@@ -610,7 +612,7 @@ export function CommandShell() {
           <div className="app-no-drag absolute right-3 top-3 z-20 flex items-center gap-2">
             {viewSwitch}
             {fleetView === "health" ? null : usageToggle}
-            <TeamButton phone={false} people={people} onAskChief={sendFromToday} />
+            <TeamButton phone={false} />
           </div>
         </>
       )}
@@ -684,15 +686,12 @@ export function CommandShell() {
       <ChiefLookExport chief={chief} assistant={assistant} />
       <StatusSheet open={statusOpen} onClose={() => setStatusOpen(false)} connected={connected} authFailed={authFailed} phone={phone} deepseek={chief?.provider === "deepseek"} />
       {paletteMounted ? <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} commands={commands} assistant={assistant} onAsk={askChief} search={searchVaultNotes} /> : null}
-      <AnimatePresence>
-        {helpOpen ? (
-          <Sheet open={helpOpen} onClose={() => setHelpOpen(false)} side={phone ? "bottom" : "right"} title="Keyboard shortcuts" subtitle="Single keys work when you're not typing in a box.">
-            <div className="px-4 pb-6">
-              <ShortcutList phone={phone} />
-            </div>
-          </Sheet>
-        ) : null}
-      </AnimatePresence>
+      <TeamSheet phone={phone} people={people} onAskChief={sendFromToday} />
+      <Sheet open={helpOpen} onClose={() => setHelpOpen(false)} side={phone ? "bottom" : "right"} title="Keyboard shortcuts" subtitle="Single keys work when you're not typing in a box.">
+        <div className="px-4 pb-6">
+          <ShortcutList phone={phone} />
+        </div>
+      </Sheet>
       <ToastViewport />
       <EngineBanner />
     </>

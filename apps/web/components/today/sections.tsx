@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { ChevronRightIcon } from "@/components/icons";
@@ -69,7 +70,7 @@ export function TodaySectionsList({ sections, onSendToChief, ...row }: RowProps 
       setAsked(true);
       showToast({ title: `Sent to ${assistant}`, body: "Suggestions first; nothing changes until you say so.", tone: "ok", icon: "check" });
     } catch (e) {
-      showToast({ title: `Couldn't send to ${assistant}`, body: e instanceof Error ? e.message : "Try again", tone: "warn", icon: "alert" });
+      showToast({ title: `Couldn't send to ${assistant}`, body: friendlyError(e, "Try again."), tone: "warn", icon: "alert" });
     } finally {
       setAsking(false);
     }

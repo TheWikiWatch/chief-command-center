@@ -129,7 +129,7 @@ export function DeepseekSchedule() {
         <div className="min-w-0">
           <p className={`text-body font-medium ${peak ? "text-warn" : "text-fg"}`}>{check === "changed" ? "Schedule changed" : peak ? "Peak: twice the price" : "Off-peak: half price"}</p>
           <p className="mt-0.5 text-callout text-fg-3">{line}</p>
-          {check === "match" ? <p className="mt-0.5 text-caption text-fg-4">Matches DeepSeek&apos;s pricing page (checked daily).</p> : null}
+          {check === "match" ? <p className="mt-0.5 text-caption text-fg-3">Matches DeepSeek&apos;s pricing page (checked daily).</p> : null}
         </div>
       </div>
       <div>

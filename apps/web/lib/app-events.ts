@@ -5,6 +5,12 @@
 export const OPEN_VOICE_MODE_EVENT = "chief:open-voice-mode";
 export const FOCUS_COMPOSER_EVENT = "chief:focus-composer";
 export const SET_DRAFT_EVENT = "chief:set-draft";
+/** A model changed (the chief's or a bot's, a provider added or removed): everything showing one reads it again. */
+export const MODELS_CHANGED_EVENT = "chief:models-changed";
+
+export function modelsChanged() {
+  window.dispatchEvent(new Event(MODELS_CHANGED_EVENT));
+}
 
 export function openVoiceMode() {
   window.dispatchEvent(new Event(OPEN_VOICE_MODE_EVENT));

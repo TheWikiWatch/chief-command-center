@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { SurfaceTabs, type Surface } from "@/components/surface-tabs";
@@ -69,7 +70,7 @@ function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
       .catch((error: unknown) => {
         if (ctrl.signal.aborted) return;
         setEntries([]);
-        setTreeError(error instanceof Error ? error.message : "The vault could not be read");
+        setTreeError(friendlyError(error, "Couldn't read the vault."));
       });
     return () => ctrl.abort();
   }, [dir]);
@@ -88,7 +89,7 @@ function VaultBrowser({ phone, surface, onSurface, trailing }: VaultPaneProps) {
         .catch((error: unknown) => {
           if (ctrl.signal.aborted) return;
           setHits([]);
-          setSearchError(error instanceof Error ? error.message : "Search failed");
+          setSearchError(friendlyError(error, "The search didn't work. Try again."));
         });
     }, 180);
     return () => {

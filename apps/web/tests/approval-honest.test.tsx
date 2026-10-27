@@ -46,7 +46,7 @@ it("a mail call the guard couldn't read exactly can't be always-allowed", () => 
   sheet(approval);
   expect(screen.getByText(call)).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Always allow/ })).toBeNull();
-  expect(screen.getByText(/can only be allowed one time at a time/)).toBeTruthy();
+  expect(screen.getByText(/can only be allowed once/)).toBeTruthy();
 });
 
 it("hidden characters and padding in a command are made visible", () => {

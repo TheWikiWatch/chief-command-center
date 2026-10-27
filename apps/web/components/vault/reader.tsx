@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
@@ -115,7 +116,7 @@ export function useFileText(path: string) {
     vaultText(path, ctrl.signal)
       .then(setText)
       .catch((e: unknown) => {
-        if (!ctrl.signal.aborted) setError(e instanceof Error ? e.message : "The vault could not be read");
+        if (!ctrl.signal.aborted) setError(friendlyError(e, "Couldn't read the vault."));
       });
     return () => ctrl.abort();
   }, [path]);

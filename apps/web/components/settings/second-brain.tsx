@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useEffect, useState } from "react";
 import { BookOpenIcon, ChevronRightIcon } from "@/components/icons";
 import { Group, Row } from "@/components/ui/settings-group";
@@ -10,7 +11,7 @@ import { FORMAT_INFO, SecondBrainSetup } from "@/components/second-brain/setup";
 import { secondBrain, type Routine, type SecondBrainStatus } from "@/lib/setup-client";
 import { useAppConfig } from "@/lib/app-config";
 import { field } from "@/components/ui/field";
-import { MODE_LABEL } from "@/components/settings-panel";
+import { BRAIN_MODE_LABEL as MODE_LABEL } from "@/components/settings/shared";
 import { LoadingLine } from "@/components/ui/surface";
 
 /* Settings → Second Brain: the folder and its routines. */
@@ -25,7 +26,7 @@ export function SecondBrainGroup({ onAskChief }: { onAskChief?: (text: string) =
     secondBrain
       .status()
       .then(setStatus)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Couldn't read the Second Brain."));
+      .catch((e: unknown) => setError(friendlyError(e, "Couldn't read the Second Brain.")));
   };
   useEffect(load, []);
   const fromEnv = config.secondBrain.source === "env";
@@ -43,7 +44,7 @@ export function SecondBrainGroup({ onAskChief }: { onAskChief?: (text: string) =
               setChanging((v) => !v);
               if (changing) load();
             }}
-            className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg"
+            className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11"
           >
             {changing ? "Close" : status?.configured ? "Change" : "Set up"}
           </button>
@@ -124,7 +125,7 @@ export function RoutineRows() {
     secondBrain
       .routines()
       .then((r) => (r.ok ? setItems(r.routines) : setError(r.error || "Couldn't read the routines.")))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Couldn't read the routines."));
+      .catch((e: unknown) => setError(friendlyError(e, "Couldn't read the routines.")));
   }, []);
   async function change(id: string, next: { enabled?: boolean; time?: string }) {
     setBusy(id);
@@ -134,7 +135,7 @@ export function RoutineRows() {
       if (!res.ok) throw new Error(res.error || "That didn't save.");
       setItems(res.routines);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't save.");
+      setError(friendlyError(e, "That didn't save."));
     } finally {
       setBusy("");
     }

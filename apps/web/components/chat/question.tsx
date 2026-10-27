@@ -15,6 +15,7 @@ import { btn } from "@/components/ui/button";
 import { openSettings, openTeam } from "@/lib/settings-nav";
 import { routinesApi } from "@/lib/routines-client";
 import { retryTurn } from "@/lib/bridge";
+import { friendlyError } from "@/lib/request";
 
 /** Hermes appends this to the choice it recommends; the card shows it as a badge instead. */
 const RECOMMENDED = /\s*\(recommended\)\s*$/i;
@@ -60,7 +61,7 @@ export function QuestionCard({
     try {
       await onAnswer(question.id, answer);
     } catch (e) {
-      setError(e instanceof Error ? e.message : `Couldn't send your answer to ${assistant}.`);
+      setError(friendlyError(e, `Couldn't send your answer to ${assistant}.`));
       setBusy("");
     }
   }
@@ -243,15 +244,15 @@ function RoutineFailure({ notice }: { notice: ChatNotice }) {
       setState(kind === "run" ? "ran" : "paused");
     } catch (e) {
       setState("");
-      setError(e instanceof Error ? e.message : "That didn't work.");
+      setError(friendlyError(e, "That didn't work."));
     }
   }
   return (
     <div className="rounded-card border border-danger/30 bg-danger/[0.07] px-3.5 py-2.5">
       <div className="flex items-center gap-1.5 text-caption font-medium text-fg-3">
         <ClockIcon size={13} />
-        <span className="min-w-0 flex-1 truncate">{routine?.name || "Scheduled job"}</span>
-        <button type="button" onClick={() => openTeam("routines")} className="press -my-1 shrink-0 rounded-full px-2 py-1 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg">
+        <span className="min-w-0 flex-1 truncate">{routineTitle(routine) || "Scheduled job"}</span>
+        <button type="button" onClick={() => openTeam("routines")} className="press relative after:absolute after:-inset-2 after:content-[''] -my-1 shrink-0 rounded-full px-2 py-1 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg">
           Manage
         </button>
       </div>
@@ -271,7 +272,7 @@ function RoutineFailure({ notice }: { notice: ChatNotice }) {
             </button>
           </>
         ) : null}
-        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="press rounded-full px-2 py-1 text-caption text-fg-3 hover:text-fg-2">
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="press relative after:absolute after:-inset-2 after:content-[''] rounded-full px-2 py-1 text-caption text-fg-3 hover:text-fg-2">
           {open ? "Hide details" : "Details"}
         </button>
       </div>
@@ -285,14 +286,20 @@ function RoutineFailure({ notice }: { notice: ChatNotice }) {
   );
 }
 
-/** "15:00" today, "Mon 15:00" within a week, else the date. */
-function resetLabel(epoch: number): string {
+/** A routine's card title: "Morning check-in · Ada" for a bot's routine, just the name for the chief's own. */
+export function routineTitle(routine?: { name: string; bot?: string } | null): string {
+  if (!routine?.name) return "";
+  return routine.bot ? `${routine.name} · ${routine.bot}` : routine.name;
+}
+
+/** When, inside a sentence, in the owner's own clock: "at 3:00 PM", "tomorrow at 3:00 PM", "on Mon at 3:00 PM". */
+export function resetPhrase(epoch: number, now = new Date()): string {
   const at = new Date(epoch * 1000);
-  const time = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
-  const days = Math.round((new Date(at).setHours(0, 0, 0, 0) - new Date().setHours(0, 0, 0, 0)) / 86_400_000);
-  if (days === 0) return time;
-  if (days === 1) return `tomorrow ${time}`;
-  return `${at.toLocaleDateString([], days < 7 ? { weekday: "short" } : { day: "numeric", month: "short" })} ${time}`;
+  const time = at.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  const days = Math.round((new Date(at).setHours(0, 0, 0, 0) - new Date(now).setHours(0, 0, 0, 0)) / 86_400_000);
+  if (days === 0) return `at ${time}`;
+  if (days === 1) return `tomorrow at ${time}`;
+  return `on ${at.toLocaleDateString([], days < 7 ? { weekday: "short" } : { day: "numeric", month: "short" })} at ${time}`;
 }
 
 // A scheduled retry waits a little past the reset (the provider's clock and ours differ by seconds).
@@ -327,7 +334,7 @@ export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: bo
       setState("sent");
     } catch (e) {
       setState("");
-      setError(e instanceof Error ? e.message : "That didn't send.");
+      setError(friendlyError(e, "That didn't send."));
     }
   }
 
@@ -344,7 +351,7 @@ export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: bo
   const sentence =
     failure.code === "limit"
       ? resets
-        ? `${assistant}'s model has used up its plan for now. It resets at ${resetLabel(resets)}.`
+        ? `${assistant}'s model has used up its plan for now. It resets ${resetPhrase(resets)}.`
         : `${assistant}'s model is turning requests away for now (a usage or rate limit).`
       : `${assistant}'s model service was busy or down, so this message wasn't answered.`;
 
@@ -360,7 +367,7 @@ export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: bo
           <span className="text-caption text-fg-2">Sent again.</span>
         ) : waiting ? (
           <>
-            <span className="text-caption text-fg-2">Retrying at {resetLabel((failure.resetsAt || 0) + RETRY_GRACE_S)}. Keep this open.</span>
+            <span className="text-caption text-fg-2">Retrying {resetPhrase((failure.resetsAt || 0) + RETRY_GRACE_S)}. Keep this open.</span>
             <button type="button" onClick={() => setState("")} className={btn("ghost", "sm")}>
               Cancel
             </button>
@@ -369,7 +376,7 @@ export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: bo
           <>
             {resets && latest ? (
               <button type="button" onClick={() => setState("waiting")} className={btn("secondary", "sm")}>
-                Retry at {resetLabel(resets + RETRY_GRACE_S)}
+                Retry {resetPhrase(resets + RETRY_GRACE_S)}
               </button>
             ) : null}
             <button type="button" disabled={state === "sending"} onClick={() => void retry()} className={btn(resets ? "ghost" : "secondary", "sm")}>
@@ -380,7 +387,7 @@ export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: bo
             </button>
           </>
         )}
-        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="press rounded-full px-2 py-1 text-caption text-fg-3 hover:text-fg-2">
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="press relative after:absolute after:-inset-2 after:content-[''] rounded-full px-2 py-1 text-caption text-fg-3 hover:text-fg-2">
           {open ? "Hide details" : "Details"}
         </button>
       </div>
@@ -399,6 +406,7 @@ export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: bo
  * thing in the chat. */
 export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQuickReply?: (text: string) => Promise<void> }) {
   const [sent, setSent] = useState("");
+  const [done, setDone] = useState(false);
   const [error, setError] = useState("");
   const [open, setOpen] = useState(false);
   const scheduled = notice.source === "scheduled";
@@ -426,9 +434,9 @@ export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQui
     <div className="rounded-card border border-line bg-card/60 px-3.5 py-2.5">
       <div className="flex items-center gap-1.5 text-caption font-medium text-fg-3">
         {scheduled ? <ClockIcon size={13} /> : <BellIcon size={13} />}
-        <span className="min-w-0 flex-1 truncate">{notice.routine?.name || (scheduled ? "Scheduled job" : "Notice")}</span>
+        <span className="min-w-0 flex-1 truncate">{routineTitle(notice.routine) || (scheduled ? "Scheduled job" : "Notice")}</span>
         {notice.routine ? (
-          <button type="button" onClick={() => openTeam("routines")} className="press -my-1 shrink-0 rounded-full px-2 py-1 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg">
+          <button type="button" onClick={() => openTeam("routines")} className="press relative after:absolute after:-inset-2 after:content-[''] -my-1 shrink-0 rounded-full px-2 py-1 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg">
             Manage
           </button>
         ) : null}
@@ -446,16 +454,17 @@ export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQui
                 setError("");
                 try {
                   await onQuickReply!(cmd);
+                  setDone(true);
                 } catch (e) {
                   setSent("");
-                  setError(e instanceof Error ? e.message : "That didn't send.");
+                  setError(friendlyError(e, "That didn't send."));
                 }
               }}
               className={`press min-h-10 rounded-full px-4 text-callout font-medium disabled:opacity-60 ${
                 cmd === "/cancel" || cmd === "/deny" || cmd === "/no" ? "border border-line-2 text-fg-2 hover:text-fg" : "bg-fg text-canvas"
               }`}
             >
-              {sent === cmd ? "Sending…" : QUICK_LABELS[cmd] || cmd}
+              {sent === cmd ? (done ? "Sent" : "Sending…") : QUICK_LABELS[cmd] || cmd}
             </button>
           ))}
         </div>

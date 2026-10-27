@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { CheckIcon, XIcon } from "@/components/icons";
@@ -71,7 +72,7 @@ export function Proposals({ items, onSendToChief, onDecided }: { items: Proposal
       if (!res.ok) throw new Error(res.error || "Couldn't save the decision");
       onDecided();
     } catch (e) {
-      showToast({ title: decision === "approve" ? `Couldn't send to ${assistant}` : "Couldn't dismiss", body: e instanceof Error ? e.message : "Try again", tone: "warn", icon: "alert" });
+      showToast({ title: decision === "approve" ? `Couldn't send to ${assistant}` : "Couldn't dismiss", body: friendlyError(e, "Try again."), tone: "warn", icon: "alert" });
     } finally {
       setSending(null);
     }

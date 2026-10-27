@@ -22,6 +22,13 @@ describe("the keyboard map", () => {
     expect(matchShortcut(key({ key: "/" }), true)).toBeNull();
     expect(matchShortcut(key({ key: "a" }), false)).toBeNull();
   });
+
+  it("leaves AltGr letters and paste-as-plain-text to the box being typed in", () => {
+    // AltGr+N on a Polish keyboard: Ctrl+Alt with the key's own letter.
+    expect(matchShortcut(key({ key: "ń", code: "KeyN", ctrlKey: true, altKey: true }), true)).toBeNull();
+    expect(matchShortcut(key({ key: "V", code: "KeyV", ctrlKey: true, shiftKey: true }), true)).toBeNull();
+    expect(matchShortcut(key({ key: "V", code: "KeyV", ctrlKey: true, shiftKey: true }), false)).toBe("voice");
+  });
 });
 
 describe("the command palette", () => {

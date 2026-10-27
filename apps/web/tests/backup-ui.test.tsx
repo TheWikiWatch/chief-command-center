@@ -64,11 +64,11 @@ it("shows the suggested folder without applying it, and backs up only after a fo
   await waitFor(() => expect((screen.getByRole("button", { name: "Back up now" }) as HTMLButtonElement).disabled).toBe(false));
 
   fireEvent.click(screen.getByRole("checkbox", { name: /Encrypt with a passphrase/ }));
-  fireEvent.change(screen.getByPlaceholderText("Passphrase"), { target: { value: "long passphrase" } });
-  fireEvent.change(screen.getByPlaceholderText("Again"), { target: { value: "different one" } });
+  fireEvent.change(screen.getByLabelText("Passphrase"), { target: { value: "long passphrase" } });
+  fireEvent.change(screen.getByLabelText("Passphrase again"), { target: { value: "different one" } });
   fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
   expect(await screen.findByText("The passphrases don't match.")).toBeTruthy();
-  fireEvent.change(screen.getByPlaceholderText("Again"), { target: { value: "long passphrase" } });
+  fireEvent.change(screen.getByLabelText("Passphrase again"), { target: { value: "long passphrase" } });
   status = { ...status, job: { kind: "manual", state: "running", startedAt: 1, done: 5, total: 10 } };
   fireEvent.click(screen.getByRole("button", { name: "Back up now" }));
   await waitFor(() => expect(calls.find((c) => c.path === "run")?.body).toEqual({ parts: "everything", passphrase: "long passphrase" }));

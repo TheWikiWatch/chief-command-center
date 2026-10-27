@@ -1,6 +1,6 @@
 "use client";
 
-import { requestJson } from "@/lib/request";
+import { friendlyError, requestJson } from "@/lib/request";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -59,17 +59,20 @@ export async function pushCapability(): Promise<{ available: boolean; publicKey?
   } catch { return { available: false }; }
 }
 
+/** Said when the browser's permission prompt was declined (callers may word it for their screen). */
+export const PUSH_DENIED = "Notifications weren't allowed. Allow them in the browser's site settings, then try again.";
+
 export async function enableWebPush(): Promise<{ ok: boolean; error?: string }> {
   try {
     if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-      return { ok: false, error: "Web Push not supported in this browser" };
+      return { ok: false, error: "This browser can't get alerts. On Android, add the app to the home screen from Chrome first." };
     }
     const capability = await pushCapability();
-    if (!capability.available || !capability.publicKey) return { ok: false, error: "Phone alerts are unavailable on this bridge." };
+    if (!capability.available || !capability.publicKey) return { ok: false, error: "Alerts aren't available from the PC right now. Try again after the app restarts there." };
     const perm = await Notification.requestPermission();
-    if (perm !== "granted") return { ok: false, error: "notification permission denied" };
+    if (perm !== "granted") return { ok: false, error: PUSH_DENIED };
     const reg = await ensureServiceWorker();
-    if (!reg) return { ok: false, error: "service worker failed" };
+    if (!reg) return { ok: false, error: "This browser couldn't set up alerts. Reload the page and try again." };
     const publicKey = capability.publicKey;
     let sub = await reg.pushManager.getSubscription();
     if (!sub) {
@@ -81,10 +84,14 @@ export async function enableWebPush(): Promise<{ ok: boolean; error?: string }> 
     const saved = await requestJson<{ ok: boolean; error?: string }>("/api/bridge/push/subscribe", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ subscription: sub.toJSON() }),
     });
-    if (!saved.ok) return { ok: false, error: saved.error || "Subscribe failed" };
+    if (!saved.ok) return { ok: false, error: saved.error || "The PC didn't save this device. Try again." };
     return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: String(e?.message || e) };
+  } catch (e) {
+    // The browser's push service refusing or timing out comes back as an AbortError with its own wording.
+    if (e instanceof DOMException && (e.name === "AbortError" || e.name === "NotAllowedError")) {
+      return { ok: false, error: e.name === "NotAllowedError" ? PUSH_DENIED : "The browser's alert service didn't answer. Try again in a minute." };
+    }
+    return { ok: false, error: friendlyError(e, "Alerts weren't turned on. Try again.") };
   }
 }
 
@@ -108,7 +115,7 @@ export async function sendTestPush(title: string): Promise<{ ok: boolean; sent: 
     });
     return { ok: data.ok !== false && !data.error, sent: Number(data.sent || 0), error: data.error };
   } catch (e) {
-    return { ok: false, sent: 0, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, sent: 0, error: friendlyError(e, "The test alert wasn't sent. Try again.") };
   }
 }
 
@@ -122,6 +129,6 @@ export async function disableWebPush(): Promise<{ ok: boolean; error?: string }>
     await sub.unsubscribe();
     return { ok: true };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    return { ok: false, error: friendlyError(e, "Alerts weren't turned off. Try again.") };
   }
 }

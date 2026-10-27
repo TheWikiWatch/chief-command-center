@@ -7,6 +7,7 @@ import { ChevronDownIcon } from "@/components/icons";
 import { Button } from "@/components/ui/button";
 import { field } from "@/components/ui/field";
 import { helperTail, steerHelper, stopHelper } from "@/lib/bridge";
+import { friendlyError } from "@/lib/request";
 import { DUR, EASE } from "@/lib/motion";
 import type { BackgroundTask, BackgroundUnit } from "@/lib/types";
 
@@ -104,6 +105,7 @@ const TAIL_MS = 2000;
 function HelperRow({ task, stalling }: { task: BackgroundTask; stalling: boolean }) {
   const [open, setOpen] = useState(false);
   const [log, setLog] = useState("");
+  const [read, setRead] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const [said, setSaid] = useState("");
@@ -117,7 +119,12 @@ function HelperRow({ task, stalling }: { task: BackgroundTask; stalling: boolean
     const ctrl = new AbortController();
     const read = () =>
       helperTail(id, ctrl.signal)
-        .then((r) => (r.ok ? setLog(r.text || "") : setError(r.error || "")))
+        .then((r) => {
+          if (!r.ok) return setError(r.error || "");
+          setLog(r.text || "");
+          setRead(true);
+          setError("");
+        })
         .catch(() => undefined);
     void read();
     const timer = setInterval(read, TAIL_MS);
@@ -148,7 +155,7 @@ function HelperRow({ task, stalling }: { task: BackgroundTask; stalling: boolean
         setSaid("Stopping after its current step. What it found so far comes back as a message.");
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't reach the helper.");
+      setError(friendlyError(e, "That didn't reach the helper."));
     } finally {
       setBusy("");
     }
@@ -177,7 +184,7 @@ function HelperRow({ task, stalling }: { task: BackgroundTask; stalling: boolean
       {open ? (
         <div className="space-y-2 px-3 pb-3">
           <pre ref={logRef} aria-label="What the helper is doing" className="max-h-48 overflow-y-auto whitespace-pre-wrap wrap-break-word rounded-ctl bg-well px-2.5 py-2 font-mono text-micro text-fg-3">
-            {log || "Reading its log…"}
+            {log || (read ? "Nothing in its log yet." : "Reading its log…")}
           </pre>
           {task.steer ? (
             <form

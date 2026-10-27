@@ -44,17 +44,32 @@ import { ReportReplySheet } from "@/components/chat/report-reply-sheet";
 import { readStart, writeStart } from "@/lib/start-cache";
 import { markStart } from "@/lib/startup-timing";
 import { currentChatThread } from "@/lib/chat-thread";
+import { fetchAbout } from "@/lib/about-client";
+import { friendlyError } from "@/lib/request";
 
 /** How many of the chat's latest rows this device keeps for an instant start. */
 const KEPT_ON_DEVICE = 40;
-import { fetchAbout } from "@/lib/about-client";
 
 // Voice mode loads the first time it is opened.
 const VoiceMode = dynamic(() => import("@/components/chat/voice-mode").then((m) => m.VoiceMode), { ssr: false });
 
-/** A reply that was not read aloud: it failed, arrived while you were away, or was held behind a newer one. */
-/** The unsent message survives a reload (Android can drop the app from memory mid-thought). */
-const DRAFT_KEY = "chief-chat-draft";
+/**
+ * The unsent message, and the messages waiting to "send after", survive a reload (Android can drop the app from
+ * memory mid-thought). Each thread keeps its own: a draft written in one thread must not turn up in the next one
+ * opened, where it's easy to send by mistake. The main thread keeps the old key, so a draft from before stays.
+ */
+const draftKey = (thread: string) => (thread === "main" ? "chief-chat-draft" : `chief-chat-draft:${thread}`);
+const afterKey = (thread: string) => `chief-chat-after:${thread}`;
+
+type AfterItem = { id: string; text: string };
+function readAfter(thread: string): AfterItem[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(afterKey(thread)) || "[]");
+    return Array.isArray(saved) ? saved.filter((x): x is AfterItem => typeof x?.id === "string" && typeof x?.text === "string").slice(0, 20) : [];
+  } catch {
+    return [];
+  }
+}
 
 export type ChatSend = (text: string) => Promise<void>;
 
@@ -127,14 +142,16 @@ export function ChiefChat({
   // re-render the chat. Sends read it with draft.get().
   const [draft] = useState(() => createDraftStore(""));
   const setText = draft.set;
+  // The chat is mounted per thread (command-shell keys it), so the thread it opened with is its own for life.
+  const [thread] = useState(() => currentChatThread());
   useEffect(() => {
     try {
-      const saved = localStorage.getItem(DRAFT_KEY);
+      const saved = localStorage.getItem(draftKey(thread));
       if (saved) setText((current) => current || saved);
     } catch {
       /* private mode */
     }
-  }, [setText]);
+  }, [setText, thread]);
   useEffect(() => {
     let timer: number | undefined;
     const unsubscribe = draft.subscribe(() => {
@@ -142,8 +159,8 @@ export function ChiefChat({
       timer = window.setTimeout(() => {
         try {
           const text = draft.get();
-          if (text) localStorage.setItem(DRAFT_KEY, text);
-          else localStorage.removeItem(DRAFT_KEY);
+          if (text) localStorage.setItem(draftKey(thread), text);
+          else localStorage.removeItem(draftKey(thread));
         } catch {
           /* private mode */
         }
@@ -153,7 +170,7 @@ export function ChiefChat({
       unsubscribe();
       window.clearTimeout(timer);
     };
-  }, [draft]);
+  }, [draft, thread]);
   // Files dragged over the chat (desktop): a drop target over the whole pane.
   const [dropping, setDropping] = useState(false);
   const dragDepth = useRef(0);
@@ -163,8 +180,16 @@ export function ChiefChat({
   const [generating, setGenerating] = useState(false);
   const generatingRef = useRef(false);
   generatingRef.current = generating;
-  // Messages to send once the chief finishes the current turn ("Send after"), oldest first.
-  const [afterQueue, setAfterQueue] = useState<{ id: string; text: string }[]>([]);
+  // Messages to send once the chief finishes the current turn ("Send after"), oldest first; kept on this device.
+  const [afterQueue, setAfterQueue] = useState<AfterItem[]>(() => (typeof window === "undefined" ? [] : readAfter(currentChatThread())));
+  useEffect(() => {
+    try {
+      if (afterQueue.length) localStorage.setItem(afterKey(thread), JSON.stringify(afterQueue));
+      else localStorage.removeItem(afterKey(thread));
+    } catch {
+      /* private mode */
+    }
+  }, [afterQueue, thread]);
   // What was added to running work this session, so its stored copy keeps the "Added while working" tag.
   const steeredTexts = useRef(new Set<string>());
   const [stopping, setStopping] = useState(false);
@@ -363,7 +388,7 @@ export function ChiefChat({
           if (!alive) return;
           if (cfg.missing) {
             base = "";
-            setVoiceLabel("Voice not loaded — relaunch Chief Command Center");
+            setVoiceLabel("Voice isn't ready. Restart the app once.");
             return;
           }
           const stt = cfg.stt?.provider || "local";
@@ -557,7 +582,7 @@ export function ChiefChat({
       if (found.length) setMessages(prev => [...found.filter(m => !prev.some(p => p.id === m.id)), ...prev]);
       setEarlier({ more, loading: false, error: "" });
     } catch (error) {
-      setEarlier(e => ({ ...e, loading: false, error: error instanceof Error ? error.message : "Couldn't load earlier messages" }));
+      setEarlier(e => ({ ...e, loading: false, error: friendlyError(error, "Couldn't load earlier messages.") }));
     }
   }, [messages]);
 
@@ -607,7 +632,9 @@ export function ChiefChat({
   // Sends go one after another: a message typed while one is on its way follows it instead of colliding with
   // it (the box never locks), and each still gets its own id, so nothing is doubled.
   const inflight = useRef<Promise<void> | null>(null);
-  function sendBody(body: string, files: PendingFile[] = pendingFiles): Promise<void> {
+  // Files go only when given: quick replies, follow-ups, Connect cards and Today's tasks must not take the photos
+  // waiting in the box with them (onSubmit passes the composer's own).
+  function sendBody(body: string, files: PendingFile[] = []): Promise<void> {
     const previous = inflight.current;
     const run = (previous ? previous.catch(() => undefined) : Promise.resolve()).then(() => sendOne(body, files));
     inflight.current = run;
@@ -714,13 +741,13 @@ export function ChiefChat({
         // The network or the gateway, not the message: queue it under the same id, so if it did reach
         // The chief before the failure the bridge drops the repeat.
         retrySend.current = null;
-        const reason = error instanceof Error ? error.message : `${assistantName()} is unreachable`;
+        const reason = friendlyError(error, `${assistantName()} is unreachable.`);
         await outbox.enqueue(clientId, trimmed, files.map(file => ({ name: file.name, mime: file.mime, blob: file.file })), reason);
         releasePending(files);
         showNotice(`Couldn't reach ${assistantName()}. Queued; it will retry on its own.`);
         return;
       }
-      const detail = error instanceof Error ? error.message : "Send failed.";
+      const detail = friendlyError(error, "That didn't send.");
       setSendError(`${detail} Your draft has been kept.`);
       fx("error");
       throw error;
@@ -749,7 +776,7 @@ export function ChiefChat({
       showNotice(`Stopped ${assistantName()}.`);
       fx("send");
     } catch (error) {
-      setSendError(error instanceof Error ? `${error.message}` : "Couldn't stop.");
+      setSendError(friendlyError(error, `Couldn't stop ${assistantName()}.`));
       fx("error");
     } finally {
       setStopping(false);
@@ -777,11 +804,20 @@ export function ChiefChat({
       if (generatingRef.current || busyRef.current) return;
       const [next, ...rest] = afterQueue;
       setAfterQueue(rest);
-      void sendBody(next.text, []).catch(() => setAfterQueue((q) => [next, ...q]));
+      void sendBody(next.text, []).catch((error) => afterFailed(next, error));
     }, 600);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [afterQueue, generating, busy, connected, authFailed]);
+
+  /** A send-after that failed: back in line when a retry can fix it, otherwise its words return to the box. */
+  function afterFailed(item: AfterItem, error: unknown) {
+    if (retryable(error)) {
+      setAfterQueue((q) => [item, ...q]);
+      return;
+    }
+    setText((current) => (current.trim() ? `${item.text}\n\n${current}` : item.text));
+  }
 
   const sendRef = useRef<ChatSend>(sendBody);
   sendRef.current = sendBody;
@@ -803,7 +839,8 @@ export function ChiefChat({
     } catch (error) {
       const typed = draft.get();
       setText(typed.trim() && body ? `${body}\n\n${typed}` : body || typed);
-      setSendError(error instanceof Error ? error.message : "Send failed. Your draft has been kept.");
+      // sendOne already said what happened when it could (with "Your draft has been kept."); keep that.
+      setSendError((current) => current || friendlyError(error, "That didn't send. Your draft has been kept."));
     }
   }
 
@@ -820,7 +857,7 @@ export function ChiefChat({
         onApprovalResolved?.(requestId);
       })
       .catch((error) => {
-        setApprovalError(error instanceof Error ? error.message : "Approval failed. Check its status before retrying.");
+        setApprovalError(friendlyError(error, "That didn't go through. Check whether it's still waiting before trying again."));
         fx("error");
       })
       .finally(() => {
@@ -872,8 +909,12 @@ export function ChiefChat({
   const onTranscript = async (spoken: string) => {
     setVoiceHint("");
     setText(spoken);
-    await sendBody(spoken);
-    setText("");
+    try {
+      await sendBody(spoken);
+      setText("");
+    } catch {
+      // sendOne already said what went wrong (once); the words stay in the box to send again.
+    }
   };
   const onMicStream = (stream: MediaStream | null) => {
     stopMicMeter.current?.();
@@ -1022,11 +1063,20 @@ export function ChiefChat({
                 </span>
               ) : (
                 <span>
-                  Could not speak {speechFailures.length} {speechFailures.length === 1 ? "reply" : "replies"}. {speechFailureReason(speechFailures)}
+                  Couldn't read {speechFailures.length} {speechFailures.length === 1 ? "reply" : "replies"} aloud. {speechFailureReason(speechFailures)}
                 </span>
               )}
-              <button type="button" className="min-h-11 font-medium underline" onClick={retrySpeech}>
-                {speechFailures.every(item => item.missed || item.held) ? "Play" : "Retry speech"}
+              <button type="button" className="press min-h-11 font-medium underline" onClick={retrySpeech}>
+                {speechFailures.every(item => item.missed || item.held) ? "Play" : "Try again"}
+              </button>
+              <button
+                type="button"
+                aria-label="Dismiss"
+                title="Dismiss"
+                className="press ml-auto grid size-11 shrink-0 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
+                onClick={() => setSpeechFailures([])}
+              >
+                <XIcon size={15} />
               </button>
             </div>
           ) : null}
@@ -1049,10 +1099,10 @@ export function ChiefChat({
                 {generating ? (
                   <button
                     type="button"
-                    className="press min-h-9 shrink-0 rounded-full px-2.5 text-caption font-medium text-fg-2 hover:text-fg"
+                    className="press min-h-11 shrink-0 rounded-full px-2.5 text-caption font-medium text-fg-2 hover:text-fg"
                     onClick={() => {
                       setAfterQueue((q) => q.filter((x) => x.id !== item.id));
-                      void sendBody(item.text, []).catch(() => setAfterQueue((q) => [item, ...q]));
+                      void sendBody(item.text, []).catch((error) => afterFailed(item, error));
                     }}
                   >
                     Add now
@@ -1061,7 +1111,7 @@ export function ChiefChat({
                 <button
                   type="button"
                   aria-label={`Remove: ${item.text}`}
-                  className="press grid size-9 shrink-0 place-items-center rounded-full text-fg-3 hover:text-fg"
+                  className="press grid size-11 shrink-0 place-items-center rounded-full text-fg-3 hover:text-fg"
                   onClick={() => setAfterQueue((q) => q.filter((x) => x.id !== item.id))}
                 >
                   <XIcon size={15} />
@@ -1086,7 +1136,8 @@ export function ChiefChat({
           phone={!!compact}
           working={generating && connected && !authFailed}
           answering={!!question && connected && !authFailed}
-          onStop={stopping ? undefined : () => void stopWork()}
+          onStop={() => void stopWork()}
+          stopping={stopping}
           onSendAfter={sendAfter}
         />
       </form>
@@ -1095,6 +1146,7 @@ export function ChiefChat({
         onClose={() => setVoiceOpen(false)}
         chief={chief}
         mood={mood}
+        asking={!!question && !approval}
         micStatus={micStatus}
         connected={connected && !authFailed}
         busy={busy}

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { requestJson } from "@/lib/request";
+import { requestJson, friendlyError } from "@/lib/request";
 
 /*
  * The app's look (bridge contract `chief.app_look.v1`, app_look.py): an accent and dark, light or system mode,
@@ -31,7 +31,7 @@ export const SWATCHES: { id: string; label: string; hex: string }[] = [
   { id: "red", label: "Red", hex: "#e5484d" },
   { id: "mono", label: "Mono", hex: "#8b8b94" },
 ];
-export const MODE_LABEL: Record<LookMode, string> = { dark: "Dark", light: "Light", system: "Match this device" };
+export const MODE_LABEL: Record<LookMode, string> = { dark: "Dark", light: "Light", system: "System" };
 
 export const LOOK_KEY = "chief-app-look";
 export const LOOK_EVENT = "chief:app-look";
@@ -173,7 +173,7 @@ export function useAppLook() {
       try {
         return take(await api.post(body));
       } catch (e) {
-        setError(e instanceof Error ? e.message : "That didn't save.");
+        setError(friendlyError(e, "That didn't save."));
         return null;
       }
     },

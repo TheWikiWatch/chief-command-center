@@ -1,7 +1,8 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState, type KeyboardEvent } from "react";
 import { Streamdown } from "streamdown";
 
 import { BotFace, faceProps } from "@/components/bot-face";
@@ -56,15 +57,28 @@ export function LookDrawer({
   }, [open, onClose]);
 
   const { name, role } = splitTitle(person.name);
+  // The drawer has no sheet title of its own: the bot's name heading names the dialog.
+  const titleId = useId();
   return (
-    <Sheet open={open} onClose={() => setOpen(false)} side={full ? "bottom" : "right"} tall={full} bare scope={full ? "viewport" : "container"} zIndex={LAYER.drawer}>
-      <LookBody person={person} name={name || person.name} role={role || person.section} retired={retired} onClose={() => setOpen(false)} />
+    <Sheet open={open} onClose={() => setOpen(false)} side={full ? "bottom" : "right"} tall={full} bare scope={full ? "viewport" : "container"} zIndex={LAYER.drawer} labelledBy={titleId}>
+      <LookBody titleId={titleId} person={person} name={name || person.name} role={role || person.section} retired={retired} onClose={() => setOpen(false)} />
     </Sheet>
   );
 }
 
-function LookBody({ person, name, role, retired, onClose }: { person: Person; name: string; role: string; retired: boolean; onClose: () => void }) {
+function LookBody({ titleId, person, name, role, retired, onClose }: { titleId: string; person: Person; name: string; role: string; retired: boolean; onClose: () => void }) {
   const [tab, setTab] = useState<Tab>("Job");
+  const tabsId = useId();
+  // Arrow keys move along the tabs (and Home/End to either end), as in any tab list.
+  const onTabKey = (e: KeyboardEvent<HTMLButtonElement>) => {
+    const at = TABS.indexOf(tab);
+    const next = e.key === "ArrowRight" ? at + 1 : e.key === "ArrowLeft" ? at - 1 : e.key === "Home" ? 0 : e.key === "End" ? TABS.length - 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    const t = TABS[(next + TABS.length) % TABS.length];
+    setTab(t);
+    document.getElementById(`${tabsId}-${t}`)?.focus();
+  };
   const [peek, setPeek] = useState<Peek | null>(null);
   const [editing, setEditing] = useState(false);
   const [reload, setReload] = useState(0);
@@ -122,7 +136,9 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
         </button>
         {restyling ? (
           // The editor shows the face itself: the header shrinks to a title so the options fit, on a phone too.
-          <h2 className="flex min-h-11 items-center text-headline text-fg">{shown.name}&apos;s look</h2>
+          <h2 id={titleId} className="flex min-h-11 items-center text-headline text-fg">
+            {shown.name}&apos;s look
+          </h2>
         ) : (
           <>
             <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1, transition: SPRING.bouncy }} className={`relative my-3 ${retired ? "opacity-50 grayscale" : ""}`}>
@@ -133,7 +149,7 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
               <button
                 type="button"
                 onClick={() => setRestyling(true)}
-                className="press -mt-1 mb-2 min-h-8 rounded-full px-3 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg"
+                className="press -mt-1 mb-2 min-h-8 rounded-full px-3 text-caption font-medium text-fg-3 hover:bg-fill-2 hover:text-fg [@media(hover:none)]:min-h-11"
               >
                 Change look
               </button>
@@ -150,7 +166,11 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
                   if (person.isChief) setAssistantTitle(res.title);
                   showToast({
                     title: `Now called ${res.name}`,
-                    body: res.soul.startsWith("kept") ? "The SOUL opens differently, so it was left as it is." : res.soul === "updated" ? "The SOUL uses the new name too." : undefined,
+                    body: res.soul.startsWith("kept")
+                      ? "Their description of who they are starts differently, so it was left as it is."
+                      : res.soul === "updated"
+                        ? "Their description of who they are uses the new name too."
+                        : undefined,
                     tone: "ok",
                     icon: "check",
                   });
@@ -159,14 +179,16 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
             ) : (
               <>
                 <div className="group flex items-center gap-1.5">
-                  <h2 className="text-display text-fg">{shown.name}</h2>
+                  <h2 id={titleId} className="text-display text-fg">
+                    {shown.name}
+                  </h2>
                   {!retired ? (
                     <button
                       type="button"
                       aria-label={`Rename ${shown.name}`}
                       title="Rename"
                       onClick={() => setRenaming(true)}
-                      className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg"
+                      className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg [@media(hover:none)]:size-11"
                     >
                       <PencilIcon size={16} />
                     </button>
@@ -216,11 +238,15 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
           {TABS.map((t) => (
             <button
               key={t}
+              id={`${tabsId}-${t}`}
               type="button"
               role="tab"
               aria-selected={tab === t}
+              aria-controls={`${tabsId}-panel`}
+              tabIndex={tab === t ? 0 : -1}
               onClick={() => setTab(t)}
-              className={`relative min-h-9 flex-1 rounded-full text-callout font-medium transition-colors duration-fast ${tab === t ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
+              onKeyDown={onTabKey}
+              className={`press relative min-h-9 flex-1 rounded-full text-callout font-medium transition-colors duration-fast focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent [@media(hover:none)]:min-h-11 ${tab === t ? "text-fg" : "text-fg-3 hover:text-fg-2"}`}
             >
               {tab === t ? <motion.span layoutId={`look-tab-${person.id}`} className="absolute inset-0 rounded-full bg-fill-3" transition={SPRING.snappy} /> : null}
               <span className="relative">{t}</span>
@@ -229,7 +255,7 @@ function LookBody({ person, name, role, retired, onClose }: { person: Person; na
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-4">
+      <div id={`${tabsId}-panel`} role="tabpanel" aria-labelledby={`${tabsId}-${tab}`} className="min-h-0 flex-1 overflow-y-auto px-5 pb-8 pt-4">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div key={tab} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE.enter } }} exit={{ opacity: 0, transition: { duration: 0.1 } }}>
             {!peek ? (
@@ -261,7 +287,7 @@ function DrawerBody({
   onRetired: () => void;
   onChanged: () => void;
 }) {
-  if (!peek.ok) return <p className="text-body text-fg-3">Could not read this profile.</p>;
+  if (!peek.ok) return <p className="text-body text-fg-3">Couldn't read this bot's details.</p>;
   if (tab === "Job") {
     const job = peek.job;
     const rows: [string, string][] = [
@@ -329,7 +355,7 @@ function RetireRow({ person, onRetired }: { person: Person; onRetired: () => voi
   const who = name || person.name;
   if (!asking) {
     return (
-      <button type="button" onClick={() => setAsking(true)} className="press min-h-10 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg">
+      <button type="button" onClick={() => setAsking(true)} className={btn("secondary", "md")}>
         Retire {who}…
       </button>
     );
@@ -337,9 +363,9 @@ function RetireRow({ person, onRetired }: { person: Person; onRetired: () => voi
   return (
     <div className="space-y-2 rounded-card border border-line-2 bg-card px-3 py-3">
       <p className="text-callout text-fg">
-        Retire {who}? Their identity, memory and skills are archived and they leave the team. You can restore them any time from Fleet, then Team.
+        Retire {who}? Their identity, memory and skills are kept in an archive and they leave the team. You can bring them back any time from Team &amp; Routines.
       </p>
-      {person.ring === "working" ? <p className="text-callout text-warn">{who} is working on a task right now; retiring waits until it&apos;s done.</p> : null}
+      {person.ring === "working" ? <p className="text-callout text-warn">{who} is working on a task right now. Retire them once it&apos;s done.</p> : null}
       {error ? (
         <p role="alert" className="text-callout text-danger">
           {error}
@@ -355,20 +381,20 @@ function RetireRow({ person, onRetired }: { person: Person; onRetired: () => voi
             try {
               const res = await fleetApi.retire(person.id);
               if (!res.ok) throw new Error(res.error || "Couldn't retire.");
-              showToast({ title: `${who} was retired`, body: "Restore from Fleet, then Team", tone: "ok", icon: "user-minus" });
+              showToast({ title: `${who} was retired`, body: "Bring them back from Team & Routines.", tone: "ok", icon: "user-minus" });
               onRetired();
             } catch (e) {
-              setError(e instanceof Error ? e.message : "Couldn't retire.");
+              setError(friendlyError(e, "Couldn't retire."));
             } finally {
               setBusy(false);
             }
           }}
-          className={btn("primary", "md")}
+          className={btn("danger", "md")}
         >
-          {busy ? "Retiring…" : "Retire"}
+          {busy ? "Retiring…" : `Retire ${who}`}
         </button>
-        <button type="button" onClick={() => setAsking(false)} className="press min-h-10 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg">
-          Cancel
+        <button type="button" disabled={busy} onClick={() => setAsking(false)} className={btn("secondary", "md")}>
+          Keep {who}
         </button>
       </div>
     </div>

@@ -8,23 +8,25 @@ import { desktop } from "@/lib/desktop";
 import { fetchAbout, type AboutInfo } from "@/lib/about-client";
 import { LoadingLine } from "@/components/ui/surface";
 import { ReportProblemGroup } from "@/components/settings/report-problem";
+import { sentence } from "@/lib/request";
 
 /* Settings → About. */
 
 /** About: what this is built from, and whose work it carries. */
 export function AboutGroup() {
   const [about, setAbout] = useState<AboutInfo | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
     void fetchAbout()
       .then(setAbout)
-      .catch(() => setAbout(null));
+      .catch(() => setFailed(true));
   }, []);
+  const unread = failed ? "Couldn't be read" : null;
   return (
     <>
-      {about ? <ReportProblemGroup email={about.reportEmail} versions={{ app: about.app, hermes: about.hermes }} /> : null}
       <Group icon={<InfoIcon className="size-4" />} title="Chief Command Center" action={<UpdateHistoryButton />}>
-        <Row label="Version" hint={about ? about.app || "unknown" : <LoadingLine className="w-16" />} />
-        <Row label="Hermes Agent" hint={about ? `${about.hermes || "version unknown"}, by Nous Research (MIT)` : <LoadingLine className="w-40" />} />
+        <Row label="Version" hint={about ? about.app || "Not known" : unread || <LoadingLine className="w-16" />} />
+        <Row label="Hermes Agent" hint={about ? `${about.hermes || "Version not known"}, by Nous Research (MIT)` : unread ? "By Nous Research (MIT)" : <LoadingLine className="w-40" />} />
         <Row
           label="Hermes updates"
           hint="Hermes is built into the app and never updates itself. A newer Hermes reaches you as an app update, once it passes the app's compatibility checks; the app backs up your data before Hermes first starts on it."
@@ -39,6 +41,8 @@ export function AboutGroup() {
           hint={`The Second Brain skills and routines, by Eugeniu Ghelbur (MIT). ${about?.toolkit?.source || "github.com/eugeniughelbur/obsidian-second-brain"}`}
         />
       </Group>
+      {/* Last, so it appearing once the versions are read moves nothing above it. */}
+      {about ? <ReportProblemGroup email={about.reportEmail} versions={{ app: about.app, hermes: about.hermes }} /> : null}
     </>
   );
 }
@@ -72,7 +76,8 @@ function DiagnosticsRow() {
             setBusy(true);
             setNote("");
             void make()
-              .then((r) => setNote(r.ok ? "Saved. The folder with the zip is open." : r.error === "cancelled" ? "" : `Couldn't make it: ${r.error}`))
+              .then((r) => setNote(r.ok ? "Saved. The folder with the zip is open." : r.error === "cancelled" ? "" : sentence(r.error) ? r.error : "The diagnostics file couldn't be made. Try again."))
+              .catch(() => setNote("The diagnostics file couldn't be made. Try again."))
               .finally(() => setBusy(false));
           }}
         >
@@ -82,5 +87,3 @@ function DiagnosticsRow() {
     </Row>
   );
 }
-
-/* ------------------------------------------------------------------ Connection (the chief's model) */

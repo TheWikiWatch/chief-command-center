@@ -64,7 +64,7 @@ export function PillButton({ children, onClick, disabled, label }: { children: R
       onClick={onClick}
       disabled={disabled}
       aria-label={label}
-      className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg disabled:opacity-50"
+      className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11 disabled:opacity-50"
     >
       {children}
     </button>

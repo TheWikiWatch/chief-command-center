@@ -22,12 +22,6 @@ import { ToolsPage } from "@/components/settings/tools";
 import { ConnectionsPage } from "@/components/settings/connections";
 import { SETTINGS_PAGES } from "@/components/settings/pages";
 
-export type ApplyBody = {
-  stt?: { provider?: string; model?: string; api_key?: string };
-  tts?: { provider?: string; voice?: string; api_key?: string };
-  secrets?: Record<string, string>;
-};
-
 /** App and Hermes voice settings in a sheet (bottom on the phone, side panel on desktop). */
 const CATEGORIES = SETTINGS_PAGES;
 const CATEGORY_KEY = "chief-settings-category";
@@ -287,7 +281,4 @@ function CategoryPage({
   );
 }
 
-export const MODE_LABEL: Record<string, string> = { new: "The Second Brain layout", keep: "Your own folders", reorganize: "Being reorganized" };
 
-/** One short line, addressed to the owner when their name is known. */
-export const previewLine = (owner: string) => (owner ? `Hi ${owner}. This is how I'll sound.` : "Hi. This is how I'll sound.");

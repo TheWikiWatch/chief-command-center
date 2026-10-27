@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRightIcon, RotateCcwIcon, SparklesIcon } from "@/components/icons";
@@ -174,7 +175,7 @@ export function ChangeRow({ change: c, title, compact = false, onReverted }: { c
       showToast({ title: "Change reverted", body: res.message || `${title} is back to its earlier version`, tone: "ok", icon: "check" });
       onReverted();
     } catch (e) {
-      showToast({ title: "Couldn't revert", body: e instanceof Error ? e.message : "The ledger failed", tone: "warn", icon: "alert" });
+      showToast({ title: "Couldn't revert", body: friendlyError(e, "Try again in a minute."), tone: "warn", icon: "alert" });
     } finally {
       setBusy(false);
       setArmed(false);
@@ -243,7 +244,7 @@ export function LazyDiff({ id, from }: { id: number; from?: number }) {
     alive.current = true;
     fetchSkillDiff(id, from)
       .then((res) => alive.current && setState(res.ok ? { text: res.diff } : { error: res.error || "Couldn't load the diff" }))
-      .catch((e) => alive.current && setState({ error: e instanceof Error ? e.message : "Couldn't load the diff" }));
+      .catch((e) => alive.current && setState({ error: friendlyError(e, "Couldn't show the changes.") }));
     return () => {
       alive.current = false;
     };

@@ -3,8 +3,15 @@
  * rays all come from one color, so they always match. Crimson (the accent) stays for "needs you" and "active".
  */
 
-/** The canvas every glow sits on (`--color-canvas`). */
+/** The dark canvas (`--c-canvas`), and the Fleet orbit's night sky in either mode. */
 export const CANVAS = "#09090b";
+/** Light mode's canvas (globals.css, :root[data-theme="light"]). */
+export const LIGHT_CANVAS = "#f6f6f8";
+
+/** The canvas the page has now: the app's look sets `data-theme` on <html> (lib/app-look.ts). */
+export function currentCanvas(): string {
+  return typeof document !== "undefined" && document.documentElement.dataset.theme === "light" ? LIGHT_CANVAS : CANVAS;
+}
 
 /** Glows and rings need at least this contrast against the canvas (WCAG non-text contrast). */
 export const MIN_GLOW_CONTRAST = 3;
@@ -48,22 +55,25 @@ export function mix(a: string, b: string, amount: number): string {
 }
 
 /**
- * A color that glows visibly on the canvas: a chosen color too dark to see (a navy chief) is lifted toward white
- * just enough. Colors that aren't hex pass through untouched.
+ * A color that glows visibly on the canvas: a chosen color too faint to see there is moved just enough, toward
+ * white on the dark canvas (a navy chief), toward black on the light one (a pale yellow chief). Colors that aren't
+ * hex pass through untouched.
  */
-export function glowColor(color: string): string {
+export function glowColor(color: string, canvas: string = currentCanvas()): string {
   if (!parseHex(color)) return color;
-  if (contrast(color, CANVAS) >= MIN_GLOW_CONTRAST) return color.toLowerCase();
+  if (contrast(color, canvas) >= MIN_GLOW_CONTRAST) return color.toLowerCase();
+  const toward = canvas === CANVAS ? "#ffffff" : "#000000";
   for (let step = 1; step <= 20; step++) {
-    const lifted = mix(color, "#ffffff", step / 20);
-    if (contrast(lifted, CANVAS) >= MIN_GLOW_CONTRAST) return lifted;
+    const moved = mix(color, toward, step / 20);
+    if (contrast(moved, canvas) >= MIN_GLOW_CONTRAST) return moved;
   }
-  return "#ffffff";
+  return toward;
 }
 
 /** The Fleet orbit's rays and bloom for a chief color: the color, sinking into the canvas. */
 export function raysPalette(color: string): { colors: string[]; bloom: string } {
-  const base = parseHex(color) ? glowColor(color) : "#8a3030";
+  // The orbit is a night sky in light mode too (globals.css .orbit-night).
+  const base = parseHex(color) ? glowColor(color, CANVAS) : "#8a3030";
   return {
     colors: [mix(base, CANVAS, 0.45), mix(base, CANVAS, 0.65), mix(base, CANVAS, 0.85), CANVAS],
     bloom: mix(base, CANVAS, 0.8),

@@ -189,6 +189,8 @@ export function readAloud(content: string) {
   if (script) void speakScript(script, currentSpeakEpoch());
 }
 
+/** Why replies weren't read aloud, as sentences ("Playback stalled. The app was in the background."). */
 export function speechFailureReason(items: SpeechFailure[]) {
-  return Array.from(new Set(items.map(item => item.reason).filter(Boolean))).join(" ");
+  const reasons = Array.from(new Set(items.map(item => item.reason?.trim()).filter(Boolean)));
+  return reasons.map(reason => (/[.!?)]$/.test(reason!) ? reason : `${reason}.`)).join(" ");
 }

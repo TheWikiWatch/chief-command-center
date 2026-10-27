@@ -7,6 +7,9 @@ import { ConnectModel } from "@/components/onboarding/connect-model";
 import { useAssistantName } from "@/lib/identity";
 import { setup, type ProviderRow } from "@/lib/setup-client";
 import { btn } from "@/components/ui/button";
+import { ConfirmRow } from "@/components/ui/confirm-row";
+import { MODELS_CHANGED_EVENT, modelsChanged } from "@/lib/app-events";
+import { friendlyError } from "@/lib/request";
 
 /**
  * Settings → Models & keys: the providers this install can use (keys and local endpoints), which one the chief
@@ -27,9 +30,14 @@ export function ModelsKeys() {
     setup
       .providers(refresh)
       .then((c) => (c.ok ? setRows(c.providers.filter((p) => p.connected && p.kind !== "external")) : setError(c.error || "Couldn't read providers.")))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Couldn't read providers."));
+      .catch((e: unknown) => setError(friendlyError(e, "Couldn't read providers.")));
   }, []);
   useEffect(() => load(), [load]);
+  useEffect(() => {
+    const again = () => load();
+    window.addEventListener(MODELS_CHANGED_EVENT, again);
+    return () => window.removeEventListener(MODELS_CHANGED_EVENT, again);
+  }, [load]);
 
   async function remove(p: ProviderRow) {
     setBusy(p.slug);
@@ -38,8 +46,9 @@ export function ModelsKeys() {
       const res = await setup.removeKey(p.slug);
       setNote(res.ok ? { tone: "ok", text: `${p.name}'s key was removed.` } : { tone: "error", text: res.error || "The key wasn't removed." });
       load(true);
+      if (res.ok) modelsChanged();
     } catch (e) {
-      setNote({ tone: "error", text: e instanceof Error ? e.message : "The key wasn't removed." });
+      setNote({ tone: "error", text: friendlyError(e, "The key wasn't removed.") });
     } finally {
       setBusy("");
       setConfirm("");
@@ -57,11 +66,11 @@ export function ModelsKeys() {
             <div className="min-w-0 flex-1">
               <p className="truncate text-body text-fg">{p.name}</p>
               <p className="text-caption text-fg-3">
-                {p.kind === "custom" ? "Local or custom endpoint" : p.keySaved ? "API key saved" : "Signed in on this PC"}
+                {p.kind === "custom" ? "A model server you added" : p.keySaved ? "Key saved on this PC" : "Signed in on this PC"}
                 {p.models.length ? ` · ${p.models.length} model${p.models.length === 1 ? "" : "s"}` : ""}
               </p>
             </div>
-            {p.current ? <span className="shrink-0 rounded-full bg-ok/15 px-2 py-0.5 text-caption text-ok">{assistant} uses this</span> : null}
+            {p.current ? <span className="shrink-0 rounded-full bg-ok/15 px-2 py-0.5 text-caption text-ok">In use by {assistant}</span> : null}
             {p.kind === "key" && p.keySaved && !p.current ? (
               <button
                 type="button"
@@ -74,17 +83,9 @@ export function ModelsKeys() {
             ) : null}
           </div>
           {confirm === p.slug ? (
-            <div className="mt-2 space-y-2 rounded-card border border-danger/30 bg-danger/6 px-3 py-2">
-              <p className="text-callout text-fg">Remove the {p.name} key from this PC? Bots set to a {p.name} model stop working until you pick another model or add a key again.</p>
-              <div className="flex gap-2">
-                <button type="button" disabled={!!busy} onClick={() => void remove(p)} className="press min-h-10 rounded-full bg-danger px-3.5 text-callout font-medium text-white disabled:opacity-50">
-                  {busy === p.slug ? "Removing…" : "Remove key"}
-                </button>
-                <button type="button" onClick={() => setConfirm("")} className="press min-h-10 rounded-full border border-line-2 px-3.5 text-callout text-fg-2 hover:text-fg">
-                  Keep it
-                </button>
-              </div>
-            </div>
+            <ConfirmRow className="mt-2" confirm="Remove key" busy={busy === p.slug} busyLabel="Removing…" onConfirm={() => void remove(p)} onCancel={() => setConfirm("")}>
+              Remove the {p.name} key from this PC? Bots set to a {p.name} model stop working until you pick another model or add a key again.
+            </ConfirmRow>
           ) : null}
         </div>
       ))}

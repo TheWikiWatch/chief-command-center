@@ -4,9 +4,10 @@ import { useId, useState, type ReactNode } from "react";
 
 import { ArrowLeftIcon, CircleAlertIcon, CircleCheckIcon } from "@/components/icons";
 import { backups, sizeLabel, type BackupInfo } from "@/lib/backup-client";
-import { desktop } from "@/lib/desktop";
+import { desktop, type RestoreProgress } from "@/lib/desktop";
 import { useAssistantName } from "@/lib/identity";
 import { field } from "@/components/ui/field";
+import { friendlyError } from "@/lib/request";
 
 type Stage =
   | { name: "file" }
@@ -25,7 +26,18 @@ const PART_LABEL: Record<string, { title: string; body: string }> = {
  * and where the Second Brain goes, then stage (verified, nothing live changes). The desktop app applies it:
  * it stops Chief, takes a safety backup, swaps, restarts and checks health.
  */
-export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { initialFile?: string; secondBrain?: string; onClose?: () => void }) {
+export function RestoreFlow({
+  initialFile = "",
+  secondBrain = "",
+  onClose,
+  onRestored,
+}: {
+  initialFile?: string;
+  secondBrain?: string;
+  onClose?: () => void;
+  /** After a restore finished: whoever showed this reads its state again. */
+  onRestored?: () => void;
+}) {
   const assistant = useAssistantName();
   const [stage, setStage] = useState<Stage>({ name: "file" });
   const [file, setFile] = useState(initialFile);
@@ -34,6 +46,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
   const [brainTarget, setBrainTarget] = useState(secondBrain);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [progress, setProgress] = useState<RestoreProgress | null>(null);
   const fileId = useId();
   const d = desktop();
 
@@ -55,7 +68,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
       setBrainTarget(secondBrain || info.source?.second_brain || "");
       setStage({ name: "preview", file: path, passphrase: phrase, info });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That backup couldn't be opened.");
+      setError(friendlyError(e, "That backup couldn't be opened."));
     } finally {
       setBusy(false);
     }
@@ -69,7 +82,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
       if (!res.ok) setError(res.error || "The backup couldn't be prepared.");
       else setStage({ name: "staged", file: s.file, parts });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The backup couldn't be prepared.");
+      setError(friendlyError(e, "The backup couldn't be prepared."));
     } finally {
       setBusy(false);
     }
@@ -79,12 +92,22 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
     if (!d?.applyRestore) return;
     setBusy(true);
     setError("");
+    setProgress(null);
+    // The desktop app reports each step (stopping, restoring, starting) while it works.
+    const stop = d.onRestoreProgress?.(setProgress);
     try {
       const res = await d.applyRestore();
       if (res.cancelled) return;
       if (!res.ok || !res.report) setError(res.error || "The restore didn't finish; your previous setup was kept.");
-      else setStage({ name: "done", report: res.report });
+      else {
+        setStage({ name: "done", report: res.report });
+        onRestored?.();
+      }
+    } catch (e) {
+      setError(friendlyError(e, "The restore didn't finish; your previous setup was kept."));
     } finally {
+      stop?.();
+      setProgress(null);
       setBusy(false);
     }
   }
@@ -96,7 +119,8 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
         <Line tone="ok">{assistant} is back with the restored data. A safety backup of the previous state was kept.</Line>
         {report.missing_secrets.length ? (
           <Line tone="warn">
-            This backup didn&apos;t include these keys; add them again in Settings: <span className="font-mono text-code">{report.missing_secrets.join(", ")}</span>
+            This backup didn&apos;t include some keys. Add them again in Settings → Models &amp; keys (or where each is used):{" "}
+            <span className="font-mono text-code">{report.missing_secrets.join(", ")}</span>
           </Line>
         ) : null}
         {report.review.length ? (
@@ -123,6 +147,16 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
           Restoring stops {assistant}, keeps a safety backup of what&apos;s here now (so this can be undone), puts the backup in place, and starts {assistant} again.
         </p>
         {error ? <Line tone="error">{error}</Line> : null}
+        {busy && progress ? (
+          <div className="space-y-1.5" role="status" aria-live="polite">
+            <p className="text-callout text-fg-2">{progress.step}</p>
+            {progress.fraction !== null ? (
+              <div className="h-2 overflow-hidden rounded-full bg-fill-2" role="progressbar" aria-label="Restore progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progress.fraction * 100)}>
+                <div className="h-full rounded-full bg-accent transition-[width]" style={{ width: `${Math.max(3, Math.round(progress.fraction * 100))}%` }} />
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         {d?.applyRestore ? (
           <Button busy={busy} onClick={() => void apply()}>
             {busy ? "Restoring…" : `Restore now`}
@@ -151,7 +185,7 @@ export function RestoreFlow({ initialFile = "", secondBrain = "", onClose }: { i
       <Section title="What's in this backup" onBack={() => setStage({ name: "file" })} onClose={onClose}>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-callout">
           <dt className="text-fg-3">Made</dt>
-          <dd className="text-fg">{info.created ? new Date(info.created).toLocaleString() : "unknown"}</dd>
+          <dd className="text-fg">{info.created ? new Date(info.created).toLocaleString() : "Not recorded"}</dd>
           <dt className="text-fg-3">App</dt>
           <dd className="text-fg">
             {info.app_version}

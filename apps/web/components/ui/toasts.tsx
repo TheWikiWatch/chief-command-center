@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 
 import { BellIcon, CheckIcon, SparklesIcon, TriangleAlertIcon, UserMinusIcon, UserPlusIcon, WifiIcon, WifiOffIcon, WrenchIcon, type IconProps } from "@/components/icons";
+import { LAYER } from "@/lib/layers";
 import { SPRING } from "@/lib/motion";
 import { dismissToast, useToasts, type Toast, type ToastIcon, type ToastTone } from "@/lib/toast-store";
 
@@ -31,7 +32,8 @@ export function ToastViewport() {
   const toasts = useToasts();
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 top-0 z-70 flex flex-col items-center gap-2 px-3 pt-[calc(env(safe-area-inset-top)+10px)]"
+      className="pointer-events-none fixed inset-x-0 top-0 flex flex-col items-center gap-2 px-3 pt-[calc(env(safe-area-inset-top)+10px)]"
+      style={{ zIndex: LAYER.toast }}
       aria-live="polite"
       data-modal-keep
       aria-atomic="false"

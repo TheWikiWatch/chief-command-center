@@ -6,6 +6,7 @@ import { ArrowLeftIcon, CircleAlertIcon, CircleCheckIcon, ChevronDownIcon, Searc
 import { setup, sortProviders, type Catalog, type ProviderRow, type SetupStatus } from "@/lib/setup-client";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
+import { friendlyError } from "@/lib/request";
 
 type Stage =
   | { name: "choose" }
@@ -23,16 +24,19 @@ type Stage =
 /**
  * `addOnly`: connect another provider (a key, or a local endpoint) without switching the chief to it. Its
  * models then show in every bot's model list. Used by Settings → Models & keys.
+ * `inSettings`: shown inside Settings already, so the last step doesn't point there.
  */
 export function ConnectModel({
   onDone,
   onBusy,
   addOnly = false,
+  inSettings = false,
   onAdded,
 }: {
   onDone?: (status: SetupStatus) => void;
   onBusy?: (busy: boolean) => void;
   addOnly?: boolean;
+  inSettings?: boolean;
   onAdded?: (provider: string) => void;
 }) {
   const [catalog, setCatalog] = useState<Catalog | null>(null);
@@ -47,7 +51,7 @@ export function ConnectModel({
     setup
       .providers()
       .then(setCatalog)
-      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : "Couldn't load providers."));
+      .catch((e: unknown) => setLoadError(friendlyError(e, "Couldn't load the list of providers.")));
   };
   useEffect(load, []);
   // Move focus to each new step's heading, so keyboard and screen-reader users follow along.
@@ -62,7 +66,7 @@ export function ConnectModel({
   const runTest = async (provider: string, model: string) => {
     setTesting(true);
     setTestError("");
-    const result = await setup.test().catch((e: unknown) => ({ ok: false, error: e instanceof Error ? e.message : "The test didn't finish." }));
+    const result = await setup.test().catch((e: unknown) => ({ ok: false, error: friendlyError(e, "The test message didn't finish.") }));
     setTesting(false);
     if (!result.ok) {
       setTestError(result.error || "The test message failed.");
@@ -93,7 +97,10 @@ export function ConnectModel({
       <Panel heading={heading} title="Connected" subtitle={`${stage.model} on ${stage.provider}`}>
         <p className="flex items-start gap-2 text-callout text-fg-2" role="status">
           <CircleCheckIcon className="mt-0.5 size-4 shrink-0 text-ok" />
-          <span>{stage.reply ? `The model answered “${stage.reply}”.` : "The model answered."} You can change this any time in Settings.</span>
+          <span>
+            {stage.reply ? `The model answered “${stage.reply}”.` : "The model answered."}
+            {inSettings ? "" : " You can change this any time in Settings."}
+          </span>
         </p>
       </Panel>
     );
@@ -216,7 +223,7 @@ function ChooseStep({
           {groups.external.length ? (
             <Disclosure open={showExternal} onToggle={() => setShowExternal((v) => !v)} label="Sign-in providers">
               <p className="mb-2 text-caption text-fg-3">
-                These use a sign-in flow instead of a key ({groups.external.slice(0, 4).map((p) => p.name).join(", ")}…). Signing in from the app is coming soon.
+                These sign in through a web page instead of a key ({groups.external.slice(0, 4).map((p) => p.name).join(", ")}…). The app can't do that for a model yet, so pick one above that takes a key.
               </p>
             </Disclosure>
           ) : null}
@@ -271,13 +278,13 @@ function KeyStep({
       setKey("");
       onConnected(models.models, models.recommended || models.featured[0] || models.models[0] || "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e, "The key wasn't saved. Try again."));
     } finally {
       setBusy(false);
     }
   };
   return (
-    <Panel heading={heading} title={`Connect ${provider.name}`} subtitle="Your key is stored on this PC in your chief's profile. It is never shown again or sent anywhere else." onBack={onBack}>
+    <Panel heading={heading} title={`Connect ${provider.name}`} subtitle={`Your key is saved on this PC. It's never shown again, and only ever sent to ${provider.name}.`} onBack={onBack}>
       <form
         className="space-y-3"
         onSubmit={(e) => {
@@ -286,7 +293,7 @@ function KeyStep({
         }}
       >
         <label className="block text-callout text-fg-2">
-          API key{provider.keyEnv ? <span className="ml-1 font-mono text-caption text-fg-3">({provider.keyEnv})</span> : null}
+          API key
           <span className="mt-1.5 flex gap-2">
             <input
               type={reveal ? "text" : "password"}
@@ -346,7 +353,7 @@ function ModelStep({
       setConfirm("");
       await onChosen(model.trim());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e, "That didn't work. Try again."));
     } finally {
       setBusy(false);
     }
@@ -397,7 +404,16 @@ function ModelStep({
             </div>
           </div>
         ) : null}
-        {error || testError ? <Problem text={error || testError} action={<GhostButton onClick={() => void choose()}>Try again</GhostButton>} /> : null}
+        {error || testError ? (
+          <Problem
+            text={error || testError}
+            action={
+              <GhostButton onClick={() => void choose()} disabled={busy || testing}>
+                Try again
+              </GhostButton>
+            }
+          />
+        ) : null}
         <TestLine testing={testing} />
         {!confirm ? (
           <PrimaryButton onClick={() => void choose()} disabled={busy || testing || !model.trim()}>
@@ -444,7 +460,7 @@ function EndpointStep({
       setResolved(result.baseUrl);
       setModel(result.models[0] || "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e, "That didn't work. Try again."));
     } finally {
       setBusy(false);
     }
@@ -458,7 +474,7 @@ function EndpointStep({
       setKey("");
       await onSaved(name.trim() || "Local model", model.trim());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e, "That didn't work. Try again."));
     } finally {
       setBusy(false);
     }
@@ -601,9 +617,9 @@ function PrimaryButton({ children, onClick, disabled, type = "button" }: { child
   );
 }
 
-function GhostButton({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+function GhostButton({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
   return (
-    <button type="button" onClick={onClick} className={btn("secondary", "md", "shrink-0")}>
+    <button type="button" onClick={onClick} disabled={disabled} className={btn("secondary", "md", "shrink-0")}>
       {children}
     </button>
   );

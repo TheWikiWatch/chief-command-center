@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useEffect, useId, useRef, useState } from "react";
 
 import { CircleAlertIcon } from "@/components/icons";
@@ -43,7 +44,7 @@ export function NameEditor({
       if (!res.ok) throw new Error(res.error || "The name wasn't saved.");
       onSaved({ title: res.title || draftName.trim(), name: res.name || draftName.trim(), role: res.role ?? draftRole.trim(), soul: res.soul || "" });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The name wasn't saved.");
+      setError(friendlyError(e, "The name wasn't saved."));
     } finally {
       setBusy(false);
     }

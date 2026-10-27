@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence } from "motion/react";
 import { CircleAlertIcon, ClockIcon, SparklesIcon } from "@/components/icons";
@@ -73,7 +74,7 @@ export function FleetHealth({
           setMoved({});
           setError("");
         } catch (e) {
-          if (!signal.aborted) setError(e instanceof Error ? e.message : "Fleet health is unavailable");
+          if (!signal.aborted) setError(friendlyError(e, "Fleet Health can't be read right now."));
         }
       }, 60_000),
     [tick],
@@ -92,7 +93,7 @@ export function FleetHealth({
       if (!res.ok) throw new Error(res.error || "Refresh failed");
       setTick((n) => n + 1);
     } catch (e) {
-      showToast({ title: "Couldn't refresh", body: e instanceof Error ? e.message : "The ledger failed", tone: "warn", icon: "alert" });
+      showToast({ title: "Couldn't refresh", body: friendlyError(e, "Try again in a minute."), tone: "warn", icon: "alert" });
     } finally {
       setRefreshing(false);
     }

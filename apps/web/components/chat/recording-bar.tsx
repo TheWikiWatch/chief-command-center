@@ -82,10 +82,10 @@ export function RecordingBar({ cancelling, dragX }: { cancelling: boolean; dragX
       aria-live="polite"
     >
       <span className="relative flex h-2.5 w-2.5 shrink-0">
-        <span className={`absolute inset-0 animate-ping rounded-full opacity-70 ${cancelling ? "bg-danger" : "bg-accent"}`} />
+        <span className={`absolute inset-0 animate-ping rounded-full opacity-70 motion-reduce:animate-none ${cancelling ? "bg-danger" : "bg-accent"}`} />
         <span className={`relative h-2.5 w-2.5 rounded-full ${cancelling ? "bg-danger" : "bg-accent"}`} />
       </span>
-      <span className="w-10 shrink-0 font-mono text-code tabular text-fg">{mm}:{ss}</span>
+      <span aria-hidden className="w-10 shrink-0 font-mono text-code tabular text-fg">{mm}:{ss}</span>
       <motion.canvas
         ref={canvas}
         className={`h-7 min-w-0 flex-1 ${cancelling ? "text-danger" : "text-accent"}`}

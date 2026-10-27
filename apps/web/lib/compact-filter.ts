@@ -10,7 +10,8 @@ export function transcriptMessages(messages: ChatMessage[]): ChatMessage[] {
 
 /** Compact chat: hide tool/system/kanban/compaction/origin scaffolding; keep errors + replies. */
 export function visibleMessages(messages: ChatMessage[], compactChat: boolean): ChatMessage[] {
-  const base = transcriptMessages(messages);
+  // Hermes's "message origin" rows are its bookkeeping, not anything the owner said or was told.
+  const base = transcriptMessages(messages).filter((m) => chatTone(m) !== "origin");
   if (!compactChat) return base;
   return base.filter((m) => {
     const tone = chatTone(m);

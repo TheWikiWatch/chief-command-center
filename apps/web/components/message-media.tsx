@@ -136,7 +136,7 @@ function VideoCard({ a }: { a: ChatAttachment }) {
               }}
             >
               <motion.span
-                className="glass flex h-14 w-14 items-center justify-center rounded-full text-white"
+                className="flex h-14 w-14 items-center justify-center rounded-full bg-black/60 text-white"
                 whileHover={{ scale: 1.06 }}
                 whileTap={{ scale: 0.94 }}
               >

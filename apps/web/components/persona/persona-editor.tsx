@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { CircleAlertIcon, HistoryIcon, PlusIcon, TriangleAlertIcon, XIcon } from "@/components/icons";
@@ -24,7 +25,7 @@ export function PersonaEditor({ profile, name }: { profile: string; name: string
     persona
       .load(profile)
       .then((d) => (d.ok ? setData(d) : setError(d.error || "Couldn't read this profile.")))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Couldn't read this profile."));
+      .catch((e: unknown) => setError(friendlyError(e, "Couldn't read this profile.")));
   };
   useEffect(load, [profile]);
 
@@ -103,7 +104,7 @@ function SoulEditor({ profile, soul, onSaved }: { profile: string; soul: Soul; o
       onSaved({ ...soul, text, hash: result.hash, warnings: result.warnings || [], history: result.history || history });
       setNotice(result.unchanged ? "No changes to save." : "Saved. The previous version is in History.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e, "Something went wrong."));
     } finally {
       setBusy(false);
     }
@@ -210,7 +211,7 @@ function History({ profile, items, onLoad }: { profile: string; items: SoulVersi
                   setPreview(r.text);
                   setOpen(v.id);
                 } catch (e) {
-                  setError(e instanceof Error ? e.message : "Couldn't read that version.");
+                  setError(friendlyError(e, "Couldn't read that version."));
                 }
               }}
             >
@@ -273,7 +274,7 @@ function MemoryEditor({
       if (!result.ok) throw new Error(result.error || "Memory wasn't saved.");
       setNotice("Saved.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong.");
+      setError(friendlyError(e, "Something went wrong."));
     } finally {
       setBusy(false);
     }

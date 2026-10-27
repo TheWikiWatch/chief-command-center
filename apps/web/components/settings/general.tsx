@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { SlidersHorizontalIcon, BotIcon, CheckIcon, MessageCircleIcon, PaletteIcon, PencilIcon } from "@/components/icons";
 import { MODE_LABEL, SWATCHES, accentHex, useAppLook, type LookMode } from "@/lib/app-look";
+import { friendlyError } from "@/lib/request";
 import { fetchSettings, patchSettings } from "@/lib/bridge";
 import { Group, Row } from "@/components/ui/settings-group";
 import { Segmented } from "@/components/ui/controls";
@@ -27,6 +28,11 @@ export function ChiefNameGroup({ chief }: { chief?: Person }) {
   useEffect(() => setShown({ name: splitTitle(chief?.name).name || assistant, role: splitTitle(chief?.name).role || "" }), [chief?.name, assistant]);
   const [editing, setEditing] = useState(false);
   const [note, setNote] = useState("");
+  useEffect(() => {
+    if (!note) return undefined;
+    const timer = window.setTimeout(() => setNote(""), 6000);
+    return () => window.clearTimeout(timer);
+  }, [note]);
   return (
     <Group
       icon={<PencilIcon className="size-4" />}
@@ -34,7 +40,7 @@ export function ChiefNameGroup({ chief }: { chief?: Person }) {
       hint="What the chief is called everywhere. Rename any other bot from its card in Fleet."
       action={
         editing ? null : (
-          <button type="button" onClick={() => setEditing(true)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+          <button type="button" onClick={() => setEditing(true)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11">
             Rename
           </button>
         )
@@ -51,7 +57,13 @@ export function ChiefNameGroup({ chief }: { chief?: Person }) {
               setShown({ name: res.name, role: res.role });
               setAssistantTitle(res.title);
               setEditing(false);
-              setNote(res.soul === "updated" ? "Saved. The SOUL uses the new name too." : res.soul.startsWith("kept") ? "Saved. The SOUL opens differently, so it was left as it is." : "Saved.");
+              setNote(
+                res.soul === "updated"
+                  ? "Saved. Their description of who they are uses the new name too."
+                  : res.soul.startsWith("kept")
+                    ? "Saved. Their description of who they are starts differently, so it was left as it is."
+                    : "Saved.",
+              );
             }}
           />
         </div>
@@ -69,9 +81,9 @@ export function IdentityGroup() {
     <Group
       icon={<BotIcon className="size-4" />}
       title={`${assistant}'s identity and memory`}
-      hint="SOUL.md (who they are), their own notes, and what they know about you."
+      hint="Who they are, their own notes, and what they know about you."
       action={
-        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11">
           {open ? "Close" : "Edit"}
         </button>
       }
@@ -117,10 +129,10 @@ export function RepliesGroup() {
           setNote("");
           try {
             await patchSettings({ streaming: next });
-            setNote(`Saved. Takes effect the next time ${assistant} starts (tray icon → Restart Chief, or the next app start).`);
+            setNote(`Saved. It takes effect when ${assistant} next starts: on the PC, the tray icon's "Restart ${assistant}", or the next time the app opens.`);
           } catch (e) {
             setOn(!next);
-            setNote(e instanceof Error ? e.message : "Couldn't save.");
+            setNote(friendlyError(e, "Couldn't save."));
           }
         }}
       />
@@ -135,28 +147,31 @@ export function LookGroup() {
   const { look, error, setAccent, setMode, undo, reset } = useAppLook();
   const custom = /^#[0-9a-f]{6}$/i.test(look.accent);
   const byBot = look.by && look.by !== "owner";
+  const changed = look.accent !== "theme" || look.mode !== "dark";
+  // Undo and Reset sit in the header; only a look a bot chose says so in its own line.
+  const actions =
+    look.canUndo || changed ? (
+      <div className="flex items-center gap-1">
+        {look.canUndo ? (
+          <button type="button" onClick={() => void undo()} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11">
+            Undo
+          </button>
+        ) : null}
+        {changed ? (
+          <button type="button" onClick={() => void reset()} className="press min-h-9 rounded-full px-3 text-callout text-fg-3 hover:text-fg [@media(hover:none)]:min-h-11">
+            Reset
+          </button>
+        ) : null}
+      </div>
+    ) : null;
   return (
-    <Group icon={<PaletteIcon className="size-4" />} title="Appearance" hint="Every window and your phone follow this.">
-      {byBot || look.canUndo ? (
-        <div className="flex items-center gap-2 px-3.5 py-2.5">
-          <p className="min-w-0 flex-1 text-callout text-fg-2">{byBot ? `Changed by ${look.by}.` : "Changed."}</p>
-          {look.canUndo ? (
-            <button type="button" onClick={() => void undo()} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
-              Undo
-            </button>
-          ) : null}
-          {look.accent !== "theme" || look.mode !== "dark" ? (
-            <button type="button" onClick={() => void reset()} className="press min-h-9 rounded-full px-3 text-callout text-fg-3 hover:text-fg">
-              Reset
-            </button>
-          ) : null}
-        </div>
-      ) : null}
+    <Group icon={<PaletteIcon className="size-4" />} title="Appearance" hint="Every window and your phone follow this." action={actions}>
+      {byBot ? <p className="px-3.5 py-2.5 text-callout text-fg-2">{look.by} changed this. Undo puts back what you had.</p> : null}
       <Row label="Mode" stacked>
         <Segmented<LookMode>
           label="Mode"
           value={look.mode}
-          options={(["dark", "light", "system"] as LookMode[]).map((m) => [m, m === "system" ? "System" : MODE_LABEL[m]])}
+          options={(["dark", "light", "system"] as LookMode[]).map((m) => [m, MODE_LABEL[m]])}
           onChange={(mode) => void setMode(mode)}
         />
       </Row>

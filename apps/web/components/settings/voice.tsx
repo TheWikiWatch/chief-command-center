@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AudioLinesIcon, CheckIcon, PlayIcon, RefreshCwIcon, SquareIcon } from "@/components/icons";
+import { AudioLinesIcon, CheckIcon, CircleAlertIcon, PlayIcon, RefreshCwIcon, SquareIcon } from "@/components/icons";
 import { Group } from "@/components/ui/settings-group";
 import { fetchSettings, patchSettings, speakText, type HermesSettings, type SettingsProvider, type VoiceChoice } from "@/lib/bridge";
 import { notifyVoiceConfig } from "@/lib/dashboard-prefs";
@@ -11,8 +11,9 @@ import { CheckMySystem } from "@/components/voice/check-my-system";
 import { loadVoiceCheck, type VoiceCheckResult } from "@/lib/mic-device";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
-import { ApplyBody, previewLine } from "@/components/settings-panel";
+import { previewLine, type ApplyBody } from "@/components/settings/shared";
 import { Field, Select } from "@/components/ui/field";
+import { friendlyError } from "@/lib/request";
 
 /* Settings → Voice: hearing and speaking engines, keys, the voice preview and Check my system. */
 
@@ -38,7 +39,7 @@ export function SystemCheckRow() {
           <p className="text-body text-fg">Check my system</p>
           <p className="mt-0.5 text-caption text-fg-3">{describeCheck(last)}</p>
         </div>
-        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 shrink-0 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 shrink-0 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11">
           {open ? "Close" : "Run"}
         </button>
       </div>
@@ -51,7 +52,7 @@ export function SystemCheckRow() {
   );
 }
 
-/* ------------------------------------------------------------------ Second Brain */
+/* ------------------------------------------------------------------ Voice */
 
 export function VoiceGroup() {
   const assistant = useAssistantName();
@@ -68,7 +69,7 @@ export function VoiceGroup() {
       setData(next);
     } catch (err) {
       setData(null);
-      setError(err instanceof Error ? err.message : "Could not load Hermes settings");
+      setError(friendlyError(err, "Couldn't read the voice settings."));
     } finally {
       setLoading(false);
     }
@@ -86,7 +87,7 @@ export function VoiceGroup() {
       setData(next);
       notifyVoiceConfig();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save");
+      setError(friendlyError(err, "That wasn't saved. Try again."));
       throw err;
     } finally {
       setSaving(false);
@@ -103,12 +104,12 @@ export function VoiceGroup() {
     <Group
       icon={<AudioLinesIcon className="size-4" />}
       title={`${assistant}’s voice`}
-      hint={`Add a key here if an engine needs one. It is saved to ${assistant}’s own profile on this PC.`}
+      hint={`How ${assistant} hears you and talks back. A key an engine needs is saved on this PC.`}
       action={
         <button
           type="button"
-          aria-label="Refresh"
-          title="Refresh from Hermes"
+          aria-label="Read the voice settings again"
+          title="Read again"
           className="press grid size-9 place-items-center rounded-full text-fg-3 hover:bg-fill-2 hover:text-fg disabled:opacity-40"
           disabled={loading || saving}
           onClick={() => void load()}
@@ -120,16 +121,15 @@ export function VoiceGroup() {
       <div className="space-y-4 p-3">
         <SystemCheckRow />
         {loading && !data ? (
-          <div className="space-y-2" role="status" aria-label="Loading Hermes…">
+          <div className="space-y-2" role="status" aria-label="Loading the voice settings…">
             <div className="h-11 rounded-ctl bg-fill-1" />
             <div className="h-11 rounded-ctl bg-fill-1" />
             <div className="h-11 rounded-ctl bg-fill-1" />
           </div>
         ) : null}
-        {!loading && !pickerReady ? (
+        {!loading && data && !pickerReady ? (
           <p className="rounded-ctl bg-fill-1 px-3 py-2 text-callout text-fg-2">
-            Voice picker needs a relaunch of Chief Command Center. Current: {stt?.provider || "local"} /{" "}
-            {tts?.provider || "edge"}.
+            Restart the app once to pick engines here. For now {assistant} hears with {stt?.provider || "local"} and speaks with {tts?.provider || "edge"}.
           </p>
         ) : null}
         {pickerReady ? (
@@ -191,7 +191,7 @@ export function VoiceGroup() {
             ) : null}
             {!voicePickable ? (
               <p className="text-caption text-fg-3">
-                Voice for this engine: <span className="text-fg-2">{tts?.voice || "set in Hermes"}</span>.
+                Voice for this engine: <span className="text-fg-2">{tts?.voice || "its default"}</span>.
               </p>
             ) : null}
           </>
@@ -201,13 +201,12 @@ export function VoiceGroup() {
             {error}
           </p>
         ) : null}
-        <p className="text-caption text-fg-3">Linked to Hermes chief profile</p>
       </div>
     </Group>
   );
 }
 
-/* ------------------------------------------------------------------ This app */
+/* ------------------------------------------------------------------ Engines and keys */
 
 export function ProviderList({
   label,
@@ -274,6 +273,8 @@ export function ProviderList({
                   onSave={async (envKey, apiKey) => {
                     await onSaveKey(envKey, apiKey);
                     setOpenId(null);
+                    // "Save and use": with its key saved, the engine is the one in use.
+                    if (!selected) onSelect(p.id);
                   }}
                 />
               ) : null}
@@ -286,10 +287,10 @@ export function ProviderList({
 }
 
 export function StatusChip({ provider, selected }: { provider: SettingsProvider; selected: boolean }) {
-  if (selected) return <span className="shrink-0 text-caption font-medium text-fg-2">current</span>;
-  if (provider.status === "ready") return <span className="shrink-0 text-caption text-fg-3">ready</span>;
+  if (selected) return <span className="shrink-0 text-caption font-medium text-fg-2">In use</span>;
+  if (provider.status === "ready") return <span className="shrink-0 text-caption text-fg-3">Ready</span>;
   if (provider.status === "needs_keys") {
-    return <span className="shrink-0 rounded-chip bg-warn/15 px-1.5 py-0.5 text-caption text-warn">needs key</span>;
+    return <span className="shrink-0 rounded-chip bg-warn/15 px-1.5 py-0.5 text-caption text-warn">Needs a key</span>;
   }
   return (
     <span className="max-w-[45%] shrink-0 truncate text-caption text-fg-3">
@@ -320,13 +321,13 @@ export function KeyField({
       setValue("");
       setReveal(false);
     } catch (err) {
-      setLocalError(err instanceof Error ? err.message : "Could not save");
+      setLocalError(friendlyError(err, "The key wasn't saved. Try again."));
     }
   }
 
   return (
-    <div className="space-y-2 border-t border-line bg-black/20 px-3 py-3">
-      <p className="text-caption text-fg-3">{provider.hint || "Add this key to the chief’s profile"}</p>
+    <div className="space-y-2 border-t border-line bg-fill-1 px-3 py-3">
+      <p className="text-caption text-fg-3">{provider.hint || `${provider.name} needs a key. It’s saved on this PC.`}</p>
       <div className="flex gap-2">
         <input
           type={reveal ? "text" : "password"}
@@ -365,10 +366,14 @@ export function KeyField({
           disabled={saving || !envKey || !value.trim()}
           onClick={() => void submit()}
         >
-          Save to Hermes (chief)
+          Save and use
         </button>
       </div>
-      {localError ? <p className="text-caption text-danger">{localError}</p> : null}
+      {localError ? (
+        <p role="alert" className="text-caption text-danger">
+          {localError}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -407,11 +412,17 @@ export function VoiceOptions({ voices }: { voices: VoiceChoice[] }) {
 
 /** Hear the saved voice: one short line through the chief's real speaking engine. */
 export function VoicePreview({ disabled }: { disabled?: boolean }) {
-  const [state, setState] = useState<"idle" | "loading" | "playing">("idle");
+  const [state, setState] = useState<"idle" | "loading" | "playing" | "failed">("idle");
   const audio = useRef<HTMLAudioElement | null>(null);
   useEffect(() => () => audio.current?.pause(), []);
+  // A failed preview says so on the button for a moment, then it can be tried again.
+  useEffect(() => {
+    if (state !== "failed") return undefined;
+    const timer = window.setTimeout(() => setState("idle"), 4000);
+    return () => window.clearTimeout(timer);
+  }, [state]);
   const play = async () => {
-    if (state !== "idle") {
+    if (state === "loading" || state === "playing") {
       audio.current?.pause();
       setState("idle");
       return;
@@ -425,29 +436,37 @@ export function VoicePreview({ disabled }: { disabled?: boolean }) {
       const el = new Audio(src);
       audio.current = el;
       el.onended = () => setState("idle");
-      el.onerror = () => setState("idle");
+      el.onerror = () => setState("failed");
       await el.play();
       setState("playing");
     } catch {
-      setState("idle");
+      setState("failed");
     }
   };
+  const label = state === "failed" ? "Couldn't play the preview. Try again." : state === "idle" ? "Preview voice" : "Stop preview";
   return (
-    <button
-      type="button"
-      aria-label={state === "idle" ? "Preview voice" : "Stop preview"}
-      title={state === "idle" ? "Preview voice" : "Stop preview"}
-      className="press grid size-11 shrink-0 place-items-center rounded-ctl border border-line bg-well text-fg-2 hover:text-fg disabled:opacity-40"
-      disabled={disabled}
-      onClick={() => void play()}
-    >
-      {state === "loading" ? (
-        <RefreshCwIcon className="size-4 animate-spin" />
-      ) : state === "playing" ? (
-        <SquareIcon className="size-3.5" />
-      ) : (
-        <PlayIcon className="size-4" />
-      )}
-    </button>
+    <>
+      <button
+        type="button"
+        aria-label={label}
+        title={label}
+        className={`press grid size-11 shrink-0 place-items-center rounded-ctl border bg-well hover:text-fg disabled:opacity-40 ${state === "failed" ? "border-danger/40 text-danger" : "border-line text-fg-2"}`}
+        disabled={disabled}
+        onClick={() => void play()}
+      >
+        {state === "loading" ? (
+          <RefreshCwIcon className="size-4 animate-spin motion-reduce:animate-none" />
+        ) : state === "playing" ? (
+          <SquareIcon className="size-3.5" />
+        ) : state === "failed" ? (
+          <CircleAlertIcon className="size-4" />
+        ) : (
+          <PlayIcon className="size-4" />
+        )}
+      </button>
+      <span className="sr-only" role="status">
+        {state === "failed" ? label : ""}
+      </span>
+    </>
   );
 }

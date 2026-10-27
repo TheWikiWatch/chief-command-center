@@ -42,7 +42,7 @@ export function PhoneNav({
               type="button"
               onClick={() => onChange(id)}
               aria-current={on ? "page" : undefined}
-              className={`relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-pane text-caption font-medium transition-colors duration-fast ${
+              className={`press relative flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-pane text-caption font-medium transition-colors duration-fast ${
                 on ? "text-fg" : "text-fg-3"
               }`}
             >

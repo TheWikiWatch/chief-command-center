@@ -164,7 +164,7 @@ it("Models & keys: lists connected providers, protects the chief's, removes anot
   render(<ModelsKeys />);
   await screen.findByText("DeepSeek");
   expect(screen.queryByText("Gemini")).toBeNull();
-  expect(screen.getByText("Nova uses this")).toBeInTheDocument();
+  expect(screen.getByText("In use by Nova")).toBeInTheDocument();
   // A sign-in found elsewhere on the PC is shown but can't be removed here.
   expect(screen.getByText(/Signed in on this PC/)).toBeInTheDocument();
   // Only the saved key that the chief isn't using offers removal.

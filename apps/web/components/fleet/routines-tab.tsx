@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useId, useState, type ReactNode } from "react";
 
@@ -23,6 +24,7 @@ import { threadsApi, type ChatThread } from "@/lib/threads-client";
 import type { Person } from "@/lib/types";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
+import { ConfirmRow } from "@/components/ui/confirm-row";
 import { SkeletonRows } from "@/components/ui/surface";
 
 type View = { mode: "list" } | { mode: "new" } | { mode: "edit"; id: string; profile: string };
@@ -49,7 +51,7 @@ export function RoutinesTab({ people }: { people: Person[] }) {
       setRoutines(res.routines);
       setBots(res.bots);
     } catch (e) {
-      setNote({ tone: "error", text: e instanceof Error ? e.message : "Couldn't read the routines." });
+      setNote({ tone: "error", text: friendlyError(e, "Couldn't read the routines.") });
       setRoutines((r) => r ?? []);
     }
   }, []);
@@ -74,7 +76,7 @@ export function RoutinesTab({ people }: { people: Person[] }) {
       if (res.routine) setRoutines((list) => list?.map((x) => (x.id === r.id ? res.routine! : x)) ?? null);
     } catch (e) {
       setRoutines((list) => list?.map((x) => (x.id === r.id ? { ...x, enabled: !on } : x)) ?? null);
-      setNote({ tone: "error", text: e instanceof Error ? e.message : "That didn't save." });
+      setNote({ tone: "error", text: friendlyError(e, "That didn't save.") });
     } finally {
       setBusy("");
     }
@@ -326,7 +328,7 @@ function RoutineEditor({
       if (!res.ok) throw new Error(res.error || "That didn't work.");
       if (after) await after();
     } catch (e) {
-      setNote({ tone: "error", text: e instanceof Error ? e.message : "That didn't work." });
+      setNote({ tone: "error", text: friendlyError(e, "That didn't work.") });
     } finally {
       setSaving("");
     }
@@ -596,22 +598,16 @@ function RoutineEditor({
         ) : null}
       </div>
       {routine && confirmDelete ? (
-        <div className="space-y-2 rounded-card border border-danger/30 bg-danger/6 px-3 py-3">
-          <p className="text-callout text-fg">Delete {routine.name}? It stops running; earlier reports stay in the chat.</p>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              disabled={!!saving}
-              onClick={() => void run("delete", () => routinesApi.remove(routine.profile, routine.id), () => onDone(`${routine.name} was deleted.`))}
-              className="press min-h-10 rounded-full bg-danger px-4 text-callout font-medium text-white disabled:opacity-50"
-            >
-              {saving === "delete" ? "Deleting…" : "Delete routine"}
-            </button>
-            <button type="button" onClick={() => setConfirmDelete(false)} className="press min-h-10 rounded-full border border-line-2 px-4 text-callout text-fg-2 hover:text-fg">
-              Keep it
-            </button>
-          </div>
-        </div>
+        <ConfirmRow
+          confirm="Delete routine"
+          busy={saving === "delete"}
+          busyLabel="Deleting…"
+          keep="Keep it"
+          onConfirm={() => void run("delete", () => routinesApi.remove(routine.profile, routine.id), () => onDone(`${routine.name} was deleted.`))}
+          onCancel={() => setConfirmDelete(false)}
+        >
+          Delete {routine.name}? It stops running; earlier reports stay in the chat.
+        </ConfirmRow>
       ) : null}
     </div>
   );

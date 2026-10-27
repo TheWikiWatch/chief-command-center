@@ -8,11 +8,11 @@ import { btn } from "@/components/ui/button";
 import { field } from "@/components/ui/field";
 import { desktop } from "@/lib/desktop";
 
-/* Settings → About: a tester tells the developer about a problem, by e-mail (private; no accounts). */
+/* Settings → About: a tester tells the developer about a problem, by email (private; no accounts). */
 
-const LIMIT = 1500; // an e-mail link longer than ~2000 characters is cut short by some mail apps
+const LIMIT = 1500; // an email link longer than ~2000 characters is cut short by some mail apps
 
-/** The e-mail a report opens: the tester's words, the versions, and the diagnostics file to attach (if made). */
+/** The email a report opens: the tester's words, the versions, and the diagnostics file to attach (if made). */
 export function reportMail(opts: {
   to: string;
   what: string;
@@ -43,7 +43,7 @@ export function reportMail(opts: {
     "----",
     `App ${opts.versions.app || "unknown"} · Hermes ${opts.versions.hermes || "unknown"}`,
     `${opts.device} · ${(opts.when ?? new Date()).toISOString().slice(0, 16).replace("T", " ")} UTC`,
-    opts.diagnostics ? `Diagnostics: ${opts.diagnostics} (in the Downloads folder; attach it to this e-mail)` : "Diagnostics: not attached",
+    opts.diagnostics ? `Diagnostics: ${opts.diagnostics} (in the Downloads folder; attach it to this email)` : "Diagnostics: not attached",
   ].join("\n");
   const q = (s: string) => encodeURIComponent(s);
   return `mailto:${opts.to}?subject=${q(`Chief Command Center problem: ${first}${headline.length > first.length ? "…" : ""}`)}&body=${q(body)}`;
@@ -71,19 +71,25 @@ export function ReportProblemGroup({ email, versions }: { email: string; version
     setBusy(true);
     setNote(null);
     let file = "";
+    let missed = false;
     try {
       if (api?.reportDiagnostics && withDiagnostics) {
-        const made = await api.reportDiagnostics();
+        const made = await api.reportDiagnostics().catch(() => ({ ok: false as const, name: "" }));
         if (made.ok) file = made.name || "";
-        else setNote({ tone: "error", text: `The diagnostics file couldn't be made (${made.error || "unknown"}); the e-mail opens without it.` });
+        else missed = true;
       }
       window.location.href = reportMail({ to: email, what, expected, versions, device: deviceLine(), diagnostics: file });
-      setNote({
-        tone: "ok",
-        text: file
-          ? `Your e-mail app is opening with the report. Attach ${file} (the folder holding it just opened), then send.`
-          : "Your e-mail app is opening with the report. Check it, then send.",
-      });
+      // A diagnostics file that couldn't be made stays said: the email still opens, without it.
+      setNote(
+        missed
+          ? { tone: "error", text: "The diagnostics file couldn't be made, so your email app is opening without it. Check the report, then send." }
+          : {
+              tone: "ok",
+              text: file
+                ? `Your email app is opening with the report. Attach ${file} (the folder holding it just opened), then send.`
+                : "Your email app is opening with the report. Check it, then send.",
+            },
+      );
       setWhat("");
       setExpected("");
     } finally {
@@ -95,7 +101,7 @@ export function ReportProblemGroup({ email, versions }: { email: string; version
     <Group
       icon={<MessageSquareWarningIcon className="size-4" />}
       title="Report a problem"
-      hint="Tell the developer what went wrong. It goes by e-mail from your own e-mail app, so you see everything before it's sent."
+      hint="Tell the developer what went wrong. It goes by email from your own email app, so you see everything before it's sent."
     >
       <div className="space-y-3 p-3">
         <label className="block">
@@ -125,7 +131,7 @@ export function ReportProblemGroup({ email, versions }: { email: string; version
         ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <button type="button" className={btn("primary", "md")} disabled={busy || !what.trim()} onClick={() => void send()}>
-            {busy ? "Preparing…" : "Write the e-mail"}
+            {busy ? "Preparing…" : "Write the email"}
           </button>
           <span className="text-caption text-fg-3">To {email}</span>
         </div>

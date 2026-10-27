@@ -12,6 +12,8 @@ import { poll } from "@/lib/poll";
 import { share } from "@/lib/share";
 import { markSeen, readSeen, threadsApi, type ChatThread } from "@/lib/threads-client";
 import { field } from "@/components/ui/field";
+import { btn } from "@/components/ui/button";
+import { friendlyError } from "@/lib/request";
 
 function ago(epoch: number): string {
   if (!epoch) return "";
@@ -152,7 +154,7 @@ export function ThreadSwitcher({
           setOpen((v) => !v);
           load();
         }}
-        className="press flex min-h-8 min-w-19 max-w-44 items-center gap-1.5 rounded-full border border-line-2 bg-fill-1 py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 hover:border-line-3 hover:text-fg sm:max-w-48"
+        className="press relative flex min-h-8 min-w-19 max-w-44 items-center gap-1.5 rounded-full border border-line-2 bg-fill-1 py-0.5 pl-2.5 pr-1.5 text-caption font-medium text-fg-2 after:absolute after:-inset-y-1.5 after:inset-x-0 after:content-[''] hover:border-line-3 hover:text-fg sm:max-w-48"
       >
         <span className="thread-switcher-title truncate">{title}</span>
         {elsewhere ? <Dot kind={elsewhere} /> : null}
@@ -204,7 +206,8 @@ function ThreadMenu({
   const live = items.filter((t) => !t.archived);
   const archived = items.filter((t) => t.archived);
 
-  async function run(work: () => Promise<{ ok: boolean; error?: string }>, after?: () => void) {
+  /** Whether it worked: a form that called it closes only then (a failed rename keeps its text). */
+  async function run(work: () => Promise<{ ok: boolean; error?: string }>, after?: () => void): Promise<boolean> {
     setBusy(true);
     setError("");
     try {
@@ -212,8 +215,10 @@ function ThreadMenu({
       if (!res.ok) throw new Error(res.error || "That didn't work.");
       onChanged();
       after?.();
+      return true;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't work.");
+      setError(friendlyError(e, "That didn't work."));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -233,7 +238,7 @@ function ThreadMenu({
               return res;
             })
           }
-          className="press flex min-h-8 items-center gap-1 rounded-full bg-fg px-3 text-caption font-semibold text-canvas disabled:opacity-50"
+          className={btn("primary", "sm", "[@media(hover:none)]:min-h-11")}
         >
           <PlusIcon size={13} />
           New thread
@@ -265,7 +270,7 @@ function ThreadMenu({
               {archived.map((t) => (
                 <li key={t.id} className="flex items-center gap-2 rounded-ctl px-2 py-1.5">
                   <span className="min-w-0 flex-1 truncate text-callout text-fg-3">{t.title}</span>
-                  <button type="button" disabled={busy} onClick={() => void run(() => threadsApi.archive(t.id, false))} className="press min-h-8 rounded-full border border-line-2 px-3 text-caption text-fg-2 hover:text-fg">
+                  <button type="button" disabled={busy} onClick={() => void run(() => threadsApi.archive(t.id, false))} className={btn("secondary", "sm", "[@media(hover:none)]:min-h-11")}>
                     Restore
                   </button>
                 </li>
@@ -297,9 +302,9 @@ function ThreadRow({
   current: boolean;
   attention: Attention;
   onPick: () => void;
-  onRename: (title: string) => Promise<void>;
-  onArchive?: () => Promise<void>;
-  onFresh: () => Promise<void>;
+  onRename: (title: string) => Promise<boolean>;
+  onArchive?: () => Promise<boolean>;
+  onFresh: () => Promise<boolean>;
   busy: boolean;
 }) {
   const assistant = useAssistantName();
@@ -314,7 +319,8 @@ function ThreadRow({
         className="flex gap-1.5 px-2 pb-2"
         onSubmit={(e) => {
           e.preventDefault();
-          void onRename(title.trim()).then(() => setMode(""));
+          if (!title.trim()) return;
+          void onRename(title.trim()).then((ok) => ok && setMode(""));
         }}
       >
         <label className="sr-only" htmlFor={`rename-${t.id}`}>
@@ -330,7 +336,7 @@ function ThreadRow({
           onChange={(e) => setTitle(e.target.value)}
           className={field({ extra: "min-h-9 min-w-0 flex-1 px-2.5 text-callout" })}
         />
-        <button type="submit" disabled={busy} className="press min-h-9 rounded-full bg-fg px-3 text-caption font-semibold text-canvas disabled:opacity-50">
+        <button type="submit" disabled={busy || !title.trim()} className={btn("primary", "sm", "[@media(hover:none)]:min-h-11")}>
           Save
         </button>
       </form>
@@ -342,10 +348,10 @@ function ThreadRow({
           Start fresh? {assistant} begins a new conversation in this thread. This one stays below as history, and memory and the Second Brain carry over.
         </p>
         <div className="flex gap-1.5">
-          <button type="button" disabled={busy || t.working} onClick={() => void onFresh().then(() => setMode(""))} className="press min-h-8 rounded-full bg-fg px-3 text-caption font-semibold text-canvas disabled:opacity-50">
+          <button type="button" disabled={busy || t.working} onClick={() => void onFresh().then((ok) => ok && setMode(""))} className={btn("primary", "sm", "[@media(hover:none)]:min-h-11")}>
             {t.working ? "Working…" : "Start fresh"}
           </button>
-          <button type="button" onClick={() => setMode("")} className="press min-h-8 rounded-full border border-line-2 px-3 text-caption text-fg-2 hover:text-fg">
+          <button type="button" onClick={() => setMode("")} className={btn("secondary", "sm", "[@media(hover:none)]:min-h-11")}>
             Cancel
           </button>
         </div>
@@ -354,14 +360,14 @@ function ThreadRow({
   } else if (mode === "actions") {
     panel = (
       <div className="flex flex-wrap gap-1.5 px-2 pb-2">
-        <button type="button" onClick={() => setMode("rename")} className="press min-h-8 rounded-full border border-line-2 px-3 text-caption text-fg-2 hover:text-fg">
+        <button type="button" onClick={() => setMode("rename")} className={btn("secondary", "sm", "[@media(hover:none)]:min-h-11")}>
           Rename
         </button>
-        <button type="button" onClick={() => setMode("fresh")} className="press min-h-8 rounded-full border border-line-2 px-3 text-caption text-fg-2 hover:text-fg">
+        <button type="button" onClick={() => setMode("fresh")} className={btn("secondary", "sm", "[@media(hover:none)]:min-h-11")}>
           Fresh start
         </button>
         {onArchive ? (
-          <button type="button" disabled={busy} onClick={() => void onArchive()} className="press min-h-8 rounded-full border border-line-2 px-3 text-caption text-fg-2 hover:text-fg">
+          <button type="button" disabled={busy} onClick={() => void onArchive()} className={btn("secondary", "sm", "[@media(hover:none)]:min-h-11")}>
             Archive
           </button>
         ) : null}

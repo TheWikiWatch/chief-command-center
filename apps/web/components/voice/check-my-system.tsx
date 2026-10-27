@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 
 import { AudioLinesIcon, CircleAlertIcon, CircleCheckIcon, DownloadIcon, MicIcon, Volume2Icon } from "@/components/icons";
@@ -76,7 +77,7 @@ export function CheckMySystem({
       setModel(await speechModel.status());
       setModelError("");
     } catch (e) {
-      setModelError(e instanceof Error ? e.message : `Couldn't reach ${assistant}.`);
+      setModelError(friendlyError(e, `Couldn't reach ${assistant}.`));
     }
   }, [assistant]);
 
@@ -193,7 +194,7 @@ export function CheckMySystem({
       s?.getTracks().forEach((t) => t.stop());
       setTyping("failed");
       const problem = micProblem(e);
-      setTypingError(problem === "denied" ? "Microphone access is blocked (see above)." : e instanceof Error ? e.message : "Voice typing didn't work.");
+      setTypingError(problem === "denied" ? "Microphone access is blocked (see above)." : friendlyError(e, "Voice typing didn't work."));
     }
   }
 
@@ -204,7 +205,7 @@ export function CheckMySystem({
       const res = await speechModel.download(id);
       if (!res.ok) setModelError(res.error || "The download didn't start.");
     } catch (e) {
-      setModelError(e instanceof Error ? e.message : "The download didn't start.");
+      setModelError(friendlyError(e, "The download didn't start."));
     }
     await refreshModel();
   }

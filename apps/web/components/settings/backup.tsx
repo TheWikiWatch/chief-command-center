@@ -71,7 +71,7 @@ export function BackupGroup() {
       title="Backup & restore"
       hint="Your setup and Second Brain, to a folder you choose."
       action={
-        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg">
+        <button type="button" onClick={() => setOpen((v) => !v)} className="press min-h-9 rounded-full border border-line-2 px-3 text-callout text-fg-2 hover:text-fg [@media(hover:none)]:min-h-11">
           {open ? "Close" : "Open"}
         </button>
       }

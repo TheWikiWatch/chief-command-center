@@ -60,7 +60,7 @@ it("keeps text size adjustable and sets interface size, motion and ambience", as
   expect(stored()).toMatchObject({ uiScale: "large", motion: "reduced", ambient: "low" });
   cleanup();
   render(<SettingsPanel open phone onClose={() => {}} category="notifications" />);
-  fireEvent.click(screen.getByRole("switch", { name: "Fleet change toasts" }));
+  fireEvent.click(screen.getByRole("switch", { name: "Bot changes" }));
   expect(stored().fleetToasts).toBe(false);
 });
 

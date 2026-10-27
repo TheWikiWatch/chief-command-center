@@ -94,6 +94,9 @@ describe("Settings → Phone on the PC", () => {
     // Changing who can open it restarts the dashboard; the other buttons wait for that.
     await waitFor(() => expect(screen.getByRole("button", { name: "Turn off" })).toBeEnabled(), { timeout: 4000 });
     fireEvent.click(screen.getByRole("button", { name: "Turn off" }));
+    // It asks first: turning access off leaves every phone without the address.
+    expect(api.disable).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Turn off access" }));
     await waitFor(() => expect(api.disable).toHaveBeenCalled());
   });
 

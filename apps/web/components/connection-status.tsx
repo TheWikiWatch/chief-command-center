@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import { DeepseekSchedule } from "@/components/deepseek-chip";
 import { SettingsIcon } from "@/components/icons";
@@ -18,6 +18,22 @@ import { useSpeechLog, type SpeechLogEntry } from "@/lib/speech-log";
 import { useAssistantName } from "@/lib/identity";
 
 export type LinkState = { connected: boolean; authFailed?: boolean };
+
+/** Whether the browser says this device has no network at all (then the PC isn't the problem). */
+function useOffline() {
+  return useSyncExternalStore(
+    (changed) => {
+      window.addEventListener("online", changed);
+      window.addEventListener("offline", changed);
+      return () => {
+        window.removeEventListener("online", changed);
+        window.removeEventListener("offline", changed);
+      };
+    },
+    () => navigator.onLine === false,
+    () => false,
+  );
+}
 
 function useNow(stepMs = 1000) {
   const [now, setNow] = useState(() => Date.now());
@@ -38,11 +54,11 @@ export function useLinkLabel({ connected, authFailed }: LinkState) {
   const state = authFailed ? "auth" : !connected ? "down" : verdict.state;
   const label =
     state === "auth"
-      ? "Bridge auth failed"
+      ? "Can't sign in"
       : state === "down"
         ? "Reconnecting…"
         : state === "degraded" && verdict.worst
-          ? `${verdict.worst.label} ${verdict.worst.error && (verdict.worst.failures ?? 2) >= 2 ? "error" : `stale ${Math.floor(verdict.ageMs / 1000)}s`}`
+          ? `${verdict.worst.label} ${verdict.worst.error && (verdict.worst.failures ?? 2) >= 2 ? "not loading" : `${Math.floor(verdict.ageMs / 1000)}s behind`}`
           : "";
   const text = state === "degraded" ? "text-warn" : "text-danger";
   return { state, label, text };
@@ -64,7 +80,7 @@ export function ConnectionDot({ connected, authFailed, onOpen, quiet = false }: 
         aria-label={label ? `Connection: ${label}. Show status` : "Connection healthy. Show status"}
       >
         <span className="relative flex h-2.5 w-2.5 shrink-0">
-          {state !== "ok" ? <span className={`absolute inset-0 animate-ping rounded-full opacity-60 ${color}`} /> : null}
+          {state !== "ok" ? <span className={`absolute inset-0 animate-ping rounded-full opacity-60 motion-reduce:animate-none ${color}`} /> : null}
           <span className={`relative h-2.5 w-2.5 rounded-full ${color} ${state === "ok" ? "shadow-[0_0_8px_rgb(var(--c-ok)/0.6)]" : ""}`} />
         </span>
         <AnimatePresence initial={false}>
@@ -88,6 +104,7 @@ export function ConnectionDot({ connected, authFailed, onOpen, quiet = false }: 
 export function StatusSheet({ open, onClose, connected, authFailed, phone, deepseek = false }: LinkState & { open: boolean; onClose: () => void; phone: boolean; deepseek?: boolean }) {
   const entries = useHealthEntries();
   const assistant = useAssistantName();
+  const offline = useOffline();
   return (
     <Sheet open={open} onClose={onClose} title="Status" subtitle="What this window can reach right now" side={phone ? "bottom" : "right"}>
       <div className="space-y-5 px-4 pb-6">
@@ -95,9 +112,15 @@ export function StatusSheet({ open, onClose, connected, authFailed, phone, deeps
           <div className="flex items-center gap-3">
             <span className={`h-2.5 w-2.5 rounded-full ${authFailed ? "bg-danger" : connected ? "bg-ok" : "bg-danger"}`} />
             <div className="min-w-0 flex-1">
-              <p className="text-body font-medium text-fg">{assistant}&apos;s gateway</p>
+              <p className="text-body font-medium text-fg">{assistant} on the PC</p>
               <p className="text-callout text-fg-3">
-                {authFailed ? "Bridge token does not match the plugin." : connected ? "Connected and answering on this PC." : "Not answering. It will reconnect on its own."}
+                {authFailed
+                  ? `This window can't sign in to ${assistant}. Restarting the app on the PC usually fixes it.`
+                  : connected
+                    ? "Connected and answering."
+                    : offline
+                      ? "This device is offline. It reconnects when the network is back."
+                      : `${assistant} isn't answering. This reconnects on its own once it's back.`}
               </p>
             </div>
           </div>
@@ -188,13 +211,20 @@ export function hermesSummary(compat: HermesCompat | undefined): { tone: "ok" | 
 
 function HermesFeatures({ open }: { open: boolean }) {
   const [compat, setCompat] = useState<HermesCompat | undefined>(undefined);
+  const [failed, setFailed] = useState(false);
+  // Read each time the sheet opens, so it never shows an answer from before a restart.
   useEffect(() => {
     if (!open) return;
     const ac = new AbortController();
-    void fetchHealth(ac.signal).then((h) => setCompat(h.hermes));
+    fetchHealth(ac.signal)
+      .then((h) => {
+        setCompat(h.hermes);
+        setFailed(false);
+      })
+      .catch(() => !ac.signal.aborted && setFailed(true));
     return () => ac.abort();
   }, [open]);
-  const summary = hermesSummary(compat);
+  const summary = failed && !compat ? { tone: "muted" as const, text: "Couldn't check right now. It's read again the next time this opens." } : hermesSummary(compat);
   return (
     <section>
       <h3 className="mb-2 px-1 text-callout font-medium text-fg-2">Hermes</h3>

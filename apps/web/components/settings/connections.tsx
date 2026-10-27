@@ -30,6 +30,8 @@ import {
   type ServiceAccount,
 } from "@/lib/connections";
 import { useAssistantName } from "@/lib/identity";
+import { ConfirmRow } from "@/components/ui/confirm-row";
+import { friendlyError } from "@/lib/request";
 
 /*
  * Settings → Connections: the services the chief can use (worker bots get them once the mail guard runs in their
@@ -52,7 +54,7 @@ export function ConnectionsPage() {
     try {
       setData(await fetchConnections(refresh));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't read your connections");
+      setError(friendlyError(err, "Couldn't read your connections."));
     } finally {
       setLoading(false);
     }
@@ -64,7 +66,7 @@ export function ConnectionsPage() {
     let live = true;
     fetchConnections()
       .then((next) => live && setData(next))
-      .catch((err) => live && setError(err instanceof Error ? err.message : "Couldn't read your connections"))
+      .catch((err) => live && setError(friendlyError(err, "Couldn't read your connections.")))
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
@@ -152,7 +154,7 @@ function useNousSignIn(onChange: () => void) {
       setSession(started);
       openSignIn(started.url);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't start the Nous sign-in");
+      setError(friendlyError(err, "Couldn't start the Nous sign-in. Try again."));
     } finally {
       setBusy(false);
     }
@@ -165,7 +167,7 @@ function useNousSignIn(onChange: () => void) {
       await signOutNous();
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't sign out");
+      setError(friendlyError(err, "Couldn't sign out. Try again."));
     } finally {
       setBusy(false);
     }
@@ -183,6 +185,7 @@ type NousSignIn = ReturnType<typeof useNousSignIn>;
 
 function NousGroup({ view, signin, action }: { view: ConnectionsView; signin: NousSignIn; action: ReactNode }) {
   const { session, busy, error, signIn, signOut, cancel } = signin;
+  const [confirmOut, setConfirmOut] = useState(false);
   const nous = view.nous;
   const status = nous.signedIn
     ? nous.connectors
@@ -206,7 +209,7 @@ function NousGroup({ view, signin, action }: { view: ConnectionsView; signin: No
             <p className="mt-0.5 text-caption text-fg-3">{status}</p>
           </div>
           {nous.signedIn ? (
-            <Button variant="ghost" size="sm" disabled={busy} onClick={() => void signOut()}>
+            <Button variant="ghost" size="sm" disabled={busy || confirmOut} onClick={() => setConfirmOut(true)}>
               Sign out
             </Button>
           ) : session ? null : (
@@ -215,6 +218,17 @@ function NousGroup({ view, signin, action }: { view: ConnectionsView; signin: No
             </Button>
           )}
         </div>
+        {confirmOut && nous.signedIn ? (
+          <ConfirmRow
+            confirm="Sign out"
+            busy={busy}
+            busyLabel="Signing out…"
+            onConfirm={() => void signOut().finally(() => setConfirmOut(false))}
+            onCancel={() => setConfirmOut(false)}
+          >
+            Sign out of Nous on this PC? Quick connections made with this account stop until you sign in again.
+          </ConfirmRow>
+        ) : null}
         {session ? (
           <div className="rounded-ctl border border-line bg-well px-3 py-3">
             <p className="text-callout text-fg-2">Nous opened in your browser. If it asks for a code, enter:</p>
@@ -323,7 +337,7 @@ export function ServiceRow({ service, view, onChange, onNous }: { service: Conne
       setConfirm(false);
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't disconnect");
+      setError(friendlyError(err, "Couldn't disconnect. Try again."));
     } finally {
       setBusy(false);
     }
@@ -512,7 +526,7 @@ function AccountRow({ service, account, many, names, onChange }: { service: Conn
       setMode("");
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "That didn't work");
+      setError(friendlyError(err, "That didn't work. Try again."));
     } finally {
       setBusy(false);
     }
@@ -605,6 +619,7 @@ export function FlowNote({
   onRetry: () => void;
   onKeys: (env: Record<string, string>, backend: Backend) => void;
 }) {
+  const chief = useAssistantName();
   if (flow.step === "starting") return <p className="shimmer-text mt-2 text-caption">Opening the {label} sign-in…</p>;
   if (flow.step === "waiting") {
     return (
@@ -628,7 +643,7 @@ export function FlowNote({
       <div className="mt-3 flex items-start gap-2.5 rounded-ctl bg-fill-1 px-3 py-2.5">
         <LockIcon className="mt-0.5 size-4 shrink-0 text-fg-3" />
         <p className="min-w-0 flex-1 text-callout text-fg-2">
-          {flow.backend === "local" ? "Keeping Google on this PC" : `Connecting ${label} directly`} finishes in a browser on your PC. Open Chief there and connect it from Settings → Connections.
+          {flow.backend === "local" ? "Keeping Google on this PC" : `Connecting ${label} directly`} finishes in a browser on your PC. Open {chief} there and connect it from Settings → Connections.
         </p>
       </div>
     );

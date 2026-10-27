@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useCallback, useEffect, useId, useState } from "react";
 
 import { CircleAlertIcon } from "@/components/icons";
@@ -30,7 +31,7 @@ export function UsagePage() {
     usageApi
       .summary(period)
       .then((r) => (r.ok ? setData(r) : setError(r.error || "Couldn't read usage.")))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : "Couldn't read usage."));
+      .catch((e: unknown) => setError(friendlyError(e, "Couldn't read usage.")));
   }, [period]);
   useEffect(load, [load]);
 
@@ -268,7 +269,7 @@ function Budget({ summary, onSaved }: { summary: UsageSummary; onSaved: () => vo
       if (!res.ok) throw new Error(res.error || "The budget wasn't saved.");
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "The budget wasn't saved.");
+      setError(friendlyError(e, "The budget wasn't saved."));
     } finally {
       setBusy(false);
     }

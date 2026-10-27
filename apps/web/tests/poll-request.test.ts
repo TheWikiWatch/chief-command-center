@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { poll } from "@/lib/poll";
-import { requestJson } from "@/lib/request";
+import { friendlyError, PLAIN, plainFailure, requestJson } from "@/lib/request";
 
 afterEach(()=>{vi.useRealTimers();vi.unstubAllGlobals();});
 describe("bounded polling",()=>{
@@ -33,13 +33,25 @@ describe("bounded polling",()=>{
     vi.useFakeTimers();
     vi.stubGlobal("fetch",vi.fn((_url,init)=>Promise.resolve({ok:true,status:200,json:()=>new Promise((_r,reject)=>init.signal.addEventListener("abort",()=>reject(new Error("aborted"))))})));
     const pending=requestJson("/test",{},100);
-    const check=expect(pending).rejects.toThrow("timed out");
+    const check=expect(pending).rejects.toThrow("took too long");
     await vi.advanceTimersByTimeAsync(101); await check;
   });
   it("rejects invalid JSON and preserves HTTP auth status",async()=>{
     vi.stubGlobal("fetch",vi.fn().mockResolvedValue(new Response("html",{status:502})));
-    await expect(requestJson("/test")).rejects.toThrow("Invalid response");
+    await expect(requestJson("/test")).rejects.toMatchObject({status:502,message:PLAIN.down});
     vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({error:"unauthorized"},{status:401})));
-    await expect(requestJson("/test")).rejects.toMatchObject({status:401});
+    await expect(requestJson("/test")).rejects.toMatchObject({status:401,message:PLAIN.signedOut});
+  });
+  it("says every failure in a sentence, keeping the server's own",async()=>{
+    vi.stubGlobal("fetch",vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    await expect(requestJson("/test")).rejects.toMatchObject({status:0,message:PLAIN.offline});
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({ok:false,error:"bridge unreachable"},{status:502})));
+    await expect(requestJson("/test")).rejects.toThrow(PLAIN.down);
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValue(Response.json({ok:false,error:"That routine no longer exists."},{status:400})));
+    await expect(requestJson("/test")).rejects.toThrow("That routine no longer exists.");
+    expect(plainFailure(418)).toBe("That didn't work (error 418). Try again.");
+    expect(friendlyError(new TypeError("Failed to fetch"),"x")).toBe(PLAIN.offline);
+    expect(friendlyError("weird","Couldn't save.")).toBe("Couldn't save.");
+    expect(friendlyError(new Error("Traceback (most recent call last)"),"Couldn't save.")).toBe("Couldn't save.");
   });
 });

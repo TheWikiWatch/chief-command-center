@@ -180,7 +180,7 @@ export const ops = {
     const data = await requestJson<{ ok?: boolean; kickoff?: string; launch_id?: string; error?: string }>(`${PREFIX}/launch`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     }, 17_000);
-    if (data.ok === false) throw new Error(data.error || "Could not prepare task");
+    if (data.ok === false) throw new Error(data.error || "Couldn't prepare the task. Try again.");
     return data;
   },
 };

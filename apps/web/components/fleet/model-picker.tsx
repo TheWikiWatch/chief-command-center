@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { CheckIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, SearchIcon, StarIcon, ZapIcon } from "@/components/icons";
@@ -34,7 +35,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
         setOptions(r);
         setFavorites(r.favorites || []);
       })
-      .catch((e: unknown) => setLoadError(e instanceof Error ? e.message : "Couldn't list models."));
+      .catch((e: unknown) => setLoadError(friendlyError(e, "Couldn't list models.")));
   }, []);
 
   async function choose(next: { provider: string; model: string }, confirm = false) {
@@ -55,7 +56,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
       setNote({ tone: "ok", text: "Saved. It answers with this model from the next message." });
       onChanged?.();
     } catch (e) {
-      setNote({ tone: "error", text: e instanceof Error ? e.message : "That model couldn't be set." });
+      setNote({ tone: "error", text: friendlyError(e, "That model couldn't be set.") });
     } finally {
       setSaving(false);
     }
@@ -70,7 +71,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
       if (res.favorites) setFavorites(res.favorites);
     } catch (e) {
       setFavorites(before);
-      setNote({ tone: "error", text: e instanceof Error ? e.message : "Couldn't save that favourite." });
+      setNote({ tone: "error", text: friendlyError(e, "Couldn't save that favourite.") });
     }
   }
 
@@ -294,7 +295,7 @@ function ThinkingLevel({ profile, model, canDisable }: { profile: string; model:
       if (!res.ok) throw new Error(res.error || "That didn't save.");
       setState(res);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't save.");
+      setError(friendlyError(e, "That didn't save."));
     } finally {
       setSaving(false);
     }

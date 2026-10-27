@@ -9,6 +9,7 @@
  *   70     a sheet opened from one of those (update history)
  *   75     voice mode; 80 the image viewer and hover cards; 85 the engine banner (Chief restarting or stopped)
  *   90     the look drawer, which opens from anywhere, sheets included
+ *   95     toasts: a result ("Saved", "Couldn't save") shows over whatever started it
  */
 export const LAYER = {
   paneSheet: 40,
@@ -17,4 +18,5 @@ export const LAYER = {
   hoverCard: 80,
   notice: 85,
   drawer: 90,
+  toast: 95,
 } as const;

@@ -1,5 +1,5 @@
 import type { ApprovalChoice, ChatAttachment, ExecApproval, Person, Snapshot, Transcript, Peek } from "@/lib/types";
-import { requestJson, RequestError } from "@/lib/request";
+import { requestJson, RequestError, friendlyError } from "@/lib/request";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { currentChatThread } from "@/lib/chat-thread";
 export { poll as subscribeBridge } from "@/lib/poll";
@@ -78,7 +78,7 @@ export async function fetchHealth(signal?: AbortSignal): Promise<HealthResult> {
       error: data.profile !== "chief" ? "Bridge is not the chief's gateway" : undefined,
     } as HealthResult;
   } catch (error) {
-    return { ok: false, status: error instanceof RequestError ? error.status : 0, error: error instanceof Error ? error.message : "Health failed" };
+    return { ok: false, status: error instanceof RequestError ? error.status : 0, error: friendlyError(error, "Health failed") };
   }
 }
 
@@ -168,7 +168,7 @@ export async function patchSettings(body: {
   streaming?: boolean;
 }): Promise<HermesSettings> {
   const data = await write<HermesSettings>("settings", body, 17_000, "PATCH");
-  if (!data.ok) throw new Error(data.error || "Could not save settings");
+  if (!data.ok) throw new Error(data.error || "The settings weren't saved. Try again.");
   return data;
 }
 /* Settings → Tools: the services the chief uses to make images and search the web (bridge tools_settings.py). */
@@ -203,7 +203,7 @@ export async function fetchTools(): Promise<ToolsState> {
 }
 export async function patchTools(body: { tool: ToolName; provider?: string; model?: string; keys?: Record<string, string> }): Promise<ToolsState> {
   const data = await write<ToolsState>("tools", body, 30_000, "PATCH");
-  if (!data.ok) throw new Error(data.error || "Could not save");
+  if (!data.ok) throw new Error(data.error || "That wasn't saved. Try again.");
   return data;
 }
 /** Runs the real tool once (one image can take a minute or two on the slower models). */
@@ -215,7 +215,6 @@ export const draftReport = (body: { message: string; previous?: string; note?: s
 
 /** Stop what the chief is doing now (Hermes's own /stop for this chat). */
 export const stopTurn = () => write<{ ok: boolean; error?: string; generating?: boolean }>("stop", withThread({}), 15_000);
-/** Queue a message for after the current turn (Hermes's /queue). */
 export type HelperTail = { ok: boolean; error?: string; id?: string; text?: string; truncated?: boolean; toolCount?: number };
 /** One helper's live log (Hermes redacts it), a note to it, or stopping it: only helpers of the current thread. */
 export const helperTail = (task: string, signal?: AbortSignal) => get<HelperTail>(`background/tail?task=${encodeURIComponent(task)}${threadQuery()}`, signal);
@@ -223,7 +222,6 @@ export const steerHelper = (task: string, text: string) => write<{ ok: boolean; 
 export const stopHelper = (task: string) => write<{ ok: boolean; error?: string }>("background/stop", withThread({ task }), 15_000);
 /** Hermes's /retry: it resends the conversation's last message itself (after a failed turn). */
 export const retryTurn = () => write<{ ok: boolean; error?: string }>("retry", withThread({}), 15_000);
-export const queueTurn = (text: string) => write<{ ok: boolean; error?: string }>("queue", withThread({ text }), 15_000);
 export const transcribeAudio = (dataUrl: string, mimeType: string) =>
   write<{ ok: boolean; transcript?: string; error?: string; code?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);
 export async function speakText(text: string, timeoutMs = 185_000) {

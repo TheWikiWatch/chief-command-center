@@ -1,6 +1,7 @@
 import { meterElement } from "@/lib/audio-level";
 import { logSpeech } from "@/lib/speech-log";
 import { assistantName } from "@/lib/identity";
+import { friendlyError } from "@/lib/request";
 
 const SPEAK_KEY = "chief-speak-replies";
 const FLOOR_KEY = "chief-speak-highwater";
@@ -29,7 +30,7 @@ export function pickRecorderMime(): string {
 export function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onerror = () => reject(new Error("Could not read recording"));
+    reader.onerror = () => reject(new Error("Couldn't read the recording. Try again."));
     reader.onload = () => resolve(String(reader.result || ""));
     reader.readAsDataURL(blob);
   });
@@ -447,7 +448,7 @@ function playClip(source: string, started: number, onSound: () => void): Promise
       resolve(outcome);
     };
     const startTimer = setTimeout(() => {
-      if (!heard && started === epoch && !paused) done({ status: "failed", reason: hiddenNow() ? "App was in the background" : "Playback never started" });
+      if (!heard && started === epoch && !paused) done({ status: "failed", reason: hiddenNow() ? "The app was in the background" : "Playback never started" });
     }, START_TIMEOUT_MS);
     // Stall watchdog: a playing clip whose position stops moving never fires "ended".
     const stallTimer = setInterval(() => {
@@ -490,7 +491,7 @@ function playClip(source: string, started: number, onSound: () => void): Promise
       if (heard || started !== epoch || !clip.paused) return;
       const name = err && typeof err === "object" && "name" in err ? String((err as { name?: string }).name) : "";
       if (name === "AbortError" && !clip.paused) return;
-      done({ status: "failed", reason: hiddenNow() ? "App was in the background" : "Playback never started" });
+      done({ status: "failed", reason: hiddenNow() ? "The app was in the background" : "Playback never started" });
     });
   });
 }
@@ -578,7 +579,7 @@ async function pumpSpeech() {
       if (stop) break;
     }
   } catch (error) {
-    result = { status: "failed", reason: error instanceof Error ? error.message : "Speech unavailable" };
+    result = { status: "failed", reason: friendlyError(error, "Couldn't reach the voice service") };
   }
   finally {
     releaseClip();

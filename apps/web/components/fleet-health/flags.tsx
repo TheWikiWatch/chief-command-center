@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { CheckIcon, ChevronRightIcon, CircleCheckIcon } from "@/components/icons";
@@ -41,7 +42,7 @@ export function FlagRow({
       onMoved?.(f, "hide");
       showToast({ title: "Marked fine", body: `${holds(f)}.`, tone: "ok", icon: "check" });
     } catch (e) {
-      showToast({ title: "Couldn't save that", body: e instanceof Error ? e.message : "Try again", tone: "warn", icon: "alert" });
+      showToast({ title: "Couldn't save that", body: friendlyError(e, "Try again."), tone: "warn", icon: "alert" });
     } finally {
       setBusy("");
     }
@@ -54,7 +55,7 @@ export function FlagRow({
       await onSendToChief(message);
     } catch (e) {
       setBusy("");
-      showToast({ title: `Couldn't send to ${assistant}`, body: e instanceof Error ? e.message : "Try again", tone: "warn", icon: "alert" });
+      showToast({ title: `Couldn't send to ${assistant}`, body: friendlyError(e, "Try again."), tone: "warn", icon: "alert" });
       return;
     }
     // Sent: record it, so the chief's tidy-up isn't counted against the skill and the flag steps aside.
@@ -119,7 +120,7 @@ export function LookedAt({ flags, onMoved }: { flags: Flag[]; onMoved?: (flag: F
       if (!res.ok) throw new Error(res.error || "Try again");
       onMoved?.(f, "show");
     } catch (e) {
-      showToast({ title: "Couldn't bring it back", body: e instanceof Error ? e.message : "Try again", tone: "warn", icon: "alert" });
+      showToast({ title: "Couldn't bring it back", body: friendlyError(e, "Try again."), tone: "warn", icon: "alert" });
     } finally {
       setBusy("");
     }

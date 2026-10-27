@@ -1,5 +1,6 @@
 "use client";
 
+import { friendlyError } from "@/lib/request";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { BotFace, bubbleParts, faceProps, usableLook, type FaceMood } from "@/components/bot-face";
@@ -10,7 +11,7 @@ import { Segmented } from "@/components/ui/controls";
 import { field } from "@/components/ui/field";
 import { BOT_PALETTE, botIdentity } from "@/lib/bot-identity";
 import { BUBBLE_BODIES, BUBBLE_EYES } from "@/lib/bubble";
-import { glowColor } from "@/lib/color";
+import { glowColor, currentCanvas, LIGHT_CANVAS } from "@/lib/color";
 import { hexColor } from "@/lib/face-snapshot";
 import { BLOB_KINDS } from "@/lib/faces";
 import { LookConflict, looks, MAX_PHOTO_BYTES, type LookState, type PetChoice } from "@/lib/look-client";
@@ -77,7 +78,7 @@ export function AppearanceEditor({ person, onDone }: { person: Person; onDone: (
       setDraft(startingLook(person, s.look));
       setLoadError("");
     } catch (e) {
-      setLoadError(e instanceof Error ? e.message : "Couldn't read this bot's look.");
+      setLoadError(friendlyError(e, "Couldn't read this bot's look."));
     }
   };
   useEffect(() => {
@@ -116,7 +117,7 @@ export function AppearanceEditor({ person, onDone }: { person: Person; onDone: (
       if (e instanceof LookConflict) {
         setNote("This look was changed somewhere else in the meantime (maybe by the chief). Showing the latest; make your change again.");
         await load();
-      } else setNote(e instanceof Error ? e.message : "Couldn't save the look.");
+      } else setNote(friendlyError(e, "Couldn't save the look."));
     } finally {
       setSaving(false);
     }
@@ -236,7 +237,7 @@ export function AppearanceEditor({ person, onDone }: { person: Person; onDone: (
             </label>
           </div>
           {draft.color && lifted !== draft.color.toLowerCase() ? (
-            <p className="mt-1.5 text-caption text-fg-3">That colour is too dark to see on the dark background, so it&apos;s shown a little lighter.</p>
+            <p className="mt-1.5 text-caption text-fg-3">That colour would be hard to see here, so it&apos;s shown a little {currentCanvas() === LIGHT_CANVAS ? "darker" : "lighter"}.</p>
           ) : null}
         </Section>
       ) : (
@@ -278,7 +279,7 @@ function PhotoSection({ profile, state, onChanged }: { profile: string; state: L
     try {
       onChanged(await fn());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "That didn't work.");
+      setError(friendlyError(e, "That didn't work."));
     } finally {
       setBusy("");
     }
@@ -349,7 +350,7 @@ function PetSection({ profile, state, onChanged }: { profile: string; state: Loo
         setCatalog(r.pets);
         if (r.error) setError(r.error);
       })
-      .catch((e: unknown) => live && setError(e instanceof Error ? e.message : "The pet gallery isn't reachable."));
+      .catch((e: unknown) => live && setError(friendlyError(e, "The pet gallery isn't reachable.")));
     return () => {
       live = false;
     };
@@ -360,7 +361,7 @@ function PetSection({ profile, state, onChanged }: { profile: string; state: Loo
     try {
       onChanged(await looks.setPet(profile, slug));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn't change the companion.");
+      setError(friendlyError(e, "Couldn't change the companion."));
     } finally {
       setBusy("");
     }
