@@ -33,6 +33,8 @@ export type HelperJob = {
   appPid: number;
   window: { x: number; y: number; width: number; height: number } | null;
   accent: string;
+  /** The app's look as the window shows it: the update window opens in the same light or dark. */
+  theme: "dark" | "light";
   facePng: string | null;
   assistantName: string;
   logFile: string;

@@ -120,7 +120,9 @@ describe("Supervisor", () => {
     const launch = harness({ failLaunch: true });
     await launch.sup.start();
     expect(launch.sup.state).toBe("backoff");
-    expect(launch.sup.detail).toBe("no launcher");
+    // A plain sentence for the screen; what went wrong goes to the log.
+    expect(launch.sup.detail).toBe("It couldn't start.");
+    expect(launch.events).toContainEqual({ type: "crashed", reason: "no launcher" });
     const ready = harness({ failReady: true });
     await ready.sup.start();
     expect(ready.sup.state).toBe("backoff");
@@ -291,6 +293,59 @@ describe("Notifier", () => {
     expect(bridge.calls[3]).toContain("after=7");
   });
 
+  it("an empty conversation waits for its first message (no request loop) and announces it", async () => {
+    const bridge = fakeBridge([{ messages: [], approval: null }, { messages: [{ id: 1, role: "assistant", content: "Hello, I'm Chief." }], approval: null }]);
+    const shown: [string, string][] = [];
+    const n = new Notifier({ port: () => 7790, token: "t", assistant: () => "Ada", shouldNotify: () => true, notify: (a, b) => shown.push([a, b]), fetchImpl: bridge.fetchImpl });
+    await n.step();
+    expect(bridge.calls[0]).toMatch(/after=0$/);
+    await n.step();
+    // Before: `after` stayed 0, so every round counted as the first one and returned at once, without a wait.
+    expect(bridge.calls[1]).toContain("after=0&wait=25");
+    expect(shown).toEqual([["Ada", "Hello, I'm Chief."]]);
+  });
+
+  it("stop ends the open long-poll, so a stop and a start never leave two loops (or two notifications)", async () => {
+    type Open = { url: string; resolve: (r: Response) => void; aborted: boolean; done: boolean };
+    const requests: Open[] = [];
+    const fetchImpl = ((url: string, init?: RequestInit) =>
+      new Promise<Response>((resolve, reject) => {
+        const entry: Open = { url: String(url), resolve: (r) => ((entry.done = true), resolve(r)), aborted: false, done: false };
+        requests.push(entry);
+        init?.signal?.addEventListener("abort", () => {
+          entry.aborted = true;
+          reject(new Error("aborted"));
+        });
+      })) as unknown as typeof fetch;
+    const answer = (i: number, ids: number[]) => requests[i].resolve(new Response(JSON.stringify({ messages: ids.map((id) => ({ id, role: "assistant", content: `reply ${id}` })) })));
+    const open = () => requests.filter((r) => !r.aborted && !r.done);
+    const settle = async () => {
+      for (let i = 0; i < 5; i++) await new Promise((r) => setTimeout(r, 0));
+    };
+    const shown: string[] = [];
+    const n = new Notifier({ port: () => 7790, token: "t", assistant: () => "Chief", shouldNotify: () => true, notify: (_a, b) => shown.push(b), fetchImpl });
+    n.start();
+    await settle();
+    answer(0, [3]);
+    await settle();
+    expect(requests[1].url).toContain("after=3&wait=25"); // the long-poll is open
+    n.stop();
+    n.start();
+    n.start(); // a second start while running changes nothing
+    await settle();
+    expect(requests[1].aborted).toBe(true);
+    expect(open()).toHaveLength(1); // the new loop's first round
+    answer(2, [3]);
+    await settle();
+    expect(open()).toHaveLength(1);
+    answer(3, [3, 4]);
+    await settle();
+    expect(shown).toEqual(["reply 4"]);
+    n.stop();
+    await settle();
+    expect(open()).toHaveLength(0);
+  });
+
   it("keeps notifications short", () => {
     expect(snippet("x".repeat(300)).length).toBe(140);
     expect(snippet("  a \n b ")).toBe("a b");
@@ -338,6 +393,24 @@ describe("applyRestore", () => {
     const res = await applyRestore(d);
     expect(log).toEqual(["stop", "engine apply", "start"]);
     expect(res).toEqual({ ok: false, error: "Chief is still running. Stop it before restoring." });
+  });
+
+  it("says where it is, with the engine's own progress while it restores", async () => {
+    const seen: [string, number | undefined][] = [];
+    const { deps: d } = deps({
+      engine: async (args, onProgress) => {
+        onProgress?.(0.5);
+        return args[0] === "apply" ? { ok: true, remapped: [], review: [], missing_secrets: [] } : { ok: true };
+      },
+      progress: (step, fraction) => seen.push([step, fraction]),
+    });
+    await applyRestore(d);
+    expect(seen).toEqual([
+      ["Stopping Chief…", undefined],
+      ["Restoring…", undefined],
+      ["Restoring…", 0.5],
+      ["Starting Chief…", undefined],
+    ]);
   });
 });
 

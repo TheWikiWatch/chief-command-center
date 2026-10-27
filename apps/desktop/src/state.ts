@@ -64,14 +64,28 @@ export function hiddenLaunch() {
   return process.argv.includes("--hidden");
 }
 
-export const STEPS: Step[] = [
-  { id: "runtime", label: "Runtime", state: "waiting" },
-  { id: "prepare", label: "Preparing Chief", state: "waiting" },
-  { id: "gateway", label: "Chief", state: "waiting" },
-  { id: "web", label: "Dashboard", state: "waiting" },
-];
+/** The assistant's name the dashboard last told the shell (desktop:setAssistantName); "Chief" until it has. */
+export function assistantName(): string {
+  return ctx.store?.value.assistantName || "Chief";
+}
+
+/** The start screen's steps, every one waiting. */
+export function bootSteps(): Step[] {
+  const name = assistantName();
+  return [
+    { id: "runtime", label: "App files", state: "waiting" },
+    { id: "prepare", label: `Preparing ${name}`, state: "waiting" },
+    { id: "gateway", label: name, state: "waiting" },
+    { id: "web", label: "Dashboard", state: "waiting" },
+  ];
+}
+
+/** What the boot page shows besides its steps: the name in its heading. */
+export function bootMeta() {
+  return { name: assistantName() };
+}
 
 export function setStep(id: string, state: Step["state"], detail = "") {
   ctx.steps = ctx.steps.map((s) => (s.id === id ? { ...s, state, detail } : s));
-  ctx.window?.webContents.send("boot:status", ctx.steps);
+  ctx.window?.webContents.send("boot:status", ctx.steps, bootMeta());
 }

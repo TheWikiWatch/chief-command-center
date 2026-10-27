@@ -8,10 +8,18 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
   pickFolder: (options?: { title?: string; defaultPath?: string }) => ipcRenderer.invoke("desktop:pickFolder", options),
   pickFile: (options?: { title?: string; filters?: { name: string; extensions: string[] }[] }) => ipcRenderer.invoke("desktop:pickFile", options),
   applyRestore: () => ipcRenderer.invoke("desktop:applyRestore"),
+  /** Where applyRestore is ({ step, fraction }, fraction 0 to 1 or null); returns an unsubscribe. */
+  onRestoreProgress: (fn: (progress: unknown) => void) => {
+    const listener = (_e: unknown, progress: unknown) => fn(progress);
+    ipcRenderer.on("desktop:restoreProgress", listener);
+    return () => void ipcRenderer.removeListener("desktop:restoreProgress", listener);
+  },
   openLogs: () => ipcRenderer.invoke("desktop:openLogs"),
   openNotices: () => ipcRenderer.invoke("desktop:openNotices"),
   /** The app's look's mode (dark, light, system): the window's colours and Electron's own theme follow it. */
   setThemeMode: (mode: string) => ipcRenderer.invoke("desktop:setThemeMode", mode),
+  /** The assistant's name, for notifications, the tray and the shell's dialogs (1 to 40 characters; false when refused). */
+  setAssistantName: (name: string) => ipcRenderer.invoke("desktop:setAssistantName", name),
   /** Settings → About: logs, crash dumps and versions in a zip the owner saves and sends themselves. */
   diagnostics: () => ipcRenderer.invoke("desktop:diagnostics"),
   /** Report a problem: the same zip, saved straight to Downloads with Explorer opened on it. */
@@ -66,10 +74,18 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
 
 // The boot screen (static/boot.html) only.
 contextBridge.exposeInMainWorld("chiefBoot", {
-  onStatus: (fn: (steps: unknown) => void) => ipcRenderer.on("boot:status", (_e, steps) => fn(steps)),
+  /** The steps, and what the heading needs ({ name }). */
+  onStatus: (fn: (steps: unknown, meta: unknown) => void) => ipcRenderer.on("boot:status", (_e, steps, meta) => fn(steps, meta)),
   retry: () => ipcRenderer.invoke("boot:retry"),
   openLogs: () => ipcRenderer.invoke("boot:logs"),
+  /** The diagnostics zip, saved to Downloads with Explorer opened on it ({ ok, name } or { ok: false, error }). */
+  saveDiagnostics: () => ipcRenderer.invoke("boot:diagnostics"),
   /** After two failed starts of a new version: "Go back to X.Y.Z" when its package is still on this PC. */
   onOffer: (fn: (offer: unknown) => void) => ipcRenderer.on("boot:offer", (_e, offer) => fn(offer)),
   rollback: () => ipcRenderer.invoke("boot:rollback"),
+  /** How going back is getting on (the updater's states: backing up, unpacking, restarting, an error). */
+  onUpdate: (fn: (state: unknown) => void) => ipcRenderer.on("updates:state", (_e, state) => fn(state)),
+  /** The waiting screen while quitting. */
+  quitNow: () => ipcRenderer.invoke("boot:quitWait", "quit"),
+  keepRunning: () => ipcRenderer.invoke("boot:quitWait", "stay"),
 });

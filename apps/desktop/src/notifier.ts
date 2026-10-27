@@ -21,26 +21,33 @@ export function snippet(value: unknown, max = 140): string {
 }
 
 export class Notifier {
-  private running = false;
+  /** The running loop's own abort: stop() ends that loop (and its open long-poll), so a start() after it never runs two. */
+  private loop: AbortController | null = null;
+  /** The first round reads where the conversation is without announcing it. A flag, not `after === 0`: an empty
+   * conversation stays at 0, and every round would be a "first" one that returns at once. */
+  private primed = false;
   private after = 0;
   private approval = "";
 
   constructor(private readonly deps: NotifierDeps) {}
 
-  private async get(query: string, timeoutMs: number): Promise<Transcript> {
+  private async get(query: string, timeoutMs: number, signal?: AbortSignal): Promise<Transcript> {
     const f = this.deps.fetchImpl ?? fetch;
+    const timeout = AbortSignal.timeout(timeoutMs);
     const res = await f(`http://127.0.0.1:${this.deps.port()}/transcript?${query}`, {
       headers: { Authorization: `Bearer ${this.deps.token}` },
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: signal ? AbortSignal.any([timeout, signal]) : timeout,
     });
     if (!res.ok) throw new Error(`bridge ${res.status}`);
     return (await res.json()) as Transcript;
   }
 
   /** One round: returns after new rows, an approval change, or the long-poll timeout. */
-  async step(wait = 25): Promise<void> {
-    const first = this.after === 0;
-    const data = await this.get(first ? "after=0" : `after=${this.after}&wait=${wait}&approval=${encodeURIComponent(this.approval)}`, (wait + 10) * 1000);
+  async step(wait = 25, signal?: AbortSignal): Promise<void> {
+    const first = !this.primed;
+    const data = await this.get(first ? "after=0" : `after=${this.after}&wait=${wait}&approval=${encodeURIComponent(this.approval)}`, (wait + 10) * 1000, signal);
+    // Stopped while the answer was on its way: the next loop reads it again.
+    if (signal?.aborted) return;
     const messages = data.messages || [];
     const newest = messages.reduce((n, m) => Math.max(n, Number(m.id || 0)), this.after);
     const approval = data.approval?.requestId || "";
@@ -52,25 +59,30 @@ export class Notifier {
         this.deps.notify(`${this.deps.assistant()} needs your approval`, snippet(data.approval?.description || data.approval?.command) || "Open to review.");
       }
     }
-    this.after = Math.max(newest, first ? newest : this.after);
+    this.after = newest;
     this.approval = approval;
+    this.primed = true;
   }
 
+  /** Starts the loop; it reads the conversation's place again first (a restore or an update can change it). */
   start() {
-    if (this.running) return;
-    this.running = true;
+    if (this.loop) return;
+    const loop = new AbortController();
+    this.loop = loop;
+    this.primed = false;
     void (async () => {
-      while (this.running) {
+      while (!loop.signal.aborted) {
         try {
-          await this.step();
+          await this.step(25, loop.signal);
         } catch {
-          await new Promise((r) => setTimeout(r, 5000));
+          if (!loop.signal.aborted) await new Promise((r) => setTimeout(r, 5000));
         }
       }
     })();
   }
 
   stop() {
-    this.running = false;
+    this.loop?.abort();
+    this.loop = null;
   }
 }

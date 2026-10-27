@@ -27,6 +27,8 @@ sealed class Job
     public int AppPid;
     public PixelRect? Window;
     public string Accent = "#E5484D";
+    /// <summary>The app's look is light ("theme": "light"): the popup uses the dashboard's light colours.</summary>
+    public bool Light;
     public string? FacePng;
     public string AssistantName = "Chief";
     public string LogFile = "";
@@ -66,6 +68,7 @@ sealed class Job
             AppId = Str(root, "appId") ?? "ChiefCommandCenter",
             AppPid = (int)(Num(root, "appPid") ?? 0),
             Accent = Str(root, "accent") ?? "#E5484D",
+            Light = Str(root, "theme") == "light",
             FacePng = Str(root, "facePng"),
             AssistantName = Str(root, "assistantName") ?? "Chief",
             LogFile = Str(root, "logFile") ?? "",

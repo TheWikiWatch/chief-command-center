@@ -2,10 +2,15 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<!-- Its Content-Security-Policy comes with the page, from boot-protocol.ts: one policy, in one place. -->
 <title>Chief Command Center</title>
 <style>
-  :root { color-scheme: dark; --bg: #09090b; --card: #151518; --line: rgba(255,255,255,.08); --fg: #ededef; --fg3: #909099; --ok: #3dd68c; --err: #ff6369; --accent: #e5484d; }
+  /* The dashboard's tokens (apps/web/app/globals.css), dark and light. Electron's theme follows the app's look
+     (window.ts applyThemeMode), and prefers-color-scheme with it, so this page opens in the window's own mode. */
+  :root { color-scheme: light dark; --bg: #09090b; --card: #151518; --line: rgba(255,255,255,.08); --idle: rgba(255,255,255,.18); --fg: #ededef; --fg3: #909099; --ok: #3dd68c; --err: #ff6369; --accent: #e5484d; }
+  @media (prefers-color-scheme: light) {
+    :root { --bg: rgb(246 246 248); --card: rgb(255 255 255); --line: rgb(0 0 0 / .12); --idle: rgb(0 0 0 / .2); --fg: rgb(24 24 27); --fg3: rgb(102 102 112); --ok: rgb(21 128 61); --err: rgb(200 30 38); --accent: rgb(214 54 60); }
+  }
   /* Where the Windows title bar was: drag the window from here (the native buttons sit at its right). */
   .titlebar { position: fixed; inset: 0 0 auto 0; height: 60px; -webkit-app-region: drag; app-region: drag; display: flex; align-items: center; padding: 0 16px; color: var(--fg3); font-size: 13px; }
   * { box-sizing: border-box; }
@@ -16,16 +21,21 @@
   ol { list-style: none; margin: 0; padding: 0; border: 1px solid var(--line); border-radius: 14px; background: var(--card); }
   li { display: grid; grid-template-columns: 22px 1fr; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
   li:last-child { border-bottom: 0; }
-  .dot { width: 10px; height: 10px; margin: 6px; border-radius: 50%; background: rgba(255,255,255,.18); }
+  .dot { width: 10px; height: 10px; margin: 6px; border-radius: 50%; background: var(--idle); }
   .working .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
   .done .dot { background: var(--ok); }
   .error .dot { background: var(--err); }
   .detail { color: var(--fg3); font-size: 13px; }
   .error .detail { color: var(--err); }
-  .actions { display: none; gap: 8px; margin-top: 16px; }
+  .actions { display: none; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
   .actions.show { display: flex; }
   button { min-height: 40px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--fg); font: inherit; cursor: pointer; }
   button.primary { background: var(--fg); color: var(--bg); border-color: transparent; font-weight: 600; }
+  button:disabled { opacity: .6; cursor: default; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .note { margin: 12px 0 0; color: var(--fg3); font-size: 13px; }
+  .note.bad { color: var(--err); }
+  .note:empty { display: none; }
   @keyframes pulse { 50% { opacity: .35; } }
   @media (prefers-reduced-motion: reduce) { .working .dot { animation: none; } }
 </style>
@@ -33,28 +43,48 @@
 <body>
 <div class="titlebar">Chief Command Center</div>
 <main>
-  <h1>Starting Chief</h1>
+  <h1 id="title">Starting Chief</h1>
   <p class="sub" id="sub">This takes a few seconds.</p>
   <ol id="steps" aria-live="polite"></ol>
   <div class="actions" id="actions">
     <button class="primary" id="retry">Try again</button>
     <button id="logs">Open logs</button>
+    <button id="diagnostics">Save diagnostics</button>
     <button id="rollback" hidden></button>
   </div>
+  <div class="actions" id="quit-actions">
+    <button class="primary" id="quit-now">Quit now</button>
+    <button id="keep-running">Keep running</button>
+  </div>
+  <p class="note" id="note" role="status"></p>
 </main>
 <script>
   const list = document.getElementById("steps");
   const actions = document.getElementById("actions");
+  const quitActions = document.getElementById("quit-actions");
+  const title = document.getElementById("title");
   const sub = document.getElementById("sub");
+  const note = document.getElementById("note");
+  let name = "Chief";
+  const say = (text, bad) => {
+    note.textContent = text || "";
+    note.classList.toggle("bad", !!bad);
+  };
+  // The same page starts the app and closes it (window.ts): the heading says which.
+  const closing = (steps) => steps.some((s) => s.id === "wait" || s.id === "quit");
   // The line under the title follows what is happening: a backup before a new version's first start takes
   // minutes on a large setup, and a failure says so instead of promising "a few seconds".
   function subtitle(steps) {
+    if (steps.some((s) => s.id === "wait")) return name + " is finishing something first. Quitting now stops it.";
+    if (steps.some((s) => s.id === "quit")) return "This can take up to half a minute.";
     if (steps.some((s) => s.state === "error")) return "Something needs attention below.";
     const working = steps.find((s) => s.state === "working");
     if (working && /Backing up/.test(working.detail || "")) return "Backing up first. This can take a few minutes on a large setup.";
     return "This takes a few seconds.";
   }
-  function render(steps) {
+  function render(steps, meta) {
+    if (meta && typeof meta.name === "string" && meta.name) name = meta.name;
+    title.textContent = (closing(steps) ? "Closing " : "Starting ") + name;
     sub.textContent = subtitle(steps);
     list.textContent = "";
     for (const step of steps) {
@@ -77,21 +107,76 @@
       list.appendChild(li);
     }
     actions.classList.toggle("show", steps.some((s) => s.state === "error"));
+    quitActions.classList.toggle("show", steps.some((s) => s.id === "wait"));
   }
   window.chiefBoot.onStatus(render);
-  document.getElementById("retry").onclick = () => window.chiefBoot.retry();
+  const retry = document.getElementById("retry");
+  retry.onclick = () => {
+    say("");
+    window.chiefBoot.retry();
+  };
   document.getElementById("logs").onclick = () => window.chiefBoot.openLogs();
+  // The dashboard can't open here, so neither can its Settings: the zip goes straight to Downloads.
+  const diagnostics = document.getElementById("diagnostics");
+  diagnostics.onclick = async () => {
+    diagnostics.disabled = true;
+    diagnostics.textContent = "Saving…";
+    say("");
+    let r = null;
+    try {
+      r = await window.chiefBoot.saveDiagnostics();
+    } catch {
+      r = null;
+    }
+    diagnostics.disabled = false;
+    diagnostics.textContent = "Save diagnostics";
+    if (r && r.ok) say("Saved in your Downloads folder as " + r.name + ". Send that file to whoever helps you with the app.");
+    else say((r && r.error) || "The diagnostics couldn't be saved. Try again.", true);
+  };
   // After two failed starts of a new version, when the previous version's package is still on this PC.
   const back = document.getElementById("rollback");
+  let offered = "";
+  let goingBack = false;
   window.chiefBoot.onOffer?.((offer) => {
-    back.hidden = !(offer && offer.rollback);
-    if (offer && offer.rollback) back.textContent = "Go back to " + offer.rollback;
+    offered = offer && offer.rollback ? String(offer.rollback) : "";
+    back.hidden = !offered;
+    if (offered && !goingBack) back.textContent = "Go back to " + offered;
   });
-  back.onclick = () => {
+  const percent = (pct) => (typeof pct === "number" ? " " + pct + "%" : "…");
+  function backFailed(error) {
+    goingBack = false;
+    back.disabled = false;
+    retry.disabled = false;
+    back.textContent = "Go back to " + offered;
+    say(error || "Going back didn't work. Try again.", true);
+  }
+  // Going back backs the setup up first (minutes on a large one), then hands over to Windows: say how far it is.
+  window.chiefBoot.onUpdate?.((state) => {
+    if (!goingBack || !state) return;
+    if (state.status === "preparing") say(state.step === "backup" ? "Backing up your setup first" + percent(state.pct) : "Getting " + offered + " ready" + percent(state.pct));
+    else if (state.status === "restarting") say(state.step || "Restarting…");
+    else if (state.status === "error") backFailed(state.error);
+  });
+  back.onclick = async () => {
+    goingBack = true;
     back.disabled = true;
+    retry.disabled = true;
     back.textContent = "Going back…";
-    window.chiefBoot.rollback();
+    say("Going back to " + offered + ". Your setup is backed up first, then the app restarts.");
+    let result = null;
+    try {
+      result = await window.chiefBoot.rollback();
+    } catch {
+      result = { status: "error", error: "" };
+    }
+    if (goingBack && result && result.status === "error") backFailed(result.error);
   };
+  const quitNow = document.getElementById("quit-now");
+  quitNow.onclick = () => {
+    quitNow.disabled = true;
+    window.chiefBoot.quitNow();
+  };
+  document.getElementById("keep-running").onclick = () => window.chiefBoot.keepRunning();
 </script>
 </body>
 </html>

@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
+import { folderSource } from "../src/release-source";
 import { compareVersions, Updater, type UpdateState, type UpdaterDeps } from "../src/updater";
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -43,7 +44,7 @@ function make(over: Partial<UpdaterDeps> = {}) {
   const log: string[] = [];
   const states: UpdateState[] = [];
   const updater = new Updater({
-    feed: () => feed,
+    source: () => folderSource(feed),
     currentVersion: "1.0.0",
     publicKey: PUB,
     updatesDir: updates,

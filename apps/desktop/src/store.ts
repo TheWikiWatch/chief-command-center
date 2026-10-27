@@ -28,7 +28,8 @@ export type DesktopSettings = {
   webEnv: Record<string, string>;
   closeNoticeShown: boolean;
   startAtLogin: boolean;
-  /** Where updates come from: a release folder while the repo is closed (PLAN §8a). Empty = no checks. */
+  /** Where updates come from, when the owner chose a source (a GitHub releases repository or a folder on this PC).
+   * Empty = the source this build ships with, the public releases repository (release-source.ts effectiveFeed). */
   updateFeed: string;
   skippedVersions: string[];
   /** Download, back up and stage a new release in the background as soon as a check finds it (the restart stays the owner's click). */
@@ -45,12 +46,14 @@ export type DesktopSettings = {
   /** Starts of this version that haven't reached the dashboard yet, and the last version that did (a healthy start). */
   bootAttempts: { version: string; count: number } | null;
   healthyVersion: string;
-  /** Phone access the app turned on: the Tailscale Serve HTTPS port, and the dashboard port it pointed at then. */
   /** Phone access while it's on: Serve's port, the dashboard port it points at, and this PC's Tailscale name (the
    * only Host the dashboard accepts phone requests for). */
   phoneServe: { port: number; uiPort: number; host?: string } | null;
   /** The app's look's mode (the dashboard says it, app_look.py): the window's background and title-bar symbols at the next start. */
   themeMode: "dark" | "light" | "system";
+  /** The assistant's name the dashboard last said (guards.ts validAssistantName), for notifications, the tray and
+   * dialogs at the next start too; empty = "Chief". */
+  assistantName: string;
 };
 
 export const DEFAULTS: DesktopSettings = {
@@ -71,6 +74,7 @@ export const DEFAULTS: DesktopSettings = {
   prepareUpdates: true,
   earlyUpdates: false,
   themeMode: "dark",
+  assistantName: "",
   lastVersion: "",
   dataSchema: 0,
   lastHermes: "",

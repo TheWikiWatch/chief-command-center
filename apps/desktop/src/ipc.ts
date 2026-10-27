@@ -5,7 +5,7 @@ import { app, dialog, ipcMain, safeStorage, shell } from "electron";
 
 import { createDiagnostics } from "./diagnostics";
 import { bridgeHealth, profileHome } from "./gateway";
-import { BOOT_URL, dialogOptions, fileFilters, originOf, senderAllowed, validFeed, validServePort, validThemeMode } from "./guards";
+import { BOOT_URL, dialogOptions, fileFilters, originOf, senderAllowed, validAssistantName, validFeed, validServePort, validThemeMode } from "./guards";
 import { type Confirm, confirmFeed, confirmForcedRestart, confirmInstall, confirmPhoneAccess, confirmPhoneEnable, confirmRestore, confirmRollback, skipAllowed } from "./owner-confirm";
 import { disablePhone, enablePhone, OPENABLE, phoneState, setPhoneAccess } from "./phone";
 import { RELEASE_KEYS } from "./release-key";
@@ -17,7 +17,7 @@ import { readUpdateKey, saveUpdateKey } from "./secrets";
 import { ctx, log, uiOrigin, uiUrl } from "./state";
 import type { Supervisor } from "./supervisor";
 import type { UpdateState } from "./updater";
-import { applyThemeMode, currentWork } from "./window";
+import { answerQuitWait, applyThemeMode, currentWork, refreshTray, setJumpList } from "./window";
 
 /* What the dashboard (and the boot page) may ask of the shell. */
 
@@ -157,7 +157,7 @@ async function buildDiagnostics(out: string): Promise<{ ok: boolean; path?: stri
       createdAt: new Date().toISOString(),
     },
   });
-  log.info("diagnostics.created", { ok: result.ok, files: result.files?.length, error: result.error });
+  log.info("diagnostics.created", { ok: result.ok, files: result.files?.length, error: result.error, detail: result.detail });
   if (result.ok) shell.showItemInFolder(out);
   return result.ok ? { ok: true, path: out } : { ok: false, error: result.error };
 }
@@ -239,6 +239,10 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
   handle("phone:open", (url) => (OPENABLE.test(String(url)) ? shell.openExternal(String(url)).then(() => true) : false));
   handle("boot:retry", () => boot.run(), { boot: true });
   handle("boot:logs", () => shell.openPath(ctx.paths.logs), { boot: true });
+  // Where the dashboard can't open (so neither can Settings → About): the same zip as "Report a problem", in Downloads.
+  handle("boot:diagnostics", () => reportDiagnostics(), { boot: true });
+  // The waiting screen while quitting: "Quit now" or "Keep running".
+  handle("boot:quitWait", (choice) => answerQuitWait(choice === "stay" ? "stay" : "quit"), { boot: true });
   // The boot page's "Go back to X.Y.Z" (offered only after this version failed to start twice): Chief is down anyway.
   handle(
     "boot:rollback",
@@ -255,6 +259,18 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
     if (!validThemeMode(mode)) return false;
     applyThemeMode(mode);
     if (ctx.store.value.themeMode !== mode) ctx.store.save({ themeMode: mode });
+    return true;
+  });
+  // The assistant's name (the page says it once loaded, and when the owner renames it): notifications, the tray, the
+  // jump list and the shell's dialogs use it, at the next start too.
+  handle("desktop:setAssistantName", (name: unknown) => {
+    const valid = validAssistantName(name);
+    if (!valid) return false;
+    if (ctx.store.value.assistantName !== valid) {
+      ctx.store.save({ assistantName: valid });
+      refreshTray();
+      setJumpList();
+    }
     return true;
   });
   // Settings → About: the third-party notices shipped in the package (empty string when this build has none).
@@ -303,6 +319,8 @@ export function registerIpc(boot: { run: () => Promise<unknown> }) {
         const res = await fetch(`${uiUrl()}/api/backup/restore/finish`, { method: "POST", headers: { "Content-Type": "application/json", ...dashboardHeaders() }, body: "{}" });
         return (await res.json()) as { ok: boolean; error?: string };
       },
+      // The page shows where the restore is (preload onRestoreProgress); a large setup takes minutes.
+      progress: (step, fraction) => ctx.window?.webContents.send("desktop:restoreProgress", { step, fraction: fraction ?? null }),
     });
     log.info("restore.done", { ok: result.ok, error: (result as { error?: string }).error });
     ctx.notifier?.start();

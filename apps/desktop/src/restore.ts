@@ -37,7 +37,8 @@ export type RestoreDeps = {
   startGateway: () => Promise<void>;
   gatewayHealthy: () => Promise<boolean>;
   finishInDashboard: () => Promise<{ ok: boolean; error?: string }>;
-  progress?: (step: string) => void;
+  /** What the restore is doing, for the page; `fraction` (0 to 1) while the engine reports how far it is. */
+  progress?: (step: string, fraction?: number) => void;
 };
 
 export type RestoreReport = { remapped: string[]; review: { file: string; line: number; text: string }[]; missing_secrets: string[] };
@@ -46,7 +47,9 @@ export async function applyRestore(deps: RestoreDeps): Promise<{ ok: boolean; er
   deps.progress?.("Stopping Chief…");
   await deps.stopGateway();
   deps.progress?.("Restoring…");
-  const applied = await deps.engine(["apply", "--state-dir", deps.stateDir, "--safety-dir", deps.safetyDir, "--app-version", deps.appVersion]);
+  const applied = await deps.engine(["apply", "--state-dir", deps.stateDir, "--safety-dir", deps.safetyDir, "--app-version", deps.appVersion], (fraction) =>
+    deps.progress?.("Restoring…", fraction),
+  );
   if (!applied.ok) {
     await deps.startGateway().catch(() => undefined);
     return { ok: false, error: applied.error || "The restore couldn't be applied; nothing was changed." };

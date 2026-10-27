@@ -1,6 +1,25 @@
 import { describe, expect, it } from "vitest";
 
-import { actionFromArgv, BOOT_URL, dialogOptions, fileFilters, isBootPage, navigateDecision, permissionAllowed, permissionCheckAllowed, sameOrigin, senderAllowed, validFeed, validServePort, validThemeMode, windowColors, windowOpenDecision } from "../src/guards";
+import {
+  actionFromArgv,
+  BOOT_URL,
+  DESKTOP_ACTIONS,
+  dialogOptions,
+  fileFilters,
+  isBootPage,
+  lookTheme,
+  navigateDecision,
+  permissionAllowed,
+  permissionCheckAllowed,
+  sameOrigin,
+  senderAllowed,
+  validAssistantName,
+  validFeed,
+  validServePort,
+  validThemeMode,
+  windowColors,
+  windowOpenDecision,
+} from "../src/guards";
 
 const ORIGIN = "http://127.0.0.1:3000";
 // User-info look-alike (`origin` + "@" + another host), assembled so the privacy scan doesn't read it as an address.
@@ -145,5 +164,30 @@ describe("the window follows the app's look", () => {
     expect(windowColors("dark", false).background).toBe("#09090b");
     expect(windowColors("system", false)).toEqual(windowColors("light", true));
     expect(windowColors("system", true)).toEqual(windowColors("dark", true));
+  });
+
+  it("the boot page and the update window take the same light or dark as the window", () => {
+    expect(lookTheme("light", true)).toBe("light");
+    expect(lookTheme("dark", false)).toBe("dark");
+    expect(lookTheme("system", false)).toBe("light");
+    expect(lookTheme("system", true)).toBe("dark");
+    // The title-bar symbols are dark on a light window: a dark boot page under them hid them.
+    expect(windowColors("light", false).symbols).toBe("#52525b");
+  });
+});
+
+describe("the assistant's name", () => {
+  it("is trimmed, 1 to 40 characters, and refused with control or direction-changing characters", () => {
+    expect(validAssistantName("  Ada ")).toBe("Ada");
+    expect(validAssistantName("Jeeves the Second")).toBe("Jeeves the Second");
+    expect(validAssistantName("x".repeat(40))).toBe("x".repeat(40));
+    expect(validAssistantName("\u{1F916}".repeat(40))).toBe("\u{1F916}".repeat(40)); // characters, not UTF-16 units
+    for (const bad of ["", "   ", "x".repeat(41), "Ada\nQuit", "Ada\u0007", "Ada\u202Eevil", "Ada\u2066", null, 7, { name: "Ada" }]) {
+      expect(validAssistantName(bad)).toBeNull();
+    }
+  });
+
+  it("names the jump list's shortcuts", () => {
+    expect(DESKTOP_ACTIONS.map((a) => a.description("Ada"))).toEqual(["Start a new thread with Ada", "Talk with Ada", "See what to do first"]);
   });
 });

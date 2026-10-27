@@ -14,7 +14,7 @@ const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)}
 
 function page(code: string, error = "") {
   const body = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Pair this phone · Chief</title><meta name="color-scheme" content="dark">
+<title>Pair this phone · Chief</title><meta name="color-scheme" content="dark light">
 <meta name="referrer" content="same-origin"><!-- the app-wide no-referrer would make this form post Origin: null -->
 <style>
 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#09090b;color:#ededef;font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:20px;box-sizing:border-box}
@@ -24,6 +24,8 @@ label{display:block;font-size:13px;color:#a1a1aa;margin-bottom:6px}
 input{width:100%;box-sizing:border-box;font:600 22px/1 ui-monospace,"Cascadia Mono",monospace;letter-spacing:.18em;text-align:center;padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:#09090b;color:#ededef}
 button{margin-top:14px;width:100%;min-height:46px;border:0;border-radius:999px;background:#ededef;color:#09090b;font:600 15px system-ui,sans-serif}
 .err{color:#ff6369;font-size:14px;margin:12px 0 0}
+@media (prefers-color-scheme:light){body{background:#f6f6f8;color:#18181b}main{background:#fff;border-color:rgba(0,0,0,.12)}p,label{color:#484850}
+input{background:#f6f6f8;color:#18181b;border-color:rgba(0,0,0,.2)}button{background:#18181b;color:#fff}.err{color:#c81e26}}
 </style></head><body><main>
 <h1>Pair this phone</h1>
 <p>On your PC, open Chief, then Settings, Phone, and choose Pair a phone. Enter the code it shows.</p>

@@ -37,10 +37,10 @@ public partial class PopupWindow : Window
     static readonly DependencyProperty ShownProgressProperty = DependencyProperty.Register(
         "ShownProgress", typeof(double), typeof(PopupWindow), new PropertyMetadata(0.0, (d, e) => ((PopupWindow)d).OnShownProgress((double)e.NewValue)));
 
-    static readonly Color Danger = Color.FromRgb(0xFF, 0x63, 0x69);
-    static readonly Color TextPrimary = Color.FromRgb(0xED, 0xED, 0xEF);
-
     readonly Job job;
+    /// <summary>The title's colours (a failure turns it to danger), per the app's look.</summary>
+    readonly Color textPrimary;
+    readonly Color danger;
     readonly bool motion;
     readonly Color accent;
     readonly TaskCompletionSource<bool> shown = new();
@@ -57,6 +57,9 @@ public partial class PopupWindow : Window
         motion = !job.ReducedMotion && SystemParameters.ClientAreaAnimation;
         accent = ParseColor(job.Accent) ?? Color.FromRgb(0xE5, 0x48, 0x4D);
         InitializeComponent();
+        textPrimary = job.Light ? Color.FromRgb(0x18, 0x18, 0x1B) : Color.FromRgb(0xED, 0xED, 0xEF);
+        danger = job.Light ? Color.FromRgb(0xC8, 0x1E, 0x26) : Color.FromRgb(0xFF, 0x63, 0x69);
+        if (job.Light) ApplyLight();
 
         Resources["AccentBrush"] = Frozen(accent);
         // White on Chief's colour, unless the colour is so light that dark text reads better.
@@ -111,7 +114,8 @@ public partial class PopupWindow : Window
         int style = Native.GetWindowLong(hwnd, Native.GWL_STYLE);
         Native.SetWindowLong(hwnd, Native.GWL_STYLE, style & ~(Native.WS_SYSMENU | Native.WS_MINIMIZEBOX | Native.WS_MAXIMIZEBOX));
 
-        Native.SetDwm(hwnd, Native.DWMWA_USE_IMMERSIVE_DARK_MODE, 1);
+        // The frame (and what DWM draws of it) in the app's own mode.
+        Native.SetDwm(hwnd, Native.DWMWA_USE_IMMERSIVE_DARK_MODE, job.Light ? 0 : 1);
         Native.SetDwm(hwnd, Native.DWMWA_WINDOW_CORNER_PREFERENCE, Native.DWMWCP_ROUND);
         // Our own rim is drawn in WPF; DWM's would double it.
         Native.SetDwm(hwnd, Native.DWMWA_BORDER_COLOR, Native.DWMWA_COLOR_NONE);
@@ -122,9 +126,9 @@ public partial class PopupWindow : Window
             && Native.SetDwm(hwnd, Native.DWMWA_SYSTEMBACKDROP_TYPE, Native.DWMSBT_TRANSIENTWINDOW) == 0;
         if (acrylic)
         {
-            // A dark tint over the acrylic keeps the dashboard's near-black and the text's contrast whatever is behind.
-            Surface.Background = Frozen(Color.FromArgb(0xDE, 0x0F, 0x0F, 0x12));
-            Resources["TrackBrush"] = Frozen(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
+            // A tint over the acrylic keeps the dashboard's canvas and the text's contrast whatever is behind.
+            Surface.Background = Frozen(job.Light ? Color.FromArgb(0xDE, 0xF6, 0xF6, 0xF8) : Color.FromArgb(0xDE, 0x0F, 0x0F, 0x12));
+            Resources["TrackBrush"] = Frozen(job.Light ? Color.FromArgb(0x14, 0x00, 0x00, 0x00) : Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF));
         }
         Place();
     }
@@ -275,11 +279,11 @@ public partial class PopupWindow : Window
     // ---- Message states ------------------------------------------------------------------------------------------
 
     /// <summary>Swaps the bar for a short message (and buttons when given).</summary>
-    internal void ShowMessage(string title, bool danger, string message, string? note, TaskbarItemProgressState taskbar, params PopupButton[] buttons)
+    internal void ShowMessage(string title, bool isDanger, string message, string? note, TaskbarItemProgressState taskbar, params PopupButton[] buttons)
     {
         StopShimmer();
         TitleText.Text = title;
-        TitleText.Foreground = Frozen(danger ? Danger : TextPrimary);
+        TitleText.Foreground = Frozen(isDanger ? danger : textPrimary);
         MessageText.Text = message;
         MessageText.ToolTip = message.Length > 90 ? message : null;
         NoteText.Text = note ?? "";
@@ -327,6 +331,19 @@ public partial class PopupWindow : Window
     }
 
     // ---- Helpers -------------------------------------------------------------------------------------------------
+
+    /// <summary>The dashboard's light tokens (apps/web/app/globals.css) in place of the dark ones in the XAML.</summary>
+    void ApplyLight()
+    {
+        Resources["TextBrush"] = Frozen(Color.FromRgb(0x18, 0x18, 0x1B));
+        Resources["Text2Brush"] = Frozen(Color.FromRgb(0x48, 0x48, 0x50));
+        Resources["Text3Brush"] = Frozen(Color.FromRgb(0x66, 0x66, 0x70));
+        Resources["SurfaceBrush"] = Frozen(Color.FromRgb(0xF6, 0xF6, 0xF8));
+        Resources["RimBrush"] = Frozen(Color.FromArgb(0x1F, 0x00, 0x00, 0x00));
+        Resources["ButtonRimBrush"] = Frozen(Color.FromArgb(0x33, 0x00, 0x00, 0x00));
+        Resources["WashBrush"] = Frozen(Colors.Black);
+        Resources["TrackBrush"] = Frozen(Color.FromRgb(0xE9, 0xE9, 0xEE));
+    }
 
     static void Announce(UIElement element)
     {

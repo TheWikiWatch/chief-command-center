@@ -7,6 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Your chief of staff and your team of agents",
     start_url: "/",
     display: "standalone",
+    // One colour each: a web app manifest has no light/dark variants. Dark is the app's default look, and the
+    // installed app's splash shows only until the page paints in the owner's own look.
     background_color: "#09090B",
     theme_color: "#09090B",
     // PNGs for Android's installed-app icon and splash (it does not use SVG there); the maskable one

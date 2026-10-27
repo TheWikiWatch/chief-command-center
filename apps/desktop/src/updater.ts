@@ -3,7 +3,7 @@ import { createReadStream, createWriteStream, existsSync, promises as fs } from 
 import path from "node:path";
 
 import type { ActiveWork } from "./active-work";
-import { folderSource, SourceError, type ReleaseSource } from "./release-source";
+import { SourceError, type ReleaseSource } from "./release-source";
 
 /**
  * "Update available" (PLAN §8 "App update flow"; docs/PLAN-2026-10-07 §1). Nothing restarts without the owner's click.
@@ -66,10 +66,8 @@ export type UpdateState =
 export type HandOffResult = { ok: true; via: "helper" | "fallback" } | { ok: false; error: string };
 
 export type UpdaterDeps = {
-  /** A release folder (the closed-phase default). */
-  feed?: () => string;
-  /** Where releases come from: a folder or a private GitHub repo (release-source.ts); wins over `feed`. */
-  source?: () => ReleaseSource | null;
+  /** Where releases come from: a folder or a GitHub releases repository (release-source.ts); null when none is set. */
+  source: () => ReleaseSource | null;
   currentVersion: string;
   publicKey: ReleaseKeys;
   updatesDir: string;
@@ -224,9 +222,7 @@ export class Updater {
   }
 
   private source(): ReleaseSource | null {
-    if (this.deps.source) return this.deps.source();
-    const feed = this.deps.feed?.() || "";
-    return feed ? folderSource(feed) : null;
+    return this.deps.source();
   }
 
   private set(state: UpdateState): UpdateState {

@@ -1,5 +1,6 @@
-<!-- The "Updating Chief" popup (PLAN 2026-10-07 §1.4): 380 × 176, drawn by DWM (rounded corners, dark acrylic, shadow),
-     the dashboard's dark tokens on top. Colours: text #EDEDEF / #A1A1AA / #85858E, rim rgb(255 255 255 / .10).
+<!-- The "Updating Chief" popup (PLAN 2026-10-07 §1.4): 380 × 176, drawn by DWM (rounded corners, acrylic, shadow),
+     the dashboard's tokens on top. Dark here: text #EDEDEF / #A1A1AA / #85858E, rim rgb(255 255 255 / .10); the app's
+     light look (the job's "theme") swaps the brushes below for the light tokens (PopupWindow.xaml.cs ApplyLight).
      SingleBorderWindow, not None: DWM draws the acrylic, the shadow and the open/close animation only for a window with
      a frame. WindowChrome below removes everything of that frame but those. -->
 <Window x:Class="ChiefUpdater.PopupWindow"
@@ -10,7 +11,7 @@
         WindowStartupLocation="Manual" Background="Transparent"
         UseLayoutRounding="True" SnapsToDevicePixels="True"
         TextOptions.TextFormattingMode="Ideal" TextOptions.TextRenderingMode="Auto"
-        FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" Foreground="#EDEDEF">
+        FontFamily="Segoe UI Variable Text, Segoe UI" FontSize="12" Foreground="{DynamicResource TextBrush}">
 
   <!-- No caption, no resize border; the glass frame over the whole window is what lets DWM draw the backdrop. -->
   <WindowChrome.WindowChrome>
@@ -25,6 +26,14 @@
     <SolidColorBrush x:Key="AccentBrush" Color="#E5484D" />
     <SolidColorBrush x:Key="OnAccentBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="TrackBrush" Color="#232328" />
+    <SolidColorBrush x:Key="TextBrush" Color="#EDEDEF" />
+    <SolidColorBrush x:Key="Text2Brush" Color="#A1A1AA" />
+    <SolidColorBrush x:Key="Text3Brush" Color="#85858E" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#0F0F12" />
+    <SolidColorBrush x:Key="RimBrush" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="ButtonRimBrush" Color="#29FFFFFF" />
+    <!-- A button's hover and press: a wash of white on dark, of black on light. -->
+    <SolidColorBrush x:Key="WashBrush" Color="#FFFFFF" />
     <FontFamily x:Key="DisplayFont">Segoe UI Variable Display, Segoe UI</FontFamily>
     <FontFamily x:Key="MonoFont">Cascadia Mono, Consolas</FontFamily>
 
@@ -54,7 +63,7 @@
             <Border x:Name="Chrome" CornerRadius="6" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}" SnapsToDevicePixels="True">
               <Grid>
-                <Border x:Name="Wash" CornerRadius="5" Background="#FFFFFF" Opacity="0" />
+                <Border x:Name="Wash" CornerRadius="5" Background="{DynamicResource WashBrush}" Opacity="0" />
                 <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
               </Grid>
             </Border>
@@ -79,13 +88,13 @@
 
     <Style x:Key="SecondaryButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
       <Setter Property="Background" Value="Transparent" />
-      <Setter Property="Foreground" Value="#EDEDEF" />
-      <Setter Property="BorderBrush" Value="#29FFFFFF" />
+      <Setter Property="Foreground" Value="{DynamicResource TextBrush}" />
+      <Setter Property="BorderBrush" Value="{DynamicResource ButtonRimBrush}" />
       <Setter Property="BorderThickness" Value="1" />
     </Style>
   </Window.Resources>
 
-  <Border x:Name="Surface" CornerRadius="8" BorderThickness="1" BorderBrush="#1AFFFFFF" Background="#0F0F12">
+  <Border x:Name="Surface" CornerRadius="8" BorderThickness="1" BorderBrush="{DynamicResource RimBrush}" Background="{DynamicResource SurfaceBrush}">
     <!-- 20 px from the window's edge, the rim included. -->
     <Grid x:Name="Body" Margin="19">
       <Grid.ColumnDefinitions>
@@ -103,8 +112,8 @@
 
       <StackPanel Grid.Column="2" VerticalAlignment="Center">
         <TextBlock x:Name="TitleText" FontFamily="{StaticResource DisplayFont}" FontSize="15" FontWeight="SemiBold"
-                   Foreground="#EDEDEF" TextTrimming="CharacterEllipsis" />
-        <TextBlock x:Name="VersionText" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="#A1A1AA" Margin="0,3,0,0" />
+                   Foreground="{DynamicResource TextBrush}" TextTrimming="CharacterEllipsis" />
+        <TextBlock x:Name="VersionText" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{DynamicResource Text2Brush}" Margin="0,3,0,0" />
 
         <StackPanel x:Name="ProgressPanel" Margin="0,16,0,0">
           <Grid x:Name="TrackHost" Height="4">
@@ -128,16 +137,16 @@
             </Canvas>
           </Grid>
           <Grid Margin="0,9,0,0">
-            <TextBlock x:Name="StepText" Foreground="#A1A1AA" FontSize="12" TextTrimming="CharacterEllipsis"
+            <TextBlock x:Name="StepText" Foreground="{DynamicResource Text2Brush}" FontSize="12" TextTrimming="CharacterEllipsis"
                        AutomationProperties.LiveSetting="Polite" AutomationProperties.Name="Step" />
-            <TextBlock x:Name="PercentText" HorizontalAlignment="Right" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="#85858E" />
+            <TextBlock x:Name="PercentText" HorizontalAlignment="Right" FontFamily="{StaticResource MonoFont}" FontSize="12" Foreground="{DynamicResource Text3Brush}" />
           </Grid>
         </StackPanel>
 
         <StackPanel x:Name="MessagePanel" Margin="0,10,0,0" Visibility="Collapsed">
-          <TextBlock x:Name="MessageText" FontSize="13" Foreground="#EDEDEF" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+          <TextBlock x:Name="MessageText" FontSize="13" Foreground="{DynamicResource TextBrush}" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
                      LineHeight="18" LineStackingStrategy="BlockLineHeight" MaxHeight="36" AutomationProperties.LiveSetting="Assertive" />
-          <TextBlock x:Name="NoteText" FontSize="12" Foreground="#A1A1AA" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
+          <TextBlock x:Name="NoteText" FontSize="12" Foreground="{DynamicResource Text2Brush}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
           <StackPanel x:Name="Buttons" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0" Visibility="Collapsed" />
         </StackPanel>
       </StackPanel>

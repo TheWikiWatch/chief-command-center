@@ -37,6 +37,8 @@ export type BootDeps = {
   startWeb: () => Promise<{ ok: boolean; detail?: string }>;
   openDashboard: () => Promise<void>;
   quit: () => void;
+  /** The assistant's name, for what the steps say. */
+  name: () => string;
   now: () => number;
   log: (event: string, fields?: Record<string, unknown>) => void;
 };
@@ -47,12 +49,16 @@ type StepId = Parameters<BootDeps["setStep"]>[0];
 
 /**
  * A supervisor that came back on its own (its restart after a crash, or the slow retry) while the start screen shows
- * a failure: the boot runs again without anyone pressing Retry. Nothing happens once the dashboard is open (no step
- * is in error then) or while a boot is already under way (it will see the recovery itself).
+ * a failure: the boot runs again without anyone pressing Retry. Nothing happens while the window shows the dashboard
+ * (it has its own "restarted and is back" banner, and a boot would load the start screen over it, losing drafts),
+ * or while a boot is already under way (it will see the recovery itself).
  */
-export function recoversBoot(event: { type: string; state?: string }, steps: { state: string }[], bootRunning: boolean): boolean {
-  return event.type === "state" && event.state === "running" && !bootRunning && steps.some((s) => s.state === "error");
+export function recoversBoot(event: { type: string; state?: string }, steps: { state: string }[], bootRunning: boolean, bootPageShown: boolean): boolean {
+  return bootPageShown && event.type === "state" && event.state === "running" && !bootRunning && steps.some((s) => s.state === "error");
 }
+
+/** What the start screen says when something the app needs isn't there (the list goes to the log). */
+export const MISSING_FILES = "Some of the app's files are missing. Reinstall Chief from its setup folder.";
 
 export function createBoot(deps: BootDeps) {
   let running: Promise<BootResult> | null = null;
@@ -69,20 +75,23 @@ export function createBoot(deps: BootDeps) {
       if (state === "done" || state === "error") deps.log(`boot.${id}.${state}`, { ms: deps.now() - (timed.get(id) ?? started), ...(detail ? { detail } : {}) });
       deps.setStep(id, state, detail);
     };
-    const fail = (id: StepId, detail: string): BootResult => {
+    // A plain sentence on the screen; the technical reason, when there is one, in the log only.
+    const fail = (id: StepId, detail: string, reason = ""): BootResult => {
+      if (reason) deps.log(`boot.${id}.reason`, { reason });
       step(id, "error", detail);
       return "error";
     };
 
     await deps.showBootPage();
+    const name = deps.name();
 
     step("runtime", "working");
     const gone = deps.missing();
-    if (gone.length) return fail("runtime", `Missing: ${gone.join("; ")}`);
+    if (gone.length) return fail("runtime", MISSING_FILES, gone.join("; "));
     try {
       deps.loadToken();
     } catch (e) {
-      return fail("runtime", e instanceof Error ? e.message : String(e));
+      return fail("runtime", "Windows couldn't open the app's saved keys for this account. Restart the PC, then try again.", e instanceof Error ? e.message : String(e));
     }
     step("runtime", "done");
 
@@ -97,7 +106,7 @@ export function createBoot(deps: BootDeps) {
     const key = deps.provisionKey();
     if (key !== deps.lastProvisionKey()) {
       const provisioned = await deps.provision();
-      if (!provisioned.ok) return fail("prepare", provisioned.error || "Preparing Hermes failed.");
+      if (!provisioned.ok) return fail("prepare", `The app couldn't get ${name} ready for this start. Try again.`, provisioned.error || "provisioning failed");
       deps.saveProvisionKey(key);
     } else deps.log("boot.provision.skipped");
     const backupMessage = deps.backupNeeded();
@@ -110,7 +119,7 @@ export function createBoot(deps: BootDeps) {
         if (pct !== shown) deps.setStep("prepare", "working", `${backupMessage} ${pct}%`);
         shown = pct;
       });
-      if (!saved.ok) return fail("prepare", `The backup before this version's first start failed: ${saved.error}. Chief wasn't started, so nothing changed.`);
+      if (!saved.ok) return fail("prepare", `The backup before this version's first start failed: ${saved.error}. ${name} wasn't started, so nothing changed.`);
     }
     deps.recordStart();
     step("prepare", "done");
@@ -122,7 +131,7 @@ export function createBoot(deps: BootDeps) {
       if (claim === "quit") return "quit";
       if (claim === "own") await deps.startGateway();
       const up = await deps.gatewayUp(claim === "external");
-      if (!up.ok) return fail("gateway", deps.gatewayDetail() || up.detail || "Chief didn't start.");
+      if (!up.ok) return fail("gateway", deps.gatewayDetail() || `${name} didn't answer. Try again.`, up.detail);
       step("gateway", "done", up.voice ? "" : "Voice isn't available yet; text chat works.");
       return "ready";
     })();

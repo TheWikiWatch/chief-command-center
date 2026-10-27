@@ -78,6 +78,7 @@ describe("kept packages and going back", () => {
     const states: UpdateState[] = [];
     let now = 0;
     const updater = new Updater({
+      source: () => null,
       currentVersion,
       publicKey: pub(keyA),
       updatesDir: updates,

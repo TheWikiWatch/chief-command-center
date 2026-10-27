@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createBoot, recoversBoot, type BootDeps } from "../src/boot";
+import { createBoot, MISSING_FILES, recoversBoot, type BootDeps } from "../src/boot";
 
 function deps(over: Partial<BootDeps> = {}) {
   const calls: string[] = [];
@@ -29,8 +29,9 @@ function deps(over: Partial<BootDeps> = {}) {
     startWeb: async () => (calls.push("web"), { ok: true }),
     openDashboard: async () => void calls.push("dashboard"),
     quit: () => void calls.push("quit"),
+    name: () => "Ada",
     now: () => (t += 10),
-    log: (event) => void calls.push(`log:${event}`),
+    log: (event, fields) => void calls.push(`log:${event}${fields?.reason ? `:${fields.reason}` : ""}`),
   };
   return { d: { ...base, ...over }, calls, steps };
 }
@@ -69,21 +70,29 @@ describe("boot", () => {
     expect(await run).toBe("ready");
   });
 
-  it("stops at the first failure and says why; a failed provision isn't remembered", async () => {
-    const missing = deps({ missing: () => ["payload"] });
+  it("stops at the first failure and says why in plain words, the technical reason in the log; a failed provision isn't remembered", async () => {
+    const missing = deps({ missing: () => ["Hermes runtime (C:\\Program Files\\WindowsApps\\x\\hermes.exe)"] });
     expect(await createBoot(missing.d).run()).toBe("error");
-    expect(missing.steps).toContain("runtime:error:Missing: payload");
+    expect(missing.steps).toContain(`runtime:error:${MISSING_FILES}`);
+    expect(missing.steps.join(" ")).not.toContain("WindowsApps"); // the path is for the log
+    expect(missing.calls).toContain("log:boot.runtime.reason:Hermes runtime (C:\\Program Files\\WindowsApps\\x\\hermes.exe)");
     expect(missing.calls).not.toContain("ports");
 
-    const prov = deps({ provision: async () => ({ ok: false, error: "no plugin" }) });
+    const prov = deps({ provision: async () => ({ ok: false, error: "Preparing Hermes failed (KeyError: 'x')" }) });
     expect(await createBoot(prov.d).run()).toBe("error");
-    expect(prov.steps).toContain("prepare:error:no plugin");
+    expect(prov.steps).toContain("prepare:error:The app couldn't get Ada ready for this start. Try again.");
+    expect(prov.calls).toContain("log:boot.prepare.reason:Preparing Hermes failed (KeyError: 'x')");
     expect(prov.calls.some((c) => c.startsWith("saved:"))).toBe(false);
 
-    const down = deps({ gatewayUp: async () => ({ ok: false, detail: "no answer" }) });
+    const down = deps({ gatewayUp: async () => ({ ok: false, detail: "No answer yet." }) });
     expect(await createBoot(down.d).run()).toBe("error");
-    expect(down.steps).toContain("gateway:error:no answer");
+    expect(down.steps).toContain("gateway:error:Ada didn't answer. Try again.");
     expect(down.calls).not.toContain("dashboard");
+
+    // The supervisor's own sentence wins (it says why: stopped, didn't answer).
+    const crashed = deps({ gatewayUp: async () => ({ ok: false }), gatewayDetail: () => "It stopped unexpectedly." });
+    await createBoot(crashed.d).run();
+    expect(crashed.steps).toContain("gateway:error:It stopped unexpectedly.");
   });
 
   it("one boot at a time: Retry during a boot joins it", async () => {
@@ -134,10 +143,17 @@ describe("a start that recovers", () => {
   it("a supervisor coming back on its own restarts the boot only while the start screen shows a failure", () => {
     const errored = [{ state: "done" }, { state: "error" }];
     const fine = [{ state: "done" }, { state: "done" }];
-    expect(recoversBoot({ type: "state", state: "running" }, errored, false)).toBe(true);
-    expect(recoversBoot({ type: "state", state: "running" }, errored, true)).toBe(false); // a boot is on it already
-    expect(recoversBoot({ type: "state", state: "running" }, fine, false)).toBe(false); // the dashboard is open
-    expect(recoversBoot({ type: "state", state: "backoff" }, errored, false)).toBe(false);
-    expect(recoversBoot({ type: "unhealthy" }, errored, false)).toBe(false);
+    expect(recoversBoot({ type: "state", state: "running" }, errored, false, true)).toBe(true);
+    expect(recoversBoot({ type: "state", state: "running" }, errored, true, true)).toBe(false); // a boot is on it already
+    expect(recoversBoot({ type: "state", state: "running" }, fine, false, true)).toBe(false);
+    expect(recoversBoot({ type: "state", state: "backoff" }, errored, false, true)).toBe(false);
+    expect(recoversBoot({ type: "unhealthy" }, errored, false, true)).toBe(false);
+  });
+
+  it("never over the dashboard: Chief failing and coming back there leaves the page (and its drafts) alone", () => {
+    // Before: the supervisor's "failed" put an error on the gateway step even while the dashboard showed, and its
+    // recovery (Try now, the 10-minute retry, a phone restart of the dashboard server) loaded the start screen over it.
+    const errored = [{ state: "done" }, { state: "error" }];
+    expect(recoversBoot({ type: "state", state: "running" }, errored, false, false)).toBe(false);
   });
 });

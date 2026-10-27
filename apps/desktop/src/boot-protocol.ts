@@ -21,7 +21,8 @@ export function serveBootPage(protocol: ProtocolApi, staticDir: string) {
     return new Response(html, {
       headers: {
         "content-type": "text/html; charset=utf-8",
-        // The boot page only shows steps and calls the preload; it loads nothing from anywhere.
+        // The boot page only shows steps and calls the preload; it loads nothing from anywhere. Its only policy (the
+        // page carries no meta one that could disagree with it).
         "content-security-policy": "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:",
       },
     });

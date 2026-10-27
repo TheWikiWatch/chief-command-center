@@ -1,13 +1,13 @@
 import { existsSync, readFileSync, rmSync, statfsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { app, crashReporter, dialog, protocol, safeStorage, screen, session, shell, utilityProcess } from "electron";
+import { app, crashReporter, dialog, nativeTheme, protocol, safeStorage, screen, session, shell, utilityProcess } from "electron";
 
 import { createBoot, recoversBoot } from "./boot";
 import { registerBootScheme, serveBootPage } from "./boot-protocol";
 import { payloadLayout } from "./env";
 import { bridgeHealth, gatewayOwner, isOrphan, killTree, launchGateway, profileHome, requestScopedStop, stillTheGateway, waitFor } from "./gateway";
-import { actionFromArgv, navigateDecision, permissionAllowed, permissionCheckAllowed, windowOpenDecision, BOOT_URL } from "./guards";
+import { actionFromArgv, lookTheme, navigateDecision, permissionAllowed, permissionCheckAllowed, windowOpenDecision, BOOT_URL } from "./guards";
 import { fallbackCommandLine, installScript, launchDetached } from "./install-package";
 import { checkForUpdates, registerIpc, sendEngineState, syncHistory } from "./ipc";
 import { Notifier } from "./notifier";
@@ -19,13 +19,30 @@ import { RELEASE_KEYS } from "./release-key";
 import { builtInFeed, builtInReportEmail, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
 import { engine, envFor, hermesCommit, hermesUpstream, logLine, preUpdateBackup, provisionKey, runPython, toolEnv } from "./runtime";
 import { bridgeToken, legacyTokenFiles, readUpdateKey, rotateBridgeToken } from "./secrets";
-import { ctx, hiddenLaunch, log, setStep, STEPS, uiOrigin, uiUrl } from "./state";
+import { assistantName, bootSteps, ctx, hiddenLaunch, log, setStep, uiOrigin, uiUrl } from "./state";
 import { Store } from "./store";
 import { Supervisor, type SupervisorEvent } from "./supervisor";
 import { APP_ID, handOff, helperCopy, markReady, PACKAGE_NAME, readResult, resultFile, resultMessage, runStage, updaterDir } from "./update-helper";
 import { compareVersions, Updater, type Release } from "./updater";
 import { launchWeb, webHealth } from "./web";
-import { announceUpdate, bringToFront, createTray, createWindow, currentWork, notify, quit, runAction, setJumpList, setSessionCookie, showBootPage, showWindow } from "./window";
+import {
+  announceUpdate,
+  bootPageShown,
+  bringToFront,
+  createTray,
+  createWindow,
+  currentWork,
+  notify,
+  quit,
+  refreshTray,
+  relaunchAfterQuit,
+  runAction,
+  setJumpList,
+  setSessionCookie,
+  showBootPage,
+  showWindow,
+  shutdown,
+} from "./window";
 
 /** What the update window shows of Chief: its face (PNG), its colour and name, from the page (`window.__chiefLook`). */
 let chiefLook: { png: Buffer | null; accent: string; name: string; reducedMotion: boolean } = { png: null, accent: "", name: "", reducedMotion: false };
@@ -77,17 +94,25 @@ async function choosePorts() {
 
 /** Another launcher runs this profile's gateway: take it over (stop only that one), use it as is, or quit. */
 async function claimGateway(): Promise<"own" | "external" | "quit"> {
+  const claim = await decideGateway();
+  // The tray offers "Restart" only for a gateway this app runs.
+  refreshTray();
+  return claim;
+}
+
+async function decideGateway(): Promise<"own" | "external" | "quit"> {
   const { paths, hermesRoot } = ctx;
   const owner = gatewayOwner(hermesRoot, payloadLayout(paths.payload).launcher);
   ctx.externalGateway = false;
   // An orphan from a crashed run of this app; never the gateway this run's supervisor is starting or running.
   if (isOrphan(owner, ctx.gateway) && (await stillTheGateway((owner as { pid: number }).pid, hermesRoot))) await killTree((owner as { pid: number }).pid);
   if (owner.state !== "foreign") return "own";
+  const name = assistantName();
   const choice = await dialog.showMessageBox(ctx.window!, {
     type: "question",
-    title: "Chief is already running",
-    message: "Chief is being run by another launcher on this PC.",
-    detail: `Take over: this app stops that copy and runs Chief itself (recommended).\nUse it as is: the app connects to the running copy but doesn't manage it.\n\nOther launcher: ${owner.launcher || "unknown"}`,
+    title: `${name} is already running`,
+    message: `${name} is being run by another launcher on this PC.`,
+    detail: `Take over: this app stops that copy and runs ${name} itself (recommended).\nUse it as is: the app connects to the running copy but doesn't manage it.\n\nOther launcher: ${owner.launcher || "unknown"}`,
     buttons: ["Take over", "Use it as is", "Quit"],
     defaultId: 0,
     cancelId: 2,
@@ -107,7 +132,7 @@ async function claimGateway(): Promise<"own" | "external" | "quit"> {
 
 const boot = createBoot({
   setStep,
-  showBootPage: () => showBootPage(STEPS.map((s) => ({ ...s }))),
+  showBootPage: () => showBootPage(bootSteps()),
   missing: () => missing(ctx.paths),
   loadToken: () => {
     // The migration hands over an existing install's bridge token once (so phones and scripts stay authorized);
@@ -128,10 +153,12 @@ const boot = createBoot({
     log.addSecret(readUpdateKey(ctx.paths.secrets, safeStorage));
     if (existsSync(handover)) rmSync(handover, { force: true });
   },
-  newerDataError: () =>
-    (ctx.store.value.dataSchema || 0) > DATA_SCHEMA
-      ? `This data was last opened by a newer version of the app (${ctx.store.value.lastVersion || "unknown"}). Install that version again, or restore the backup made before the update (Settings, then Backup & restore).`
-      : null,
+  // The dashboard (and its Settings) can't open on this screen: the way out is the newer version itself.
+  newerDataError: () => {
+    if ((ctx.store.value.dataSchema || 0) <= DATA_SCHEMA) return null;
+    const newer = ctx.store.value.lastVersion;
+    return `Your data was last opened by a newer version of the app${newer ? ` (${newer})` : ""}, which this version can't read. Install ${newer || "that version"} or a newer one, and ${assistantName()} opens as before.`;
+  },
   choosePorts,
   restoreJournalExists: () => existsSync(path.join(ctx.paths.appDir, "restore", "restore-journal.json")),
   recover: () => engine()(["recover", "--state-dir", path.join(ctx.paths.appDir, "restore")]) as Promise<{ ok: boolean; action?: string }>,
@@ -175,7 +202,7 @@ const boot = createBoot({
     ctx.notifier = new Notifier({
       port: () => ctx.store.value.ports.bridge,
       token: ctx.token,
-      assistant: () => "Chief",
+      assistant: assistantName,
       shouldNotify: () => !ctx.window || !ctx.window.isVisible() || !ctx.window.isFocused(),
       notify,
     });
@@ -183,7 +210,8 @@ const boot = createBoot({
     announceUpdate();
     void checkForUpdates().then(() => syncHistory());
   },
-  quit: () => app.exit(0),
+  quit: () => void shutdown(),
+  name: assistantName,
   now: () => Date.now(),
   log: (event, fields) => log.info(event, fields),
 });
@@ -223,14 +251,18 @@ function onSupervisorEvent(name: "gateway" | "web", e: SupervisorEvent) {
   }
   if (ctx.quitting) return;
   sendEngineState();
+  // The start screen's steps only while it shows: over the dashboard, a boot would replace the page (and its drafts),
+  // and the dashboard's own banner says Chief stopped and came back.
+  const onBootPage = bootPageShown();
   // Chief (or the dashboard) came back by itself while the start screen shows a failure: carry on without Retry.
-  if (recoversBoot(e, ctx.steps, boot.running)) {
+  if (recoversBoot(e, ctx.steps, boot.running, onBootPage)) {
     log.info("boot.recovered", { by: name });
     void runBoot();
   }
   if (name === "gateway" && e.type === "state" && e.state === "failed") {
-    setStep("gateway", "error", `${e.detail} Chief kept stopping; the app tries again every 10 minutes.`);
-    if (!ctx.window?.isFocused()) notify("Chief stopped", "It kept stopping, so the app will try again in 10 minutes. Click to open Chief.");
+    const assistant = assistantName();
+    if (onBootPage) setStep("gateway", "error", `${e.detail} ${assistant} kept stopping, so the app tries again every 10 minutes. Press Try again to start it now.`);
+    if (!ctx.window?.isFocused()) notify(`${assistant} stopped`, `It kept stopping, so the app will try again in 10 minutes. Click to open ${assistant}.`);
   }
 }
 
@@ -273,6 +305,8 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
   // A second launch shows the window; `--quit` (an installer or updater) asks this instance to quit cleanly.
   app.on("second-instance", (_event, argv) => {
     if (argv.includes("--quit")) return void quit();
+    // Closing already: the launch isn't lost, the app opens again once it has closed.
+    if (ctx.quitting) return relaunchAfterQuit(argv);
     const action = actionFromArgv(argv);
     if (action) runAction(action);
     else showWindow();
@@ -383,8 +417,9 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         const dir = updaterDir(ctx.paths.appDir);
         const logFile = path.join(ctx.paths.logs, "update-install.log");
         const from = app.getVersion();
-        const bounds = ctx.window && !ctx.window.isMinimized() && ctx.window.isVisible() ? ctx.window.getBounds() : null;
-        const scale = bounds ? screen.getDisplayMatching(bounds).scaleFactor : 1;
+        // The helper works in physical pixels; Electron's bounds are in DIPs, scaled per display (a window on a 150 %
+        // screen beside a 100 % one isn't at its DIP origin times 1.5).
+        const bounds = ctx.window && !ctx.window.isMinimized() && ctx.window.isVisible() ? screen.dipToScreenRect(ctx.window, ctx.window.getBounds()) : null;
         return handOff({
           dir,
           helper: () => helperCopy(process.resourcesPath, dir, from),
@@ -398,10 +433,10 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
             packageName: PACKAGE_NAME,
             appId: APP_ID,
             appPid: process.pid,
-            // The helper works in physical pixels; Electron's bounds are in DIPs.
-            window: bounds ? { x: Math.round(bounds.x * scale), y: Math.round(bounds.y * scale), width: Math.round(bounds.width * scale), height: Math.round(bounds.height * scale) } : null,
+            window: bounds ? { x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.width), height: Math.round(bounds.height) } : null,
             accent: chiefLook.accent || "#E5484D",
-            assistantName: chiefLook.name || "Chief",
+            theme: lookTheme(ctx.store.value.themeMode, nativeTheme.shouldUseDarkColors),
+            assistantName: chiefLook.name || assistantName(),
             logFile,
             reducedMotion: chiefLook.reducedMotion,
           },
@@ -419,11 +454,7 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
               /* already gone */
             }
           },
-          quit: () => {
-            ctx.quitting = true;
-            ctx.window?.hide();
-            setTimeout(() => app.exit(0), 300);
-          },
+          quit: () => void shutdown({ hide: true }),
           log: (line) => logLine("update-install.log", line),
         });
       },

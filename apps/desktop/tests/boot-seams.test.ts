@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { isOrphan } from "../src/gateway";
@@ -20,6 +23,21 @@ describe("ports on Retry", () => {
   });
   it("a first start takes the defaults when they are free", async () => {
     expect(await decidePorts({ saved: { ui: 3005, bridge: 7795 }, first: true, bridgeHeld: false, uiHeld: false, probe: async (p) => p !== 3005 && p !== 7795 })).toEqual({ ui: 3000, bridge: 7790 });
+  });
+});
+
+describe("the boot page", () => {
+  const html = readFileSync(path.join(__dirname, "..", "static", "boot.html"), "utf8");
+  it("opens in the window's own light or dark (it was always dark, under dark title-bar symbols in light mode)", () => {
+    expect(html).toContain("color-scheme: light dark");
+    expect(html).toMatch(/@media \(prefers-color-scheme: light\) \{\s*:root \{ --bg: rgb\(246 246 248\)/);
+  });
+  it("says Closing while quitting, not Starting", () => {
+    expect(html).toContain('(closing(steps) ? "Closing " : "Starting ")');
+    expect(html).toContain('s.id === "wait" || s.id === "quit"');
+  });
+  it("has one Content-Security-Policy, the one boot-protocol.ts sends", () => {
+    expect(html).not.toMatch(/http-equiv="Content-Security-Policy"/i);
   });
 });
 

@@ -152,9 +152,9 @@ export function permissionCheckAllowed(permission: string, requestingOrigin: str
 
 /** Shortcuts from the taskbar jump list and the tray, passed to a launch as `--action=<id>`. */
 export const DESKTOP_ACTIONS = [
-  { id: "new-thread", title: "New thread", description: "Start a new thread with Chief" },
-  { id: "voice", title: "Voice mode", description: "Talk with Chief" },
-  { id: "today", title: "Today", description: "See what to do first" },
+  { id: "new-thread", title: "New thread", description: (name: string) => `Start a new thread with ${name}` },
+  { id: "voice", title: "Voice mode", description: (name: string) => `Talk with ${name}` },
+  { id: "today", title: "Today", description: () => "See what to do first" },
 ] as const;
 export type DesktopAction = (typeof DESKTOP_ACTIONS)[number]["id"];
 
@@ -172,8 +172,26 @@ const THEME_MODES = ["dark", "light", "system"] as const;
 export type ThemeMode = (typeof THEME_MODES)[number];
 export const validThemeMode = (value: unknown): value is ThemeMode => THEME_MODES.includes(value as ThemeMode);
 
+/** Light or dark for the app's look's mode ("system" asks Windows): the window, the boot page and the update window. */
+export function lookTheme(mode: ThemeMode, systemDark: boolean): "dark" | "light" {
+  return mode === "light" || (mode === "system" && !systemDark) ? "light" : "dark";
+}
+
 /** The window's colours for the app's look's mode: the canvas behind the page and the title-bar buttons' symbols. */
 export function windowColors(mode: ThemeMode, systemDark: boolean): { background: string; symbols: string } {
-  const light = mode === "light" || (mode === "system" && !systemDark);
-  return light ? { background: "#f6f6f8", symbols: "#52525b" } : { background: "#09090b", symbols: "#a1a1aa" };
+  return lookTheme(mode, systemDark) === "light" ? { background: "#f6f6f8", symbols: "#52525b" } : { background: "#09090b", symbols: "#a1a1aa" };
+}
+
+/**
+ * The assistant's name as the dashboard says it, for notifications, the tray and dialogs: trimmed, 1 to 40
+ * characters, with no control or direction-changing characters (a name that reorders a notification's text could
+ * make it say something else). Null when it isn't one.
+ */
+export function validAssistantName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const name = value.trim();
+  const length = [...name].length;
+  if (length < 1 || length > 40) return null;
+  if (/[\u0000-\u001f\u007f-\u009f\u061c\u200e\u200f\u2028-\u202e\u2066-\u2069\ufeff]/.test(name)) return null;
+  return name;
 }

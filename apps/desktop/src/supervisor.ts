@@ -13,7 +13,9 @@ export type SupervisorEvent =
   | { type: "state"; state: SupervisorState; detail?: string }
   | { type: "restart-scheduled"; inMs: number; attempt: number }
   | { type: "retry-scheduled"; inMs: number }
-  | { type: "unhealthy"; failures: number };
+  | { type: "unhealthy"; failures: number }
+  /** Why it stopped, for the log: the state's own detail is a plain sentence for the screen. */
+  | { type: "crashed"; reason: string };
 
 export type ChildHandle = { pid?: number; stop: (graceful: boolean) => Promise<void> };
 
@@ -106,7 +108,7 @@ export class Supervisor {
       child = await this.deps.launch();
     } catch (e) {
       if (generation !== this.generation) return;
-      this.crashed(e instanceof Error ? e.message : "It couldn't start.");
+      this.crashed("It couldn't start.", e instanceof Error ? e.message : String(e));
       return;
     }
     if (generation !== this.generation || !this.wanted) {
@@ -120,7 +122,7 @@ export class Supervisor {
       if (generation !== this.generation) return;
       this.child = null;
       await this.end(child, false);
-      this.crashed(e instanceof Error ? e.message : "It didn't become ready.");
+      this.crashed("It started but didn't answer.", e instanceof Error ? e.message : String(e));
       return;
     }
     if (generation === this.generation && this.wanted) {
@@ -163,7 +165,7 @@ export class Supervisor {
     this.generation++;
     this.child = null;
     await this.end(child, false);
-    this.crashed("It stopped answering.");
+    this.crashed("It stopped answering.", `no answer to ${HEALTH_FAILURES} health checks in a row`);
   }
 
   /** The child exited. Expected exits (stop, or a child this supervisor ended) are ignored; others restart with backoff. */
@@ -176,10 +178,11 @@ export class Supervisor {
     this.generation++;
     if (this.healthTimer) this.clearTimer(this.healthTimer);
     this.healthTimer = null;
-    this.crashed(code === null ? "It stopped unexpectedly." : `It exited (code ${code}).`);
+    this.crashed("It stopped unexpectedly.", code === null ? "the process ended" : `exit code ${code}`);
   }
 
-  private crashed(detail: string) {
+  private crashed(detail: string, reason: string) {
+    this.deps.onEvent?.({ type: "crashed", reason });
     const now = this.now();
     this.restarts = this.restarts.filter((t) => now - t < WINDOW_MS);
     if (this.restarts.length >= MAX_RESTARTS) {

@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { collect, createDiagnostics } from "../src/diagnostics";
+import { collect, createDiagnostics, LOG_TAIL_BYTES, readTail } from "../src/diagnostics";
 import { Logger } from "../src/logger";
 
 const tmp = mkdtempSync(path.join(tmpdir(), "chief-diag-test-"));
@@ -26,11 +26,24 @@ describe("the diagnostics bundle", () => {
     { dir: path.join(tmp, "absent"), prefix: "bridge", pattern: /./, text: true },
   ];
 
-  it("takes logs (redacted) and crash dumps, and nothing else", () => {
+  it("takes logs (redacted) and crash dumps, and nothing else", async () => {
     const staging = path.join(tmp, "staging");
-    const files = collect(sources, staging, redact);
+    const files = await collect(sources, staging, redact);
     expect(files.sort()).toEqual(["crashes/crash.dmp", "logs/gateway.log", "logs/main.jsonl"]);
     expect(readFileSync(path.join(staging, "logs", "main.jsonl"), "utf8")).toContain("Bearer [redacted]");
+  });
+
+  it("takes only the newest part of a long log, from a whole line on", async () => {
+    // Before: whole logs (up to 20 MB each) were read and redacted at once on the main thread, freezing the window.
+    const big = path.join(tmp, "big.log");
+    const line = "x".repeat(99) + "\n";
+    writeFileSync(big, `${"first line\n"}${line.repeat(Math.ceil((LOG_TAIL_BYTES * 1.5) / line.length))}last line\n`);
+    const tail = await readTail(big);
+    expect(tail.length).toBeLessThanOrEqual(LOG_TAIL_BYTES);
+    expect(tail.startsWith("x".repeat(99))).toBe(true); // no half line at the top
+    expect(tail).not.toContain("first line");
+    expect(tail.endsWith("last line\n")).toBe(true);
+    expect(await readTail(path.join(logs, "gateway.log"))).toBe("started\n"); // a short log, whole
   });
 
   // Zipping goes through Windows' own tools, which took 18 s on a GitHub runner (under a second here).

@@ -30,6 +30,7 @@ function deps(over: Partial<HandOffDeps> = {}) {
       appPid: 4242,
       window: null,
       accent: "#E5484D",
+      theme: "light",
       assistantName: "Chief",
       logFile: "C:\\data\\logs\\update-install.log",
       reducedMotion: false,
@@ -58,7 +59,7 @@ describe("handing a restart to the update helper", () => {
     expect(await handOff(d)).toEqual({ ok: true, via: "helper" });
     expect(events.filter((e) => !e.startsWith("log"))).toEqual(['launch shown: "C:\\data\\updater\\ChiefUpdater-1.0.0.exe"', "quit"]);
     const job = JSON.parse(readFileSync(path.join(dir, "job-1.1.0.json"), "utf8"));
-    expect(job).toMatchObject({ from: "1.0.0", to: "1.1.0", appPid: 4242, facePng: path.join(dir, "face.png"), shownFile: shownFile(dir, "1.1.0"), resultFile: resultFile(dir), readyDir: dir });
+    expect(job).toMatchObject({ from: "1.0.0", to: "1.1.0", appPid: 4242, theme: "light", facePng: path.join(dir, "face.png"), shownFile: shownFile(dir, "1.1.0"), resultFile: resultFile(dir), readyDir: dir });
     expect(existsSync(readyFile(dir, "1.1.0"))).toBe(false); // a stale marker would close the window too early
   });
 

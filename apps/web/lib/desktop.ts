@@ -105,6 +105,9 @@ export type ChiefDesktop = {
   updates?: DesktopUpdates;
   /** The app's look's mode, for the window's colours; older shells lack it. */
   setThemeMode?: (mode: "dark" | "light" | "system") => Promise<boolean>;
+  /** The assistant's name, for the shell's notifications, tray menu, jump list and dialogs (kept for the next start).
+   * Trimmed, 1 to 40 characters, no control characters; resolves false when refused. Older shells lack it. */
+  setAssistantName?: (name: string) => Promise<boolean>;
   /** Older shells lack it. */
   phone?: DesktopPhone;
   /** A native folder picker; resolves to the chosen folder, or null when cancelled. */
@@ -129,7 +132,12 @@ export type ChiefDesktop = {
   /** Taskbar jump-list and tray shortcuts ("new-thread", "voice", "today"); returns an unsubscribe. */
   onAction?: (fn: (action: string) => void) => () => void;
   applyRestore?: () => Promise<{ ok: boolean; error?: string; cancelled?: true; report?: { remapped: string[]; review: { file: string; line: number; text: string }[]; missing_secrets: string[] } }>;
+  /** While applyRestore runs: its step ("Stopping Chief…", "Restoring…", "Starting Chief…", …) and, while the
+   * restore engine reports it, how far it is (0 to 1; null otherwise). Returns an unsubscribe; older shells lack it. */
+  onRestoreProgress?: (fn: (progress: RestoreProgress) => void) => () => void;
 };
+
+export type RestoreProgress = { step: string; fraction: number | null };
 
 export function desktop(): ChiefDesktop | null {
   if (typeof window === "undefined") return null;
