@@ -211,6 +211,31 @@ class ChatStateTests(unittest.TestCase):
         self.assertEqual(found[0]["failure"]["streak"], 4)
         self.assertNotIn("failure", found[1])
 
+    def test_a_bots_relayed_routine_run_is_that_routines_card(self):
+        routine = {"name": "Sam check-in", "jobId": "job7", "profile": "ada", "bot": "Ada"}
+        rows = [
+            {"message": "Two new papers.", "source": "cron", "routine": routine},
+            {
+                "message": "This run didn't finish. Open Team & Routines to see what went wrong.",
+                "source": "cron",
+                "routine": routine,
+                "failure": {"error": "it didn't finish", "streak": 2, "detail": "RuntimeError: refused"},
+            },
+            # Relayed before rows carried the routine: the header still becomes the card's title.
+            {"message": "Routine: Papers (Ada)\n-------------\n\nOne more paper.", "source": "cron"},
+        ]
+        outbox._outbox_path().write_text(
+            "".join(json.dumps({"id": f"o{i}", "at": 100.0 + i, "chat_id": "owner", "read": False, **row}) + "\n" for i, row in enumerate(rows)),
+            encoding="utf-8",
+        )
+        answer, failed, older = chat_state.notices("session", since=0)
+        self.assertEqual((answer["text"], answer["source"], answer["routine"]), ("Two new papers.", "scheduled", routine))
+        self.assertNotIn("failure", answer)
+        self.assertEqual(failed["failure"], {"error": "it didn't finish", "streak": 2, "detail": "RuntimeError: refused"})
+        self.assertEqual(failed["routine"], routine)
+        self.assertEqual(older["text"], "One more paper.")
+        self.assertEqual(older["routine"], {"name": "Papers", "jobId": "", "profile": "", "bot": "Ada"})
+
     def test_attachments_sent_after_a_reply_show_once(self):
         shown = self.home / "img" / "shown.png"
         new = self.home / "img" / "sketch.png"

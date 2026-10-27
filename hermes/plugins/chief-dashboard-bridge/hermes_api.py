@@ -51,11 +51,14 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
             "set_hermes_home_override",
         ),
         "hermes_cli": (),
+        # The chief's (and a bot's) secret scope around every Hermes call (data.chief_config_scope).
+        "agent.secret_scope": ("build_profile_secret_scope", "reset_secret_scope", "set_secret_scope"),
+        # Hermes's one-key config writer (settings, models, the fleet, the Second Brain, speech, local models).
+        "cli": ("save_config_value",),
     },
     "models and keys": {
         "hermes_cli.auth": ("PROVIDER_REGISTRY", "has_usable_secret"),
         "hermes_cli.config": (
-            "atomic_config_replace",
             "custom_endpoint_key_env",
             "get_config_path",
             "load_config",
@@ -68,6 +71,8 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "agent.reasoning_effort": ("route_supported_efforts",),
         "hermes_cli.credential_lifecycle": ("remove_provider_env_credential", "save_provider_env_credential"),
         "hermes_cli.inventory": ("build_model_options_payload", "load_picker_context"),
+        # One provider's model list, fetched now (setup/models).
+        "hermes_cli.models": ("provider_model_ids",),
         "hermes_cli.runtime_provider": ("resolve_runtime_provider",),
         "hermes_cli.web_models": ("CustomEndpointUpdate", "ModelAssignment"),
         "hermes_cli.web_routers.config_env": ("upsert_custom_endpoint", "validate_custom_endpoint"),
@@ -97,6 +102,7 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
             "remove_job",
             "trigger_job",
             "_job_output_dir",
+            "parse_schedule",
         ),
     },
     "voice": {
@@ -140,7 +146,9 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
             "local_models_status",
         ),
         "hermes_cli.local_runtime.bootstrap": ("ensure_local_runtime", "models_dir"),
-        "hermes_cli.config": ("atomic_config_replace", "get_config_path", "load_config", "load_config_readonly", "read_user_config_raw"),
+        "hermes_cli.config": ("get_config_path", "load_config", "load_config_readonly"),
+        # The models folder (patch 0006's `local_runtime.models_dir`), saved with Hermes's one-key writer.
+        "cli": ("save_config_value",),
     },
     "failed turns": {
         # Hermes's closing line for a failed turn, shown as a marker under the app's failure card.
@@ -172,8 +180,6 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "tools.registry": ("registry",),
     },
     "connections": {
-        # The chief's scope for every connections call (Hermes's own MCP worker pattern).
-        "agent.secret_scope": ("build_profile_secret_scope", "reset_secret_scope", "set_secret_scope"),
         # Nous sign-in: Hermes's dashboard device-code flow, its session table, and sign-out.
         "hermes_cli.web_routers.oauth": ("_start_nous_device_code", "_oauth_sessions", "_oauth_sessions_lock"),
         "hermes_cli.auth": ("clear_provider_auth", "invalidate_nous_auth_status_cache"),
@@ -186,6 +192,8 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "tools.connectors.managed": ("managed_client", "managed_kind", "WATCH_TICK_SECONDS", "DESKTOP_PAGE"),
         "tools.connectors.live": ("open",),
         "tools.connectors.operation": ("ConnectionOperation", "Target"),
+        # Cancelling a quick sign-in settles its operation, as the chat card's Continue does.
+        "tools.connectors.contract": ("SettleReason",),
         "tools.connectors.run": ("drive_operation",),
         "tools.connectors.portal.client": ("PortalConnectorClient",),
         # Work tools (the MCP catalog) and their OAuth.

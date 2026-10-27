@@ -31,14 +31,14 @@ import secrets
 import threading
 import time
 import types
-from contextlib import contextmanager, suppress
+from contextlib import AbstractContextManager, suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from collections.abc import Iterator
 
 from . import google_local
-from .data import chief_home
+from .data import chief_config_scope
+from .util import owner_error
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -46,6 +46,10 @@ CONTRACT = "chief.connections.v1"
 _OP_TTL = 15 * 60
 _CACHE_S = 20.0
 _PREPARE_S = 31.0
+# A second Connect for the same account while its sign-in link is still good gets that link, not a second one.
+_QUICK_REUSE_S = 4 * 60
+# A Nous sign-in we started is forgotten after this long (Hermes's own sessions last 15 minutes).
+_NOUS_TTL = 20 * 60
 
 
 class ConnectionsError(ValueError):
@@ -80,29 +84,9 @@ _NOT_OFFERED = {"paypal", "plaid", "robinhood", "square", "stripe"}
 # ----------------------------------------------------------------------------- scope
 
 
-@contextmanager
-def chief_scope() -> Iterator[Path]:
-    """The chief profile's home and secret scope for this thread (and threads started from it)."""
-    from hermes_constants import reset_hermes_home_override, set_hermes_home_override
-
-    home = chief_home()
-    home_token = set_hermes_home_override(home)
-    secret_token = None
-    reset_secret = None
-    try:
-        try:
-            from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
-
-            secret_token = set_secret_scope(build_profile_secret_scope(home), profile_home=str(home))
-            reset_secret = reset_secret_scope
-        except Exception:
-            logger.debug("chief-dashboard-bridge: no secret scope for connections", exc_info=True)
-        yield home
-    finally:
-        if secret_token is not None and reset_secret is not None:
-            with suppress(Exception):
-                reset_secret(secret_token)
-        reset_hermes_home_override(home_token)
+def chief_scope() -> AbstractContextManager[Path]:
+    """The chief profile's home and secret scope for this thread (and threads started from it): data.chief_config_scope."""
+    return chief_config_scope()
 
 
 # ----------------------------------------------------------------------------- Nous
@@ -129,7 +113,19 @@ def _nous_state() -> dict[str, Any]:
 
 
 _nous_lock = threading.Lock()
-_nous_sessions: dict[str, str] = {}  # our session id -> Hermes's dashboard OAuth session id
+_nous_sessions: dict[str, tuple[str, float]] = {}  # our session id -> (Hermes's dashboard OAuth session id, started)
+
+
+def _prune_nous(now: float | None = None) -> None:
+    """Forget sign-ins that are old or that Hermes has ended (it drops its own after a while)."""
+    from hermes_cli.web_routers.oauth import _oauth_sessions, _oauth_sessions_lock
+
+    now = time.time() if now is None else now
+    with _nous_lock, _oauth_sessions_lock:
+        for sid, (hid, started) in list(_nous_sessions.items()):
+            sess = _oauth_sessions.get(hid)
+            if now - started > _NOUS_TTL or sess is None or str(sess.get("status") or "pending") != "pending":
+                _nous_sessions.pop(sid, None)
 
 
 def nous_start() -> dict[str, Any]:
@@ -137,11 +133,18 @@ def nous_start() -> dict[str, Any]:
     so a free-tier identity's connectors carry over and the credentials land where Hermes expects them."""
     from hermes_cli.web_routers.oauth import _start_nous_device_code
 
+    _prune_nous()
     with chief_scope():
-        started = asyncio.run(_start_nous_device_code("chief"))
+        try:
+            started = asyncio.run(_start_nous_device_code("chief"))
+        except Exception as exc:
+            # Hermes's refusal before any code (already signed in, free tier unavailable) is its own sentence.
+            if type(exc).__name__ == "HTTPException" and getattr(exc, "status_code", 0) == 400:
+                raise ConnectionsError(_plain(str(getattr(exc, "detail", "") or ""), "Nous couldn't start a sign-in. Try again.")) from exc
+            raise
     sid = secrets.token_urlsafe(12)
     with _nous_lock:
-        _nous_sessions[sid] = str(started["session_id"])
+        _nous_sessions[sid] = (str(started["session_id"]), time.time())
     _invalidate()
     return {
         "ok": True,
@@ -153,12 +156,16 @@ def nous_start() -> dict[str, Any]:
 
 
 def _hermes_session(sid: str) -> tuple[str, dict[str, Any] | None]:
+    """(Hermes's session id, a copy of its session) for one of ours; the session is None once Hermes dropped it."""
     from hermes_cli.web_routers.oauth import _oauth_sessions, _oauth_sessions_lock
 
     with _nous_lock:
-        hid = _nous_sessions.get(sid, "")
+        hid = (_nous_sessions.get(sid) or ("", 0.0))[0]
+    if not hid:
+        return "", None
     with _oauth_sessions_lock:
-        return hid, dict(_oauth_sessions.get(hid) or {}) if hid else None
+        sess = _oauth_sessions.get(hid)
+        return hid, dict(sess) if sess is not None else None
 
 
 def nous_poll(sid: str) -> dict[str, Any]:
@@ -166,9 +173,13 @@ def nous_poll(sid: str) -> dict[str, Any]:
     if not hid:
         raise ConnectionsError("That sign-in has ended. Start again.")
     if sess is None:
+        with _nous_lock:
+            _nous_sessions.pop(sid, None)
         return {"ok": True, "status": "expired"}
     status = str(sess.get("status") or "pending")
     if status != "pending":
+        with _nous_lock:
+            _nous_sessions.pop(sid, None)
         _invalidate()
         _forget_directory()
     out: dict[str, Any] = {"ok": True, "status": status}
@@ -181,7 +192,7 @@ def nous_cancel(sid: str) -> dict[str, Any]:
     from hermes_cli.web_routers.oauth import _oauth_sessions, _oauth_sessions_lock
 
     with _nous_lock:
-        hid = _nous_sessions.pop(sid, "")
+        hid = (_nous_sessions.pop(sid, None) or ("", 0.0))[0]
     if hid:
         with _oauth_sessions_lock:
             sess = _oauth_sessions.pop(hid, None)
@@ -570,10 +581,28 @@ class Op:
     created: float
     status: str = "pending"  # pending | connected | failed
     error: str = ""
+    account: tuple[str, str, str] = ("", "", "")  # quick: (slug, name, account signed in again)
 
 
 _ops: dict[str, Op] = {}
 _ops_lock = threading.Lock()
+_quick_locks: dict[tuple[str, str, str], threading.Lock] = {}
+
+
+def _open_quick(account: tuple[str, str, str]) -> Op | None:
+    """A quick sign-in already open for this service and account whose link is still good."""
+    now = time.time()
+    with _ops_lock:
+        for op in _ops.values():
+            if op.backend == "quick" and op.account == account and op.status == "pending" and now - op.created < _QUICK_REUSE_S:
+                if not getattr(op.handle, "settled", False):
+                    return op
+    return None
+
+
+def _quick_lock(account: tuple[str, str, str]) -> threading.Lock:
+    with _ops_lock:
+        return _quick_locks.setdefault(account, threading.Lock())
 
 
 def _keep(op: Op) -> Op:
@@ -812,12 +841,17 @@ def connect(service_id: str, backend: str = "", env: dict[str, Any] | None = Non
             return {"ok": True, "state": "connected"}
         op = _keep(Op(op_id, svc.id, "mcp", attempt, url, time.time()))
     else:
-        operation, url = _quick_connect(svc.quick, name=name or None, repair_id=account or None)
-        _forget_directory()  # the first connect may have just made the Nous identity the directory needs
-        if not url:
-            _invalidate()
-            return {"ok": True, "state": "connected"}
-        op = _keep(Op(op_id, svc.id, "quick", operation, url, time.time()))
+        key = (svc.quick, name, account)
+        # One sign-in per account at a time: a double click (or a second window) gets the link already open.
+        with _quick_lock(key):
+            op = _open_quick(key)
+            if op is None:
+                operation, url = _quick_connect(svc.quick, name=name or None, repair_id=account or None)
+                _forget_directory()  # the first connect may have just made the Nous identity the directory needs
+                if not url:
+                    _invalidate()
+                    return {"ok": True, "state": "connected"}
+                op = _keep(Op(op_id, svc.id, "quick", operation, url, time.time(), account=key))
     return {"ok": True, "op": op.id, "url": op.url, "backend": op.backend, "finishOnPc": op.backend in ("local", "mcp")}
 
 
@@ -851,6 +885,12 @@ def op_cancel(op_id: str) -> dict[str, Any]:
                 from tools.connectors.mcp_oauth import cancel_attempt
 
                 cancel_attempt(op.handle.flow)
+            elif op.backend == "quick":
+                # Settling the operation is what the chat's card does on Continue: its watcher stops at once
+                # instead of polling Nous until the deadline.
+                from tools.connectors.contract import SettleReason
+
+                op.handle.settle(SettleReason.continue_)
     return {"ok": True}
 
 
@@ -1031,5 +1071,4 @@ def call(fn: Any) -> Any:
     except ImportError:
         return {"ok": False, "error": "This Hermes can't connect services from the app (see Status)."}, 501
     except Exception as exc:
-        logger.warning("connections action failed: %s", type(exc).__name__, exc_info=True)
-        return {"ok": False, "error": _plain(str(exc), "That didn't work. Try again.")}, 500
+        return {"ok": False, "error": owner_error(exc, what="connections action")}, 500

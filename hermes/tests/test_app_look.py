@@ -63,6 +63,11 @@ class AppLookTests(unittest.TestCase):
         app_look.reset()
         self.assertEqual((app_look.get()["accent"], app_look.get()["mode"]), ("theme", "dark"))
 
+    def test_a_look_that_couldnt_be_saved_is_a_plain_error(self):
+        with patch.object(app_look, "chief_home", lambda: self.home / "gone"), self.assertLogs("chief-dashboard-bridge", level="WARNING"):
+            answer = app_look.call(lambda: app_look.set_look("pink"))
+        self.assertEqual(answer, ({"ok": False, "error": "Couldn't save the look. Try again."}, 500))
+
 
 if __name__ == "__main__":
     unittest.main()

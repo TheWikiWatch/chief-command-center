@@ -85,9 +85,11 @@ def _rows() -> list[dict]:
         return list(_cache["rows"])  # type: ignore[arg-type]
 
 
-def append_outbox(chat_id: str, message: str, *, source: str = "adapter") -> str:
+def append_outbox(chat_id: str, message: str, *, source: str = "adapter", routine: dict | None = None, failure: dict | None = None) -> str:
+    """One row. `routine` ({name, jobId, profile, bot}) and `failure` ({error, streak, detail}) ride along with a bot's
+    routine run the bridge relays (routines.relay), so the chat shows it as that routine's card."""
     mid = uuid.uuid4().hex[:12]
-    row = {
+    row: dict = {
         "id": mid,
         "at": time.time(),
         "chat_id": chat_id or identity.owner_id(),
@@ -95,6 +97,10 @@ def append_outbox(chat_id: str, message: str, *, source: str = "adapter") -> str
         "source": source,
         "read": False,
     }
+    if routine:
+        row["routine"] = routine
+    if failure:
+        row["failure"] = failure
     path = _outbox_path()
     with _lock:
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -22,6 +22,7 @@ from typing import Any
 
 from . import changes
 from .data import chief_home
+from .util import write_json_atomic
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -56,10 +57,7 @@ def _read() -> dict[str, Any]:
 
 
 def _write(doc: dict[str, Any]) -> None:
-    path = chief_home() / _FILE
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(doc, indent=2), encoding="utf-8")
-    tmp.replace(path)
+    write_json_atomic(chief_home() / _FILE, doc)
 
 
 def get() -> dict[str, Any]:
@@ -138,6 +136,9 @@ def call(fn: Any) -> Any:
         return fn()
     except LookError as exc:
         return {"ok": False, "error": str(exc)}, 400
+    except OSError as exc:  # the look couldn't be saved (a full disk, a locked file)
+        logger.warning("app look not saved: %s", type(exc).__name__)
+        return {"ok": False, "error": "Couldn't save the look. Try again."}, 500
 
 
 # ----------------------------------------------------------------------------- the bots

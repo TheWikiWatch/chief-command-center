@@ -4,7 +4,7 @@ Every step is Hermes's own (`hermes_cli/web_routers/local_models.py`, plain func
 the same ones its desktop app and CLI drive): the hardware probe, the catalog priced for this machine (what fits,
 which build, how big), installing the engine (PM, pinned SHA-256s), downloads with byte progress, pause and resume,
 the one-click quickstart (engine, this machine's build of the recommended model, start the server, make it the
-default), activating a model for the chief or a bot, starting and stopping the server, removing a model.
+default), activating a model for the chief, starting and stopping the server, removing a model.
 
 What the app adds:
 
@@ -33,13 +33,16 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from . import data
 from .data import chief_config_scope
+from .util import TRY_AGAIN, subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
 CONTRACT = "chief.local_models.v1"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]{0,159}$")
-_PROFILE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
+# Hermes's names for its llama.cpp provider (web_routers/local_models.py), in case it stops exporting them.
+_LLAMACPP = ("llamacpp", "llama.cpp", "llama-cpp")
 _SUGGEST_MIN_FREE = 40 * 1024**3
 FOLDER_NAME = "Chief models"
 
@@ -59,6 +62,34 @@ def _run(value: Any) -> Any:
     return asyncio.run(value) if asyncio.iscoroutine(value) else value
 
 
+# What Hermes's local-model handlers refuse with, in the owner's words: their HTTPException details are written for
+# developers, and a 502 carries the raw error. Anything not listed is the plain fallback for its status.
+_HERMES_SAYS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"^model not found$"), "That model isn't downloaded any more."),
+    (re.compile(r"^unknown model "), "That isn't a model this app knows."),
+    (re.compile(r" is not downloaded$"), "That model isn't downloaded yet."),
+    (re.compile(r"^(job not found|unknown download job)$"), "That download has ended."),
+    (re.compile(r"^Setup is already running$"), "Setup is already running."),
+    (re.compile(r"^No automatic recommendation"), "There's no automatic pick for this PC. Choose a model from the list."),
+    (re.compile(r"^no catalog model fits"), "None of the models fits this PC."),
+    (re.compile(r"^no variant of .+ fits"), "That model doesn't fit this PC."),
+    (re.compile(r"needs llama\.cpp .+ or newer"), "That model needs a newer engine. Update the engine first."),
+    (re.compile(r"^Another Hermes process owns this server"), "Another copy of Hermes runs the local server, so it can't be stopped from here."),
+    (re.compile(r"^local server is not running$"), "The local server isn't running."),
+    (re.compile(r"could not start"), "The local server couldn't start. Check the engine is installed, then try again."),
+    (re.compile(r"^action must be"), "Start or stop."),
+)
+
+
+def hermes_refusal(status: Any, detail: Any) -> str:
+    """A Hermes refusal in a sentence the owner can act on."""
+    text = " ".join(str(detail or "").split())
+    for pattern, sentence in _HERMES_SAYS:
+        if pattern.search(text):
+            return sentence
+    return "The local server didn't answer. Try again." if status == 502 else TRY_AGAIN
+
+
 def _call(fn, *args: Any, **kwargs: Any) -> Any:
     """A Hermes handler in the chief's scope; its HTTPException becomes a plain error."""
     with chief_config_scope():
@@ -66,7 +97,8 @@ def _call(fn, *args: Any, **kwargs: Any) -> Any:
             return _run(fn(*args, **kwargs))
         except Exception as exc:
             if type(exc).__name__ == "HTTPException":
-                raise LocalModelsError(str(getattr(exc, "detail", "") or "That didn't work.")) from exc
+                logger.info("local models: Hermes refused (%s)", getattr(exc, "status_code", ""))
+                raise LocalModelsError(hermes_refusal(getattr(exc, "status_code", None), getattr(exc, "detail", ""))) from exc
             raise
 
 
@@ -154,12 +186,12 @@ def folder() -> dict[str, Any]:
 
         current = bootstrap.models_dir()
         configured = str(((load_config_readonly() or {}).get("local_runtime") or {}).get("models_dir") or "").strip()
-    default = _default_models_dir()
     return {
         "path": str(current),
         "chosen": bool(configured),
         "supported": folder_supported(),
-        "suggested": str(suggested_folder(default)),
+        # Only while the owner hasn't chosen: it measures every drive, and the pane polls during a download.
+        "suggested": str(current) if configured else str(suggested_folder(_default_models_dir())),
         "freeBytes": _free_bytes(current),
         "models": _models_in(current),
     }
@@ -193,18 +225,16 @@ def set_folder(path: str) -> dict[str, Any]:
 
 
 def _write_runtime_setting(key: str, value: Any) -> None:
+    """One `local_runtime` setting, through Hermes's one-key writer (a whole-file rewrite would undo a setting
+    Hermes saved meanwhile)."""
     with chief_config_scope():
-        from hermes_cli.config import atomic_config_replace, get_config_path, read_user_config_raw
+        from cli import save_config_value
+        from hermes_cli.config import get_config_path
 
         path = get_config_path()
-        raw = read_user_config_raw(path)
-        section = raw.get("local_runtime") if isinstance(raw.get("local_runtime"), dict) else {}
-        section[key] = value
-        raw["local_runtime"] = section
-        atomic_config_replace(path, raw)
-    from .data import forget_yaml
-
-    forget_yaml(path)
+        if not save_config_value(f"local_runtime.{key}", value):
+            raise LocalModelsError("Couldn't save that setting. Try again.")
+    data.forget_yaml(path)
 
 
 # ----------------------------------------------------------------------------- what Hermes says
@@ -339,25 +369,38 @@ def resume(job_id: str) -> dict[str, Any]:
     return {"ok": True, **_call(lm.local_models_download_resume, lm.JobIdBody(job_id=_id(job_id, "download")))}
 
 
+def _who_uses(model_id: str) -> str:
+    """The name of the chief or the bot whose model this is ("" when none): removing it would leave them without one."""
+    from .usage import _title
+
+    names = tuple(str(p).lower() for p in getattr(_lm(), "_LLAMACPP_PROVIDERS", _LLAMACPP))
+    chief = data.chief_home()
+    folder = data.profiles_dir()
+    bots = sorted(p for p in folder.iterdir() if p.is_dir() and p != chief and (p / "config.yaml").is_file()) if folder.is_dir() else []
+    for home in [chief, *bots]:
+        model = subdict(data.load_yaml(home / "config.yaml"), "model")
+        if str(model.get("provider") or "").lower() in names and str(model.get("default") or "") == model_id:
+            return _title("chief" if home == chief else home.name, home)
+    return ""
+
+
 def remove(model_id: str) -> dict[str, Any]:
     model_id = _id(model_id)
-    with chief_config_scope():
-        from hermes_cli.config import load_config_readonly
+    user = _who_uses(model_id)
+    if user:
+        raise LocalModelsError(f"{user} is using this model. Choose another model for {user} first.")
+    try:
+        return {"ok": True, **_call(_lm().local_models_delete, model_id)}
+    except PermissionError as exc:  # Windows won't delete a file the server has loaded
+        raise LocalModelsError("The local server is using this model. Stop the server first, then remove it.") from exc
 
-        model = (load_config_readonly() or {}).get("model") or {}
-    if str(model.get("provider") or "").lower() in ("llamacpp", "llama.cpp", "llama-cpp") and str(model.get("default") or "") == model_id:
-        raise LocalModelsError("Chief is using this model. Choose another model for Chief first.")
-    return {"ok": True, **_call(_lm().local_models_delete, model_id)}
 
-
-def activate(model_id: str, profile: str = "chief") -> dict[str, Any]:
-    """Make a downloaded model the chief's (or a bot's) model, and make sure the server is up."""
+def activate(model_id: str) -> dict[str, Any]:
+    """Make a downloaded model the chief's model, and make sure the server is up. The chief's only: Hermes's handler
+    scopes a bot's profile by switching this whole process to hosting several profiles, after which any credential
+    read in the gateway without a profile's scope fails. A bot gets a local model from its own Models picker."""
     lm = _lm()
-    profile = (profile or "chief").strip().lower()
-    if not _PROFILE.match(profile):
-        raise LocalModelsError("Unknown bot.")
-    scope = None if profile == "chief" else profile
-    return {"ok": True, **_call(lm.local_models_activate, lm.ModelActivateBody(model_id=_id(model_id)), scope)}
+    return {"ok": True, **_call(lm.local_models_activate, lm.ModelActivateBody(model_id=_id(model_id)), None)}
 
 
 def server(action: str) -> dict[str, Any]:

@@ -77,15 +77,22 @@ def _worker_dirs() -> list[Path]:
     return out
 
 
-def _busy(name: str) -> bool:
+def _jobs() -> dict[str, Any]:
+    """The kanban's jobs by worker (one read: the board and a process check per job)."""
     try:
-        jobs = data.work_status().get("jobs") or {}
-        return (data.job_for_person(jobs, name).get("status") or "") == "working"
+        return data.work_status().get("jobs") or {}
+    except Exception:
+        return {}
+
+
+def _busy(name: str, jobs: dict[str, Any] | None = None) -> bool:
+    try:
+        return (data.job_for_person(_jobs() if jobs is None else jobs, name).get("status") or "") == "working"
     except Exception:
         return False
 
 
-def _describe(entry: Path) -> dict[str, Any]:
+def _describe(entry: Path, jobs: dict[str, Any] | None = None) -> dict[str, Any]:
     meta = _load_yaml(entry / "profile.yaml")
     ui = (meta.get("ui_meta") or {}).get("hermes-bots") if isinstance(meta.get("ui_meta"), dict) else {}
     ui = ui if isinstance(ui, dict) else {}
@@ -98,12 +105,13 @@ def _describe(entry: Path) -> dict[str, Any]:
         "description": str(meta.get("description") or ""),
         "model": {"provider": str(model.get("provider") or ""), "model": str(model.get("default") or "")},
         "cwd": str(terminal.get("cwd") or ""),
-        "working": _busy(entry.name),
+        "working": _busy(entry.name, jobs),
     }
 
 
 def roster() -> dict[str, Any]:
-    return {"ok": True, "contract": CONTRACT, "workers": [_describe(e) for e in _worker_dirs()], "archives": archives()}
+    jobs = _jobs()
+    return {"ok": True, "contract": CONTRACT, "workers": [_describe(e, jobs) for e in _worker_dirs()], "archives": archives()}
 
 
 # ---------------------------------------------------------------- sections (the Fleet tab's grouping)
@@ -181,7 +189,8 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
         from cli import save_config_value
 
         with persona.profile_scope(home):
-            save_config_value("terminal.cwd", str(workdir))
+            if not save_config_value("terminal.cwd", str(workdir)):
+                raise FleetError("Couldn't save the new bot's settings. Try again.")
         meta = _load_yaml(home / "profile.yaml")
         if not isinstance(meta.get("ui_meta"), dict):
             meta["ui_meta"] = {}
@@ -433,7 +442,7 @@ def _tool(fn):
     def handle(args: dict, **_kw) -> str:
         try:
             result = fn(args or {})
-        except (FleetError, persona.PersonaError, looks.LookError) as exc:
+        except (FleetError, persona.PersonaError, looks.LookError, providers.ProvidersError) as exc:
             result = {"ok": False, "error": str(exc)}
         except Exception as exc:  # never a traceback (or a value) into the conversation
             logger.warning("fleet tool failed: %s", type(exc).__name__)

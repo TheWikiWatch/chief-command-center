@@ -29,6 +29,7 @@ persona = importlib.import_module("test_fleet_plugin.persona")
 providers = importlib.import_module("test_fleet_plugin.providers")
 second_brain = importlib.import_module("test_fleet_plugin.second_brain")
 fleet = importlib.import_module("test_fleet_plugin.fleet")
+REAL_BUSY = fleet._busy
 
 _MISSING = object()
 SOUL = "You are Nova, the planner. You keep the week on track."
@@ -77,7 +78,7 @@ class FleetTestCase(unittest.TestCase):
             (data, "named_profile_is_deleted", lambda path: Path(path).name == "gone"),
             (data, "chief_config_scope", contextlib.nullcontext),
             (persona, "profile_scope", lambda home: contextlib.nullcontext()),
-            (fleet, "_busy", lambda name: name in self.busy),
+            (fleet, "_busy", lambda name, jobs=None: name in self.busy),
         ):
             patcher = patch.object(target, name, value)
             patcher.start()
@@ -106,6 +107,20 @@ class RosterTests(FleetTestCase):
             ],
         )
         self.assertEqual(result["archives"], [])
+
+    def test_the_board_is_read_once_for_the_whole_roster(self):
+        for name in ("vega", "orion"):
+            (self.profiles / name).mkdir()
+        reads = []
+        board = {"jobs": {"vega": {"status": "working"}}}
+        with (
+            patch.object(fleet, "_busy", REAL_BUSY),
+            patch.object(data, "work_status", lambda: reads.append(1) or board),
+            patch.object(data, "job_for_person", lambda jobs, name: jobs.get(name) or {}),
+        ):
+            workers = {w["id"]: w["working"] for w in fleet.roster()["workers"]}
+        self.assertEqual(workers, {"ada": False, "orion": False, "vega": True})
+        self.assertEqual(len(reads), 1)
 
     def test_a_bare_profile_is_described_by_its_folder(self):
         bare = self.profiles / "vega"
@@ -206,6 +221,12 @@ class MintTests(FleetTestCase):
         with patch.object(fleet.looks, "write_face", lambda pid, face: written.append((pid, face)) or ({"ok": True}, 200)):
             self.mint(look={"style": "bubble", "color": "teal", "blobKind": "sun"})
         self.assertEqual(written, [("nova", {"style": "bubble", "color": "#12a594", "body": "bean", "eyes": "dot", "cheeks": False})])
+
+    def test_a_setting_hermes_couldnt_save_undoes_the_mint(self):
+        fake_module(self, "cli", save_config_value=lambda key, value: False)
+        with self.assertLogs("chief-dashboard-bridge", level="WARNING"), self.assertRaisesRegex(fleet.FleetError, "Couldn't save"):
+            self.mint()
+        self.assertFalse((self.profiles / "nova").exists())
 
     def test_a_failure_part_way_removes_the_half_made_profile(self):
         def broken(key, value):

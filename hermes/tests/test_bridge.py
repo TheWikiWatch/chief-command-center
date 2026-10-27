@@ -255,7 +255,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_profile_names_cannot_leave_the_profiles_folder(self):
         for name in ("..", "../..", "chief/../..", "Chief", "a" * 70, ""):
-            self.assertEqual(data.profile_peek(name), {"ok": False, "error": "unknown profile"}, name)
+            self.assertEqual(data.profile_peek(name), {"ok": False, "error": "That bot isn't on the team any more."}, name)
             self.assertIsNone(data.avatar_bytes(name), name)
 
     def handler(self, bridge, path, body: bytes, length=None):
@@ -342,6 +342,117 @@ class BridgeTests(unittest.TestCase):
                 self.assertTrue(bridge.send("hi", [], "id-2")["ok"])
                 self.assertTrue(bridge.send("hi", [])["ok"])
         self.assertEqual(len(queued), 4)
+
+    def test_a_send_that_fails_after_its_id_was_claimed_is_released_not_dropped(self):
+        # A full disk while saving a photo used to keep the id: the dashboard's retry then came back "duplicate".
+        queued = []
+
+        class Adapter:
+            def queue_user_text(self, text, media=None, message_type="text"):
+                queued.append(text)
+                return True
+
+        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("ascii")
+        with patch.dict(os.environ, {"COMMAND_CENTER_ENABLED": "1"}):
+            bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
+            bridge.command_center_adapter = Adapter()
+            bind = {"sessionKey": "agent:main:command_center:dm:owner", "platform": "command_center"}
+            with patch.object(data, "resolve_session_key", return_value=bind), patch.object(server, "_live_command_center_adapter", return_value=None):
+                with (
+                    patch.object(data, "compose_user_turn", side_effect=OSError(28, "No space left on device", "D:\\synthetic\\x.png")),
+                    self.assertLogs("chief-dashboard-bridge", level="WARNING"),
+                ):
+                    failed = bridge.send("look", [{"name": "a.png", "mime": "image/png", "data_url": image}], "id-9")
+                self.assertEqual(failed, {"ok": False, "error": "Couldn't send that. Try again."})  # no path, no errno text
+                self.assertEqual(list((self.home / "cache" / "inbound").iterdir()), [])
+                again = bridge.send("look", [{"name": "a.png", "mime": "image/png", "data_url": image}], "id-9")
+        self.assertTrue(again["ok"])
+        self.assertNotIn("duplicate", again)
+        self.assertEqual(len(queued), 1)
+
+    def test_uploads_are_all_or_nothing(self):
+        image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("ascii")
+        items = [{"name": f"{n}.png", "mime": "image/png", "data_url": image} for n in ("one", "two", "three")]
+        inbound = self.home / "cache" / "inbound"
+        real = Path.write_bytes
+        writes = []
+
+        def fill_up(path, payload):
+            writes.append(path)
+            if len(writes) == 3:
+                raise OSError(28, "No space left on device")
+            return real(path, payload)
+
+        with patch.object(Path, "write_bytes", fill_up), self.assertRaises(data.UploadError) as caught:
+            data.stage_uploads(items)
+        self.assertEqual(str(caught.exception), "Couldn't save three.png on this PC. Check there's free space, then try again.")
+        self.assertEqual(list(inbound.iterdir()), [], "the two already saved are removed")
+        self.assertEqual(data._recent_media_paths, {})
+        bad = [*items[:2], {"name": "x.png", "data_url": "not a data url"}]
+        with self.assertRaises(data.UploadError):
+            data.stage_uploads(bad)
+        self.assertEqual(list(inbound.iterdir()), [])
+
+    def test_a_fresh_start_waits_for_the_confirmation_only_when_hermes_asks_for_one(self):
+        queued, asked = [], []
+
+        class Adapter:
+            _active_sessions: dict = {}
+
+            def queue_user_text(self, text, media=None, message_type="text"):
+                queued.append(text)
+                return True
+
+        slash = types.ModuleType("tools.slash_confirm")
+        slash.get_pending = lambda key: asked.append(key) or {"command": "/new"}
+        tools = types.ModuleType("tools")
+        tools.slash_confirm = slash
+        bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
+        bridge.command_center_adapter = Adapter()
+        bind = {"sessionKey": "agent:main:command_center:dm:owner", "platform": "command_center"}
+        with (
+            patch.dict(sys.modules, {"tools": tools, "tools.slash_confirm": slash}),
+            patch.object(data, "resolve_session_key", return_value=bind),
+            patch.object(server, "_live_command_center_adapter", return_value=None),
+        ):
+            (self.home / "config.yaml").write_text(json.dumps({"approvals": {"destructive_slash_confirm": False}}), encoding="utf-8")
+            data.forget_yaml(self.home / "config.yaml")
+            started = time.monotonic()
+            self.assertTrue(bridge.fresh_start()["ok"])
+            self.assertLess(time.monotonic() - started, 1.0)
+            self.assertEqual((queued, asked), (["/new"], []))  # Hermes runs it at once: nothing to answer
+            (self.home / "config.yaml").write_text(json.dumps({"model": {}}), encoding="utf-8")
+            data.forget_yaml(self.home / "config.yaml")
+            self.assertTrue(bridge.fresh_start()["ok"])
+        self.assertEqual(queued, ["/new", "/new", "/approve"])  # on when unset, as Hermes reads it
+
+    def test_load_earlier_is_offered_only_when_there_is_something_earlier(self):
+        with self.database() as conn:
+            conn.execute("INSERT INTO messages VALUES (1, 'session_meta', '{}', '1.0', NULL, 's', 1)")
+            conn.execute("INSERT INTO messages VALUES (2, 'user', 'hello', '2.0', NULL, 's', 1)")
+            conn.execute("INSERT INTO messages VALUES (3, 'assistant', 'hi', '3.0', NULL, 's', 0)")
+            conn.execute("INSERT INTO messages VALUES (4, 'user', 'again', '4.0', NULL, 's', 1)")
+        self.assertFalse(data.has_rows_before("session", 2))
+        self.assertTrue(data.has_rows_before("session", 4))  # an archived row counts: Load earlier reads those
+        self.assertFalse(data.has_rows_before("", 4))
+        self.assertFalse(data.has_rows_before("session", 0))
+
+    def test_only_the_bridges_own_refusals_reach_the_owner_as_written(self):
+        boom = RuntimeError("Cannot run: job 'x' is completed. Use 'hermes cron resume x' in E:\\private-folder")
+        with self.assertLogs("chief-dashboard-bridge", level="WARNING") as logs:
+            self.assertEqual(server._guarded(lambda: (_ for _ in ()).throw(boom)), {"ok": False, "error": "That didn't work. Try again."})
+        self.assertIn("RuntimeError", logs.output[0])
+        self.assertNotIn("private-folder", logs.output[0])
+        refused = server.threads.ThreadError("That thread is archived.")
+        self.assertEqual(server._guarded(lambda: (_ for _ in ()).throw(refused)), {"ok": False, "error": "That thread is archived."})
+        missing = server.hermes_api.HermesMissing("tools.approval.x")
+        self.assertIn("can't do that from the app", server._guarded(lambda: (_ for _ in ()).throw(missing))["error"])
+
+    def test_an_oversized_send_says_so_in_words(self):
+        bridge = server.BridgeServer(token="test", port=0, session_key_override="", inject=lambda *_: False)
+        h, out = self.handler(bridge, "/send", b"{}", length=81 * 1024 * 1024)
+        h.do_POST()
+        self.assertEqual((out["code"], out["error"]), (413, "That's too big to send. Send fewer or smaller files."))
 
     def test_media_tag_only_takes_real_paths(self):
         # Prose that mentions MEDIA: stays text; it used to become a fake file chip.

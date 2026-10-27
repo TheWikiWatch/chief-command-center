@@ -148,15 +148,32 @@ def is_chief_home(path: Path | None = None) -> bool:
 
 
 @contextmanager
-def chief_config_scope() -> Iterator[None]:
-    """Force load/save onto the chief profile, even if this thread inherited another HERMES_HOME."""
+def chief_config_scope() -> Iterator[Path]:
+    """The chief profile's home and secret scope for this thread (and threads started from it), even if it inherited
+    another HERMES_HOME. The secret scope matters once Hermes hosts more than one profile in this process: from then
+    on a credential read without one raises instead of borrowing the process's (Hermes's own MCP worker pattern)."""
     from hermes_constants import reset_hermes_home_override, set_hermes_home_override
 
-    token = set_hermes_home_override(chief_home())
+    home = chief_home()
+    home_token = set_hermes_home_override(home)
+    secret_token = None
+    reset_secret = None
     try:
-        yield
+        try:
+            from agent.secret_scope import build_profile_secret_scope, reset_secret_scope, set_secret_scope
+
+            secret_token = set_secret_scope(build_profile_secret_scope(home), profile_home=str(home))
+            reset_secret = reset_secret_scope
+        except Exception:
+            logger.debug("chief-dashboard-bridge: no secret scope for the chief", exc_info=True)
+        yield home
     finally:
-        reset_hermes_home_override(token)
+        if secret_token is not None and reset_secret is not None:
+            try:
+                reset_secret(secret_token)
+            except Exception:
+                logger.debug("chief-dashboard-bridge: secret scope reset failed", exc_info=True)
+        reset_hermes_home_override(home_token)
 
 
 def profiles_dir(root: Path | None = None) -> Path:
@@ -738,65 +755,85 @@ def _safe_upload_name(name: str) -> str:
     return base or "file"
 
 
+_SAVE_FAILED = "Couldn't save {name} on this PC. Check there's free space, then try again."
+
+
 def stage_uploads(items: list[Any], dest: Path | None = None) -> list[dict[str, Any]]:
-    """Write composer uploads into the inbound cache and return paths the chief can read."""
+    """Write composer uploads into the inbound cache and return paths the chief can read. All or nothing: when one
+    file can't be taken (or saved: a full disk), the ones already written are removed and UploadError says why."""
     if not items:
         return []
     if len(items) > MAX_ATTACHMENTS:
         raise UploadError(f"Attach up to {MAX_ATTACHMENTS} files at a time.")
     root = dest or (chief_home() / "cache" / "inbound")
-    root.mkdir(parents=True, exist_ok=True)
     staged: list[dict[str, Any]] = []
-    for raw in items:
-        if not isinstance(raw, dict):
-            raise UploadError("A file could not be read.")
-        name = _safe_upload_name(str(raw.get("name") or "file"))
-        if _denied_file(Path(name)):
-            raise UploadError(f"{name} cannot be attached.")
-        mime = str(raw.get("mime") or raw.get("mime_type") or "application/octet-stream").split(";", 1)[0].strip().lower()
-        data_url = str(raw.get("data_url") or raw.get("dataUrl") or "").strip()
-        if not data_url.startswith("data:") or "," not in data_url:
-            raise UploadError(f"{name} is not a valid file.")
-        header, encoded = data_url.split(",", 1)
-        if ";base64" not in header:
-            raise UploadError(f"{name} is not a valid file.")
+    try:
         try:
-            import base64
-            import binascii
-
-            payload = base64.b64decode(encoded, validate=True)
-        except (binascii.Error, ValueError):
-            raise UploadError(f"{name} is not a valid file.") from None
-        if not payload:
-            raise UploadError(f"{name} is empty.")
-        if len(payload) > MAX_ATTACHMENT_BYTES:
-            raise UploadError(f"{name} is over 25MB.")
-        ext = Path(name).suffix.lower()
-        kind = (
-            "image"
-            if mime.startswith("image/") or ext.lstrip(".") in _IMAGE_EXTS
-            else (
-                "video"
-                if mime.startswith("video/") or ext.lstrip(".") in _VIDEO_EXTS
-                else ("audio" if mime.startswith("audio/") or ext.lstrip(".") in _AUDIO_EXTS else "file")
-            )
-        )
-        path = root / f"up_{uuid_hex()}_{name}"
-        path.write_bytes(payload)
-        remember_media_path(str(path))
-        inline = ""
-        if ext in _INLINE_EXTS and len(payload) <= _INLINE_MAX:
-            inline = payload.decode("utf-8", errors="replace")
-        staged.append(
-            {
-                "path": str(path),
-                "name": name,
-                "mime": mime or "application/octet-stream",
-                "kind": kind,
-                "inline": inline,
-            }
-        )
+            root.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise UploadError(_SAVE_FAILED.format(name="the files")) from exc
+        for raw in items:
+            staged.append(_stage_one(raw, root))
+    except BaseException:
+        discard_staged(staged)
+        raise
     return staged
+
+
+def _stage_one(raw: Any, root: Path) -> dict[str, Any]:
+    if not isinstance(raw, dict):
+        raise UploadError("A file could not be read.")
+    name = _safe_upload_name(str(raw.get("name") or "file"))
+    if _denied_file(Path(name)):
+        raise UploadError(f"{name} cannot be attached.")
+    mime = str(raw.get("mime") or raw.get("mime_type") or "application/octet-stream").split(";", 1)[0].strip().lower()
+    data_url = str(raw.get("data_url") or raw.get("dataUrl") or "").strip()
+    if not data_url.startswith("data:") or "," not in data_url:
+        raise UploadError(f"{name} is not a valid file.")
+    header, encoded = data_url.split(",", 1)
+    if ";base64" not in header:
+        raise UploadError(f"{name} is not a valid file.")
+    try:
+        import base64
+        import binascii
+
+        payload = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise UploadError(f"{name} is not a valid file.") from None
+    if not payload:
+        raise UploadError(f"{name} is empty.")
+    if len(payload) > MAX_ATTACHMENT_BYTES:
+        raise UploadError(f"{name} is over 25MB.")
+    ext = Path(name).suffix.lower()
+    kind = (
+        "image"
+        if mime.startswith("image/") or ext.lstrip(".") in _IMAGE_EXTS
+        else (
+            "video"
+            if mime.startswith("video/") or ext.lstrip(".") in _VIDEO_EXTS
+            else ("audio" if mime.startswith("audio/") or ext.lstrip(".") in _AUDIO_EXTS else "file")
+        )
+    )
+    path = root / f"up_{uuid_hex()}_{name}"
+    try:
+        path.write_bytes(payload)
+    except OSError as exc:
+        try:
+            path.unlink(missing_ok=True)  # a part-written file
+        except OSError:
+            pass
+        raise UploadError(_SAVE_FAILED.format(name=name)) from exc
+    remember_media_path(str(path))
+    inline = ""
+    if ext in _INLINE_EXTS and len(payload) <= _INLINE_MAX:
+        inline = payload.decode("utf-8", errors="replace")
+    return {
+        "path": str(path),
+        "name": name,
+        "mime": mime or "application/octet-stream",
+        "kind": kind,
+        "inline": inline,
+    }
 
 
 def discard_staged(staged: list[dict[str, Any]]) -> None:
@@ -1070,6 +1107,29 @@ def head_id(session_key: str) -> int:
         return 0
 
 
+def has_rows_before(session_key: str, before_id: int) -> bool:
+    """Whether Load earlier has anything before `before_id` (archived rows count, as Load earlier reads them): one
+    indexed lookup instead of reading a page."""
+    db_path = chief_home() / "state.db"
+    if not session_key or not before_id or not db_path.is_file():
+        return False
+    try:
+        conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        conn.row_factory = sqlite3.Row
+        try:
+            sid = _message_session_id(conn, session_key)
+            row = conn.execute(
+                "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND id < ? AND role IN ('user', 'assistant')) AS found",
+                (sid, before_id),
+            ).fetchone()
+            return bool(row and row["found"])
+        finally:
+            conn.close()
+    except Exception:
+        logger.debug("earlier rows check failed", exc_info=True)
+        return False
+
+
 def _all_replay_windows(conn: sqlite3.Connection, session_id: str) -> list[tuple[int, int | None]]:
     """Every compaction's re-inserted block in the session, archived or not (see _replay_window)."""
     out: list[tuple[int, int | None]] = []
@@ -1133,7 +1193,6 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
             role = str(row["role"] or "")
             if role in _SKIP_ROLES:
                 continue
-            names = _tool_names(row["tool_calls"])
             if role == "tool":
                 # A question the chief asked with `clarify`, and the owner's answer.
                 from .chat_state import asked_from_tool_row
@@ -1153,25 +1212,21 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                         {"id": row["id"], "role": "assistant", "content": "", "timestamp": row["timestamp"], "tools": [], "attachments": [], "connect": connect}
                     )
                 continue
-            content = ""
-            attachments: list[dict[str, Any]] = []
-            if role != "tool":
-                content, attachments = parse_message_content(row["content"])
-                if role == "user":
-                    content = strip_agent_attachment_notes(content)
-                    # A scheduled job's message that Hermes copied into the conversation (`attach_to_session`,
-                    # the morning brief) keeps its context for Chief; the chat already shows it as a notice.
-                    if content.lstrip().startswith(_CRON_MIRROR):
-                        continue
-                # Files the bot sent may be shown wherever they are; a path written in anyone else's text is not
-                # one (the owner's own uploads live in the app's inbound folder, which is served anyway).
-                if role == "assistant":
-                    for att in attachments:
-                        remember_media_path(str(att.get("path") or ""))
-            if role == "tool" and not names:
+            if role not in {"user", "assistant"}:
                 continue
-            if role not in {"user", "assistant", "tool"}:
-                continue
+            names = _tool_names(row["tool_calls"])
+            content, attachments = parse_message_content(row["content"])
+            if role == "user":
+                content = strip_agent_attachment_notes(content)
+                # A scheduled job's message that Hermes copied into the conversation (`attach_to_session`,
+                # the morning brief) keeps its context for Chief; the chat already shows it as a notice.
+                if content.lstrip().startswith(_CRON_MIRROR):
+                    continue
+            # Files the bot sent may be shown wherever they are; a path written in anyone else's text is not
+            # one (the owner's own uploads live in the app's inbound folder, which is served anyway).
+            if role == "assistant":
+                for att in attachments:
+                    remember_media_path(str(att.get("path") or ""))
             if not content.strip() and not names and not attachments:
                 continue
             item = {
@@ -1211,13 +1266,16 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
     return {"sessionKey": session_key, "messages": messages, "lastId": last}
 
 
+_NO_SUCH_BOT = "That bot isn't on the team any more."
+
+
 def profile_peek(name: str) -> dict[str, Any]:
     if not PROFILE_ID_RE.match(name or ""):
-        return {"ok": False, "error": "unknown profile"}
+        return {"ok": False, "error": _NO_SUCH_BOT}
     root = install_root()
     home = profiles_dir(root) / name
     if not home.is_dir() or named_profile_is_deleted(home):
-        return {"ok": False, "error": "unknown profile"}
+        return {"ok": False, "error": _NO_SUCH_BOT}
     cfg = load_yaml(home / "config.yaml")
     meta = load_yaml(home / "profile.yaml")
     skills_dir = home / "skills"
@@ -1299,11 +1357,11 @@ def pending_approval(session_key: str) -> dict[str, Any] | None:
 def resolve_approval(session_key: str, request_id: str, choice: str) -> dict[str, Any]:
     allowed = {"once", "session", "always", "deny"}
     if not request_id.strip():
-        return {"ok": False, "error": "request ID required"}
+        return {"ok": False, "error": "That request isn't waiting for an answer any more."}
     if choice not in allowed:
-        return {"ok": False, "error": "bad choice"}
+        return {"ok": False, "error": "That isn't one of the request's choices. Pick one of its buttons."}
     if not session_key:
-        return {"ok": False, "error": "no session bound"}
+        return {"ok": False, "error": "There's no conversation to answer in yet."}
     from . import hermes_api
 
     try:
@@ -1315,7 +1373,7 @@ def resolve_approval(session_key: str, request_id: str, choice: str) -> dict[str
         return {"ok": True, "resolved": int(n)}
     except Exception:
         logger.warning("resolve approval failed", exc_info=True)
-        return {"ok": False, "error": "resolve failed"}
+        return {"ok": False, "error": "Couldn't answer that request. Try again."}
 
 
 def avatar_bytes(name: str) -> tuple[bytes, str] | None:

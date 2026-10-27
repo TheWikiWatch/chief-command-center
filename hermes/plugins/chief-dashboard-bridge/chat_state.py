@@ -220,6 +220,40 @@ def unwrap_cron(text: str) -> tuple[str, dict[str, str] | None]:
 # The chief's own profile: the gateway that posts these notices runs its jobs (routines.run_now / update take it).
 CHIEF_PROFILE = "chief"
 
+# How routines.relay wrote a bot's run before its rows carried the routine: "Routine: <name> (<bot>)", a divider, the
+# answer. Those rows stay in the outbox for a month.
+_RELAYED_HEAD = re.compile(r"^Routine: (?P<name>.+) \((?P<bot>[^()\n]+)\)\n-------------\n\n(?P<body>.+)$", re.S)
+_RELAYED_FAILED = "This run didn't finish. Open Team & Routines to see what went wrong."
+
+
+def _streak(value: Any) -> int:
+    try:
+        return max(1, int(value))
+    except (TypeError, ValueError):
+        return 1
+
+
+def relayed_run(row: dict[str, Any], text: str) -> tuple[str, dict[str, str] | None, dict[str, Any] | None]:
+    """A bot's routine run that routines.relay posted: (its answer, the routine {name, jobId, profile, bot}, the failure
+    for a run that didn't finish), as unwrap_cron and unwrap_cron_failure read the chief's own. Anything else is
+    (text, None, None)."""
+    stored = row.get("routine")
+    if isinstance(stored, dict) and stored.get("name"):
+        routine = {k: str(stored.get(k) or "") for k in ("name", "jobId", "profile", "bot")}
+        raw = row.get("failure")
+        failure = None
+        if isinstance(raw, dict):
+            failure = {"error": str(raw.get("error") or "it didn't finish"), "streak": _streak(raw.get("streak")), "detail": str(raw.get("detail") or "")}
+        return text, routine, failure
+    found = _RELAYED_HEAD.match(text) if row.get("source") == "cron" else None
+    if not found:
+        return text, None, None
+    body = found.group("body").strip()
+    routine = {"name": found.group("name").strip(), "jobId": "", "profile": "", "bot": found.group("bot").strip()}
+    failure = {"error": "it didn't finish", "streak": 1, "detail": body} if body == _RELAYED_FAILED else None
+    return body, routine, failure
+
+
 _CRON_FAILED = re.compile(r"^⚠️ Cron '(?P<name>.+?)' failed: (?P<rest>.+)$", re.S)
 _CRON_JOB_ID = re.compile(r"`hermes cron (?:runs|run|edit|pause) (?P<id>[^`\s]+)`")
 _CRON_STREAK = re.compile(r"This job has failed (?P<n>\d+) runs in a row")
@@ -351,10 +385,13 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
             continue
         for a in attachments:
             remember_media_path(str(a.get("path") or ""))
-        # A failure comes inside the same envelope as an answer ("Cronjob Response: …"), or bare.
-        body, routine = unwrap_cron(stripped)
-        body, found, failure = unwrap_cron_failure(body)
-        routine = routine or found
+        # A bot's routine run the bridge relayed carries its routine; the chief's own come in Hermes's envelope
+        # ("Cronjob Response: …"), and a failure inside the same envelope as an answer, or bare.
+        body, routine, failure = relayed_run(row, stripped)
+        if routine is None:
+            body, routine = unwrap_cron(stripped)
+            body, found, failure = unwrap_cron_failure(body)
+            routine = routine or found
         item: dict[str, Any] = {
             "id": str(row.get("id") or ""),
             "at": float(row.get("at") or 0),

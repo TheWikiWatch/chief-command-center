@@ -137,6 +137,16 @@ class CatalogTests(ProviderTestCase):
         self.assertEqual(len(found["featured"]), 12)
         self.assertEqual(providers.provider_models("ghost"), {"ok": False, "error": "Unknown provider."})
 
+    def test_one_providers_models_are_fetched_without_probing_every_provider(self):
+        asked = []
+        fake_module(self, "hermes_cli.models", provider_model_ids=lambda slug, force_refresh: asked.append((slug, force_refresh)) or ["nova-fresh"])
+        with patch.object(providers, "recommended_model", return_value=""):
+            self.assertEqual(providers.provider_models("nova")["models"], ["nova-fresh"])
+            self.assertEqual(asked, [("nova", True)])
+            fake_module(self, "hermes_cli.models", provider_model_ids=lambda slug, force_refresh: [])
+            self.assertEqual(len(providers.provider_models("nova")["models"]), 200)  # nothing fetched: the catalog's list
+        self.assertEqual(self.refresh_seen, [False, False], "the catalog itself is never refreshed for one provider")
+
     def test_connected_models_lists_connected_providers_current_first(self):
         self.payload["providers"].append(
             {"slug": "aurora", "name": "Aurora", "auth_type": "api_key", "key_env": "AURORA_KEY", "authenticated": True, "featured_models": ["aurora-1"]}
@@ -216,14 +226,15 @@ class EffortTests(ProviderTestCase):
         }
         self.config = self.raw
         self.written: list[dict] = []
+        self.save_ok = True
         fake_module(
             self,
             "hermes_cli.config",
             load_config=lambda: json.loads(json.dumps(self.raw)),
             read_user_config_raw=lambda path: json.loads(json.dumps(self.raw)),
             get_config_path=lambda: Path("config.yaml"),
-            atomic_config_replace=self.replace,
         )
+        fake_module(self, "cli", save_config_value=self.save)
         fake_module(self, "agent")
         fake_module(
             self,
@@ -234,9 +245,12 @@ class EffortTests(ProviderTestCase):
         forget.start()
         self.addCleanup(forget.stop)
 
-    def replace(self, path, data):
-        self.written.append(data)
-        self.raw = data
+    def save(self, key, value):
+        # Hermes's one-key writer: the rest of the file is left as it is.
+        self.written.append({key: json.loads(json.dumps(value))})
+        section, _, name = key.partition(".")
+        self.raw.setdefault(section, {})[name] = value
+        return self.save_ok
 
     def test_reads_the_models_own_level_over_the_profiles(self):
         now = providers.effort()
@@ -246,15 +260,71 @@ class EffortTests(ProviderTestCase):
     def test_set_and_clear_for_a_dotted_model_name_keeps_the_rest(self):
         after = providers.set_effort("high")
         self.assertEqual(after["effort"], "high")
-        self.assertEqual(self.written[-1]["agent"]["reasoning_overrides"], {"other.model": "low", "nova.think-2": "high"})  # one key, dots and all
-        self.assertEqual(self.written[-1]["agent"]["reasoning_effort"], "medium")
+        # The whole mapping under one key: a dotted key path would split the model's name.
+        self.assertEqual(self.written[-1], {"agent.reasoning_overrides": {"other.model": "low", "nova.think-2": "high"}})
+        self.assertEqual(self.raw["agent"]["reasoning_effort"], "medium")
         providers.set_effort("")
-        self.assertEqual(self.written[-1]["agent"]["reasoning_overrides"], {"other.model": "low"})
+        self.assertEqual(self.written[-1], {"agent.reasoning_overrides": {"other.model": "low"}})
         self.assertFalse(providers.set_effort("loud")["ok"])
+
+    def test_a_level_hermes_couldnt_save_is_reported(self):
+        self.save_ok = False
+        self.assertEqual(providers.set_effort("high"), {"ok": False, "error": "Couldn't save the thinking level. Try again."})
 
     def test_yaml_false_reads_as_off(self):
         self.raw["agent"]["reasoning_overrides"]["nova.think-2"] = False
         self.assertEqual(providers.effort()["effort"], "none")
+
+
+class GrantTests(ProviderTestCase):
+    """A bot gets one of the chief's providers: its key, and a custom endpoint's definition, under its exact name."""
+
+    SLUG = "local-127.0.0.1:8283"
+
+    def setUp(self):
+        super().setUp()
+        import tempfile
+
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.bot = Path(tmp.name)
+        endpoint = {"base_url": "http://127.0.0.1:8283/v1", "key_env": "LOCAL_ENDPOINT_KEY"}
+        self.raw = {
+            Path("chief") / "config.yaml": {"providers": {self.SLUG: endpoint}},
+            self.bot / "config.yaml": {"providers": {"other.box": {"base_url": "http://192.0.2.1/v1"}}, "model": {"provider": "nova"}},
+        }
+        self.env = {"LOCAL_ENDPOINT_KEY": "synthetic-endpoint-key"}
+        self.saved_config: list[tuple] = []
+        self.env_saved: list[tuple] = []
+        self.save_ok = True
+        fake_module(self, "hermes_constants", get_hermes_home=lambda: Path("chief"))
+        fake_module(
+            self,
+            "hermes_cli.config",
+            load_env=lambda: dict(self.env),
+            read_user_config_raw=lambda path: json.loads(json.dumps(self.raw.get(Path(path), {}))),
+            save_env_value=lambda name, value: self.env_saved.append((name, value)),
+        )
+        fake_module(self, "cli", save_config_value=lambda key, value: self.saved_config.append((key, value)) or self.save_ok)
+        scope = patch.object(providers, "_scope", lambda home: contextlib.nullcontext())
+        scope.start()
+        self.addCleanup(scope.stop)
+
+    def test_a_dotted_endpoint_name_is_one_key_and_the_bots_own_endpoints_stay(self):
+        result = providers.grant_provider(self.SLUG, self.bot)
+        self.assertEqual(result, {"ok": True, "provider": self.SLUG, "keys": 1})
+        self.assertEqual(len(self.saved_config), 1)
+        key, value = self.saved_config[0]
+        self.assertEqual(key, "providers")  # never "providers.local-127.0.0.1:8283", which nests at every dot
+        self.assertEqual(set(value), {"other.box", self.SLUG})
+        self.assertEqual(value[self.SLUG]["base_url"], "http://127.0.0.1:8283/v1")
+        self.assertEqual(self.env_saved, [("LOCAL_ENDPOINT_KEY", "synthetic-endpoint-key")])
+
+    def test_a_config_hermes_couldnt_save_is_an_error_not_ok(self):
+        self.save_ok = False
+        with self.assertRaisesRegex(providers.ProvidersError, "Couldn't save"):
+            providers.grant_provider(self.SLUG, self.bot)
+        self.assertEqual(self.env_saved, [])
 
 
 class KeyTests(ProviderTestCase):

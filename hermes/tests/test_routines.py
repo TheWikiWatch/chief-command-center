@@ -6,6 +6,7 @@ import json
 import os
 import sys
 import tempfile
+import threading
 import types
 import unittest
 from pathlib import Path
@@ -93,6 +94,8 @@ class FakeJobs:
 
     def trigger_job(self, job_id):
         self.calls.append(("trigger", job_id))
+        if self._store()[job_id].get("state") == "completed":
+            raise ValueError(f"Cannot run: job '{job_id}' is completed (terminal). Create a new occurrence with 'hermes cron resume {job_id} --run-now'.")
 
     def remove_job(self, job_id):
         self.calls.append(("remove", job_id))
@@ -404,6 +407,23 @@ class ListAndChangeTests(RoutineTestCase):
         routines.run_now("chief", self.daily["id"])
         self.assertEqual(self.jobs.calls, [("trigger", self.daily["id"])])
 
+    def test_a_one_off_that_already_ran_says_so_in_words(self):
+        once = self.jobs.add(self.chief, name="Once", prompt="p", schedule={"kind": "once"}, deliver="command_center", state="completed")
+        with self.assertRaises(routines.RoutineError) as caught:
+            routines.run_now("chief", once["id"])
+        self.assertNotIn("hermes cron", str(caught.exception))
+        self.assertIn("run once", str(caught.exception))
+
+    def test_a_bots_routine_comes_back_with_its_own_last_report(self):
+        out = self.ada / "cron" / "output" / self.bot["id"]
+        out.mkdir(parents=True)
+        (out / "2026-10-01_08-00-00.md").write_text("## Response\nTwo papers.", encoding="utf-8")
+        for changed in (
+            routines.run_now("ada", self.bot["id"]),
+            routines.update("ada", self.bot["id"], name="Papers daily"),
+        ):
+            self.assertIn("Two papers.", changed["routine"]["lastOutput"])  # read from the bot's store, not the chief's
+
     def test_built_in_routines_cannot_be_deleted(self):
         with self.assertRaises(routines.RoutineError):
             routines.delete("chief", self.built_in["id"])
@@ -452,10 +472,68 @@ class RelayTests(RoutineTestCase):
         self.assertEqual(routines.relay(), 2)
         rows = outbox.read_outbox()
         self.assertEqual([r["chat_id"] for r in rows], [f"owner.{thread}"] * 2)
-        self.assertTrue(rows[0]["message"].startswith("Routine: Papers (Ada)"))
-        self.assertTrue(rows[0]["message"].endswith("Three new papers."))
+        # The answer alone; the chat titles its card from the routine (its name and bot), with Manage and Run again.
+        self.assertEqual(rows[0]["message"], "Three new papers.")
+        self.assertEqual(rows[0]["routine"], {"name": "Papers", "jobId": self.job["id"], "profile": "ada", "bot": "Ada"})
+        self.assertNotIn("failure", rows[0])
+        self.assertEqual(rows[1]["failure"]["error"], "it didn't finish")
+        self.assertEqual(rows[1]["failure"]["streak"], 1)
         self.assertEqual({r["source"] for r in rows}, {"cron"})
         self.assertEqual(routines.relay(), 0, "already relayed")
+
+    def test_the_newest_failed_run_carries_hermess_count_and_line(self):
+        routines._set_bot_thread("ada", self.job["id"], "main")
+        self.job.update(failure_streak=3, last_error="RuntimeError: the provider refused")
+        self.run_file("2026-10-01_08-00-00.md", "## Error\nboom")
+        self.run_file("2026-10-02_08-00-00.md", "## Error\nboom")
+        self.assertEqual(routines.relay(), 2)
+        older, newest = [r["failure"] for r in outbox.read_outbox()]
+        self.assertEqual((older["streak"], newest["streak"]), (1, 3))
+        self.assertEqual(newest["detail"], "RuntimeError: the provider refused")
+
+    def test_a_run_posted_before_a_failure_is_not_posted_again(self):
+        routines._set_bot_thread("ada", self.job["id"], "main")
+        self.run_file("2026-10-01_08-00-00.md", "## Response\nFirst.")
+        self.run_file("2026-10-02_08-00-00.md", "## Response\nSecond.")
+        real = outbox.append_outbox
+        calls = []
+
+        def flaky(*args, **kwargs):
+            calls.append(args[1])
+            if len(calls) == 2:
+                raise OSError("disk full")
+            return real(*args, **kwargs)
+
+        with patch.object(outbox, "append_outbox", flaky), self.assertLogs("chief-dashboard-bridge", level="WARNING"):
+            self.assertEqual(routines.relay(), 1)
+        self.assertEqual(routines.relay(), 1)
+        self.assertEqual([r["message"] for r in outbox.read_outbox()], ["First.", "Second."])
+
+    def test_a_thread_change_during_a_relay_is_kept(self):
+        key = f"ada/{self.job['id']}"
+        routines._set_bot_thread("ada", self.job["id"], "main")
+        self.run_file("2026-10-01_08-00-00.md", "## Response\nHello.")
+        reading, go_on = threading.Event(), threading.Event()
+        get_job = self.jobs.get_job
+
+        def slow(job_id):
+            reading.set()
+            go_on.wait(5)
+            return get_job(job_id)
+
+        other = self.jobs.add(self.ada, name="Digest", prompt="p", schedule={"expr": "0 9 * * *"}, deliver="local")
+        with patch.object(self.jobs, "get_job", slow):
+            relay = threading.Thread(target=routines.relay)
+            relay.start()
+            self.assertTrue(reading.wait(5))
+            # A request moves another routine while the relay is mid-way: it waits its turn instead of being undone.
+            change = threading.Thread(target=routines._set_bot_thread, args=("ada", other["id"], "main"))
+            change.start()
+            go_on.set()
+            relay.join(5)
+            change.join(5)
+        self.assertEqual(self.mapping(), {key: "main", f"ada/{other['id']}": "main"})
+        self.assertEqual(self.mapping(routines._RELAYED_FILE), {key: "2026-10-01_08-00-00.md", f"ada/{other['id']}": ""})
 
     def test_a_muted_routine_relays_its_answers_but_not_its_failures(self):
         thread = self.thread()
@@ -464,7 +542,7 @@ class RelayTests(RoutineTestCase):
         self.run_file("2026-10-01_08-00-00.md", "## Error\nboom")
         self.run_file("2026-10-02_08-00-00.md", "## Response\nTwo new papers.")
         self.assertEqual(routines.relay(), 1)
-        self.assertTrue(outbox.read_outbox()[0]["message"].endswith("Two new papers."))
+        self.assertEqual(outbox.read_outbox()[0]["message"], "Two new papers.")
 
     def test_a_deleted_thread_falls_back_to_the_main_chat(self):
         routines._set_bot_thread("ada", self.job["id"], "t-0000ffff")

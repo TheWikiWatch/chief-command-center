@@ -63,6 +63,8 @@ class LocalModelsTests(unittest.TestCase):
 
         async def delete(model_id):
             test.calls.append(("delete", model_id))
+            if test.locked:
+                raise PermissionError(13, "in use", str(test.root / "models" / f"{model_id}.gguf"))
             return {"ok": True}
 
         def quickstart(body, profile=None):
@@ -105,29 +107,45 @@ class LocalModelsTests(unittest.TestCase):
         fake_module(self, "hermes_cli.web_routers")
         fake_module(self, "hermes_cli.local_runtime")
         fake_module(self, "hermes_cli.local_runtime.bootstrap", models_dir=models_dir, partials_dir=lambda: models_dir() / ".partials")
-        written = []
-        self.written = written
+        self.locked = False
+        self.saved = []
+        self.save_ok = True
 
-        def replace(path, raw):
-            written.append(json.loads(json.dumps(raw)))
-            cfg["local_runtime"] = dict(raw.get("local_runtime") or {})
+        def save_config_value(key, value):
+            # Hermes's one-key writer: only the key it is given changes.
+            test.saved.append((key, value))
+            section, _, name = key.partition(".")
+            cfg.setdefault(section, {})[name] = value
+            return test.save_ok
 
+        fake_module(self, "cli", save_config_value=save_config_value)
         fake_module(
             self,
             "hermes_cli.config",
             load_config_readonly=lambda: cfg,
             load_config=lambda: cfg,
-            read_user_config_raw=lambda path: json.loads(json.dumps(cfg)),
             get_config_path=lambda: self.root / "config.yaml",
-            atomic_config_replace=replace,
         )
+        self.profiles = self.root / "profiles"
+        (self.profiles / "chief").mkdir(parents=True)
         for p in (
             patch.object(local_ai, "chief_config_scope", contextlib.nullcontext),
             patch.object(local_ai, "_default_models_dir", lambda: self.root / "hermes" / "models"),
             patch.object(local_ai, "suggested_folder", lambda default: Path("E:/Chief models")),
+            patch.object(data, "chief_home", lambda root=None: self.profiles / "chief"),
+            patch.object(data, "profiles_dir", lambda root=None: self.profiles),
         ):
             p.start()
             self.addCleanup(p.stop)
+
+    def bot(self, name, title, provider, model):
+        home = self.profiles / name
+        home.mkdir(parents=True, exist_ok=True)
+        (home / "config.yaml").write_text(json.dumps({"model": {"provider": provider, "default": model}}), encoding="utf-8")
+        if title:
+            (home / "profile.yaml").write_text(json.dumps({"ui_meta": {"hermes-bots": {"title": title}}}), encoding="utf-8")
+        data.forget_yaml(home / "config.yaml")
+        data.forget_yaml(home / "profile.yaml")
 
     def test_status_says_what_the_page_needs_and_nothing_else(self):
         state = local_ai.status()
@@ -135,12 +153,21 @@ class LocalModelsTests(unittest.TestCase):
         self.assertEqual((state["folder"]["chosen"], state["folder"]["suggested"], state["folder"]["supported"]), (False, str(Path("E:/Chief models")), True))
         self.assertEqual(local_ai.catalog()["models"], [{"id": "qwen-x", "display_name": "Qwen X", "fits": True, "size_label": "16.5 GB", "recommended": True}])
 
+    def test_the_drives_are_measured_only_until_a_folder_is_chosen(self):
+        measured = []
+        with patch.object(local_ai, "suggested_folder", lambda default: measured.append(default) or Path("E:/Chief models")):
+            local_ai.folder()
+            self.config["local_runtime"]["models_dir"] = str(self.root / "m")
+            chosen = local_ai.folder()
+        self.assertEqual(len(measured), 1)
+        self.assertEqual(chosen["suggested"], str(self.root / "m"))
+
     def test_the_first_download_waits_for_a_folder(self):
         with self.assertRaisesRegex(local_ai.LocalModelsError, "Choose a folder"):
             local_ai.quickstart()
         target = self.root / "big drive" / "Chief models"
         self.assertTrue(local_ai.set_folder(str(target))["ok"])
-        self.assertEqual(self.written[-1]["local_runtime"]["models_dir"], str(target))
+        self.assertEqual(self.saved, [("local_runtime.models_dir", str(target))])  # one key, through Hermes's writer
         self.assertTrue(target.is_dir())
         self.assertEqual(local_ai.quickstart()["job_id"], "qs1")
         self.assertEqual(self.calls[-1], ("quickstart", None, None))  # the machine's recommendation, in the chief's scope
@@ -159,29 +186,63 @@ class LocalModelsTests(unittest.TestCase):
         with self.assertRaisesRegex(local_ai.LocalModelsError, "Wait for the download"):
             local_ai.set_folder(str(self.root / "other"))
 
+    def test_a_folder_hermes_couldnt_save_says_so(self):
+        self.save_ok = False
+        with self.assertRaisesRegex(local_ai.LocalModelsError, "Couldn't save"):
+            local_ai.set_folder(str(self.root / "big drive"))
+
     def test_hermes_refusals_are_plain_and_ids_are_checked(self):
         self.config["local_runtime"]["models_dir"] = str(self.root / "m")
-        with self.assertRaisesRegex(local_ai.LocalModelsError, "no catalog model fits"):
+        with self.assertRaisesRegex(local_ai.LocalModelsError, "^None of the models fits this PC.$"):
             local_ai.quickstart("too-big")
-        with self.assertRaisesRegex(local_ai.LocalModelsError, "job not found"):
+        with self.assertRaisesRegex(local_ai.LocalModelsError, "^That download has ended.$"):
             local_ai.job("nope")
         for bad in ("../x", "a b", "x" * 200):
             with self.assertRaises(local_ai.LocalModelsError):
                 local_ai.download(bad)
         self.assertEqual(local_ai.call(lambda: local_ai.server("explode"))[1], 400)
 
-    def test_activate_for_the_chief_or_a_bot_and_never_remove_the_chiefs_model(self):
-        local_ai.activate("qwen-x-Q4", "chief")
-        local_ai.activate("qwen-x-Q4", "research-desk")
-        self.assertEqual(self.calls[-2:], [("activate", "qwen-x-Q4", None), ("activate", "qwen-x-Q4", "research-desk")])
+    def test_what_hermes_says_becomes_a_sentence(self):
+        cases = [
+            (404, "model not found", "That model isn't downloaded any more."),
+            (404, "qwen-x-Q4 is not downloaded", "That model isn't downloaded yet."),
+            (404, "unknown download job", "That download has ended."),
+            (409, "Qwen X needs llama.cpp b9100 or newer — update the engine first", "That model needs a newer engine. Update the engine first."),
+            (
+                502,
+                "The local server could not start — check the runtime is installed",
+                "The local server couldn't start. Check the engine is installed, then try again.",
+            ),
+            (502, "[WinError 5] Access is denied: 'E:\\private-folder\\models'", "The local server didn't answer. Try again."),
+            (500, "Traceback (most recent call last): ...", "That didn't work. Try again."),
+        ]
+        for status, detail, sentence in cases:
+            with self.subTest(detail=detail[:30]):
+                self.assertEqual(local_ai.hermes_refusal(status, detail), sentence)
+
+    def test_activate_is_for_the_chief(self):
+        local_ai.activate("qwen-x-Q4")
+        self.assertEqual(self.calls[-1], ("activate", "qwen-x-Q4", None))
         with self.assertRaises(local_ai.LocalModelsError):
-            local_ai.activate("qwen-x-Q4", "../chief")
-        self.config["model"] = {"provider": "llamacpp", "default": "qwen-x-Q4"}
-        with self.assertRaisesRegex(local_ai.LocalModelsError, "Chief is using this model"):
+            local_ai.activate("../chief")
+
+    def test_a_model_the_chief_or_a_bot_uses_is_never_removed(self):
+        self.bot("chief", "", "llamacpp", "qwen-x-Q4")
+        with self.assertRaisesRegex(local_ai.LocalModelsError, "is using this model. Choose another model for"):
             local_ai.remove("qwen-x-Q4")
-        self.config["model"] = {"provider": "openrouter", "default": "some/model"}
+        self.bot("chief", "", "openrouter", "some/model")
+        self.bot("research-desk", "Ada - Research", "llama.cpp", "qwen-x-Q4")
+        with self.assertRaisesRegex(local_ai.LocalModelsError, "^Ada is using this model. Choose another model for Ada first.$"):
+            local_ai.remove("qwen-x-Q4")
+        self.assertNotIn(("delete", "qwen-x-Q4"), self.calls)
+        self.bot("research-desk", "Ada - Research", "openrouter", "some/model")
         local_ai.remove("qwen-x-Q4")
         self.assertEqual(self.calls[-1], ("delete", "qwen-x-Q4"))
+
+    def test_a_model_the_server_has_loaded_says_stop_the_server_first(self):
+        self.locked = True
+        answer = local_ai.call(lambda: local_ai.remove("qwen-x-Q4"))
+        self.assertEqual(answer, ({"ok": False, "error": "The local server is using this model. Stop the server first, then remove it."}, 400))
 
     def test_without_patch_0006_the_folder_is_hermess_and_downloads_dont_wait(self):
         sys.modules["hermes_cli.local_runtime.bootstrap"].__dict__.pop("partials_dir")

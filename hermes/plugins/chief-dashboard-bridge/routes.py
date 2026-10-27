@@ -257,7 +257,7 @@ def build(bridge) -> list[Route]:
     def clarify(req: Request):
         answer = req.body.get("answer")
         if not isinstance(answer, (str, list)):
-            return {"ok": False, "error": "answer must be text or a list"}, 400
+            return {"ok": False, "error": "Answer in words, or pick from the choices."}, 400
         return _guarded(lambda: bridge.answer_question(req.b("id")[:128], answer, _thread_body(req.body)))
 
     def routine_update(req: Request):
@@ -282,10 +282,6 @@ def build(bridge) -> list[Route]:
         return _guarded(
             lambda: second_brain.set_routine(req.b("id"), enabled=enabled if isinstance(enabled, bool) else None, at=str(at) if isinstance(at, str) else None)
         )
-
-    def voice_model_use(req: Request):
-        err = speech_model.use(req.b("id"))
-        return {"ok": False, "error": err} if err else {"ok": True}
 
     def push_subscribe(req: Request):
         sub = req.body.get("subscription")
@@ -354,7 +350,6 @@ def build(bridge) -> list[Route]:
             ),
             **A,
         ),
-        Route(G, "/outbox", lambda r: bridge.outbox(after_id=r.q("after"), limit=min(max(1, int_q(r, "limit", 50)), 500)), dashboard=False),
         Route(P, "/outbox/notify", outbox_notify, dashboard=False),
         # Threads and routines
         Route(G, "/threads", lambda r: _guarded(bridge.thread_list)),
@@ -397,7 +392,6 @@ def build(bridge) -> list[Route]:
         Route(P, "/voice/model/download", lambda r: _guarded(lambda: speech_model.download(r.b("id", speech_model.DEFAULT_MODEL))), **A),
         Route(P, "/voice/model/cancel", lambda r: _guarded(speech_model.cancel), **A),
         Route(P, "/voice/model/delete", lambda r: _guarded(lambda: speech_model.delete(r.b("id"))), **A),
-        Route(P, "/voice/model/use", lambda r: _guarded(lambda: voice_model_use(r)), dashboard=False, **A),
         # Setup: models, keys, the Second Brain
         Route(G, "/setup/status", lambda r: {"ok": True, "contract": providers.CONTRACT, **providers.status()}),
         Route(G, "/setup/providers", lambda r: _guarded(lambda: providers.catalog(refresh=_flag(r.qs, "refresh")))),
@@ -496,7 +490,8 @@ def build(bridge) -> list[Route]:
         Route(P, "/local-models/pause", lambda r: local_ai.call(lambda: local_ai.pause(r.b("job"))), limit=4 * KB, **A),
         Route(P, "/local-models/resume", lambda r: local_ai.call(lambda: local_ai.resume(r.b("job"))), limit=4 * KB, **A),
         Route(P, "/local-models/remove", lambda r: local_ai.call(lambda: local_ai.remove(r.b("model"))), limit=4 * KB, **A),
-        Route(P, "/local-models/activate", lambda r: local_ai.call(lambda: local_ai.activate(r.b("model"), r.b("profile", "chief"))), limit=4 * KB, **A),
+        # For the chief only: a bot's model is set from its own Models picker (fleet/model).
+        Route(P, "/local-models/activate", lambda r: local_ai.call(lambda: local_ai.activate(r.b("model"))), limit=4 * KB, **A),
         Route(P, "/local-models/server", lambda r: local_ai.call(lambda: local_ai.server(r.b("action"))), limit=4 * KB, **A),
         # Connections: email, calendars, documents and work tools (connections.py)
         Route(G, "/connections", lambda r: connections.call(lambda: connections.overview(refresh=_flag(r.qs, "refresh")))),

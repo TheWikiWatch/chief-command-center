@@ -22,11 +22,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
 from . import data, threads
-from .util import subdict
+from .util import subdict, write_json_atomic
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -38,6 +39,9 @@ _PROFILE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 _MAX_PROMPT = 4000
 _THREADS_FILE = "routine_threads.json"
 _RELAYED_FILE = "routine_relayed.json"
+# The two files above are read, changed and written back by a request (a bot routine's thread) and by the watch
+# loop's relay: one at a time, or one would write back what the other just changed.
+_state_lock = threading.RLock()
 
 
 class RoutineError(ValueError):
@@ -168,10 +172,7 @@ def _read(name: str) -> dict[str, Any]:
 
 
 def _write(name: str, value: dict[str, Any]) -> None:
-    path = data.chief_home() / name
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(value, indent=2, sort_keys=True), encoding="utf-8")
-    tmp.replace(path)
+    write_json_atomic(data.chief_home() / name, value, sort_keys=True)
 
 
 def _key(profile: str, job_id: str) -> str:
@@ -181,15 +182,16 @@ def _key(profile: str, job_id: str) -> str:
 def _set_bot_thread(profile: str, job_id: str, thread: str | None) -> None:
     """Where a bot's routine reports (None forgets it). A new routine relays from its first run on."""
     key = _key(profile, job_id)
-    mapping, relayed = _read(_THREADS_FILE), _read(_RELAYED_FILE)
-    if thread is None:
-        mapping.pop(key, None)
-        relayed.pop(key, None)
-    else:
-        mapping[key] = thread
-        relayed.setdefault(key, "")
-    _write(_THREADS_FILE, mapping)
-    _write(_RELAYED_FILE, relayed)
+    with _state_lock:
+        mapping, relayed = _read(_THREADS_FILE), _read(_RELAYED_FILE)
+        if thread is None:
+            mapping.pop(key, None)
+            relayed.pop(key, None)
+        else:
+            mapping[key] = thread
+            relayed.setdefault(key, "")
+        _write(_THREADS_FILE, mapping)
+        _write(_RELAYED_FILE, relayed)
 
 
 def _thread_of(deliver: Any) -> str | None:
@@ -405,10 +407,12 @@ def create(
     jobs = _cron()
     with jobs.use_cron_store(home):
         job = jobs.create_job(prompt, expr, name=name, deliver=deliver if profile == "chief" else "local", **extra)
-    if profile != "chief":
-        _set_bot_thread(profile, job["id"], thread or threads.MAIN)
+        if profile != "chief":
+            _set_bot_thread(profile, job["id"], thread or threads.MAIN)
+        # Inside the store's scope: a bot's last report is in its own store.
+        described = _describe(profile, home, job, jobs)
     logger.info("routines: %s created for %s (%s)", name, profile, expr)
-    return {"ok": True, "routine": _describe(profile, home, job, jobs)}
+    return {"ok": True, "routine": described}
 
 
 def update(
@@ -462,7 +466,8 @@ def update(
         elif enabled is False:
             jobs.pause_job(job["id"], reason="Turned off in the app.")
         job = jobs.get_job(job["id"]) or job
-    return {"ok": True, "routine": _describe(profile, home, job, jobs)}
+        described = _describe(profile, home, job, jobs)
+    return {"ok": True, "routine": described}
 
 
 def run_now(profile: str, routine_id: str) -> dict[str, Any]:
@@ -472,9 +477,13 @@ def run_now(profile: str, routine_id: str) -> dict[str, Any]:
     with jobs.use_cron_store(home):
         if not (job.get("enabled") and job.get("state") != "paused"):
             jobs.resume_job(job["id"])
-        jobs.trigger_job(job["id"])
+        try:
+            jobs.trigger_job(job["id"])
+        except ValueError as exc:  # a one-off that already ran: Hermes's text is a command line
+            raise RoutineError("This routine was set to run once and already has. Make a new one to run it again.") from exc
         job = jobs.get_job(job["id"]) or job
-    return {"ok": True, "routine": _describe(profile, home, job, jobs)}
+        described = _describe(profile, home, job, jobs)
+    return {"ok": True, "routine": described}
 
 
 def delete(profile: str, routine_id: str) -> dict[str, Any]:
@@ -493,18 +502,35 @@ def delete(profile: str, routine_id: str) -> dict[str, Any]:
 # ---------------------------------------------------------------- relaying a bot's runs
 
 
+_FAILED_RUN = "This run didn't finish. Open Team & Routines to see what went wrong."
+
+
 def _answer(text: str) -> str | None:
     """What a run said, from its output file: the answer, a short failure line, or None (silent/blocked)."""
     if "## Response" in text:
         answer = text.rpartition("## Response")[2].strip()
         return None if not answer or answer.upper().startswith("[SILENT]") else answer
     if "## Error" in text:
-        return "This run didn't finish. Open Team & Routines to see what went wrong."
+        return _FAILED_RUN
     return None
 
 
+def _failure(job: dict[str, Any], newest: bool) -> dict[str, Any]:
+    """A failed run, for the chat's failure card (as chat_state.unwrap_cron_failure reads the chief's own): what went
+    wrong in a few words, how many runs in a row (Hermes's count is the job's now, so only for its newest run), and
+    Hermes's own line for Details."""
+    detail = " ".join(str(job.get("last_error") or "").split())[:500] if newest else ""
+    return {"error": "it didn't finish", "streak": max(1, int(job.get("failure_streak") or 1)) if newest else 1, "detail": detail or _FAILED_RUN}
+
+
 def relay(limit: int = 5) -> int:
-    """Relay new runs of the bots' routines into their threads. Returns how many were posted."""
+    """Relay new runs of the bots' routines into their threads. Returns how many were posted. Each run is recorded
+    as relayed as soon as it is posted, so a failure later in the pass can't post it again on the next one."""
+    with _state_lock:
+        return _relay(limit)
+
+
+def _relay(limit: int) -> int:
     mapping = _read(_THREADS_FILE)
     if not mapping:
         return 0
@@ -513,7 +539,7 @@ def relay(limit: int = 5) -> int:
     relayed = _read(_RELAYED_FILE)
     homes = dict(_homes())
     jobs = _cron()
-    posted, changed = 0, False
+    posted = 0
     for key, thread in sorted(mapping.items()):
         profile, _, job_id = key.partition("/")
         home = homes.get(profile)
@@ -531,22 +557,29 @@ def relay(limit: int = 5) -> int:
             continue
         if key not in relayed:
             # Known before relaying existed: start from now, don't replay its history.
-            relayed[key], changed = files[-1].name, True
+            relayed[key] = files[-1].name
+            _write(_RELAYED_FILE, relayed)
             continue
         fresh = [p for p in files if p.name > str(relayed.get(key) or "")][-limit:]
         for path in fresh:
-            text = path.read_text(encoding="utf-8", errors="replace")
-            answer = _answer(text)
-            if answer and _muted(job) and "## Response" not in text:
-                answer = None  # a failure, and its alerts are muted
-            if answer:
-                chat = threads.chat_id(thread if threads.exists(thread) else threads.MAIN)
-                head = f"Routine: {job.get('name') or 'Routine'} ({_bot_name(profile, home)})"
-                append_outbox(chat, f"{head}\n-------------\n\n{answer}", source="cron")
-                posted += 1
-            relayed[key], changed = path.name, True
-    if changed:
-        _write(_RELAYED_FILE, relayed)
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+                answer = _answer(text)
+                failed = "## Response" not in text
+                if answer and failed and _muted(job):
+                    answer = None  # a failure, and its alerts are muted
+                if answer:
+                    chat = threads.chat_id(thread if threads.exists(thread) else threads.MAIN)
+                    # The chat shows its own card for it: the routine's name and bot in the title, Manage and Run again.
+                    routine = {"name": str(job.get("name") or "Routine"), "jobId": job_id, "profile": profile, "bot": _bot_name(profile, home)}
+                    append_outbox(chat, answer, source="cron", routine=routine, failure=_failure(job, path == files[-1]) if failed else None)
+                    posted += 1
+                relayed[key] = path.name
+                _write(_RELAYED_FILE, relayed)
+            except Exception:
+                # Read again next time, from this run on (nothing after it is skipped).
+                logger.warning("routine relay failed for %s", key, exc_info=True)
+                break
     if posted:
         logger.info("routines: relayed %d bot routine run(s)", posted)
     return posted

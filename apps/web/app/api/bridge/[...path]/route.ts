@@ -11,8 +11,13 @@ function bridgeBase() {
   return bridgeUrl();
 }
 
-/** Choosing or inspecting the Second Brain folder names a folder on the PC: only from the PC's own window. */
-const PC_ONLY = new Set(["POST setup/second-brain", "POST setup/second-brain/inspect"]);
+/** Choosing a folder (the Second Brain's, the local models') names a folder on the PC, which the bridge creates or
+ * writes into: only from the PC's own window. */
+const PC_ONLY = new Map([
+  ["POST setup/second-brain", "Choose the Second Brain folder on the PC."],
+  ["POST setup/second-brain/inspect", "Choose the Second Brain folder on the PC."],
+  ["POST local-models/folder", "Choose the folder for local models on the PC."],
+]);
 
 function token() {
   return process.env.CHIEF_DASHBOARD_TOKEN || "";
@@ -21,9 +26,8 @@ function token() {
 async function proxy(req: NextRequest, path: string[]) {
   if (!permittedOperation("bridge", req.method, path)) return Response.json({ ok: false, error: "Unsupported operation" }, { status: 404 });
   if (req.method !== "GET" && !validMutationOrigin(req.headers, req.url)) return Response.json({ ok: false, error: "Invalid request origin" }, { status: 403 });
-  if (PC_ONLY.has(`${req.method} ${path.join("/")}`) && !isDirectLoopback(req.headers)) {
-    return Response.json({ ok: false, error: "Choose the Second Brain folder on the PC." }, { status: 403 });
-  }
+  const pcOnly = PC_ONLY.get(`${req.method} ${path.join("/")}`);
+  if (pcOnly && !isDirectLoopback(req.headers)) return Response.json({ ok: false, error: pcOnly }, { status: 403 });
   const url = new URL(req.url);
   if (path[0] === "file" || path[0] === "preview" || path[0] === "thumb") {
     const file = url.searchParams.get("path") || "";
@@ -63,42 +67,7 @@ async function proxy(req: NextRequest, path: string[]) {
 
   // A long-poll (/transcript?wait=N) is held by the bridge for up to N seconds (at most 25).
   const wait = path[0] === "transcript" ? Math.min(25, Math.max(0, Number(url.searchParams.get("wait")) || 0)) : 0;
-  // Provider setup can fetch catalogs and run one test completion: allow a minute. Starting a connection waits for
-  // the service's sign-in link (Nous and an MCP server each allow 30 s).
-  // A generated portrait waits on the image service (the bridge allows it 150 s); installing a pet downloads its
-  // sprite sheet; the pet gallery's first read fetches its whole manifest.
-  const look = path[0] === "look" ? path[2] || "" : "";
-  const timeoutMs = wait
-    ? (wait + 10) * 1000
-    : look === "portrait"
-      ? 170000
-    : look === "pet" || look === "avatar"
-      ? 70000
-    : rel === "pets/catalog" || path[0] === "pets" || path[0] === "pet"
-      ? 30000
-    : rel === "connections/connect"
-      ? 75000
-    : path[0] === "connections"
-      ? 30000
-    : path[0] === "setup"
-      ? 60000
-    : rel === "tools/test"
-      ? 180000
-    : rel === "report/draft"
-      ? 60000
-    : path[0] === "tools"
-      ? 30000
-    : path[0] === "file" || path[0] === "preview" || path[0] === "thumb" || path[0] === "transcribe" || path[0] === "speak"
-      ? 180000
-      : path[0] === "snapshot"
-          ? 15000
-          : path[0] === "health"
-            ? 2000
-            : path[0] === "settings"
-              ? 15000
-        : path[0] === "send"
-          ? 120000
-                : 8000;
+  const timeoutMs = wait ? (wait + 10) * 1000 : answerWithin(path);
 
   // The time limit is for the bridge to start answering. Once it has, the answer streams to the browser for as long
   // as that takes: a limit over the whole body cut big answers off half-way to a phone ("failed to pipe response"),
@@ -152,6 +121,43 @@ async function proxy(req: NextRequest, path: string[]) {
 
 /** How long an answer that has started may take to finish streaming. */
 const BODY_GRACE_MS = 5 * 60_000;
+
+/**
+ * How long the bridge may take to start answering a route: at least as long as the page's own client waits for it
+ * (lib/*-client.ts, lib/local-models.ts), so a slow answer reaches the page instead of a cut-off from here.
+ */
+function answerWithin(path: string[]): number {
+  const top = path[0];
+  const rel = path.join("/");
+  // A generated portrait waits on the image service (the bridge allows it 150 s); installing a pet downloads its
+  // sprite sheet; the pet gallery's first read fetches its whole manifest.
+  if (top === "look") return path[2] === "portrait" ? 170_000 : path[2] === "pet" || path[2] === "avatar" ? 70_000 : 8_000;
+  if (top === "pets" || top === "pet") return 30_000;
+  // Starting a connection waits for the service's sign-in link (Nous and an MCP server each allow 30 s).
+  if (rel === "connections/connect") return 75_000;
+  if (top === "connections") return 30_000;
+  // Provider setup fetches catalogs (setup/models asks the provider afresh) and runs one test completion (60 s).
+  if (top === "setup") return 65_000;
+  // The fleet's models list asks every connected provider on a refresh (60 s); retiring exports the bot's profile
+  // and restoring imports it (120 s).
+  if (rel === "fleet/retire" || rel === "fleet/restore") return 125_000;
+  if (top === "fleet") return 65_000;
+  // Local models: starting the server waits for it to come up (120 s); the catalog prices every model for this PC.
+  if (rel === "local-models/server") return 125_000;
+  if (top === "local-models") return 65_000;
+  // A fresh start waits for Hermes to ask for its confirmation (8 s), right after start-up for the chat to attach.
+  if (top === "threads") return 25_000;
+  // Routines read every bot's store, and change one in it (15-20 s).
+  if (top === "routines") return 25_000;
+  if (rel === "tools/test") return 180_000;
+  if (rel === "report/draft") return 60_000;
+  if (top === "tools") return 30_000;
+  if (top === "file" || top === "preview" || top === "thumb" || top === "transcribe" || top === "speak") return 180_000;
+  if (top === "snapshot" || top === "settings") return 15_000;
+  if (top === "health") return 2_000;
+  if (top === "send") return 120_000;
+  return 8_000;
+}
 
 /** The bridge's answer streamed on, with its timers cleared when it ends, and a cut-off logged with its route. */
 function passThrough(body: ReadableStream<Uint8Array>, route: string, done: () => void): ReadableStream<Uint8Array> {

@@ -14,7 +14,22 @@ package.__path__ = [str(PLUGIN)]
 sys.modules.setdefault(package.__name__, package)
 hermes_api = importlib.import_module("test_hermes_api_plugin.hermes_api")
 
-HERMES_ROOTS = {"hermes_cli", "hermes_constants", "tools", "gateway", "agent", "cron", "run_agent", "model_tools", "toolsets", "utils"}
+HERMES_ROOTS = {
+    "hermes_cli",
+    "hermes_constants",
+    "tools",
+    "gateway",
+    "agent",
+    "cron",
+    "run_agent",
+    "model_tools",
+    "toolsets",
+    "utils",
+    # Hermes's top-level modules the plugin reaches too: the CLI's config writer, Bot Mode's ui_meta writer, its YAML.
+    "cli",
+    "tui_gateway",
+    "hermes_yaml",
+}
 
 
 def plugin_imports():

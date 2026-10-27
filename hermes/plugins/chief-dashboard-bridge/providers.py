@@ -13,8 +13,9 @@ Every provider fact comes from Hermes itself, never from a list kept here:
 - the live test: ``agent.auxiliary_client.call_llm``, which speaks every provider's API style;
 - what each model can do (reasoning, fast), how much of a plan is left and when a rate limit lifts: the same catalog
   payload (Hermes 0.22: ``capabilities``, ``usage`` from its usage cache, ``limit`` from the credential pool);
-- reasoning effort: ``agent.reasoning_overrides`` per model (dotted names, so written as a whole mapping) over
-  ``agent.reasoning_effort``, the levels from ``agent.reasoning_effort.route_supported_efforts``.
+- reasoning effort: ``agent.reasoning_overrides`` per model (dotted names, so written as a whole mapping, through
+  ``cli.save_config_value``, Hermes's one-key writer) over ``agent.reasoning_effort``, the levels from
+  ``agent.reasoning_effort.route_supported_efforts``.
 
 Everything runs in the chief profile's scope. Keys are accepted, never returned or logged. A contract test
 (hermes/tests/contract) exercises these imports against each Hermes pin before it ships.
@@ -31,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from .data import chief_config_scope, chief_home
-from .util import subdict
+from .util import subdict, write_json_atomic
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -41,6 +42,10 @@ _ENV = re.compile(r"^[A-Z][A-Z0-9_]{1,63}$")
 # Rows a person can finish connecting inside the app. OAuth and cloud-SDK providers are listed but set up
 # with Hermes's own tools for now.
 _KEY_AUTH = {"api_key"}
+
+
+class ProvidersError(ValueError):
+    pass
 
 
 def _run(coro):
@@ -255,14 +260,27 @@ def recommended_model(slug: str) -> str:
             return ""
 
 
+def _fresh_models(slug: str) -> list[str]:
+    """This provider's own model list, fetched now (Hermes's per-provider fetcher); [] when it has none to offer."""
+    try:
+        with chief_config_scope():
+            from hermes_cli.models import provider_model_ids
+
+            return [str(m) for m in (provider_model_ids(slug, force_refresh=True) or [])][:200]
+    except Exception as exc:
+        logger.info("provider models: %s", type(exc).__name__)
+        return []
+
+
 def provider_models(slug: str) -> dict[str, Any]:
-    """Models a connected provider offers (fetched fresh), with Hermes's recommended default."""
-    for row in catalog(refresh=True)["providers"]:
+    """Models a connected provider offers (its list fetched fresh), with Hermes's recommended default. Only this
+    provider is asked: a refreshed catalog would probe every provider to answer for one."""
+    for row in catalog()["providers"]:
         if row["slug"] == slug:
             return {
                 "ok": True,
                 "provider": slug,
-                "models": row["models"],
+                "models": _fresh_models(slug) or row["models"],
                 "featured": row["featured"],
                 "recommended": recommended_model(slug),
                 "connected": row["connected"],
@@ -386,10 +404,7 @@ def set_favorite(provider: str, model: str, on: bool) -> dict[str, Any]:
             if len(current) >= _FAVORITES_MAX:
                 return {"ok": False, "error": f"Up to {_FAVORITES_MAX} favourites. Unstar one first."}
             current.insert(0, {"provider": provider, "model": model})
-        path = chief_home() / _FAVORITES_FILE
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps({"favorites": current}, indent=2), encoding="utf-8")
-        tmp.replace(path)
+        write_json_atomic(chief_home() / _FAVORITES_FILE, {"favorites": current})
     return {"ok": True, "favorites": current}
 
 
@@ -447,20 +462,20 @@ def set_effort(value: str, home: Path | None = None) -> dict[str, Any]:
     if value and value not in current["levels"]:
         return {"ok": False, "error": "That model doesn't take that level."}
     with _scope(home):
-        from hermes_cli.config import atomic_config_replace, get_config_path, read_user_config_raw
+        from cli import save_config_value
+        from hermes_cli.config import get_config_path, read_user_config_raw
 
         path = get_config_path()
-        raw = read_user_config_raw(path)
-        agent = raw.get("agent") if isinstance(raw.get("agent"), dict) else {}
-        overrides = dict(agent.get("reasoning_overrides") or {}) if isinstance(agent.get("reasoning_overrides"), dict) else {}
+        agent = subdict(read_user_config_raw(path) or {}, "agent")
+        overrides = dict(subdict(agent, "reasoning_overrides"))
         if value:
             overrides[model] = value
         else:
             overrides.pop(model, None)
-        agent["reasoning_overrides"] = overrides
-        raw["agent"] = agent
-        # Model names have dots, which Hermes's dotted-key writer would split: the whole file, comments kept.
-        atomic_config_replace(path, raw)
+        # Model names have dots, which a dotted key path would split: the whole mapping goes under one key, through
+        # Hermes's one-key writer (a whole-file rewrite would undo a setting Hermes saved meanwhile).
+        if not save_config_value("agent.reasoning_overrides", overrides):
+            return {"ok": False, "error": "Couldn't save the thinking level. Try again."}
     from .data import forget_yaml
 
     forget_yaml(path)
@@ -496,7 +511,11 @@ def grant_provider(slug: str, home: Path) -> dict[str, Any]:
     copied = 0
     with _scope(home):
         if isinstance(custom, dict):
-            save_config_value(f"providers.{slug}", custom)
+            mine = subdict(read_user_config_raw(home / "config.yaml") or {}, "providers")
+            # A slug can hold dots ("local-127.0.0.1:8283"), which Hermes's dotted key path would split into nested
+            # keys: the bot's whole `providers:` mapping goes under the one key.
+            if not save_config_value("providers", {**mine, slug: custom}):
+                raise ProvidersError("Couldn't save the bot's settings. Try again.")
         for name in env_names:
             value = chief_env.get(name, "")
             if value:

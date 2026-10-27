@@ -35,6 +35,8 @@ from . import usage
 from . import fleet
 from . import speech_model
 from . import providers
+from . import hermes_api
+from .util import owner_error, subdict, write_json_atomic
 
 logger = logging.getLogger("chief-dashboard-bridge")
 
@@ -131,6 +133,13 @@ def _busy_input_mode() -> str:
         return "interrupt"
 
 
+def _slash_confirm_on() -> bool:
+    """Hermes asks before `/new` unless the chief's `approvals.destructive_slash_confirm` is off (read from the
+    owner's own config, as Hermes reads it: on when unset)."""
+    approvals = subdict(data.load_yaml(data.chief_home() / "config.yaml"), "approvals")
+    return bool(approvals.get("destructive_slash_confirm", True))
+
+
 def _queue_inbound(adapter: Any, text: str, media: list | None = None, message_type: str = "text", chat_id: str = "") -> bool:
     """Return once the turn is queued. Do not wait for the model. `chat_id` is the thread's chat (default main)."""
     media = media or []
@@ -185,7 +194,6 @@ class BridgeServer:
         self._httpd: ThreadingHTTPServer | None = None
         self._subscribers: list[Callable[[dict], None]] = []
         self._sub_lock = threading.Lock()
-        self._watch_stop = threading.Event()
         self._send_lock = threading.Lock()
         self._sent_ids: dict[str, float] = {}
         self._pushed_approvals: dict[str, float] = {}
@@ -275,7 +283,7 @@ class BridgeServer:
             deadline = time.monotonic() + max(0.0, min(float(wait or 0), _LONGPOLL_MAX))
             seen = changes.version()
             # `after` 0 is a conversation with no rows yet (a fresh install): hold until the first one.
-            while time.monotonic() < deadline and not self._watch_stop.is_set():
+            while time.monotonic() < deadline:
                 pending = data.pending_approval(sk)
                 if data.head_id(sk) > after:
                     break
@@ -321,8 +329,7 @@ class BridgeServer:
                 # Whether Load earlier has anything to show (a new thread has nothing before its first rows).
                 ids = [int(m["id"]) for m in payload.get("messages") or [] if 0 < int(m.get("id") or 0) < 10**12]
                 if ids:
-                    probe = data.transcript(sk, before_id=min(ids), limit=1)
-                    payload["more"] = bool(probe.get("messages")) or bool(probe.get("more"))
+                    payload["more"] = data.has_rows_before(sk, min(ids))
         payload["thread"] = thread or threads.MAIN
         payload["longpoll"] = True
         return payload
@@ -353,6 +360,9 @@ class BridgeServer:
         try:
             from tools import slash_confirm
         except Exception:
+            slash_confirm = None
+        # With the confirmation off, Hermes runs /new at once and nothing is asked: no waiting for it.
+        if slash_confirm is not None and not _slash_confirm_on():
             slash_confirm = None
         end = time.monotonic() + 8.0
         while slash_confirm is not None and time.monotonic() < end:
@@ -443,7 +453,8 @@ class BridgeServer:
                 learning.run_now()
         except Exception:
             logger.warning("Fleet Health setup failed", exc_info=True)
-        while not self._watch_stop.wait(_WATCH_SECONDS):
+        while True:
+            time.sleep(_WATCH_SECONDS)
             tick += 1
             if tick % _BUDGET_EVERY == 0:
                 try:
@@ -524,21 +535,20 @@ class BridgeServer:
         if not first:
             push.notify_flags(fresh)
         keep = sorted(seen | {str(f["id"]) for f in flags})[-500:]
-        tmp = state.with_name(state.name + ".tmp")
-        tmp.write_text(json.dumps(keep), encoding="utf-8")
-        os.replace(tmp, state)
+        write_json_atomic(state, keep, indent=None)
 
     def _snapshot_sig(self) -> str:
         roster = data.list_roster()
         work = data.work_status()
         bind = self.binding()
-        tail = data.transcript(bind.get("sessionKey") or "", limit=1)
-        last = tail.get("lastId") or 0
+        sk = bind.get("sessionKey") or ""
+        # The newest row only (every 5 s while someone listens): not a page of the transcript.
+        last = data.head_id(sk)
         ids = ",".join(p["id"] for p in roster.get("people") or [])
         jobs = json.dumps(work.get("jobs") or {}, sort_keys=True, default=str)
-        pending = data.pending_approval(bind.get("sessionKey") or "")
+        pending = data.pending_approval(sk)
         rid = (pending or {}).get("requestId") or ""
-        gen = "1" if self.generating(bind.get("sessionKey") or "") else "0"
+        gen = "1" if self.generating(sk) else "0"
         return f"{ids}|{jobs}|{last}|{bind.get('sessionKey')}|{rid}|{gen}"
 
     def broadcast(self, payload: dict) -> None:
@@ -626,8 +636,10 @@ class BridgeServer:
             return {"ok": True, "accepted": True, "duplicate": True}
         try:
             result = self._send_once(text, attachments, thread)
-        except threads.ThreadError as exc:
-            result = {"ok": False, "error": str(exc)}
+        except Exception as exc:
+            # Any failure (a full disk while saving a photo) is a send that didn't happen: the id is released below,
+            # so the dashboard's retry with the same id goes through instead of being dropped as a duplicate.
+            result = {"ok": False, "error": owner_error(exc, (threads.ThreadError, data.UploadError), "Couldn't send that. Try again.", what="send")}
         if not result.get("ok"):
             self._release_send(client_id)
         return result
@@ -646,7 +658,7 @@ class BridgeServer:
         else:
             wait_s = min(max(wait_s, self._STARTUP_GRACE_S - elapsed), self._ATTACH_WAIT_MAX_S)
         end = time.monotonic() + wait_s
-        while self.command_center_adapter is None and time.monotonic() < end and not self._watch_stop.is_set():
+        while self.command_center_adapter is None and time.monotonic() < end:
             time.sleep(0.25)
         return self.command_center_adapter
 
@@ -730,12 +742,16 @@ class BridgeServer:
                 "retry": True,
             }
         if not use_cc and not sk:
-            return {"ok": False, "error": "no session bound"}
+            return {"ok": False, "error": "There's no conversation to send to yet."}
         try:
             staged = data.stage_uploads(attachments or [])
         except data.UploadError as exc:
             return {"ok": False, "error": str(exc)}
-        composed = data.compose_user_turn(text, staged)
+        try:
+            composed = data.compose_user_turn(text, staged)
+        except Exception:
+            data.discard_staged(staged)
+            raise
         text = composed["text"]
         if not text:
             return {"ok": False, "error": "Message is empty."}
@@ -765,18 +781,12 @@ class BridgeServer:
         try:
             accepted = bool(self.inject(text, sk))
         except Exception as exc:
-            logger.warning("inject_message failed: %s", exc)
+            logger.warning("inject_message failed: %s", type(exc).__name__)
             data.discard_staged(staged)
-            return {"ok": False, "error": "inject failed"}
+            return {"ok": False, "error": "Couldn't send that. Try again."}
         self._quote_from_pc(text, bind)
         self.broadcast({"type": "sent", "at": time.time(), "platform": "discord"})
         return {"ok": accepted, "sessionKey": sk, "kind": bind.get("kind"), "accepted": accepted, "platform": "discord"}
-
-    def outbox(self, after_id: str = "", limit: int = 50) -> dict[str, Any]:
-        from . import adapter as cc_mod
-
-        rows = cc_mod.read_outbox(after_id=after_id, limit=limit)
-        return {"ok": True, "items": rows, "path": str(cc_mod._outbox_path())}
 
     def _quote_from_pc(self, text: str, bind: dict) -> None:
         bot = self.discord_bot
@@ -801,22 +811,29 @@ class BridgeServer:
             asyncio.run_coroutine_threadsafe(_send(), loop)
 
 
+# The bridge's own refusals: plain sentences, shown as they are.
+_KNOWN_ERRORS: tuple[type[BaseException], ...] = (
+    persona.PersonaError,
+    second_brain.SecondBrainError,
+    speech_model.SpeechModelError,
+    fleet.FleetError,
+    threads.ThreadError,
+    routines.RoutineError,
+    providers.ProvidersError,
+)
+
+
 def _guarded(fn) -> dict[str, Any]:
-    """Run a setup action; a Hermes-side failure becomes a plain error, never a traceback or a key."""
+    """Run an action for a route: the bridge's own refusals keep their sentence; anything else (Hermes's text can
+    carry a path, a command or a key) becomes a plain one, with only its type in the log."""
     try:
         return fn()
-    except (
-        persona.PersonaError,
-        second_brain.SecondBrainError,
-        speech_model.SpeechModelError,
-        fleet.FleetError,
-        threads.ThreadError,
-        routines.RoutineError,
-    ) as exc:
+    except _KNOWN_ERRORS as exc:
         return {"ok": False, "error": str(exc)}
-    except Exception as exc:  # the adapter maps expected failures itself
-        logger.warning("bridge action failed: %s", type(exc).__name__)
-        return {"ok": False, "error": providers._plain(exc)}
+    except (hermes_api.HermesMissing, ImportError):
+        return {"ok": False, "error": "This version of Hermes can't do that from the app (see Status)."}
+    except Exception as exc:
+        return {"ok": False, "error": owner_error(exc)}
 
 
 def hermes_build() -> str:
@@ -948,7 +965,7 @@ def _make_handler(bridge: BridgeServer):
                 self._reject(400, "invalid Content-Length")
                 return None
             if length > limit:
-                self._reject(413, "payload too large")
+                self._reject(413, "That's too big to send. Send fewer or smaller files.")
                 return None
             raw = self.rfile.read(length) if length else b""
             if len(raw) != length:
@@ -1080,7 +1097,7 @@ def _make_handler(bridge: BridgeServer):
             try:
                 self.wfile.write(b'retry: 3000\ndata: {"type":"hello"}\n\n')
                 self.wfile.flush()
-                while not bridge._watch_stop.is_set():
+                while True:
                     current = changes.wait(seen, 15.0)
                     if current == seen and not pending:
                         self.wfile.write(b": ping\n\n")

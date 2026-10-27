@@ -724,6 +724,123 @@ class QuickAccountsTests(unittest.TestCase):
         self.assertEqual(work[0].blurb, "Contacts and deals.")
 
 
+class NousSignInTests(unittest.TestCase):
+    """The Nous sign-in reports "expired" once Hermes has dropped its session, and old sign-ins are forgotten."""
+
+    def setUp(self):
+        connections._nous_sessions.clear()
+        self.addCleanup(connections._nous_sessions.clear)
+        self.sessions: dict = {}
+        self.refusal = None
+        test = self
+
+        async def start(profile):
+            if test.refusal is not None:
+                raise test.refusal
+            hid = f"h{len(test.sessions) + 1}"
+            test.sessions[hid] = {"status": "pending", "created_at": 0}
+            return {"session_id": hid, "user_code": "ABCD-1234", "verification_url": "https://portal.example.com/device", "expires_in": 900}
+
+        for name in ("hermes_cli", "hermes_cli.web_routers"):
+            if name not in sys.modules:
+                fake_module(self, name)
+        fake_module(self, "hermes_cli.web_routers.oauth", _start_nous_device_code=start, _oauth_sessions=self.sessions, _oauth_sessions_lock=threading.Lock())
+        p = patch.object(connections, "chief_scope", _noscope)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_a_sign_in_hermes_dropped_is_expired_then_ended(self):
+        sid = connections.nous_start()["session"]
+        self.assertEqual(connections.nous_poll(sid), {"ok": True, "status": "pending"})
+        self.sessions.clear()  # Hermes forgets its sessions after a while
+        self.assertEqual(connections.nous_poll(sid), {"ok": True, "status": "expired"})
+        with self.assertRaisesRegex(connections.ConnectionsError, "ended"):
+            connections.nous_poll(sid)
+
+    def test_finished_and_old_sign_ins_are_forgotten(self):
+        done = connections.nous_start()["session"]
+        old = connections.nous_start()["session"]
+        self.sessions["h1"]["status"] = "approved"
+        hid, started = connections._nous_sessions[old]
+        connections._nous_sessions[old] = (hid, started - connections._NOUS_TTL - 1)
+        fresh = connections.nous_start()["session"]
+        self.assertEqual(list(connections._nous_sessions), [fresh])
+        self.assertNotIn(done, connections._nous_sessions)
+
+    def test_hermess_own_refusal_is_its_sentence(self):
+        class HTTPException(Exception):
+            def __init__(self, status_code, detail):
+                super().__init__(detail)
+                self.status_code, self.detail = status_code, detail
+
+        self.refusal = HTTPException(400, "You're already signed in to Nous.")
+        with self.assertRaisesRegex(connections.ConnectionsError, "^You're already signed in to Nous.$"):
+            connections.nous_start()
+
+
+class QuickReuseTests(unittest.TestCase):
+    """A second Connect for the same account gets the sign-in already open; Cancel stops its watcher."""
+
+    def setUp(self):
+        with connections._ops_lock:
+            connections._ops.clear()
+        self.addCleanup(connections._ops.clear)
+        self.made: list[tuple] = []
+        self.settled: list = []
+        svc = connections.Service("outlook", "Outlook", "mail", "Mail.", quick="outlook")
+        view = {"services": [{"id": "outlook", "backends": ["quick"], "state": "not_connected"}], "nous": {"connectors": True}, "local": {}}
+        test = self
+
+        def quick(slug, name=None, repair_id=None):
+            threading.Event().wait(0.1)  # Nous takes a moment to hand out the link
+            handle = types.SimpleNamespace(settled=False)
+            handle.settle = lambda by: test.settled.append(by) or setattr(handle, "settled", True)
+            test.made.append((slug, name, repair_id))
+            return handle, f"https://connect.example.com/link/{len(test.made)}"
+
+        for target, name, value in (
+            (connections, "_find", lambda service_id: svc),
+            (connections, "overview", lambda refresh=False: view),
+            (connections, "_quick_connect", quick),
+            (connections, "_quick_account", lambda slug, account_id: {}),
+            (connections, "_forget_directory", lambda: None),
+        ):
+            p = patch.object(target, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        for name in ("tools", "tools.connectors"):
+            if name not in sys.modules:
+                fake_module(self, name)
+        fake_module(self, "tools.connectors.contract", SettleReason=types.SimpleNamespace(continue_="continue"))
+
+    def test_a_double_click_gets_one_sign_in(self):
+        answers = []
+        clicks = [threading.Thread(target=lambda: answers.append(connections.connect("outlook"))) for _ in range(2)]
+        for click in clicks:
+            click.start()
+        for click in clicks:
+            click.join(5)
+        self.assertEqual(len(self.made), 1)
+        self.assertEqual({a["op"] for a in answers}, {answers[0]["op"]})
+        self.assertEqual({a["url"] for a in answers}, {"https://connect.example.com/link/1"})
+        # Another account of the same service is its own sign-in.
+        self.assertNotEqual(connections.connect("outlook", name="work")["op"], answers[0]["op"])
+        self.assertEqual(self.made, [("outlook", None, None), ("outlook", "work", None)])
+
+    def test_cancel_settles_the_sign_in_and_the_next_connect_starts_afresh(self):
+        first = connections.connect("outlook")
+        self.assertEqual(connections.op_cancel(first["op"]), {"ok": True})
+        self.assertEqual(self.settled, ["continue"])  # its watcher stops now, not at the deadline
+        second = connections.connect("outlook")
+        self.assertNotEqual(second["op"], first["op"])
+        self.assertEqual(len(self.made), 2)
+
+    def test_a_sign_in_finished_elsewhere_isnt_handed_out_again(self):
+        first = connections.connect("outlook")
+        connections._ops[first["op"]].handle.settled = True
+        self.assertNotEqual(connections.connect("outlook")["op"], first["op"])
+
+
 class FileApiTests(unittest.TestCase):
     def test_connection_secrets_are_never_files_to_serve(self):
         for name in ("google_token.json", "google_client_secret.json", "google_account.json", "nous_auth.json"):
