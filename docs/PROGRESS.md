@@ -1269,3 +1269,28 @@ window-controls overlay on every geometry change and resize, and never less than
 narrower chat column the row didn't fit: it now folds a step at a time until it does (voice, status and settings
 into "More", then the face, then the thread chip's name) and unfolds as the window widens. Checked in the real
 desktop window at eight sizes from 380 px wide to maximized: nothing reaches the window buttons.
+
+**Polish pass (2026-10-26).** A review of the whole app, then fixes in every area (plan:
+`docs/PLAN-2026-10-26-polish.md`).
+
+- Nothing lost, nothing stuck. A draft and "send after this" are kept per thread and survive a reload; a message that
+  can't be sent goes back into the box instead of vanishing. Stop shows "Stopping…" until it lands. Renaming a thread
+  closes only when it worked. The bridge releases a failed send so the retry goes through, and an upload that fails
+  halfway leaves nothing behind. In the desktop app, quitting has one path (with "Wait for Chief", "Quit now" and
+  "Keep running"), a restart from the tray is hidden when another launcher runs Chief, and the boot page no longer
+  dead-ends (backup progress on Go back, Save diagnostics).
+- Plain words. Every error is a sentence ("Can't reach Nova right now", "The key wasn't saved. Try again."), never a
+  code or a stack trace, on the dashboard and from the bridge. Jargon is gone from Settings ("profile", "bridge",
+  environment-variable names, "Web Push", "engine b9000 (cuda)"); "e-mail" is "email"; the assistant's own name is
+  used everywhere, including the desktop app's tray, notifications and boot screen.
+- Light mode outside the dashboard: the boot page, the update window, the error page and the pairing page follow it;
+  shadows, the orbit and glow colours were tuned for light.
+- Settings: one way to ask before something can't be undone (a key, a paired phone, phone access, the Nous sign-in, a
+  downloaded model, a routine). Models on this PC follows a download by its own route, shows each error beside the
+  action that failed, can update the engine, and says "Starting…/Stopping…". Pairing a phone says when it's paired.
+  Restoring shows each step and its progress, and first run picks up the restored model. Report a problem says when
+  the diagnostics file couldn't be made. The voice key box saves and uses the engine in one step.
+- The shell: Team & Routines opens from anywhere (a routine card's Manage, the palette); shortcuts leave AltGr letters,
+  paste-as-plain-text and open dialogs alone; toasts show over drawers; the Look drawer's tabs work with the arrow
+  keys; dialogs without a title are named by their heading; phone touch targets are 44 px.
+- Tests: web 572 passed (4 skipped), desktop 166 passed, Python 573 + 22 (upstream tooling) passed, privacy scan clean.

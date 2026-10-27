@@ -243,7 +243,7 @@ Two Hermes profile helpers reach outside the profile they are given:
 
 `hermes/plugins/chief-dashboard-bridge/routes.py` (the route table), `hermes_api.py` (the Hermes names the bridge uses), `apps/web/lib/proxy-policy.ts` (the proxy's allow-list). Test map: `hermes/tests/test_routes.py`, `test_hermes_api.py`; the upstream suite's "Hermes names the bridge uses".
 
-- **A new bridge route** goes in `routes.py` with its body limit (1 MB unless it needs more) and `dashboard=True` only if the page calls it; then add it to `proxy-policy.ts`. `test_routes.py` fails until both agree. Routes the page never calls (`/outbox`, `/outbox/notify`, `/voice/model/use`) stay off the proxy.
+- **A new bridge route** goes in `routes.py` with its body limit (1 MB unless it needs more) and `dashboard=True` only if the page calls it; then add it to `proxy-policy.ts`. `test_routes.py` fails until both agree. Routes the page never calls (`/outbox/notify`) stay off the proxy.
 - **A new Hermes import** in the plugin goes in `hermes_api.CAPABILITIES` under the feature that needs it, or `test_hermes_api.py` fails. Code that must not fail quietly reads the name with `hermes_api.get()` (approvals do): a missing name is logged once and shows in Status.
 - **A route with an id in the middle** (`/look/{id}/pet`) is written with `{id}` in `routes.py` and as `"POST look/:id/pet"` in `proxy-policy.ts`'s `bridgeTemplates`; `test_routes.py` compares the two lists. A `raw=True` route (the photo upload, `PUT /look/{id}/avatar`) gets its body as bytes; the dashboard proxy must also export that method.
 - **Bot looks write through Hermes's `_configure_ui_meta`** (`looks.py`), whose body uses `tui_gateway.server`'s globals (`json`, the ui_meta lock) and only works once that module rebinds it. The gateway doesn't load the TUI server, so `looks._configure_fn` runs the same code over its own module plus those two names (or uses the server's bound copy when it is loaded). If Hermes adds another server global to that body, every save fails as "Hermes didn't save the look"; `run_looks_contract.py` catches it. `persona.rename` still writes `profile.yaml` directly (no revision bump), so a rename racing a look save can drop one of them.
@@ -412,3 +412,20 @@ Two Hermes profile helpers reach outside the profile they are given:
   `env(titlebar-area-*)` alone went stale or missing in the desktop app. A header in the top-right corner must keep
   its row inside its content box: overflowing flex items paint into the padding (where the buttons are) without
   counting as scroll overflow, so the chat header measures its descendants' right edges and folds (`useHeaderFold`).
+
+## Polish pass (2026-10-26)
+
+- **An error reaches the owner only as a sentence** (`friendlyError` / `plainFailure` in `lib/request.ts`): a server's
+  own text is kept when it reads as one (a capital, a space, no stack trace), anything else becomes the caller's
+  fallback. A new `catch` uses `friendlyError(e, "…")`, never `e.message`; the bridge's side is `util.owner_error`.
+  A test that throws `new Error("network lost")` and expects that text on screen is testing the old behaviour.
+- **Shadows that change with the mode are variables** (`--elev-1/3/4` on `:root` and the light block): Tailwind writes
+  an `@theme` shadow's value straight into its utility, so `--shadow-e3: 0 …` can't follow light mode.
+- **A part of the page that stays dark in light mode** (`.orbit-night`, the Fleet orbit) must redeclare the
+  `--color-*` variables as well as the `--c-*` tokens: `@theme` colours are computed where they're declared, so
+  changing `--c-canvas` alone inside it changes nothing.
+- **AltGr is Ctrl+Alt on Windows** (Chromium reports both, and `getModifierState("AltGraph")` for plain Ctrl+Alt too).
+  A Ctrl+Alt shortcut matches the letter itself (`e.key`), not `e.code`, or AltGr+N stops typing "ń".
+- **The Team & Routines sheet is mounted once by the shell** (`TeamSheet`); `TeamButton` and `openTeam()` only send
+  `OPEN_TEAM_EVENT`. A sheet that lives inside a pane's header isn't there when another tab or surface is showing.
+- **Shortcuts stand down while a dialog is open** (any `[aria-modal="true"]`), except the palette closing itself.
