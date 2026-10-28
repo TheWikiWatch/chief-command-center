@@ -479,3 +479,10 @@ Two Hermes profile helpers reach outside the profile they are given:
   long-poll wakes on `choice`.
 - **History clean-up**: 0.22.5 defaults `sessions.auto_prune` off and asks in the chat when the disk is low;
   provisioning writes `true` when the owner hasn't chosen, which also ends the question.
+
+## Dependency updates (2026-10-28)
+
+- **npm 10 crashes updating Vite or Vitest while Vitest is behind its newest patch** ("Cannot read properties of null
+  (reading 'edgesOut')", in npm's peer-set code, through Vitest's optional plugins). Update Vitest to its newest patch
+  first (`npm update vitest`), then the rest. Asking for an older Vitest exactly (`vitest@5.0.3` while 5.0.5 is out)
+  fails the same way.

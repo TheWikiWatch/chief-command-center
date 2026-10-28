@@ -1325,3 +1325,11 @@ desktop window at eight sizes from 380 px wide to maximized: nothing reaches the
   open question at once, messages sent during a restart kept and answered after it.
 - The Hermes compatibility workflow on GitHub had been red since 0.1.47 (the routines contract still looked for the
   bot's name in the message text); fixed.
+
+**Dependencies (2026-10-28).** The advisories that failed CI's dependency scan on every push since 2026-10-21 are
+fixed. In what ships: Next.js 16.4.1, DOMPurify 3.4.17 and Electron 44.9.1. In development and build tools only:
+happy-dom 21 (the dashboard's tests run on it, unchanged), Vitest 5.0.5, Vite 8.3.5, undici, fast-uri and zod, and in
+`requirements-dev.txt` Pillow 13.0.0 and certifi 2026.10.19, which the Hermes 0.22.5 payload already ships (0.1.47's
+payload has Pillow 12.3.0, so the next release also fixes the app's own copy). Both are newer than that file's
+two-week rule; its header says how to regenerate it until 2026-11-04. http-cache-semantics (no fix yet) is still
+passed over until 2026-11-12.
