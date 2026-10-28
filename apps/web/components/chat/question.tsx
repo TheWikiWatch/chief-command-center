@@ -8,14 +8,16 @@ import { BotFace, faceProps } from "@/components/bot-face";
 import { BellIcon, CheckIcon, CircleAlertIcon, ClockIcon } from "@/components/icons";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
-import type { AskedQuestion, ChatNotice, PendingQuestion, Person } from "@/lib/types";
+import type { AskedQuestion, ChatNotice, PendingChoice, PendingQuestion, Person } from "@/lib/types";
 import { linkifyVaultRefs } from "@/lib/vault-client";
 import { field as fieldClass } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
 import { openSettings, openTeam } from "@/lib/settings-nav";
 import { routinesApi } from "@/lib/routines-client";
-import { retryTurn } from "@/lib/bridge";
+import { discardLostTurn, retryTurn } from "@/lib/bridge";
+import { currentChatThread } from "@/lib/chat-thread";
 import { friendlyError } from "@/lib/request";
+import { threadsApi } from "@/lib/threads-client";
 
 /** Hermes appends this to the choice it recommends; the card shows it as a badge instead. */
 const RECOMMENDED = /\s*\(recommended\)\s*$/i;
@@ -28,6 +30,90 @@ export function choiceLabel(choice: string) {
  * The chief's open question. The turn waits until it's answered: tap a choice (or several, then Send),
  * or "Something else" to answer in your own words. Typing in the message box answers it too.
  */
+/** Hermes's title in plain lines: its markdown (bold, code) dropped, a trailing colon too. */
+function plainLines(text: string): string[] {
+  return text
+    .replace(/\*\*|__|`/g, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim().replace(/:$/, ""))
+    .filter(Boolean);
+}
+
+/**
+ * A choice Hermes offers as buttons: after a plan limit stopped a reply, the plan's model to keep going on (Hermes
+ * switches this chat to it and sends the message again); also its /model, /reasoning and /fast pickers. A tap calls
+ * Hermes back, and it says what it did in the chat. "Not now" only hides the card here.
+ */
+export function ChoiceCard({
+  choice,
+  chief,
+  onChoose,
+}: {
+  choice: PendingChoice;
+  chief: Person | undefined;
+  onChoose: (id: string, value: string) => Promise<void>;
+}) {
+  const headingId = useId();
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  // A new choice is a new card (the thread keys it by id), so nothing here carries over.
+  const [hidden, setHidden] = useState(false);
+  if (hidden) return null;
+  const [head, ...rest] = plainLines(choice.title);
+
+  async function pick(value: string) {
+    setBusy(value);
+    setError("");
+    try {
+      await onChoose(choice.id, value);
+    } catch (e) {
+      setError(friendlyError(e, "That didn't work. Try again."));
+      setBusy("");
+    }
+  }
+
+  return (
+    <motion.section
+      aria-labelledby={headingId}
+      className="mt-5 flex gap-2.5"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0, transition: { duration: 0.24, ease: EASE.enter } }}
+      exit={{ opacity: 0, transition: { duration: 0.14 } }}
+    >
+      <div className="w-7 shrink-0 pt-0.5">{chief ? <BotFace {...faceProps(chief)} mood="waiting" size={28} /> : null}</div>
+      <div className="min-w-0 flex-1 rounded-card border border-accent/30 bg-accent/6 px-3.5 py-3">
+        <h3 id={headingId} className="text-body font-medium text-fg">
+          {head || "Pick one"}
+        </h3>
+        {rest.length ? <p className="mt-1 whitespace-pre-line text-caption text-fg-3">{rest.join("\n")}</p> : null}
+        <div className="mt-3 flex flex-col gap-2">
+          {choice.choices.map((c) => (
+            <button
+              key={c.value}
+              type="button"
+              disabled={!!busy}
+              aria-current={c.current ? "true" : undefined}
+              onClick={() => void pick(c.value)}
+              className={btn("secondary", "sm", "h-auto min-h-11 justify-start py-2 text-left")}
+            >
+              <span className="min-w-0 flex-1">{busy === c.value ? "Working…" : c.label}</span>
+              {c.current ? <span className="shrink-0 text-caption text-fg-3">now</span> : null}
+            </button>
+          ))}
+        </div>
+        <button type="button" disabled={!!busy} onClick={() => setHidden(true)} className="press mt-2 min-h-9 rounded-full px-2 text-caption text-fg-3 hover:text-fg-2">
+          Not now
+        </button>
+        {error ? (
+          <p role="alert" className="mt-2 text-caption text-danger">
+            {error}
+          </p>
+        ) : null}
+      </div>
+    </motion.section>
+  );
+}
+
 export function QuestionCard({
   question,
   chief,
@@ -401,6 +487,118 @@ export function TurnFailure({ notice, latest }: { notice: ChatNotice; latest: bo
   );
 }
 
+/**
+ * Hermes's line for a turn that ended without an answer, said plainly (Hermes 0.22.5 says why). One that a stop or
+ * restart cut off is never run again by Hermes, so while it's the newest thing in the chat it offers to send the
+ * message again (Hermes's /retry resends the last message itself).
+ */
+export function FailedTurnMarker({ reason, latest }: { reason?: "restart" | "partial"; latest: boolean }) {
+  const assistant = useAssistantName();
+  const [state, setState] = useState<"" | "sending" | "sent">("");
+  const [error, setError] = useState("");
+  if (!reason) return <p className="text-caption text-fg-3">Not answered</p>;
+
+  async function again() {
+    setState("sending");
+    setError("");
+    try {
+      const res = await retryTurn();
+      if (!res.ok) throw new Error(res.error || "That didn't send.");
+      setState("sent");
+    } catch (e) {
+      setState("");
+      setError(friendlyError(e, "That didn't send."));
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      <p className="text-caption text-fg-3">
+        {reason === "restart" ? `Cut off when ${assistant} stopped, so it wasn't answered.` : "Didn't finish. Some steps may already have run: check before sending it again."}
+      </p>
+      {reason === "restart" && latest ? (
+        state === "sent" ? (
+          <span className="text-caption text-fg-2">Sent again.</span>
+        ) : (
+          <button type="button" disabled={state === "sending"} onClick={() => void again()} className={btn("ghost", "sm")}>
+            {state === "sending" ? "Sending…" : "Send again"}
+          </button>
+        )
+      ) : null}
+      {error ? (
+        <p role="alert" className="w-full text-caption text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Hermes 0.22.5 pauses a conversation whose reply a crash or a forced stop cut off: the owner's newer message is saved
+ * but not answered until the lost reply is dropped (Continue: Hermes's /discard, which never re-runs it) or the chat
+ * starts fresh. Hermes's own notice asks for typed commands; this is the same choice as buttons.
+ */
+function PausedConversation({ notice, latest }: { notice: ChatNotice; latest: boolean }) {
+  const lost = !!notice.paused?.lostTurn;
+  const assistant = useAssistantName();
+  const [state, setState] = useState<"" | "continue" | "fresh" | "done">("");
+  const [error, setError] = useState("");
+  const [open, setOpen] = useState(false);
+
+  async function act(kind: "continue" | "fresh") {
+    setState(kind);
+    setError("");
+    try {
+      const res = kind === "continue" ? await discardLostTurn() : await threadsApi.fresh(currentChatThread());
+      if (!res.ok) throw new Error(res.error || "That didn't work.");
+      setState("done");
+    } catch (e) {
+      setState("");
+      setError(friendlyError(e, "That didn't work. Try again."));
+    }
+  }
+
+  return (
+    <div className="rounded-card border border-warn/30 bg-warn/[0.07] px-3.5 py-2.5">
+      <p className="flex items-start gap-1.5 text-callout font-medium text-fg">
+        <CircleAlertIcon size={15} className="mt-0.5 shrink-0 text-warn" />
+        <span className="min-w-0 flex-1">{lost ? `${assistant}'s last reply was cut off` : "This chat is paused"}</span>
+      </p>
+      <p className="mt-1 text-callout text-fg-2">
+        {lost
+          ? `${assistant} stopped before finishing it, so this chat is waiting. Your newer message is saved. Continue to drop the unfinished reply (it won't be run again) and get your answer, or start fresh.`
+          : `A saved message couldn't be sent, so ${assistant} isn't answering in this chat. Start fresh to go on (this conversation is kept).`}
+      </p>
+      <div className="mt-2.5 flex flex-wrap items-center gap-2">
+        {state === "done" ? (
+          <span className="text-caption text-fg-2">Done.</span>
+        ) : latest ? (
+          <>
+            {lost ? (
+              <button type="button" disabled={!!state} onClick={() => void act("continue")} className={btn("secondary", "sm")}>
+                {state === "continue" ? "Continuing…" : "Continue"}
+              </button>
+            ) : null}
+            <button type="button" disabled={!!state} onClick={() => void act("fresh")} className={btn(lost ? "ghost" : "secondary", "sm")}>
+              {state === "fresh" ? "Starting fresh…" : "Start fresh"}
+            </button>
+          </>
+        ) : null}
+        <button type="button" aria-expanded={open} onClick={() => setOpen((v) => !v)} className="press relative after:absolute after:-inset-2 after:content-[''] rounded-full px-2 py-1 text-caption text-fg-3 hover:text-fg-2">
+          {open ? "Hide details" : "Details"}
+        </button>
+      </div>
+      {open ? <p className="mt-2 whitespace-pre-wrap font-mono text-micro text-fg-3">{notice.text}</p> : null}
+      {error ? (
+        <p role="alert" className="mt-2 text-caption text-danger">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /** A scheduled job's result or a gateway notice: not a reply to anything you said. A notice that asks for
  * an answer (Hermes's text fallback, e.g. confirming /new) gets its answers as buttons while it is the newest
  * thing in the chat. */
@@ -414,6 +612,7 @@ export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQui
   const replies = onQuickReply && !scheduled ? quickReplies(notice.text) : [];
   if (notice.failure) return <RoutineFailure notice={notice} />;
   if (notice.turnFailure) return <TurnFailure notice={notice} latest={!!onQuickReply} />;
+  if (notice.paused) return <PausedConversation notice={notice} latest={!!onQuickReply} />;
   // A gateway notice (a restart, a reminder that it is busy) is a quiet line; it opens to the full text.
   if (!scheduled && !replies.length) {
     const times = notice.repeat && notice.until ? `${notice.repeat}× · until ${new Date(notice.until * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "";

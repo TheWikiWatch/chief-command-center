@@ -251,6 +251,7 @@ def build(bridge) -> list[Route]:
                 session=req.q("session")[:64],
                 background=(req.qs.get("bg") or [None])[0],
                 draft=(req.qs.get("draft") or [None])[0],
+                choice=(req.qs.get("choice") or [None])[0],
             )
         )
 
@@ -336,12 +337,16 @@ def build(bridge) -> list[Route]:
         Route(P, "/stop", lambda r: bridge.control("stop", r.b("text"), _thread_body(r.body)), **A),
         Route(P, "/steer", lambda r: bridge.control("steer", r.b("text"), _thread_body(r.body)), **A),
         Route(P, "/retry", lambda r: bridge.control("retry", "", _thread_body(r.body)), **A),
+        # A conversation Hermes paused after a restart cut a turn off: drop that turn and go on (Hermes's /discard).
+        Route(P, "/discard", lambda r: bridge.control("discard", "", _thread_body(r.body)), **A),
         # One helper (a delegated task) at a time: its live log, a note, or stop (chat_state.helper_*).
         Route(G, "/background/tail", lambda r: bridge.helper("tail", r.q("task"), thread=_thread_param(r.qs))),
         Route(P, "/background/steer", lambda r: bridge.helper("steer", r.b("task"), r.b("text"), _thread_body(r.body)), limit=8 * KB, **A),
         Route(P, "/background/stop", lambda r: bridge.helper("stop", r.b("task"), thread=_thread_body(r.body)), limit=4 * KB, **A),
         Route(P, "/queue", lambda r: bridge.control("queue", r.b("text"), _thread_body(r.body)), **A),
         Route(P, "/clarify", clarify, **A),
+        # A choice Hermes offered as buttons (a plan limit's model switch, /model, /reasoning): chat_state.choose.
+        Route(P, "/choice", lambda r: _guarded(lambda: bridge.choose(r.b("id")[:64], r.b("value")[:400], _thread_body(r.body))), limit=8 * KB, **A),
         Route(
             P,
             "/approve",
@@ -537,6 +542,9 @@ def build(bridge) -> list[Route]:
         ),
         Route(G, "/fleet/effort", lambda r: _guarded(lambda: fleet.effort(r.q("profile", "chief")))),
         Route(P, "/fleet/effort", lambda r: _guarded(lambda: fleet.set_effort(profile(r), r.b("effort"))), limit=4 * KB, **A),
+        # The model a profile's background helpers use (Hermes's delegation.provider / delegation.model).
+        Route(G, "/fleet/helpers", lambda r: _guarded(lambda: fleet.helpers(r.q("profile", "chief")))),
+        Route(P, "/fleet/helpers", lambda r: _guarded(lambda: fleet.set_helpers(profile(r), r.b("provider"), r.b("model"))), limit=4 * KB, **A),
         Route(
             P,
             "/fleet/favorite",

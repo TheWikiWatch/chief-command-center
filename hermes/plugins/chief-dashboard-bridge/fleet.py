@@ -257,6 +257,28 @@ def set_effort(profile: str, value: str) -> dict[str, Any]:
     return providers.set_effort(value, _model_home(profile))
 
 
+def helpers(profile: str) -> dict[str, Any]:
+    """The model a profile's background helpers use ("" for its own)."""
+    return providers.helpers(_model_home(profile))
+
+
+def set_helpers(profile: str, provider: str, model: str) -> dict[str, Any]:
+    """Pin a profile's helpers to one of the offered models (a bot gets that provider's key, as with its own model),
+    or with both "" let them use the profile's own model."""
+    provider, model = (provider or "").strip(), (model or "").strip()
+    home = _model_home(profile)
+    if provider or model:
+        offered = {(g["provider"], m) for g in models()["groups"] for m in g["models"]}
+        if (provider, model) not in offered:
+            raise FleetError("That model isn't offered by a connected provider. Add the provider's key first.")
+        if home is not None:
+            providers.grant_provider(provider, home)
+    result = providers.set_helpers(provider, model, home)
+    if result.get("ok"):
+        logger.info("fleet: %s's helpers on %s", (profile or "chief").strip().lower(), f"{provider}/{model}" if model else "its own model")
+    return result
+
+
 # ---------------------------------------------------------------- retire / restore
 
 

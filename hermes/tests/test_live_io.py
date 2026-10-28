@@ -345,6 +345,17 @@ class LongPollFanOutTests(LiveTestCase):
             self.assertLess(at - sent, 2.0, "woken by the signal, not the fallback timer")
         self.assertEqual([n["text"] for n in answers[0][0]["notices"]], ["earlier notice", "Your routine finished."])
 
+    def test_a_long_poll_returns_at_once_when_rows_it_has_are_gone(self):
+        conn = sqlite3.connect(self.home / "state.db")
+        with conn:
+            conn.execute("DELETE FROM messages WHERE id = 5")
+        conn.close()
+        t0 = time.monotonic()
+        payload = self.bridge.live_transcript(5, wait=5, gen="0", approval="")
+        self.assertLess(time.monotonic() - t0, 2.0, "not held until the timer")
+        self.assertTrue(payload["reset"])
+        self.assertEqual(([m["id"] for m in payload["messages"]], payload["lastId"], payload["more"]), ([1, 2, 3, 4], 4, False))
+
 
 if __name__ == "__main__":
     unittest.main()

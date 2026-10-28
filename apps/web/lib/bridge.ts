@@ -91,7 +91,7 @@ export async function fetchSnapshot(signal?: AbortSignal): Promise<Snapshot> {
  * What the chat already knows, for a long-poll: the bridge holds the request (up to `wait` seconds)
  * until a row lands after `after`, generating differs from `gen`, or the approval differs.
  */
-export type TranscriptWait = { wait: number; gen: boolean; approval: string; clarify: string; notice: string; bg?: string; draft?: string };
+export type TranscriptWait = { wait: number; gen: boolean; approval: string; clarify: string; notice: string; bg?: string; draft?: string; choice?: string };
 
 /** `noticeSince`: the newest notice the chat has (epoch seconds), so only newer ones come back. */
 export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: TranscriptWait, noticeSince = 0): Promise<Transcript> {
@@ -106,6 +106,7 @@ export async function fetchTranscript(after = 0, signal?: AbortSignal, live?: Tr
     q.set("notice", live.notice);
     if (live.bg !== undefined) q.set("bg", live.bg);
     if (live.draft !== undefined) q.set("draft", live.draft);
+    if (live.choice !== undefined) q.set("choice", live.choice);
   }
   if (noticeSince) q.set("nsince", String(noticeSince));
   if (currentChatThread() !== "main") q.set("thread", currentChatThread());
@@ -135,6 +136,8 @@ export async function fetchApprovals(signal?: AbortSignal): Promise<{ ok: boolea
 /** Answer the chief's open question: a choice's text, several choices (multi-select), or the owner's own words. */
 export const answerQuestion = (id: string, answer: string | string[]) =>
   write<{ ok: boolean; error?: string; code?: string }>("clarify", withThread({ id, answer }));
+/** Pick one of the choices Hermes offered as buttons: Hermes acts on it and says what it did in the chat. */
+export const chooseOption = (id: string, value: string) => write<{ ok: boolean; error?: string; code?: string; message?: string }>("choice", withThread({ id, value }), 60_000);
 /** Rename a bot (the chief too): its title, and unless `updateSoul` is false, its SOUL's "You are …". */
 export const renameProfile = (profile: string, name: string, role: string, updateSoul = true) =>
   write<{ ok: boolean; error?: string; title?: string; name?: string; role?: string; soul?: string }>(
@@ -222,6 +225,8 @@ export const steerHelper = (task: string, text: string) => write<{ ok: boolean; 
 export const stopHelper = (task: string) => write<{ ok: boolean; error?: string }>("background/stop", withThread({ task }), 15_000);
 /** Hermes's /retry: it resends the conversation's last message itself (after a failed turn). */
 export const retryTurn = () => write<{ ok: boolean; error?: string }>("retry", withThread({}), 15_000);
+/** A conversation Hermes paused after a restart cut a reply off: drop that reply (never re-run) and go on. */
+export const discardLostTurn = () => write<{ ok: boolean; error?: string }>("discard", withThread({}), 15_000);
 export const transcribeAudio = (dataUrl: string, mimeType: string) =>
   write<{ ok: boolean; transcript?: string; error?: string; code?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);
 export async function speakText(text: string, timeoutMs = 185_000) {

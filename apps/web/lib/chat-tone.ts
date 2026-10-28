@@ -5,6 +5,9 @@ export type ChatTone = "reply" | "kanban" | "system" | "compaction" | "origin" |
 
 export function chatTone(message: ChatMessage): ChatTone {
   const body = String(message.content || "").trim();
+  // Hermes's line for a turn that ended unanswered: a marker, never a reply (so never read aloud), and the end of
+  // the wait for one.
+  if (message.failedTurn) return "error";
   if (message.role === "tool") return "tool";
   if (message.role === "assistant" && message.tools?.length && !body) return "tool";
   if (message.role === "system") return "error";

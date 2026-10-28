@@ -110,6 +110,7 @@ def _row(raw: dict[str, Any]) -> dict[str, Any]:
         "caps": _caps(raw),
         "usage": _usage(raw.get("usage")),
         "limit": _limit(raw.get("limit")),
+        "plan": _plan(raw.get("plan_usage"), raw.get("usage_levels")),
     }
 
 
@@ -155,6 +156,46 @@ def _usage(raw: Any) -> dict[str, Any] | None:
         resets = sorted(str(a.get("resets_at")) for a in accounts if a.get("resets_at"))
         return {"left": 0, "resetsAt": resets[0] if resets else None, "window": "", "accounts": len(accounts)}
     return None
+
+
+def _plan(raw: Any, levels: Any) -> dict[str, Any] | None:
+    """A Nous plan with usage windows (Hermes 0.22.5), as its own pickers draw it (`hermes_cli/model_picker_usage.py`):
+    each allowance (`day`, `week`, `month`, `top_tier` or the server's own) with how much is used, when it refills
+    (epoch seconds) and which models it covers (`all`, or `large` ones); the plan's picks; which models are Large and
+    which are Free (a full allowance never stops a Free one); whether it's paused; whether credits pay once one is
+    full. A full window is said here, since Hermes leaves `usage` and `limit` off this row. None for other accounts."""
+    if not isinstance(raw, dict) or raw.get("kind") != "usage_window":
+        return None
+    gauges = []
+    for g in (raw.get("gauges") or [])[:8]:
+        if not isinstance(g, dict):
+            continue
+        try:
+            left = max(0.0, min(1.0, float(g.get("left_fraction"))))  # type: ignore[arg-type]  # None raises, and is skipped
+        except (TypeError, ValueError):
+            continue
+        resets = g.get("resets_at_ms")
+        gauges.append(
+            {
+                "label": str(g.get("label") or ""),
+                "title": str(g.get("title") or ""),
+                "used": round((1.0 - left) * 100),
+                "full": left <= 0.0,
+                "resetsAt": resets / 1000 if isinstance(resets, (int, float)) and not isinstance(resets, bool) and resets > 0 else None,
+                "scope": "large" if g.get("scope") == "top_tier" else "all",
+            }
+        )
+    levels = levels if isinstance(levels, dict) else {}
+    credits = raw.get("credits_pay")
+    return {
+        "name": str(raw.get("plan") or ""),
+        "gauges": gauges,
+        "paused": str(raw.get("paused_reason") or "") or None,
+        "creditsPay": credits if isinstance(credits, bool) else None,
+        "featured": [str(m) for m in (raw.get("featured_model_ids") or [])][:20],
+        "large": [str(m) for m in (raw.get("top_tier_model_ids") or [])][:200],
+        "free": [str(m) for m, level in levels.items() if level == "free"][:200],
+    }
 
 
 def _limit(raw: Any) -> dict[str, Any] | None:
@@ -360,6 +401,7 @@ def connected_models(refresh: bool = False) -> dict[str, Any]:
                 "caps": {m: c for m, c in row["caps"].items() if m in models},
                 "usage": row["usage"],
                 "limit": row["limit"],
+                "plan": row["plan"],
             }
         )
     groups.sort(key=lambda g: (g["provider"] != data["provider"], g["name"].lower()))
@@ -480,6 +522,35 @@ def set_effort(value: str, home: Path | None = None) -> dict[str, Any]:
 
     forget_yaml(path)
     return effort(home)
+
+
+def helpers(home: Path | None = None) -> dict[str, Any]:
+    """The model a profile's background helpers use (Hermes's `delegation.provider` / `delegation.model`), or ""
+    for both when they use the profile's own model (Hermes's default)."""
+    with _scope(home):
+        from hermes_cli.config import load_config
+
+        delegation = subdict(load_config() or {}, "delegation")
+    return {"ok": True, "provider": str(delegation.get("provider") or "").strip(), "model": str(delegation.get("model") or "").strip()}
+
+
+def set_helpers(slug: str, model: str, home: Path | None = None) -> dict[str, Any]:
+    """Pin a profile's helpers to provider/model, or with both "" let them use the profile's own model again. Hermes
+    reads it whenever a helper starts (tools/delegate_tool_config.py), as its own Settings writes it."""
+    slug, model = (slug or "").strip(), (model or "").strip()
+    if bool(slug) != bool(model) or (slug and not _SLUG.match(slug.lower())) or len(model) > 200:
+        return {"ok": False, "error": "Choose a provider and a model."}
+    with _scope(home):
+        from cli import save_config_value
+        from hermes_cli.config import get_config_path
+
+        path = get_config_path()
+        if not (save_config_value("delegation.provider", slug) and save_config_value("delegation.model", model)):
+            return {"ok": False, "error": "Couldn't save the helpers' model. Try again."}
+    from .data import forget_yaml
+
+    forget_yaml(path)
+    return helpers(home)
 
 
 def grant_provider(slug: str, home: Path) -> dict[str, Any]:

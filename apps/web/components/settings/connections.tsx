@@ -26,6 +26,7 @@ import {
   type ConnectionService,
   type ConnectionsView,
   type KeyNeed,
+  type NousResult,
   type NousStart,
   type ServiceAccount,
 } from "@/lib/connections";
@@ -126,6 +127,8 @@ function useNousSignIn(onChange: () => void) {
   const [session, setSession] = useState<NousStart | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // What the finished sign-in did, said once: who signed in, what moved from the free guest, a new model.
+  const [result, setResult] = useState<NousResult | null>(null);
 
   useEffect(() => {
     if (!session) return;
@@ -135,8 +138,10 @@ function useNousSignIn(onChange: () => void) {
         .then((res) => {
           if (!live || res.status === "pending") return;
           setSession(null);
-          if (res.status === "approved") onChange();
-          else setError(res.status === "error" ? res.error || "The Nous sign-in didn't finish." : res.status === "denied" ? "The sign-in was declined." : "The code expired. Try again.");
+          if (res.status === "approved") {
+            setResult({ account: res.account, handoff: res.handoff, model: res.model });
+            onChange();
+          } else setError(res.status === "error" ? res.error || "The Nous sign-in didn't finish." : res.status === "denied" ? "The sign-in was declined." : "The code expired. Try again.");
         })
         .catch(() => undefined);
     }, 2000);
@@ -149,6 +154,7 @@ function useNousSignIn(onChange: () => void) {
   async function signIn() {
     setBusy(true);
     setError("");
+    setResult(null);
     try {
       const started = await startNousSignIn();
       setSession(started);
@@ -163,6 +169,7 @@ function useNousSignIn(onChange: () => void) {
   async function signOut() {
     setBusy(true);
     setError("");
+    setResult(null);
     try {
       await signOutNous();
       onChange();
@@ -178,14 +185,15 @@ function useNousSignIn(onChange: () => void) {
     setSession(null);
   }
 
-  return { session, busy, error, signIn, signOut, cancel };
+  return { session, busy, error, result, clearResult: () => setResult(null), signIn, signOut, cancel };
 }
 
 type NousSignIn = ReturnType<typeof useNousSignIn>;
 
 function NousGroup({ view, signin, action }: { view: ConnectionsView; signin: NousSignIn; action: ReactNode }) {
-  const { session, busy, error, signIn, signOut, cancel } = signin;
+  const { session, busy, error, result, clearResult, signIn, signOut, cancel } = signin;
   const [confirmOut, setConfirmOut] = useState(false);
+  const assistant = useAssistantName();
   const nous = view.nous;
   const status = nous.signedIn
     ? nous.connectors
@@ -248,6 +256,23 @@ function NousGroup({ view, signin, action }: { view: ConnectionsView; signin: No
                 Waiting for you to approve…
               </span>
             </div>
+          </div>
+        ) : null}
+        {result ? (
+          <div role="status" className="rounded-ctl border border-ok/30 bg-ok/[0.07] px-3 py-2.5">
+            <p className="flex items-center gap-1.5 text-callout font-medium text-fg">
+              <CheckIcon className="size-4 shrink-0 text-ok" strokeWidth={2.5} />
+              {result.account ? `Signed in as ${result.account}.` : "Signed in."}
+            </p>
+            {result.handoff?.map((line) => (
+              <p key={line} className="mt-1 text-callout text-fg-2">
+                {line}
+              </p>
+            ))}
+            {result.model ? <p className="mt-1 text-callout text-fg-2">{`${assistant} now uses ${result.model}, your account's model, instead of the free one.`}</p> : null}
+            <button type="button" onClick={clearResult} className="press mt-1.5 min-h-9 rounded-full px-2 text-caption text-fg-3 hover:text-fg-2">
+              Done
+            </button>
           </div>
         ) : null}
         {!nous.signedIn ? (

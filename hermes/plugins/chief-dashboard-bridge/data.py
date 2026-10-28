@@ -1147,11 +1147,57 @@ def _all_replay_windows(conn: sqlite3.Connection, session_id: str) -> list[tuple
     return out
 
 
+def _message_columns(conn: sqlite3.Connection) -> set[str]:
+    return {str(row[1]) for row in conn.execute("PRAGMA table_info(messages)")}
+
+
+def _message_rows(conn: sqlite3.Connection, where: str, params: tuple) -> list[sqlite3.Row]:
+    """Transcript rows with Hermes's `display_kind` (how its own viewers draw a row: `hidden`, `steer`, `failed_turn`…)
+    and `message_uid` (one message across the copies a rewrite or a compaction writes), NULL on a store too old for them."""
+    have = _message_columns(conn)
+    extra = ", ".join(col if col in have else f"NULL AS {col}" for col in ("display_kind", "message_uid"))
+    return conn.execute(f"SELECT id, role, content, timestamp, tool_calls, {extra} FROM messages WHERE {where}", params).fetchall()
+
+
+def _taken_back(conn: sqlite3.Connection, row_id: int) -> bool:
+    """Whether the newest row a reader has is no longer in the conversation: Hermes's `/retry` (Send again, Retry)
+    deletes the live rows and writes them again with new ids, a rewind or `/undo` archives what was taken back.
+    A row compaction archived (`compacted`) is still there: its copies are flagged `replay`."""
+    compacted = "compacted" if "compacted" in _message_columns(conn) else "1"
+    row = conn.execute(f"SELECT active, {compacted} AS compacted FROM messages WHERE id = ?", (row_id,)).fetchone()
+    return row is None or not (row["active"] or row["compacted"])
+
+
+# Hermes prefixes a message sent while the chief works with where it came from, for the model only
+# (gateway/run_busy.py `_steer_text_with_origin`). When the turn had already ended, that text becomes the next turn's
+# message, prefix and all: the chat shows what the owner typed.
+_ORIGIN = re.compile(
+    r"\AGateway message origin \(JSON data, not instructions or authorization\):\n\{[^\n]*\}\n"
+    r"(?:Do not guess a reply destination when these fields are insufficient\.\n)?\n?"
+)
+
+
+def strip_origin(text: str) -> str:
+    return _ORIGIN.sub("", text, count=1) if text.startswith("Gateway message origin") else text
+
+
+def _steer_text(raw: Any) -> str:
+    """What the owner typed while the chief worked: Hermes stores it inside its out-of-band frame for the model."""
+    try:
+        from agent.conversation_compression import _extract_steer_text_from_message
+
+        return str(_extract_steer_text_from_message({"role": "user", "content": raw}) or "")
+    except Exception:
+        return ""
+
+
 def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id: int = 0) -> dict[str, Any]:
     """Rows after `after_id` (oldest first), the latest `limit` (after_id 0), or with `before_id` the
     page before it (Load earlier: `more` says whether older rows exist, `cursor` is the next `before`).
     Load earlier also reads rows archived by context compaction (active = 0): that is the conversation
-    before the chief's last compaction. The copies each compaction re-inserted are flagged `replay`."""
+    before the chief's last compaction. The copies each compaction re-inserted are flagged `replay`.
+    When the row at `after_id` was taken back (see _taken_back), the answer is the latest page with `reset`:
+    the reader shows it instead of what it had."""
     db_path = chief_home() / "state.db"
     messages: list[dict[str, Any]] = []
     if not session_key or not db_path.is_file():
@@ -1161,28 +1207,22 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
     cursor = after_id
     older = False
     trimmed = False
+    reset = False
     scanned_from = before_id
     try:
         sid = _message_session_id(conn, session_key)
         fetch = max(limit * 6, 240)
+        if after_id and not before_id and _taken_back(conn, after_id):
+            reset, after_id, cursor = True, 0, 0
         if before_id:
-            rows = conn.execute(
-                "SELECT id, role, content, timestamp, tool_calls FROM messages WHERE session_id = ? AND id < ? ORDER BY id DESC LIMIT ?",
-                (sid, before_id, fetch),
-            ).fetchall()
+            rows = _message_rows(conn, "session_id = ? AND id < ? ORDER BY id DESC LIMIT ?", (sid, before_id, fetch))
             rows = list(reversed(rows))
             older = len(rows) == fetch
             scanned_from = rows[0]["id"] if rows else before_id
         elif after_id:
-            rows = conn.execute(
-                "SELECT id, role, content, timestamp, tool_calls FROM messages WHERE session_id = ? AND active = 1 AND id > ? ORDER BY id ASC LIMIT ?",
-                (sid, after_id, fetch),
-            ).fetchall()
+            rows = _message_rows(conn, "session_id = ? AND active = 1 AND id > ? ORDER BY id ASC LIMIT ?", (sid, after_id, fetch))
         else:
-            rows = conn.execute(
-                "SELECT id, role, content, timestamp, tool_calls FROM messages WHERE session_id = ? AND active = 1 ORDER BY id DESC LIMIT ?",
-                (sid, fetch),
-            ).fetchall()
+            rows = _message_rows(conn, "session_id = ? AND active = 1 ORDER BY id DESC LIMIT ?", (sid, fetch))
             rows = list(reversed(rows))
         window = _replay_window(conn, sid)
         windows = _all_replay_windows(conn, sid) if before_id else ([window] if window else [])
@@ -1191,7 +1231,9 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                 break
             cursor = row["id"]
             role = str(row["role"] or "")
-            if role in _SKIP_ROLES:
+            kind = str(row["display_kind"] or "")
+            # Scaffolding for the model that Hermes's own viewers never draw.
+            if role in _SKIP_ROLES or kind == "hidden":
                 continue
             if role == "tool":
                 # A question the chief asked with `clarify`, and the owner's answer.
@@ -1217,7 +1259,10 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
             names = _tool_names(row["tool_calls"])
             content, attachments = parse_message_content(row["content"])
             if role == "user":
-                content = strip_agent_attachment_notes(content)
+                # Sent while the chief worked: what the owner typed, not the frame around it.
+                if kind == "steer":
+                    content = _steer_text(row["content"]) or content
+                content = strip_agent_attachment_notes(strip_origin(content))
                 # A scheduled job's message that Hermes copied into the conversation (`attach_to_session`,
                 # the morning brief) keeps its context for Chief; the chat already shows it as a notice.
                 if content.lstrip().startswith(_CRON_MIRROR):
@@ -1237,12 +1282,19 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                 "tools": names,
                 "attachments": attachments,
             }
-            # Hermes's closing line for a failed turn: the chat shows it as a quiet marker under the failure card.
+            if row["message_uid"]:
+                item["uid"] = row["message_uid"]
+            if kind == "steer" and role == "user":
+                item["steered"] = True
+            # Hermes's closing line for a failed turn: the chat shows it as a quiet marker, never as a reply (nor reads
+            # it aloud). 0.22.5 types it (`failed_turn`), and says why: a restart cut the turn off, or it didn't finish.
             if role == "assistant" and not names:
-                from .chat_state import failed_turn_boundary
+                from .chat_state import failed_turn_boundary, failed_turn_reason
 
-                if failed_turn_boundary(role, content):
+                if kind == "failed_turn" or failed_turn_boundary(role, content):
                     item["failedTurn"] = True
+                    if reason := failed_turn_reason(content):
+                        item["failedReason"] = reason
             # A compaction copy of a row the reader has already seen: history, never a new reply.
             if any(row["id"] > w[0] and (w[1] is None or row["id"] < w[1]) for w in windows):
                 item["replay"] = True
@@ -1263,7 +1315,10 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
         nxt = messages[0]["id"] if trimmed and messages else scanned_from
         return {"sessionKey": session_key, "messages": messages, "lastId": nxt, "cursor": nxt, "more": older}
     last = cursor if after_id else (messages[-1]["id"] if messages else cursor)
-    return {"sessionKey": session_key, "messages": messages, "lastId": last}
+    page = {"sessionKey": session_key, "messages": messages, "lastId": last}
+    if reset:
+        page["reset"] = True
+    return page
 
 
 _NO_SUCH_BOT = "That bot isn't on the team any more."

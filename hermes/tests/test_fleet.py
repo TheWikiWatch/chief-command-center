@@ -282,6 +282,19 @@ class ModelTests(FleetTestCase):
         with self.assertRaises(persona.PersonaError):
             fleet.set_model("ghost", "nova", "nova-small")
 
+    def test_helpers_get_an_offered_model_and_a_bot_the_providers_key(self):
+        saved = []
+        with patch.object(
+            providers, "set_helpers", lambda slug, model, home=None: saved.append((slug, model, home)) or {"ok": True, "provider": slug, "model": model}
+        ):
+            with self.assertRaises(fleet.FleetError):
+                fleet.set_helpers("ada", "nova", "orbit-1")
+            self.assertEqual(fleet.set_helpers("ADA", "orbit", "orbit-1")["model"], "orbit-1")
+            self.assertEqual(fleet.set_helpers("chief", "nova", "nova-small")["model"], "nova-small")
+            fleet.set_helpers("ada", "", "")  # back to the bot's own model: nothing to check or grant
+        self.assertEqual(saved, [("orbit", "orbit-1", self.ada), ("nova", "nova-small", None), ("", "", self.ada)])
+        self.assertEqual(self.hermes_calls, [("grant", "orbit", "ada")], "only a bot is granted the key, once")
+
 
 class RetireTests(FleetTestCase):
     def setUp(self):

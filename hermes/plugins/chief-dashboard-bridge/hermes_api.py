@@ -42,6 +42,10 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
     "status line": {
         "agent.display": ("build_status_phrase",),
     },
+    "transcript": {
+        # A message sent while the chief worked is stored inside Hermes's out-of-band frame; the chat shows what was typed.
+        "agent.conversation_compression": ("_extract_steer_text_from_message",),
+    },
     "profiles": {
         "hermes_constants": (
             "get_default_hermes_root",

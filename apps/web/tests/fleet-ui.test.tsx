@@ -111,6 +111,67 @@ it("favourites come first, plans say what's left, and a thinking model gets a le
   await waitFor(() => expect((screen.getByLabelText("Thinking") as HTMLSelectElement).value).toBe("high"));
 });
 
+it("helpers use the bot's own model until another is picked", async () => {
+  let helpers = { ok: true, provider: "", model: "" };
+  const calls = route({
+    "fleet/models": () => MODELS,
+    "fleet/effort": () => EFFORT,
+    "fleet/helpers": (b) => (b.provider !== undefined ? (helpers = { ok: true, provider: String(b.provider), model: String(b.model) }) : helpers),
+  });
+  render(<ModelPicker profile="research-desk" provider="openrouter" model="deepseek/deepseek-chat" />);
+  const select = (await screen.findByLabelText("Helpers use")) as HTMLSelectElement;
+  expect(select.value).toBe("");
+  expect(within(select).getByRole("option", { name: "The same model" })).toBeInTheDocument();
+  fireEvent.change(select, { target: { value: "local-model\u0000tiny-local" } });
+  await waitFor(() =>
+    expect(calls.find((c) => c.path === "fleet/helpers" && c.body.provider !== undefined)?.body).toEqual({ profile: "research-desk", provider: "local-model", model: "tiny-local" }),
+  );
+  await waitFor(() => expect((screen.getByLabelText("Helpers use") as HTMLSelectElement).value).toBe("local-model\u0000tiny-local"));
+});
+
+it("a Nous plan shows its allowances, the plan's picks first, Free and Large, and what a full one stops", async () => {
+  const now = Date.now() / 1000;
+  const models = {
+    ok: true,
+    current: { provider: "nous", model: "hermes-large" },
+    groups: [
+      {
+        provider: "nous",
+        name: "Nous Portal",
+        kind: "external",
+        models: ["hermes-large", "hermes-free", "hermes-small"],
+        plan: {
+          name: "Plus",
+          gauges: [
+            { label: "day", title: "", used: 40, full: false, resetsAt: now + 3 * 3600, scope: "all" },
+            { label: "week", title: "", used: 100, full: true, resetsAt: now + 21 * 3600, scope: "all" },
+          ],
+          paused: null,
+          creditsPay: false,
+          featured: ["hermes-small"],
+          large: ["hermes-large"],
+          free: ["hermes-free"],
+        },
+      },
+    ],
+  };
+  route({ "fleet/models": () => models, "fleet/effort": () => ({ ...EFFORT, provider: "nous", model: "hermes-large" }) });
+  render(<ModelPicker profile="chief" provider="nous" model="hermes-large" />);
+  // Closed: the allowances, and the current (Large) model is stopped.
+  expect(await screen.findByRole("meter", { name: "This week: 100% used" })).toBeInTheDocument();
+  expect(screen.getByRole("meter", { name: "Today: 40% used" })).toBeInTheDocument();
+  expect(screen.getByText(/^limit reached · resets in 21h$/)).toBeInTheDocument();
+  expect(screen.getByText("Weekly limit reached · resets in 21h · only Free models until then")).toBeInTheDocument();
+  await openPicker();
+  const group = screen.getByRole("group", { name: "Nous Portal" });
+  const rows = within(group).getAllByRole("button", { name: /^hermes-/ });
+  expect(rows.map((r) => r.textContent?.split(/(?=Free|Large)/)[0].replace(/stopped.*/, "").trim())).toEqual(["hermes-small", "hermes-large", "hermes-free"]);
+  expect(within(rows[1]).getByText("Large")).toBeInTheDocument();
+  expect(within(rows[1]).getByText(/stopped until the limit resets/)).toBeInTheDocument();
+  expect(within(rows[2]).getByText("Free")).toBeInTheDocument();
+  expect(within(rows[2]).queryByText(/stopped/)).toBeNull(); // a full allowance never stops a Free model
+});
+
 it("Team: retired bots restore, and removing for good needs a second confirmation", async () => {
   let archives = [{ id: "research-desk-20260930", title: "Sam - Researcher", description: "", retired_at: "2026-09-30T12:00:00Z", model: { provider: "", model: "" } }];
   const calls = route({

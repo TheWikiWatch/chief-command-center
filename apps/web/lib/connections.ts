@@ -47,7 +47,10 @@ export type KeyNeed = { name: string; prompt: string; secret: boolean };
 type ConnectStart = { ok: boolean; error?: string; op?: string; url?: string; backend?: Backend; finishOnPc?: boolean; needs?: KeyNeed[]; state?: "connected" };
 type OpStatus = { ok: boolean; error?: string; status: "pending" | "connected" | "failed"; service: string };
 export type NousStart = { ok: boolean; error?: string; session: string; code: string; url: string; expiresIn: number };
-type NousPoll = { ok: boolean; error?: string; status: "pending" | "approved" | "denied" | "expired" | "error" | "cancelled" };
+/** A finished sign-in (Hermes 0.22.5) also says who signed in, what moved over from the free guest (Hermes's own
+ * lines: apps moved, apps to connect again), and the chief's new model when Hermes moved it off the free one. */
+export type NousResult = { account?: string | null; handoff?: string[]; model?: string };
+type NousPoll = { ok: boolean; error?: string; status: "pending" | "approved" | "denied" | "expired" | "error" | "cancelled" } & NousResult;
 
 const PREFIX = "/api/bridge/connections";
 const get = <T,>(path: string, timeout = 30_000) => requestJson<T>(`${PREFIX}${path}`, { cache: "no-store" }, timeout);

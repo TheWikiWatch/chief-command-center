@@ -3,6 +3,9 @@
 - **Question** (`pending_clarify` / `resolve_clarify`): Hermes's `clarify` tool blocks the turn until the
   owner answers. The entry lives in Hermes's own registry (`tools.clarify_gateway`); the dashboard shows
   it as a card and answers through the same resolver a chat platform's buttons use.
+- **Choice** (`pending_choice` / `choose`): a choice Hermes offers as buttons where a platform has them (after a
+  plan limit, the plan's model to switch to; `/model`, `/reasoning`, `/fast`). The adapter keeps the newest per
+  chat with Hermes's callback; a tap runs the callback on the gateway's loop, and Hermes's answer is posted.
 - **Notices** (`notices`): messages the gateway sent that are not transcript rows (scheduled-job results,
   gateway notices). The adapter writes every send to the outbox; a send whose text is a transcript reply
   is a reply, not a notice. Busy "⏳ Working" notices are never shown as notices.
@@ -132,10 +135,85 @@ def asked_from_tool_row(content: Any) -> list[dict[str, Any]]:
     return out
 
 
+# ----------------------------------------------------------------------------- choice (Hermes's quick buttons)
+
+# An offer is good for a while; Hermes's own callback also refuses a stale one (a newer turn ran since).
+_CHOICE_TTL = 30 * 60
+_choices: dict[str, dict[str, Any]] = {}
+_choice_lock = threading.Lock()
+
+
+def record_choice(chat_id: str, title: str, choices: list[dict[str, Any]], callback: Any, loop: Any) -> str:
+    """Keep the newest offer for a chat (it replaces any earlier one): the card's title, its choices
+    ({value, label, current}), and Hermes's callback with the loop it must run on."""
+    import secrets
+
+    cid = secrets.token_hex(6)
+    with _choice_lock:
+        _choices[chat_id] = {"id": cid, "title": title, "choices": choices, "at": time.time(), "callback": callback, "loop": loop}
+    return cid
+
+
+def pending_choice(chat_id: str) -> dict[str, Any] | None:
+    """The open offer in a chat, as the card shows it, or None."""
+    with _choice_lock:
+        offer = _choices.get(chat_id)
+        if offer is not None and time.time() - offer["at"] > _CHOICE_TTL:
+            _choices.pop(chat_id, None)
+            offer = None
+    return None if offer is None else {"id": offer["id"], "title": offer["title"], "choices": offer["choices"], "at": offer["at"]}
+
+
+def choose(chat_id: str, cid: str, value: str, timeout: float = 45.0) -> dict[str, Any]:
+    """The owner tapped a choice: run Hermes's callback with it on the gateway's loop and post Hermes's answer in the
+    chat (as its other platforms do). An offer that's gone, or a value it didn't offer, is refused."""
+    import asyncio
+
+    with _choice_lock:
+        offer = _choices.get(chat_id)
+        if offer is None or offer["id"] != cid or time.time() - offer["at"] > _CHOICE_TTL:
+            return {"ok": False, "code": "gone", "error": "That choice is no longer open."}
+        if value not in {c["value"] for c in offer["choices"]}:
+            return {"ok": False, "error": "Pick one of the choices."}
+        _choices.pop(chat_id, None)
+    try:
+        answer = asyncio.run_coroutine_threadsafe(offer["callback"](value), offer["loop"]).result(timeout)
+    except Exception as exc:
+        logger.warning("choice callback failed: %s", type(exc).__name__)
+        return {"ok": False, "error": "That didn't work. Try again."}
+    message = str(answer or "").strip()
+    if message:
+        from .outbox import append_outbox
+
+        append_outbox(chat_id, message, source="send")
+    return {"ok": True, "message": message}
+
+
 # ----------------------------------------------------------------------------- notices
 
-_BUSY = re.compile(r"^\s*⏳\s*Working\b")
+# Hermes's lines the app shows its own way, so never as notices or phone alerts: the "⏳ Working — N min" heartbeat
+# (the chat's step line); its acknowledgements of a message sent while the chief works (the app tags it "Added while
+# working" or shows it queued); 0.22.5's "your message is saved" lines (the app has its restart banner and its own
+# queue) and its "Discarded N lost turn(s)" (the paused card's Continue says Done). Hermes's refusals ("…was not
+# processed", "…not accepting new work…", "Nothing to discard…") still show: those didn't happen.
+_BUSY = re.compile(
+    r"^\s*(?:⏳\s*(?:Working\b|Queued for the next turn|Subagent working|Compressing context"
+    r"|Hermes is restarting — your message is saved|Your message is saved and will be answered|Gateway \w+ — queued for the next turn)"
+    r"|⏩\s*(?:Steered into current run|Steer queued)|⚡\s*Interrupting current task|🗑️?\s*Discarded \d+ lost turn)"
+)
+# Hermes 0.22.5 pauses a conversation whose turn a crash or a forced stop cut off: the next message is saved, not
+# answered, until the owner drops the lost turn (/discard) or starts fresh (gateway/session_ingress.pause_notice).
+_PAUSED = re.compile(r"^\s*⏸️?\s*This conversation is paused:")
+_LOST_TURN = "did not finish when Hermes restarted"
 _SPACE = re.compile(r"\s+")
+
+
+def paused_conversation(text: str) -> dict[str, bool] | None:
+    """Hermes's notice that this conversation is paused, as {lostTurn}: a turn a restart cut off (Continue drops it),
+    or a saved message Hermes couldn't send (only starting fresh helps). None for any other text."""
+    if not _PAUSED.match(str(text or "")):
+        return None
+    return {"lostTurn": _LOST_TURN in str(text)}
 
 
 def _norm(text: str) -> str:
@@ -324,6 +402,23 @@ _FAILED_TURN_FALLBACK = (
 )
 
 
+# How Hermes 0.22.5 words a turn that ended without an answer (gateway/session_settlement_recovery.py,
+# agent/turn_failure_copy.py): a stop or restart cut it off and it never runs again, or it didn't finish and some of
+# its steps may already have run.
+_CUT_OFF = ("Gateway restarting:", "Gateway shutting down:")
+_UNFINISHED = ("This turn did not complete", "An automated delivery was interrupted")
+
+
+def failed_turn_reason(content: str) -> str:
+    """Why a failed-turn line says the turn ended: "restart", "partial", or "" (it wasn't answered)."""
+    text = _norm(content)
+    if text.startswith(_CUT_OFF):
+        return "restart"
+    if text.startswith(_UNFINISHED):
+        return "partial"
+    return ""
+
+
 def failed_turn_boundary(role: str, content: str) -> bool:
     """Hermes's own closing line for a failed turn ("Your request was not processed…"): a marker, not a reply."""
     try:
@@ -405,6 +500,8 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
             item["failure"] = failure
         elif not routine and (turn := turn_failure(stripped, item["at"])):
             item["turnFailure"] = turn
+        elif not routine and (paused := paused_conversation(stripped)):
+            item["paused"] = paused
         if attachments:
             item["attachments"] = attachments
         out.append(item)

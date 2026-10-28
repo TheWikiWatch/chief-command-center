@@ -133,6 +133,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_filtered_rows_advance_cursor_without_losing_reply(self):
         with self.database() as conn:
+            conn.execute("INSERT INTO messages VALUES (1, 'user', 'go', '', NULL, 's', 1)")
             conn.executemany("INSERT INTO messages VALUES (?, 'tool', '', '', NULL, 's', 1)", [(i,) for i in range(2, 722)])
             conn.execute("INSERT INTO messages VALUES (722, 'assistant', 'later reply', '', NULL, 's', 1)")
         first = data.transcript("session", after_id=1)
@@ -148,6 +149,7 @@ class BridgeTests(unittest.TestCase):
             conn.executemany(
                 "INSERT INTO messages VALUES (?, ?, ?, '1', NULL, 's', 1)",
                 [
+                    (1, "user", "hello"),
                     (2, "user", "[Cron delivery: Second Brain: morning brief]\n# Morning brief\n1. Pick a date?"),
                     (3, "user", "1. Friday"),
                     (4, "assistant", "Filed: Friday."),
@@ -191,7 +193,7 @@ class BridgeTests(unittest.TestCase):
 
     def test_visible_limit_does_not_skip_next_page(self):
         with self.database() as conn:
-            conn.executemany("INSERT INTO messages VALUES (?, 'assistant', 'reply', '', NULL, 's', 1)", [(i,) for i in range(2, 252)])
+            conn.executemany("INSERT INTO messages VALUES (?, 'assistant', 'reply', '', NULL, 's', 1)", [(i,) for i in range(1, 252)])
         first = data.transcript("session", after_id=1)
         second = data.transcript("session", after_id=first["lastId"])
         self.assertEqual(len(first["messages"]), 120)

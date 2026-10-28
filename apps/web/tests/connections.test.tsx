@@ -28,6 +28,7 @@ let calls: Call[];
 let view: ConnectionsView;
 let opStatus: "pending" | "connected" | "failed";
 let opened: string[];
+let nousPoll: Record<string, unknown>;
 
 beforeEach(() => {
   forgetConnectCardServices();
@@ -35,6 +36,7 @@ beforeEach(() => {
   calls = [];
   opened = [];
   opStatus = "pending";
+  nousPoll = { ok: true, status: "pending" };
   view = {
     ok: true,
     nous: { signedIn: false, guest: false, account: null, connectors: false },
@@ -65,6 +67,7 @@ beforeEach(() => {
       return json({ ok: true, status: opStatus, service: "gmail" });
     }
     if (path === "/connections/nous/start") return json({ ok: true, session: "s1", code: "ABCD-1234", url: "https://portal.example.test/device", expiresIn: 900 });
+    if (path === "/connections/nous/s1") return json(nousPoll);
     if (path === "/connections/disconnect") return json({ ok: true, also: [] });
     return json({ ok: true });
   });
@@ -170,6 +173,25 @@ it("signs in to Nous with a code and the portal's page", async () => {
   expect(await screen.findByText("ABCD-1234")).toBeTruthy();
   expect(opened).toEqual(["https://portal.example.test/device"]);
   expect(screen.getByRole("link", { name: /Open Nous/ }).getAttribute("href")).toBe("https://portal.example.test/device");
+});
+
+it("a finished sign-in says who signed in, what moved over from the guest, and the chief's new model", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  render(<ConnectionsPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "Sign in" }));
+  await screen.findByText("ABCD-1234");
+  // Hermes 0.22.5 hands the free guest's apps to the account by itself, and can move the chief off the free model.
+  nousPoll = { ok: true, status: "approved", account: "me@example.com", handoff: ["Moved to your account: Gmail, Notion.", "Connect again: Linear."], model: "nous/hermes-test" };
+  view = { ...view, nous: { signedIn: true, guest: false, account: "me@example.com", connectors: true } };
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(2100);
+  });
+  expect(await screen.findByText("Signed in as me@example.com.")).toBeTruthy();
+  expect(screen.getByText("Moved to your account: Gmail, Notion.")).toBeTruthy();
+  expect(screen.getByText("Connect again: Linear.")).toBeTruthy();
+  expect(screen.getByText(/now uses nous\/hermes-test, your account's model/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Done" }));
+  expect(screen.queryByText("Signed in as me@example.com.")).toBeNull();
 });
 
 it("confirms before disconnecting, and says what else on this PC goes with it", async () => {

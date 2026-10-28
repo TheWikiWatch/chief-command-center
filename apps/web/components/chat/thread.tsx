@@ -33,9 +33,9 @@ import { messageTimeMs, uniqueToolNames } from "@/lib/thinking-chrome";
 import { looksFailed, stepDuration, toolLabel } from "@/lib/tool-labels";
 import { Tip } from "@/components/ui/popovers";
 import { readAloud } from "@/components/chat/use-reply-speech";
-import type { ChatMessage, ChatNotice, PendingQuestion, Person, ReplyDraft, TurnActivity } from "@/lib/types";
+import type { ChatMessage, ChatNotice, PendingChoice, PendingQuestion, Person, ReplyDraft, TurnActivity } from "@/lib/types";
 import { ConnectCards } from "@/components/chat/connect-card";
-import { AskedRow, NoticeBody, QuestionCard } from "@/components/chat/question";
+import { AskedRow, ChoiceCard, FailedTurnMarker, NoticeBody, QuestionCard } from "@/components/chat/question";
 import { useAssistantName } from "@/lib/identity";
 
 const OPTIMISTIC = 1e12;
@@ -230,6 +230,8 @@ export function Thread({
   draft,
   question,
   onAnswer,
+  choice,
+  onChoose,
   onQuickReply,
   onReport,
   loading = false,
@@ -261,6 +263,9 @@ export function Thread({
   /** The chief's open question (the turn waits for the answer), and how to answer it. */
   question?: PendingQuestion | null;
   onAnswer?: (id: string, answer: string | string[]) => Promise<void>;
+  /** A choice Hermes offers as buttons (shown once the turn is over), and how to pick one. */
+  choice?: PendingChoice | null;
+  onChoose?: (id: string, value: string) => Promise<void>;
   /** Sends a gateway prompt's answer (e.g. "/approve") from the buttons on the newest notice. */
   onQuickReply?: (text: string) => Promise<void>;
   /** The flag under a reply: report it as a problem to the developer (shown only when reports are set up). */
@@ -424,7 +429,7 @@ export function Thread({
                   animate={animated.current.has(row.m.id)}
                   onCancelQueued={onCancelQueued}
                   onRetryQueued={onRetryQueued}
-                  onQuickReply={row.m.notice && row === lastMsgRow ? onQuickReply : undefined}
+                  onQuickReply={(row.m.notice || row.m.failedTurn) && row === lastMsgRow ? onQuickReply : undefined}
                   onReport={onReport}
                 />
               );
@@ -432,6 +437,8 @@ export function Thread({
             <AnimatePresence>
               {question && onAnswer ? (
                 <QuestionCard key={`q-${question.id}`} question={question} chief={chief} onAnswer={onAnswer} />
+              ) : choice && onChoose && !awaiting ? (
+                <ChoiceCard key={`c-${choice.id}`} choice={choice} chief={chief} onChoose={onChoose} />
               ) : awaiting && draft?.text && !waitingApproval ? (
                 <DraftRow key={`draft-${draft.id}`} chief={chief} text={draft.text} />
               ) : awaiting ? (
@@ -549,10 +556,11 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
   }
 
   if (m.failedTurn) {
-    // Hermes's closing line for a failed turn: the failure card above says what happened.
+    // Hermes's closing line for a failed turn: a failure card above says what happened, or (cut off by a stop or a
+    // restart) the marker does, with Send again while it's the newest thing in the chat.
     return (
       <motion.div {...motionProps} className={`${first ? "mt-3" : "mt-1.5"} pl-9`}>
-        <p className="text-caption text-fg-3">Not answered</p>
+        <FailedTurnMarker reason={m.failedReason} latest={!!onQuickReply} />
       </motion.div>
     );
   }

@@ -93,6 +93,8 @@ export type ChatMessage = {
   attachments?: ChatAttachment[];
   /** Bridge: a copy Hermes re-inserted at a context compaction (history, never a new reply). */
   replay?: boolean;
+  /** Bridge: Hermes's id for the message itself (0.22.5), the same on every copy a rewrite or compaction writes. */
+  uid?: string;
   /** Client-only: a local bubble the bridge accepted ("sent", waiting for its stored copy), or one
    * waiting in the outbox for the chief to be reachable ("queued", lib/outbox.ts). */
   delivery?: "sent" | "queued";
@@ -102,7 +104,8 @@ export type ChatMessage = {
   queueNote?: string;
   /** Client-only: files in a queued bubble that have no preview to show. */
   queueFiles?: string[];
-  /** Client-only: sent while the chief was working, so it was added to that work (steer), not a new turn. */
+  /** Sent while the chief was working, so it was added to that work (steer), not a new turn: set on the bubble
+   * as it's sent, and by the bridge on its stored copy. */
   steered?: boolean;
   /** Bridge: questions the chief asked with Hermes's `clarify` tool, and the owner's answers. */
   asked?: AskedQuestion[];
@@ -112,6 +115,9 @@ export type ChatMessage = {
   notice?: ChatNotice;
   /** Bridge: Hermes's closing line for a failed turn ("Your request was not processed…"), shown as a quiet marker. */
   failedTurn?: boolean;
+  /** Bridge: why that turn ended unanswered (Hermes 0.22.5): a stop or restart cut it off (it never runs again),
+   * or it didn't finish and some of its steps may already have run. */
+  failedReason?: "restart" | "partial";
 };
 
 export type ConnectRequest = { service: string; label: string; why: string };
@@ -120,6 +126,9 @@ export type AskedQuestion = { question: string; choices: string[]; answer: strin
 
 /** The chief's open question: the turn waits until the owner answers (a choice, several, or their own words). */
 export type PendingQuestion = { id: string; question: string; choices: string[]; multi: boolean };
+
+/** A choice Hermes offers as buttons (a plan limit's model switch, its /model and /reasoning pickers). */
+export type PendingChoice = { id: string; title: string; choices: { value: string; label: string; current: boolean }[]; at: number };
 
 /** A message the gateway sent that isn't a reply: a scheduled job's result or a notice. */
 export type ChatNotice = {
@@ -134,6 +143,9 @@ export type ChatNotice = {
   /** A chat turn that failed after Hermes's retries: a usage or rate limit (with when it lifts, epoch seconds, when
    * the provider said) or a provider that was down. Hermes's full text is `detail`. */
   turnFailure?: { code: "limit" | "down"; resetsAt: number | null; detail: string };
+  /** Hermes paused this conversation (0.22.5): a reply a crash or forced stop cut off (`lostTurn`: Continue drops it
+   * and the saved message runs), or a saved message it couldn't send (only starting fresh helps). */
+  paused?: { lostTurn: boolean };
   /** Files it carried (an image a routine made, or one handed over after a reply's text). */
   attachments?: ChatAttachment[];
   /** Client-only: the same notice repeated this many times in a row (restarts), and when the last one came. */
@@ -165,6 +177,8 @@ export type Transcript = {
   approval?: ExecApproval | null;
   /** The chief's open question, its current step, and notices since `nsince` (newer bridges). */
   clarify?: PendingQuestion | null;
+  /** A choice Hermes offers as buttons in this chat (Hermes 0.22.5 bridges). */
+  choice?: PendingChoice | null;
   activity?: TurnActivity | null;
   /** The reply as it's being written (Hermes's draft frames), and its signature for the long-poll (newer bridges). */
   draft?: ReplyDraft | null;
@@ -182,6 +196,9 @@ export type Transcript = {
   /** Load earlier (`?before=`, and the first load): older rows are left. `cursor`: the next `before` to ask for. */
   more?: boolean;
   cursor?: number;
+  /** Hermes rewrote the conversation since the caller's `after` (Send again and Retry run its /retry, which writes every
+   * row again with new ids; /undo takes rows back): this is the latest page, to show instead of what's there. */
+  reset?: boolean;
 };
 
 export type Peek = {

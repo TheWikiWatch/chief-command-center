@@ -429,3 +429,50 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **The Team & Routines sheet is mounted once by the shell** (`TeamSheet`); `TeamButton` and `openTeam()` only send
   `OPEN_TEAM_EVENT`. A sheet that lives inside a pane's header isn't there when another tab or surface is showing.
 - **Shortcuts stand down while a dialog is open** (any `[aria-modal="true"]`), except the palette closing itself.
+
+## Hermes 0.22.5 (2026-10-28)
+
+- **A bot's routine runs in the chief's gateway only because of patch 0007.** Since 0.22.5 an agent cron job for a
+  profile the process doesn't own goes through `run_canonical_job`, which starts the install root's own gateway
+  (`ensure_gateway_runtime` → `spawn_unmanaged_gateway(root, idle_exit=True)`, detached). The app runs only the
+  chief's gateway (`gateway.standalone: true`) and its ticker visits every other profile, so without 0007 each bot
+  routine starts a second gateway on the root profile. Chat controls checks for a root `gateway.pid` or
+  `gateway-starts.log`. Upstream calls `gateway.standalone` a temporary shim; when it goes, the app has to run the
+  root's multiplexer itself.
+- **The transcript reads Hermes's `display_kind`** (`data._message_rows`): `hidden` rows are skipped, a `steer` row
+  is unwrapped (`agent.conversation_compression._extract_steer_text_from_message`) and tagged `steered`, a
+  `failed_turn` row is the failed-turn marker. Its reason comes from Hermes's English openings
+  (`chat_state.failed_turn_reason`: "Gateway restarting:", "Gateway shutting down:" for a turn a stop cut off; "This
+  turn did not complete", "An automated delivery was interrupted" for one that may have half-run). A reworded
+  opening falls back to "Not answered".
+- **A turn lost to a crash or a forced stop pauses the conversation.** Hermes's notice starts "⏸️ This conversation
+  is paused:" (`chat_state.paused_conversation`; "did not finish when Hermes restarted" is the lost-turn kind). The
+  card's Continue sends `/discard` (`server.control("discard")`), Start fresh `/new` (alias `/reset`). The phone gets
+  the app's sentence, not Hermes's.
+- **`/retry` writes the conversation again with new ids** (`replace_messages_in_transaction`: DELETE of the live rows,
+  then INSERT; the copies keep their `message_uid`). Send again and Retry use it, and a reader paging by id would show
+  every copy as new. The bridge answers a cursor whose row is gone, or taken back by a rewind or `/undo` (`active = 0`,
+  `compacted = 0`), with the latest page and `reset` (`data._taken_back`); the long-poll also wakes when the head
+  falls below the cursor. The chat swaps the thread and moves the speech floor past the copies by `uid`. Hermes
+  deletes rows only in such rewrites or with a whole session (ids are AUTOINCREMENT, never reused).
+- **Busy lines are matched on Hermes's English openings** (`chat_state._BUSY`, from `locales/en.yaml`
+  `gateway.busy.*`, `session_ingress.pause_notice` and `discard.done`): acknowledgements, "your message is saved" and
+  "Discarded N lost turn(s)" are hidden; refusals ("…was not processed", "…not accepting…", "Nothing to discard")
+  still show. A reworded acknowledgement shows as a
+  notice again (noisy, not harmful). Provisioning turns the steer echo off for our platform only
+  (`display.platforms.command_center.busy_steer_ack_enabled`) and marks the one-time `/busy` tip seen.
+- **A signature change is invisible to the names check.** `managed_client(*, creates_guest, …)` became required
+  and every Quick connect failed. Test fakes of Hermes functions take the same keyword-only arguments as the real
+  ones, so a test fails when the call does.
+- **A Nous sign-in replaces the signed-in account** (`replace_account=True` in `_start_nous_device_code`): the bridge
+  refuses to start one while signed in, and service rows offer it only when signed out. An expired code is an
+  `error` with reason `timeout`; the session table lives in `hermes_cli.web_server_oauth`.
+- **Nous plans with usage windows** carry `plan_usage` and `usage_levels`, and the row loses `usage` once a window
+  is full and `limit` always. `lib/plan-usage.ts` copies the rules of `hermes_cli/model_picker_usage.py` (what a full
+  allowance stops, the limit line); keep them in step when Hermes changes its own.
+- **Hermes's quick-choice buttons** reach us through `adapter.send_choice_picker`: the newest offer per chat with
+  Hermes's callback (`chat_state.record_choice`); a tap runs it on the gateway's loop (`run_coroutine_threadsafe`) and
+  posts its answer. Hermes refuses a stale offer itself; the bridge forgets one after 30 minutes. The transcript
+  long-poll wakes on `choice`.
+- **History clean-up**: 0.22.5 defaults `sessions.auto_prune` off and asks in the chat when the disk is low;
+  provisioning writes `true` when the owner hasn't chosen, which also ends the question.

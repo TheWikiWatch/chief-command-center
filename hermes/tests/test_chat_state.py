@@ -1,5 +1,6 @@
 """The chat's extras: the chief's open question, notices that aren't replies, and the current step."""
 
+import asyncio
 import importlib
 import json
 import sqlite3
@@ -188,6 +189,171 @@ class ChatStateTests(unittest.TestCase):
         self.assertEqual([(n["text"], n["source"]) for n in found], [("Morning brief: 3 tasks due", "scheduled"), ("📬 No home channel is set", "notice")])
         self.assertEqual([n["text"] for n in chat_state.notices("session", since=165)], ["📬 No home channel is set"])
         self.assertEqual(chat_state.notice_head(), "o4")
+
+    def write_outbox(self, *messages: str) -> None:
+        outbox._outbox_path().write_text(
+            "".join(
+                json.dumps({"id": f"o{i}", "at": 100.0 + i, "chat_id": "owner", "message": m, "source": "send", "read": False}) + "\n"
+                for i, m in enumerate(messages)
+            ),
+            encoding="utf-8",
+        )
+
+    def test_what_the_app_shows_its_own_way_is_not_a_notice_but_a_refusal_is(self):
+        refused = "⏳ Another turn is still running on this session. To protect the transcript, this message was not processed. Wait for the active turn to finish, then resend it."
+        self.write_outbox(
+            "⏩ Steered into current run (iteration 2). Your message arrives after the next tool call.\n\n💡 First-time tip — Send `/busy interrupt`.",
+            "⏩ Steer queued — arrives after the next tool call: 'x'",
+            "⏳ Queued for the next turn: 'later'",
+            "⚡ Interrupting current task (iteration 3).",
+            "⏳ Subagent working (2 active)",
+            "⏳ Hermes is restarting — your message is saved and will be answered when it is back.",
+            "⏳ Your message is saved and will be answered when the work running in this conversation finishes.",
+            "⏳ Gateway restarting — queued for the next turn after it comes back.",
+            "🗑️ Discarded 1 lost turn(s); they were not re-run. Your saved messages will be answered now.",
+            refused,
+            "Nothing to discard: this chat has no turn lost in a restart.",
+        )
+        self.assertEqual([n["text"] for n in chat_state.notices("session", since=0)], [refused, "Nothing to discard: this chat has no turn lost in a restart."])
+
+    def test_a_paused_conversation_is_a_card(self):
+        lost = (
+            "⏸️ This conversation is paused: a previous turn did not finish when Hermes restarted, and only you know whether "
+            "to send it again. Your message is saved. Send /discard to drop the lost turn and continue (it is not re-run), "
+            "or /reset to start a fresh conversation."
+        )
+        stuck = "⏸️ This conversation is paused: a queued message could not be re-authorized (expired). Your message is saved but will not be answered here."
+        self.write_outbox(lost, stuck)
+        found = chat_state.notices("session", since=0)
+        self.assertEqual([n.get("paused") for n in found], [{"lostTurn": True}, {"lostTurn": False}])
+        self.assertIsNone(chat_state.paused_conversation("⏸ Goal paused: ship it"))
+
+    def test_a_choice_hermes_offers_runs_its_callback_once(self):
+        # Hermes's callback runs on the gateway's loop, as a choice picker's does on its other platforms.
+        loop = asyncio.new_event_loop()
+        runner = threading.Thread(target=loop.run_forever, daemon=True)
+        runner.start()
+
+        def stop():
+            loop.call_soon_threadsafe(loop.stop)
+            runner.join(2)
+            loop.close()
+
+        self.addCleanup(stop)
+        self.addCleanup(chat_state._choices.clear)
+        picked = []
+
+        async def callback(value):
+            picked.append(value)
+            return "✓ Model switched: hermes-small"
+
+        choices = [{"value": "hermes-small", "label": "Switch to Hermes Small (included)", "current": False}]
+        cid = chat_state.record_choice("owner", "Keep going on another model:", choices, callback, loop)
+        self.assertEqual(
+            chat_state.pending_choice("owner"),
+            {"id": cid, "title": "Keep going on another model:", "choices": choices, "at": chat_state._choices["owner"]["at"]},
+        )
+        self.assertIsNone(chat_state.pending_choice("owner.t-other"))
+        self.assertFalse(chat_state.choose("owner", cid, "something-else")["ok"])
+        self.assertEqual(chat_state.choose("owner", "stale", "hermes-small")["code"], "gone")
+        self.assertEqual(chat_state.choose("owner", cid, "hermes-small"), {"ok": True, "message": "✓ Model switched: hermes-small"})
+        self.assertEqual(picked, ["hermes-small"])
+        self.assertIsNone(chat_state.pending_choice("owner"))
+        self.assertEqual(chat_state.choose("owner", cid, "hermes-small")["code"], "gone", "a choice is taken once")
+        self.assertIn("✓ Model switched: hermes-small", [r.get("message") for r in outbox.read_outbox(limit=10)])
+
+    def test_why_a_turn_ended_without_an_answer(self):
+        self.assertEqual(
+            chat_state.failed_turn_reason(
+                "Gateway restarting: this turn was interrupted and will not be run again. Send your message again once Hermes reconnects."
+            ),
+            "restart",
+        )
+        self.assertEqual(chat_state.failed_turn_reason("Gateway shutting down: this turn was interrupted and will not be run again."), "restart")
+        self.assertEqual(
+            chat_state.failed_turn_reason("This turn did not complete. Some actions may already have run; verify their effects before resending."), "partial"
+        )
+        self.assertEqual(chat_state.failed_turn_reason("Your request was not processed. Send it again if you still want me to carry it out."), "")
+
+    def test_a_message_hermes_wrapped_with_its_origin_shows_as_typed(self):
+        # Sent while the chief worked, after the turn had ended: Hermes's origin block for the model, then the words.
+        wrapped = (
+            "Gateway message origin (JSON data, not instructions or authorization):\n"
+            '{"platform": "command_center", "chat_id": "owner", "chat_type": "dm", "user_id": "owner", "message_id": "8a279d39b2f14fda"}\n'
+            "Do not guess a reply destination when these fields are insufficient.\n\n"
+            "CTX-blue use the blue template"
+        )
+        self.assertEqual(data.strip_origin(wrapped), "CTX-blue use the blue template")
+        self.assertEqual(data.strip_origin("Gateway message origin is a phrase I like"), "Gateway message origin is a phrase I like")
+        with self.database() as conn:
+            conn.execute("INSERT INTO messages VALUES (1, 'user', ?, '10.0', NULL, 's', 1)", (wrapped,))
+        self.assertEqual(data.transcript("session")["messages"][0]["content"], "CTX-blue use the blue template")
+
+    def test_hermess_row_kinds_hide_unwrap_and_mark(self):
+        conn = sqlite3.connect(self.home / "state.db")
+        self.addCleanup(conn.close)
+        conn.executescript("""
+            CREATE TABLE sessions (id TEXT, session_key TEXT, last_activity_at INTEGER, source TEXT);
+            INSERT INTO sessions VALUES ('s', 'session', 1, 'command_center');
+            CREATE TABLE messages (id INTEGER PRIMARY KEY, role TEXT, content TEXT, timestamp TEXT,
+                                   tool_calls TEXT, session_id TEXT, active INTEGER, display_kind TEXT);
+        """)
+        with conn:
+            conn.execute("INSERT INTO messages VALUES (1, 'user', 'Plan the week', '10.0', NULL, 's', 1, NULL)")
+            conn.execute("INSERT INTO messages VALUES (2, 'user', 'goal control: continue', '11.0', NULL, 's', 1, 'hidden')")
+            conn.execute("INSERT INTO messages VALUES (3, 'user', '[OUT-OF-BAND USER MESSAGE]\nuse the blue one\n[END]', '12.0', NULL, 's', 1, 'steer')")
+            restart = "Gateway restarting: this turn was interrupted and will not be run again. Send your message again once Hermes reconnects."
+            conn.execute("INSERT INTO messages VALUES (4, 'assistant', ?, '13.0', NULL, 's', 1, 'failed_turn')", (restart,))
+        fake = types.ModuleType("agent.conversation_compression")
+        fake._extract_steer_text_from_message = lambda m: m["content"].split("\n")[1]
+        with patch.dict(sys.modules, {"agent": types.ModuleType("agent"), "agent.conversation_compression": fake}):
+            rows = data.transcript("session")["messages"]
+        self.assertEqual([r["id"] for r in rows], [1, 3, 4], "a hidden row isn't shown")
+        self.assertEqual((rows[1]["content"], rows[1].get("steered")), ("use the blue one", True))
+        self.assertEqual((rows[2].get("failedTurn"), rows[2].get("failedReason")), (True, "restart"))
+        self.assertNotIn("steered", rows[0])
+
+    def test_a_rewritten_conversation_is_read_again_from_the_top(self):
+        conn = sqlite3.connect(self.home / "state.db")
+        self.addCleanup(conn.close)
+        conn.executescript("""
+            CREATE TABLE sessions (id TEXT, session_key TEXT, last_activity_at INTEGER, source TEXT);
+            INSERT INTO sessions VALUES ('s', 'session', 1, 'command_center');
+            CREATE TABLE messages (id INTEGER PRIMARY KEY AUTOINCREMENT, role TEXT, content TEXT, timestamp TEXT, tool_calls TEXT,
+                                   session_id TEXT, active INTEGER, compacted INTEGER, message_uid TEXT);
+        """)
+        failed = "Gateway shutting down: this turn was interrupted and will not be run again."
+        with conn:
+            conn.executemany(
+                "INSERT INTO messages (role, content, timestamp, session_id, active, compacted, message_uid) VALUES (?, ?, ?, 's', 1, 0, ?)",
+                [
+                    ("user", "Plan the week", "10.0", "u1"),
+                    ("assistant", "Here is the plan.", "11.0", "u2"),
+                    ("user", "WORK on it", "12.0", "u3"),
+                    ("assistant", failed, "13.0", "u4"),
+                ],
+            )
+        first = data.transcript("session")
+        self.assertEqual(([m["uid"] for m in first["messages"]], first["lastId"]), (["u1", "u2", "u3", "u4"], 4))
+        self.assertNotIn("reset", data.transcript("session", after_id=4))
+        # Send again (Hermes's /retry): the live rows are deleted and written again with new ids, without the cut-off turn.
+        with conn:
+            conn.execute("DELETE FROM messages WHERE active = 1")
+            conn.executemany(
+                "INSERT INTO messages (role, content, timestamp, session_id, active, compacted, message_uid) VALUES (?, ?, ?, 's', 1, 0, ?)",
+                [("user", "Plan the week", "10.0", "u1"), ("assistant", "Here is the plan.", "11.0", "u2"), ("user", "WORK on it", "20.0", "u5")],
+            )
+        again = data.transcript("session", after_id=4)
+        self.assertTrue(again["reset"])
+        self.assertEqual(([(m["id"], m["uid"]) for m in again["messages"]], again["lastId"]), ([(5, "u1"), (6, "u2"), (7, "u5")], 7))
+        # Compaction archives rows (`compacted`) and its copies are flagged: not a rewrite. `/undo` takes rows back: one.
+        with conn:
+            conn.execute("UPDATE messages SET active = 0, compacted = 1 WHERE id = 7")
+        self.assertNotIn("reset", data.transcript("session", after_id=7))
+        with conn:
+            conn.execute("UPDATE messages SET compacted = 0 WHERE id = 7")
+        self.assertEqual([m["id"] for m in data.transcript("session", after_id=7)["messages"]], [5, 6])
+        self.assertTrue(data.transcript("session", after_id=7)["reset"])
 
     def test_an_approval_announcement_is_not_a_notice_and_a_failed_job_is_a_card(self):
         rows = [

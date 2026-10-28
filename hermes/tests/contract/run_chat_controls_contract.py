@@ -287,7 +287,16 @@ def main() -> int:
 
         # Home-channel notices count from the start; busy notices only after the warm-up (see above).
         notices = call("/transcript?after=0").get("notices") or []
-        flagged = [n for n in notices if "/sethome" in n.get("text", "") or (n.get("text", "").startswith("⏳") and float(n.get("at") or 0) >= warmed_at)]
+        flagged = [
+            n
+            for n in notices
+            if "/sethome" in n.get("text", "")
+            # Hermes's acknowledgements of a message sent while the chief works (the steer above), and its one-time tip.
+            # Its "⚡ Stopped. You can continue this session." answers the owner's Stop: that one is a notice.
+            or n.get("text", "").lstrip().startswith(("⏩ Steered", "⏩ Steer queued", "⚡ Interrupting"))
+            or "/busy" in n.get("text", "")
+            or (n.get("text", "").startswith("⏳") and float(n.get("at") or 0) >= warmed_at)
+        ]
         check("no home-channel or busy notices", not flagged, flagged)
 
         # The bridge token never reaches the agent's own commands (bridge_token.py): a terminal child of the

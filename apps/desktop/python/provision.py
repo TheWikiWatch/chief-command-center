@@ -19,7 +19,8 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
 - Gives the chief the `kanban` toolset (delegating to workers) and the bridge's `fleet` toolset (mint, re-pin,
   retire and restore workers), and, unless the owner chose otherwise,
   `display.busy_input_mode: steer`, so a message sent while the chief works is added to that work instead of
-  stopping it.
+  stopping it; Hermes's echo of that is off for the app's platform and its one-time `/busy` tip counts as seen.
+- Keeps Hermes 0.22.0's history clean-up (`sessions.auto_prune: true`) unless the owner chose.
 
 Prints one JSON object: {"ok": true, "changed": [...]}.
 """
@@ -296,6 +297,25 @@ def main() -> int:
     if not display.get("busy_input_mode"):
         save_config_value("display.busy_input_mode", "steer")
         changed.append("busy input: steer")
+    # The chat tags a message sent while the chief works "Added while working"; Hermes's own echo of it ("⏩ Steered
+    # into current run…") is off for the app's platform only, and its one-time tip (which suggests typing `/busy
+    # interrupt`, a mode that would stop the work instead) counts as seen. Unless the owner chose.
+    platforms = (display.get("platforms") if isinstance(display.get("platforms"), dict) else {}) or {}
+    ours = platforms.get("command_center") if isinstance(platforms.get("command_center"), dict) else {}
+    if "busy_steer_ack_enabled" not in ours:
+        save_config_value("display.platforms.command_center.busy_steer_ack_enabled", False)
+        changed.append("busy input: no steer echo in the app")
+    onboarding = raw.get("onboarding") if isinstance(raw.get("onboarding"), dict) else {}
+    seen = onboarding.get("seen") if isinstance(onboarding.get("seen"), dict) else {}
+    if "busy_input_prompt" not in seen:
+        save_config_value("onboarding.seen.busy_input_prompt", True)
+        changed.append("busy input: tip seen")
+    # Hermes 0.22.5 stopped cleaning up old history by default and asks in the chat, with commands, when the disk runs
+    # low. Keep 0.22.0's behaviour (ended conversations idle for 90 days go), unless the owner chose.
+    sessions = raw.get("sessions") if isinstance(raw.get("sessions"), dict) else {}
+    if "auto_prune" not in sessions:
+        save_config_value("sessions.auto_prune", True)
+        changed.append("history: old conversations cleaned up")
     # Replies show in the app as they're written: Hermes streams draft frames to the chat platform (the bridge
     # adapter opts in; `streaming.transport` stays "auto"). Hermes's master switch is global, so on an adopted
     # install every other platform the owner may run is pinned to today's behaviour (a per-platform value can

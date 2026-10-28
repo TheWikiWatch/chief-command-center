@@ -182,6 +182,45 @@ class PickerFactsTests(CatalogTests):
         self.assertEqual(group["usage"], {"left": 17, "resetsAt": "2026-10-20T00:00:00+00:00", "window": "week"})  # the tightest window
         self.assertEqual(group["limit"], {"scope": "models", "models": {"nova-think": "2026-10-18T16:00:00+00:00"}})
 
+    def test_a_usage_window_plan_reaches_the_picker_with_its_gauges(self):
+        # Hermes 0.22.5's Nous row: `plan_usage` and `usage_levels`; no `usage` once a window is full, no `limit`.
+        nova = self.payload["providers"][0]
+        nova["models"] = ["nova-large", "nova-small", "nova-free"]
+        nova["plan_usage"] = {
+            "kind": "usage_window",
+            "plan": "Plus",
+            "gauges": [
+                {"label": "day", "left_fraction": 0.6, "style": "green", "resets_at_ms": 1_793_200_000_000, "scope": "all", "title": "Today"},
+                {"label": "week", "left_fraction": 0.0, "style": "red", "resets_at_ms": 1_793_500_000_000, "scope": "all", "title": "This week"},
+                {"label": "top_tier", "left_fraction": "x", "scope": "top_tier"},  # unreadable: skipped
+                {"label": "month", "left_fraction": 0.05, "resets_at_ms": None, "scope": "top_tier", "title": "Large models"},
+            ],
+            "top_tier_model_ids": ["nova-large"],
+            "featured_model_ids": ["nova-small"],
+            "paused_reason": None,
+            "credits_pay": False,
+        }
+        nova["usage_levels"] = {"nova-large": "top_tier", "nova-small": "medium", "nova-free": "free"}
+        group = providers.connected_models()["groups"][0]
+        self.assertEqual(
+            group["plan"],
+            {
+                "name": "Plus",
+                "gauges": [
+                    {"label": "day", "title": "Today", "used": 40, "full": False, "resetsAt": 1_793_200_000.0, "scope": "all"},
+                    {"label": "week", "title": "This week", "used": 100, "full": True, "resetsAt": 1_793_500_000.0, "scope": "all"},
+                    {"label": "month", "title": "Large models", "used": 95, "full": False, "resetsAt": None, "scope": "large"},
+                ],
+                "paused": None,
+                "creditsPay": False,
+                "featured": ["nova-small"],
+                "large": ["nova-large"],
+                "free": ["nova-free"],
+            },
+        )
+        self.assertIsNone(providers._plan({"kind": "credits"}, {}), "only window plans get gauges")
+        self.assertIsNone(providers._plan(None, None))
+
     def test_several_accounts_show_the_one_with_most_left_and_all_limited_says_so(self):
         accounts = [
             {"id": "a", "windows": [{"used_percent": 95.0, "resets_at": "2026-10-18T15:00:00+00:00"}], "state": "ready"},
@@ -274,6 +313,18 @@ class EffortTests(ProviderTestCase):
     def test_yaml_false_reads_as_off(self):
         self.raw["agent"]["reasoning_overrides"]["nova.think-2"] = False
         self.assertEqual(providers.effort()["effort"], "none")
+
+    def test_helpers_use_the_profiles_model_until_pinned_and_can_go_back(self):
+        self.assertEqual(providers.helpers(), {"ok": True, "provider": "", "model": ""})
+        self.assertEqual(providers.set_helpers("orbit", "orbit.mini-1"), {"ok": True, "provider": "orbit", "model": "orbit.mini-1"})
+        # Hermes's own keys, one at a time (the dotted model name is a value, never a key path).
+        self.assertEqual(self.written, [{"delegation.provider": "orbit"}, {"delegation.model": "orbit.mini-1"}])
+        self.assertEqual(providers.set_helpers("", ""), {"ok": True, "provider": "", "model": ""})
+        for slug, model in (("orbit", ""), ("", "orbit-1"), ("../x", "m")):
+            with self.subTest(slug=slug, model=model):
+                self.assertFalse(providers.set_helpers(slug, model)["ok"])
+        self.save_ok = False
+        self.assertEqual(providers.set_helpers("orbit", "orbit-1"), {"ok": False, "error": "Couldn't save the helpers' model. Try again."})
 
 
 class GrantTests(ProviderTestCase):

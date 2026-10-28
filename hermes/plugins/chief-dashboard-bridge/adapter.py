@@ -126,10 +126,19 @@ class CommandCenterAdapter(BasePlatformAdapter):
         metadata: dict[str, Any] | None = None,
     ) -> SendResult:
         mid = append_outbox(chat_id or self.chat_id, content or "", source="send")
-        # Hermes's "⏳ Working — N min" busy notices feed the chat's step line; they never ping the phone.
-        from .chat_state import busy_line
+        # Hermes's busy lines feed the chat's step line or say what the app already shows; they never ping the phone.
+        # A paused conversation does, in the app's words (Hermes's tells the owner to type a command).
+        from .chat_state import busy_line, paused_conversation
 
-        if not busy_line(content or ""):
+        if paused := paused_conversation(content or ""):
+            name = identity.assistant_name()
+            _notify_phone(
+                f"{name}'s last reply was cut off when it stopped. Open the chat to continue."
+                if paused["lostTurn"]
+                else f"This chat with {name} is paused. Open it to start fresh.",
+                chat_id or self.chat_id,
+            )
+        elif not busy_line(content or ""):
             _notify_phone(content or "", chat_id or self.chat_id)
         if self._broadcast:
             try:
@@ -145,6 +154,32 @@ class CommandCenterAdapter(BasePlatformAdapter):
             except Exception:
                 logger.debug("cc broadcast failed", exc_info=True)
         return SendResult(success=True, message_id=mid)
+
+    # Hermes's quick-choice buttons (0.22.5: after a plan limit, the plan's model to switch to; also /model,
+    # /reasoning and /fast). The chat shows the newest offer as a card; a tap calls Hermes back with the choice
+    # (chat_state.choose) and posts what it answers. Without this, Hermes sends one line naming a typed command.
+    async def send_choice_picker(
+        self,
+        chat_id: str,
+        title: str,
+        choices: list,
+        session_key: str,
+        on_choice_selected: Any,
+        metadata: dict[str, Any] | None = None,
+    ) -> SendResult:
+        from .chat_state import record_choice
+
+        items = [
+            {"value": str(c.get("value") or ""), "label": str(c.get("label") or c.get("value") or ""), "current": bool(c.get("is_current"))}
+            for c in (choices or [])
+            if isinstance(c, dict) and str(c.get("value") or "")
+        ][:40]
+        if not items:
+            return SendResult(success=False, error="No choices")
+        chat = chat_id or self.chat_id
+        cid = record_choice(chat, str(title or ""), items, lambda value: on_choice_selected(chat_id, value), asyncio.get_running_loop())
+        changes.bump("choice")
+        return SendResult(success=True, message_id=f"choice-{cid}")
 
     # Hermes hands a reply's attachments to the platform one by one after its text. The chat shows a file from
     # a "MEDIA:<path>" line, so each one is sent as that line (the base class's default is a "Couldn't deliver

@@ -4,7 +4,19 @@ import { friendlyError } from "@/lib/request";
 import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import { CheckIcon, ChevronDownIcon, CircleAlertIcon, CircleCheckIcon, SearchIcon, StarIcon, ZapIcon } from "@/components/icons";
-import { fleetApi, type Effort, type FavoriteModel, type ModelCaps, type ModelGroup, type ModelsResult, type PlanUsage, type RateLimit } from "@/lib/fleet-client";
+import {
+  fleetApi,
+  type Effort,
+  type FavoriteModel,
+  type HelpersModel as HelpersModelState,
+  type ModelCaps,
+  type ModelGroup,
+  type ModelsResult,
+  type NousPlan,
+  type PlanUsage,
+  type RateLimit,
+} from "@/lib/fleet-client";
+import { blocks, featuredFirst, fullest, gaugeName, isLarge, limitLine, resetsIn, sizeWord, spentFor } from "@/lib/plan-usage";
 import { whenLabel } from "@/lib/routines-client";
 import { field } from "@/components/ui/field";
 import { btn } from "@/components/ui/button";
@@ -53,7 +65,10 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
       }
       setCurrent(next);
       setOpen(false);
-      setNote({ tone: "ok", text: "Saved. It answers with this model from the next message." });
+      // As Hermes does on a plan with usage windows: a note, never a question.
+      const plan = options?.groups.find((g) => g.provider === next.provider)?.plan;
+      const large = plan && isLarge(plan, next.model) ? " A Large model uses more of your plan with each message." : "";
+      setNote({ tone: "ok", text: `Saved. It answers with this model from the next message.${large}` });
       onChanged?.();
     } catch (e) {
       setNote({ tone: "error", text: friendlyError(e, "That model couldn't be set.") });
@@ -104,9 +119,15 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
           {current.model || "Not set"}
           <span className="text-fg-3">{group ? ` · ${group.name}` : current.provider && !known ? ` · ${current.provider}` : ""}</span>
         </span>
-        {group ? <UsageChip usage={group.usage} limit={group.limit} model={current.model} quiet /> : null}
+        {group?.plan ? <PlanChip plan={group.plan} model={current.model} quiet /> : group ? <UsageChip usage={group.usage} limit={group.limit} model={current.model} quiet /> : null}
         <ChevronDownIcon className={`size-4 shrink-0 text-fg-3 transition-transform duration-fast ${open ? "rotate-180" : ""}`} />
       </button>
+      {/* On a Nous plan with usage windows: how much of each allowance is used, here as in Hermes's own pickers. */}
+      {group?.plan && !open ? (
+        <div className="-mx-3">
+          <PlanGauges plan={group.plan} />
+        </div>
+      ) : null}
 
       {open ? (
         <div id={`${id}-list`} className="overflow-hidden rounded-card border border-line bg-card">
@@ -124,6 +145,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
                     providerName={g.name}
                     caps={g.caps?.[fav.model]}
                     limit={g.limit}
+                    plan={g.plan}
                     selected={same(fav, current)}
                     starred
                     onPick={() => void choose(fav)}
@@ -133,16 +155,19 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
               </Section>
             ) : null}
             {groups.map((g) => {
-              const shown = g.models.filter((m) => matches(g, m));
+              // A plan's own picks come first, as Hermes lists them.
+              const shown = featuredFirst(g.plan, g.models).filter((m) => matches(g, m));
               if (!shown.length) return null;
               return (
-                <Section key={g.provider} title={g.name} aside={<UsageChip usage={g.usage} limit={g.limit} />}>
+                <Section key={g.provider} title={g.name} aside={g.plan ? <PlanChip plan={g.plan} /> : <UsageChip usage={g.usage} limit={g.limit} />}>
+                  {g.plan && !q ? <PlanGauges plan={g.plan} /> : null}
                   {shown.map((m) => (
                     <ModelRow
                       key={`${g.provider}:${m}`}
                       model={m}
                       caps={g.caps?.[m]}
                       limit={g.limit}
+                      plan={g.plan}
                       selected={g.provider === current.provider && m === current.model}
                       starred={isStarred(g.provider, m)}
                       onPick={() => void choose({ provider: g.provider, model: m })}
@@ -176,6 +201,7 @@ export function ModelPicker({ profile, provider, model, onChanged }: { profile: 
       ) : null}
 
       {current.model && (caps ? caps.reasoning : true) ? <ThinkingLevel profile={profile} model={current.model} canDisable={!!caps?.canDisable} /> : null}
+      {groups.length ? <HelpersModel profile={profile} groups={groups} /> : null}
     </div>
   );
 }
@@ -202,6 +228,7 @@ function ModelRow({
   providerName,
   caps,
   limit,
+  plan,
   selected,
   starred,
   onPick,
@@ -211,6 +238,7 @@ function ModelRow({
   providerName?: string;
   caps?: ModelCaps;
   limit?: RateLimit | null;
+  plan?: NousPlan | null;
   selected: boolean;
   starred: boolean;
   onPick: () => void;
@@ -218,17 +246,24 @@ function ModelRow({
 }) {
   // An account-wide limit is said once, on the provider's heading.
   const limited = limit?.scope === "models" ? limit.models[model] : "";
+  // On a plan with usage windows: "Free" or "Large", and dimmed while a full allowance stops it (the line above says why).
+  const size = plan ? sizeWord(plan, model) : "";
+  const stopped = !!plan && blocks(plan, model);
+  const spent = stopped && plan ? spentFor(plan, model) : null;
   return (
-    <div className="flex items-center gap-1 pr-1.5">
+    <div className={`flex items-center gap-1 pr-1.5 ${stopped ? "opacity-60" : ""}`}>
       <button type="button" onClick={onPick} aria-current={selected ? "true" : undefined} className="press flex min-h-11 min-w-0 flex-1 items-center gap-2 py-1.5 pl-3 text-left hover:bg-fill-1">
         <span className="min-w-0 flex-1">
           <span className={`block truncate text-callout ${selected ? "font-medium text-fg" : "text-fg-2"}`}>{model}</span>
-          {providerName || limited ? (
+          {providerName || limited || spent ? (
             <span className="block truncate text-caption text-fg-3">
-              {[providerName, limited ? `rate limited until ${when(limited)}` : ""].filter(Boolean).join(" · ")}
+              {[providerName, limited ? `rate limited until ${when(limited)}` : "", spent ? `stopped until the limit resets${spent.resetsAt ? ` (${resetsIn(spent.resetsAt)})` : ""}` : ""]
+                .filter(Boolean)
+                .join(" · ")}
             </span>
           ) : null}
         </span>
+        {size ? <span className="shrink-0 rounded-chip bg-fill-2 px-1.5 py-px text-micro text-fg-3">{size}</span> : null}
         {caps?.fast ? (
           <span title="Has a fast mode" className="shrink-0 text-fg-3">
             <ZapIcon className="size-3.5" />
@@ -248,6 +283,51 @@ function ModelRow({
       >
         <StarIcon className={`size-4 ${starred ? "fill-current" : ""}`} />
       </button>
+    </div>
+  );
+}
+
+/**
+ * A Nous plan with usage windows, in one chip: "Plan paused", a full allowance that stops this model, or how much of
+ * the fullest allowance is used. Quiet: only when it matters (80% used or more, or a model it stops).
+ */
+export function PlanChip({ plan, model, quiet }: { plan: NousPlan; model?: string; quiet?: boolean }) {
+  const warn = "shrink-0 rounded-chip bg-warn/15 px-1.5 py-px text-micro text-warn";
+  if (plan.paused) return <span className={warn}>plan paused</span>;
+  const spent = model ? spentFor(plan, model) : null;
+  if (spent && model && blocks(plan, model)) {
+    return <span className={warn}>limit reached{spent.resetsAt ? ` · resets ${resetsIn(spent.resetsAt)}` : ""}</span>;
+  }
+  const g = fullest(plan);
+  if (!g || (quiet && g.used < 80)) return null;
+  return <span className={`shrink-0 rounded-chip px-1.5 py-px text-micro ${g.used >= 90 ? "bg-warn/15 text-warn" : "bg-fill-2 text-fg-3"}`}>{`${gaugeName(g)} ${g.used}% used`}</span>;
+}
+
+/** Every allowance of a Nous plan as a bar (used, like the Portal's "N% used"), what a full one means, and a pause. */
+export function PlanGauges({ plan }: { plan: NousPlan }) {
+  const line = limitLine(plan);
+  return (
+    <div className="space-y-1.5 px-3 pt-1 pb-2">
+      {plan.gauges.map((g) => (
+        <div key={`${g.label}:${g.scope}`} className="flex items-center gap-2 text-caption">
+          <span className="w-24 shrink-0 truncate text-fg-3">{gaugeName(g)}</span>
+          <span
+            className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-fill-2"
+            role="meter"
+            aria-label={`${gaugeName(g)}: ${g.used}% used`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={g.used}
+          >
+            <span className={`block h-full rounded-full ${g.full ? "bg-danger" : g.used >= 80 ? "bg-warn" : "bg-accent"}`} style={{ width: `${Math.max(2, g.used)}%` }} />
+          </span>
+          <span className={`w-24 shrink-0 text-right tabular-nums ${g.full ? "text-danger" : "text-fg-3"}`}>
+            {g.used}%{g.resetsAt ? ` · ${resetsIn(g.resetsAt)}` : ""}
+          </span>
+        </div>
+      ))}
+      {plan.paused ? <p className="text-caption text-warn">Plan paused: {plan.paused}</p> : null}
+      {line ? <p className="text-caption text-warn">{line}</p> : null}
     </div>
   );
 }
@@ -315,6 +395,71 @@ function ThinkingLevel({ profile, model, canDisable }: { profile: string; model:
         ))}
       </select>
       <p className="text-caption text-fg-3">More thinking answers hard questions better, more slowly and at a higher cost. Kept for {model}.</p>
+      {error ? <Line tone="error">{error}</Line> : null}
+    </div>
+  );
+}
+
+/**
+ * The model the bot's background helpers run on (the tasks it hands off: Hermes's `delegation.provider` and
+ * `delegation.model`). By default they use the bot's own model; a cheaper or faster one keeps big jobs affordable.
+ */
+function HelpersModel({ profile, groups }: { profile: string; groups: ModelGroup[] }) {
+  const id = useId();
+  const [state, setState] = useState<HelpersModelState | null>(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    fleetApi
+      .helpers(profile)
+      .then((r) => live && (r.ok ? setState(r) : setError(r.error || "")))
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [profile]);
+
+  if (!state) return null;
+  const value = state.model ? `${state.provider}\u0000${state.model}` : "";
+  // A pin to a model that's no longer offered stays listed, so the select says what it is.
+  const offered = groups.some((g) => g.provider === state.provider && g.models.includes(state.model));
+
+  async function save(next: string) {
+    const [provider = "", model = ""] = next ? next.split("\u0000") : [];
+    setSaving(true);
+    setError("");
+    try {
+      const res = await fleetApi.setHelpers(profile, provider, model);
+      if (!res.ok) throw new Error(res.error || "That didn't save.");
+      setState(res);
+    } catch (e) {
+      setError(friendlyError(e, "That didn't save."));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-1 pt-1">
+      <label htmlFor={id} className="block text-callout text-fg-2">
+        Helpers use
+      </label>
+      <select id={id} value={value} disabled={saving} onChange={(e) => void save(e.target.value)} className={field({ extra: "w-full disabled:opacity-60" })}>
+        <option value="">The same model</option>
+        {value && !offered ? <option value={value}>{state.model} (no longer offered)</option> : null}
+        {groups.map((g) => (
+          <optgroup key={g.provider} label={g.name}>
+            {g.models.map((m) => (
+              <option key={m} value={`${g.provider}\u0000${m}`}>
+                {m}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      <p className="text-caption text-fg-3">For the tasks it hands off to helpers. A faster or cheaper model keeps big jobs quick and affordable.</p>
       {error ? <Line tone="error">{error}</Line> : null}
     </div>
   );

@@ -20,7 +20,7 @@ import { CheckIcon, PaperclipIcon, XIcon } from "@/components/icons";
 import { type MicStatus } from "@/components/mic-button";
 import { meterStream } from "@/lib/audio-level";
 import { fx } from "@/lib/fx";
-import { answerQuestion, fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, stopTurn, type OutboundAttachment } from "@/lib/bridge";
+import { answerQuestion, chooseOption, fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, stopTurn, type OutboundAttachment } from "@/lib/bridge";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { SHOW_APPROVAL_EVENT } from "@/lib/open-target";
 import { chatTone, isMachineNote } from "@/lib/chat-tone";
@@ -28,7 +28,7 @@ import { computeThinkingChrome, shouldClearPendingReply } from "@/lib/thinking-c
 import { visibleMessages } from "@/lib/compact-filter";
 import { fullPhotosOn, useDashboardPrefs, VOICE_EVENT } from "@/lib/dashboard-prefs";
 import { getSpeechPhase, blobToDataUrl, stopSpeech, subscribeSpeaking, toggleSpeechPause } from "@/lib/voice-client";
-import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingQuestion, Person, PreviousConversation, ReplyDraft, Transcript, TurnActivity, BackgroundUnit } from "@/lib/types";
+import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecApproval, PendingChoice, PendingQuestion, Person, PreviousConversation, ReplyDraft, Transcript, TurnActivity, BackgroundUnit } from "@/lib/types";
 import { BackgroundWork, backgroundTaskCount } from "@/components/chat/background-work";
 import { admitFiles } from "@/lib/upload-limits";
 import { shrinkImage } from "@/lib/image-shrink";
@@ -176,6 +176,8 @@ export function ChiefChat({
   const dragDepth = useRef(0);
   const [busy, setBusy] = useState(false);
   const [pendingReply, setPendingReply] = useState(false);
+  /** When the reply being waited for was asked for (epoch seconds, like a notice's `at`). */
+  const pendingSince = useRef(0);
   const busyRef = useRef(false);
   const [generating, setGenerating] = useState(false);
   const generatingRef = useRef(false);
@@ -202,9 +204,11 @@ export function ChiefChat({
   // lands, and an idle chat makes one request every 25s instead of one every 2.5s.
   const [longpoll, setLongpoll] = useState(false);
   const longpollRef = useRef(false);
-  const bridgeState = useRef<{ generating: boolean; approval: string; clarify: string; notice: string; bg?: string; draft?: string }>({ generating: false, approval: "", clarify: "", notice: "" });
+  const bridgeState = useRef<{ generating: boolean; approval: string; clarify: string; notice: string; bg?: string; draft?: string; choice?: string }>({ generating: false, approval: "", clarify: "", notice: "" });
   // The chief's open question (its turn waits for the answer), notices that aren't replies, and its current step.
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
+  // A choice Hermes offers as buttons (a plan limit's model switch, its /model and /reasoning pickers).
+  const [choice, setChoice] = useState<PendingChoice | null>(null);
   const questionRef = useRef<PendingQuestion | null>(null);
   questionRef.current = question;
   const [notices, setNotices] = useState<ChatNotice[]>([]);
@@ -289,6 +293,7 @@ export function ChiefChat({
     };
     if (previews.length) sentPreviews.current.set(bubble.id, previews);
     setMessages(m => [...m, bubble]);
+    pendingSince.current = Date.now() / 1000;
     setPendingReply(true);
     fx("send");
   }, []);
@@ -331,7 +336,7 @@ export function ChiefChat({
     [messages, prefs.compactChat],
   );
   // Reading replies aloud: the speak floor, what was spoken, failures and retry (components/chat/use-reply-speech.ts).
-  const { speechFailures, setSpeechFailures, retrySpeech, primeFromSnapshot, historyPrimed, sessionKeyRef } = useReplySpeech({
+  const { speechFailures, setSpeechFailures, retrySpeech, raiseSpeakFloor, primeFromSnapshot, historyPrimed, sessionKeyRef } = useReplySpeech({
     visible,
     messages,
     speakOn,
@@ -461,6 +466,19 @@ export function ChiefChat({
         primeFromSnapshot(data);
         return;
       }
+      if (data.reset) {
+        // Hermes rewrote the conversation (Send again and Retry run its /retry, which writes every row again with new
+        // ids): this page replaces what's shown. Copies of rows already here are history, never read aloud again.
+        const rows = data.messages || [];
+        const known = new Set(messagesRef.current.flatMap((m) => (m.uid ? [m.uid] : [])));
+        const lastCopy = rows.reduce((n, m) => (m.uid && known.has(m.uid) ? Math.max(n, m.id) : n), 0);
+        raiseSpeakFloor(lastCopy || rows.reduce((n, m) => Math.max(n, m.id), data.lastId || 0));
+        lastIdRef.current = data.lastId || 0;
+        earlierCursor.current = null;
+        setMessages(rows);
+        if (typeof data.more === "boolean") setEarlier((e) => ({ ...e, more: !!data.more }));
+        return;
+      }
       lastIdRef.current = data.lastId || after;
       if (!after) {
         setMessages(data.messages || []);
@@ -486,7 +504,7 @@ export function ChiefChat({
         if (data.messages.some((m) => !m.replay && m.role === "assistant" && chatTone(m) === "reply" && (m.content || "").trim())) fx("reply");
       }
     },
-    [primeFromSnapshot, historyPrimed, sessionKeyRef],
+    [primeFromSnapshot, raiseSpeakFloor, historyPrimed, sessionKeyRef],
   );
 
   useEffect(() => poll(async signal => {
@@ -494,7 +512,7 @@ export function ChiefChat({
     // What the bridge last told us, not local guesses: a difference would return the long-poll at once.
     const state = bridgeState.current;
     const live = longpollRef.current && historyPrimed.current
-      ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg, draft: state.draft }
+      ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg, draft: state.draft, choice: state.choice }
       : undefined;
     const started = Date.now();
     // An open long-poll is the chat connected and waiting for news, not a chat gone quiet.
@@ -513,6 +531,8 @@ export function ChiefChat({
         // Only a bridge that reports background work (or drafts) is asked to wake on it.
         ...(typeof data.backgroundSig === "string" ? { bg: data.backgroundSig } : {}),
         ...(typeof data.draftSig === "string" ? { draft: data.draftSig } : {}),
+        // Only a bridge that offers choices is asked to wake on them.
+        ...("choice" in data ? { choice: data.choice?.id || "" } : {}),
       };
       // The draft stays on the bridge until the turn ends; once the stored reply it became has landed here, that
       // draft is done with, even if the turn is still wrapping up.
@@ -525,6 +545,7 @@ export function ChiefChat({
       });
       setBackground(Array.isArray(data.background) ? data.background : []);
       if ("clarify" in data) setQuestion(data.clarify ?? null);
+      if ("choice" in data) setChoice(data.choice ?? null);
       if (Array.isArray(data.previous)) setPrevious(data.previous);
       setActivity(data.activity ?? null);
       if (Array.isArray(data.notices)) {
@@ -591,6 +612,12 @@ export function ChiefChat({
     const timer = window.setTimeout(() => setPendingReply(false), 21_000);
     return () => window.clearTimeout(timer);
   }, [pendingReply, generating, busy]);
+
+  // Hermes answered the send by pausing the conversation, or the turn failed (a limit, a provider down): no reply is
+  // coming, so the chat isn't "thinking" (a few seconds' slack for the two clocks).
+  useEffect(() => {
+    if (pendingReply && notices.some((n) => (n.paused || n.turnFailure) && n.at >= pendingSince.current - 5)) setPendingReply(false);
+  }, [notices, pendingReply]);
 
 
 
@@ -692,6 +719,7 @@ export function ChiefChat({
     }
     busyRef.current = true;
     setBusy(true);
+    pendingSince.current = Date.now() / 1000;
     setPendingReply(true);
     setSendError("");
     setSendNotice("");
@@ -866,6 +894,15 @@ export function ChiefChat({
       });
   }
 
+  const chooseOffered = useCallback(async (id: string, value: string) => {
+    const result = await chooseOption(id, value);
+    if (!result.ok) {
+      if (result.code === "gone") setChoice(null);
+      throw new Error(result.error || "That didn't work.");
+    }
+    setChoice((c) => (c?.id === id ? null : c));
+  }, []);
+
   const answerOpenQuestion = useCallback(async (id: string, answer: string | string[]) => {
     const result = await answerQuestion(id, answer);
     if (!result.ok) {
@@ -1018,6 +1055,8 @@ export function ChiefChat({
         draft={replyDraft}
         question={question}
         onAnswer={answerOpenQuestion}
+        choice={choice}
+        onChoose={chooseOffered}
         onQuickReply={sendBody}
         onReport={reportSetup ? reportReply : undefined}
         header={previous.length ? <PreviousConversations items={previous} chief={chief} phone={!!compact} /> : null}

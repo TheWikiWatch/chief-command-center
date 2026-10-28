@@ -1294,3 +1294,34 @@ desktop window at eight sizes from 380 px wide to maximized: nothing reaches the
   paste-as-plain-text and open dialogs alone; toasts show over drawers; the Look drawer's tabs work with the arrow
   keys; dialogs without a title are named by their heading; phone touch targets are 44 px.
 - Tests: web 572 passed (4 skipped), desktop 166 passed, Python 573 + 22 (upstream tooling) passed, privacy scan clean.
+
+**Hermes v0.22.5 (2026-10-28).** The bundled Hermes moves from v0.22.0 to v0.22.5 (plan:
+`docs/PLAN-2026-10-28-hermes-0225.md`). Upstream's v0.22.2, v0.22.4 and v0.22.5 had been blocked here; v0.22.5 is about
+5,500 commits past the pin, including upstream's new gateway runtime.
+
+- Patch queue: 0003 loses its cron hunk, 0005 goes (upstream pins edge-tts 7.3.1 itself), 0006 is re-anchored. New
+  0007 keeps the bots' routines in the chief's gateway: 0.22.5 would start a second, detached gateway on the install's
+  root profile for every one.
+- Breaks fixed: minting a bot (Hermes moved the model seed), every Quick connect (a new required argument), Nous
+  sign-in (it now replaces a signed-in account, so the app never offers that; an unused code says it expired), routine
+  failures Hermes refuses before they run, and its own "couldn't confirm this run" pauses, in plain words.
+- The chat around a restart: a reply a stop or update cut off is a marker ("Cut off when Chief stopped") with Send
+  again, never a reply read aloud; a reply lost to a crash, which now pauses the conversation, is a card with Continue
+  and Start fresh instead of a line asking for `/discard`. Hermes's acknowledgements of a message sent mid-turn, its
+  "your message is saved" lines and its "Discarded 1 lost turn(s)" stay out of the chat and off the phone; a message
+  added mid-turn shows as typed. A message sent into a paused chat, or one a limit stopped, no longer shows "thinking".
+- Send again and Retry (both Hermes's `/retry`) no longer show the conversation twice: `/retry` writes every row again
+  with new ids, and the chat now reloads it instead of adding the copies, without reading old replies aloud again.
+- Nous plans: each allowance's gauge (today, this week, Large models) in Settings → Models and every bot's picker,
+  the plan's picks first, Free and Large tags, and the models a full allowance stops. When a limit stops a reply,
+  Hermes's offer of the plan's model is a button (Hermes switches the chat and sends the message again); `/model`,
+  `/reasoning` and `/fast` are pickers too.
+- Helpers' model: Settings → Models and each bot's model section choose the model background helpers run on.
+- A Nous sign-in says who signed in, which apps moved over from the free guest, which to connect again, and the
+  chief's new model when Hermes moved it off the free one.
+- History clean-up stays as it was (0.22.5 turned it off by default and would ask in the chat when the disk is low).
+- Arrives with Hermes: long local-model turns survive sleep, Nemotron 3.5 Bolt in Models on this PC, draft models
+  that speed up local generation (the first engine update downloads one per model, about 1 GB), stop withdrawing an
+  open question at once, messages sent during a restart kept and answered after it.
+- The Hermes compatibility workflow on GitHub had been red since 0.1.47 (the routines contract still looked for the
+  bot's name in the message text); fixed.

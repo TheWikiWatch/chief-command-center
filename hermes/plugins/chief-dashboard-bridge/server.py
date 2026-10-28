@@ -260,14 +260,15 @@ class BridgeServer:
         session: str = "",
         background: str | None = None,
         draft: str | None = None,
+        choice: str | None = None,
     ) -> dict[str, Any]:
         """The transcript with the chief's state: generating, the pending approval, its open question
-        (`clarify`), notices that aren't replies, the current step (`activity`) and the reply as it's being
-        written (`draft`). With `wait` (seconds) and `after`, hold until a row lands after it or generating, the
-        approval, the question, the newest notice or the draft differs from what the caller has: one open request
-        instead of a poll every 0.8s. `clarify` / `notice` / `draft` None means the caller doesn't track them (an
-        older dashboard). `thread` picks the conversation; `session` reads one of its earlier conversations
-        (before a fresh start)."""
+        (`clarify`), a choice Hermes offers as buttons (`choice`), notices that aren't replies, the current step
+        (`activity`) and the reply as it's being written (`draft`). With `wait` (seconds) and `after`, hold until a
+        row lands after it or generating, the approval, the question, the choice, the newest notice or the draft
+        differs from what the caller has: one open request instead of a poll every 0.8s. `clarify` / `notice` /
+        `draft` / `choice` None means the caller doesn't track them (an older dashboard). `thread` picks the
+        conversation; `session` reads one of its earlier conversations (before a fresh start)."""
         bind, chat = self.thread_bind(thread)
         sk = bind.get("sessionKey") or ""
         draft_chat = chat or identity.owner_id()
@@ -285,7 +286,9 @@ class BridgeServer:
             # `after` 0 is a conversation with no rows yet (a fresh install): hold until the first one.
             while time.monotonic() < deadline:
                 pending = data.pending_approval(sk)
-                if data.head_id(sk) > after:
+                # A row after the caller's, or none as new as the one it has: Hermes took rows back (`/undo`).
+                head = data.head_id(sk)
+                if head > after or 0 < head < after:
                     break
                 if gen in ("0", "1") and ("1" if self.generating(sk) else "0") != gen:
                     break
@@ -299,6 +302,8 @@ class BridgeServer:
                     break
                 if draft is not None and chat_state.draft_signature(draft_chat) != draft:
                     break
+                if choice is not None and ((chat_state.pending_choice(draft_chat) or {}).get("id") or "") != choice:
+                    break
                 seen = changes.wait(seen, min(_LONGPOLL_STEP, max(0.0, deadline - time.monotonic())))
                 if thread in ("", threads.MAIN):
                     bind = self.binding()
@@ -309,6 +314,7 @@ class BridgeServer:
         payload["generating"] = self.generating(sk)
         payload["approval"] = data.pending_approval(sk)
         payload["clarify"] = chat_state.pending_clarify(sk)
+        payload["choice"] = chat_state.pending_choice(draft_chat)
         payload["activity"] = chat_state.activity(sk, payload["generating"], chat_state.vault_path(), chat_id=chat or identity.owner_id())
         # A draft outlives its turn only when the turn died without a final reply: it goes with the turn.
         if not payload["generating"] and chat_state.draft(draft_chat):
@@ -324,7 +330,7 @@ class BridgeServer:
                 since = min(stamps) if stamps else time.time() - 86400
             payload["notices"] = chat_state.notices(sk, since=since, chat_id=chat or identity.owner_id())
             payload["noticeHead"] = chat_state.notice_head()
-            if not after:
+            if not after or payload.get("reset"):
                 payload["previous"] = threads.previous_sessions(thread)
                 # Whether Load earlier has anything to show (a new thread has nothing before its first rows).
                 ids = [int(m["id"]) for m in payload.get("messages") or [] if 0 < int(m.get("id") or 0) < 10**12]
@@ -337,6 +343,11 @@ class BridgeServer:
     def answer_question(self, clarify_id: str, answer: Any, thread: str = threads.MAIN) -> dict[str, Any]:
         bind, _chat = self.thread_bind(thread)
         return chat_state.resolve_clarify(bind.get("sessionKey") or "", clarify_id, answer)
+
+    def choose(self, choice_id: str, value: str, thread: str = threads.MAIN) -> dict[str, Any]:
+        """A choice Hermes offered as buttons in this thread (chat_state.choose)."""
+        _bind, chat = self.thread_bind(thread)
+        return chat_state.choose(chat or identity.owner_id(), choice_id, value)
 
     def thread_list(self) -> dict[str, Any]:
         return threads.list_threads(
@@ -681,17 +692,19 @@ class BridgeServer:
             return {"ok": False, "error": str(exc)}
 
     def control(self, action: str, text: str = "", thread: str = threads.MAIN) -> dict[str, Any]:
-        """Stop the chief's current turn, add context to it (steer), queue a message for after it, or retry the last one.
+        """Stop the chief's current turn, add context to it (steer), queue a message for after it, retry the last one,
+        or let a paused conversation go on (discard).
 
-        These are Hermes's own chat commands (`/stop`, `/steer <text>`, `/queue <text>`, `/retry`), sent into the chief's
-        Command Center chat, so Hermes applies its own rules: a steer lands at the next safe point and falls
-        back to the queue when the turn has already ended; nothing is lost.
+        These are Hermes's own chat commands (`/stop`, `/steer <text>`, `/queue <text>`, `/retry`, `/discard`), sent
+        into the chief's Command Center chat, so Hermes applies its own rules: a steer lands at the next safe point and
+        falls back to the queue when the turn has already ended; nothing is lost. `/discard` (Hermes 0.22.5) drops a
+        turn a restart cut off, never re-running it, and the messages saved behind it then run.
         """
         action = str(action or "").strip().lower()
         text = " ".join(str(text or "").split())
-        if action not in ("stop", "steer", "queue", "retry"):
+        if action not in ("stop", "steer", "queue", "retry", "discard"):
             return {"ok": False, "error": "Unknown control."}
-        if action not in ("stop", "retry") and not text:
+        if action not in ("stop", "retry", "discard") and not text:
             return {"ok": False, "error": "Message is empty."}
         if len(text) > 8000:
             return {"ok": False, "error": "That message is too long to add mid-turn; send it as a message instead."}
@@ -711,7 +724,7 @@ class BridgeServer:
             command = text
         else:
             # /retry: Hermes resends the conversation's last message itself (after a failed turn, e.g. a usage limit).
-            command = {"stop": "/stop", "retry": "/retry"}.get(action) or f"/queue {text}"
+            command = {"stop": "/stop", "retry": "/retry", "discard": "/discard"}.get(action) or f"/queue {text}"
         try:
             accepted = _queue_inbound(cc, command, chat_id=chat)
         except Exception as exc:
