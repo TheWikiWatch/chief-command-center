@@ -479,6 +479,12 @@ Two Hermes profile helpers reach outside the profile they are given:
   long-poll wakes on `choice`.
 - **History clean-up**: 0.22.5 defaults `sessions.auto_prune` off and asks in the chat when the disk is low;
   provisioning writes `true` when the owner hasn't chosen, which also ends the question.
+- **The first terminal command copies Hermes's node, npm and Python out of the package** (0.22.5,
+  `pm/user_facing.py`: inside the MSIX a program from elsewhere can't start the packaged ones). Into
+  `<Hermes root>\tools`, about 280 MB and 2.5 minutes here, with a digest of every source file; until then the
+  command, and its approval, wait. Once per install and again when an update moves those versions. The bridge has
+  Hermes make them in the background at start (`terminal_tools.py`); the smoke test, on a fresh home each time,
+  waits up to 5 minutes for its approval. The 0.1.48 release's first smoke run failed on exactly this.
 
 ## Dependency updates (2026-10-28)
 

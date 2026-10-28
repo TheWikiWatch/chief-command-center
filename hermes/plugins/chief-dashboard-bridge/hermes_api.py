@@ -46,6 +46,10 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         # A message sent while the chief worked is stored inside Hermes's out-of-band frame; the chat shows what was typed.
         "agent.conversation_compression": ("_extract_steer_text_from_message",),
     },
+    "terminal": {
+        # The copies of Hermes's node, npm and Python that commands run with in the installed app, made at start.
+        "pm.user_facing": ("user_facing_path",),
+    },
     "profiles": {
         "hermes_constants": (
             "get_default_hermes_root",

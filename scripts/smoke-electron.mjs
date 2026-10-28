@@ -151,7 +151,9 @@ async function main() {
     await box.fill("APPROVEME please");
     await box.press("Enter");
     const allow = page.getByRole("button", { name: "Allow once" });
-    await allow.waitFor({ timeout: 90_000 });
+    // The first command on a fresh install waits for Hermes's copies of its node, npm and Python (Hermes 0.22.5,
+    // started with the gateway: terminal_tools.py), about two and a half minutes on this PC.
+    await allow.waitFor({ timeout: 300_000 });
     ok = check("an approval is asked for", true) && ok;
     await allow.click();
     await page.getByText("Approved and ran.", { exact: false }).last().waitFor({ timeout: 90_000 });

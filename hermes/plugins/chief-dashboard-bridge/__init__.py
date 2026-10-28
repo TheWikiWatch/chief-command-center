@@ -258,6 +258,13 @@ def _register(ctx):
     except Exception:
         logger.warning("chief-dashboard-bridge: local models boot unavailable", exc_info=True)
 
+    try:
+        from . import terminal_tools
+
+        terminal_tools.warm_with_gateway()
+    except Exception:
+        logger.warning("chief-dashboard-bridge: terminal tool copies not started", exc_info=True)
+
     thread = threading.Thread(target=bridge.serve_forever, name="chief-dashboard-bridge", daemon=True)
     thread.start()
     _server = bridge

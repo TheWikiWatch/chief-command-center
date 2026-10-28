@@ -1312,6 +1312,9 @@ desktop window at eight sizes from 380 px wide to maximized: nothing reaches the
   added mid-turn shows as typed. A message sent into a paused chat, or one a limit stopped, no longer shows "thinking".
 - Send again and Retry (both Hermes's `/retry`) no longer show the conversation twice: `/retry` writes every row again
   with new ids, and the chat now reloads it instead of adding the copies, without reading old replies aloud again.
+- Hermes now runs the chief's commands with copies of its node, npm and Python made outside the app (about 280 MB,
+  once per install and after updates that move them). They're made in the background when Chief starts, so the
+  first command after this update doesn't wait two and a half minutes (nor its approval).
 - Nous plans: each allowance's gauge (today, this week, Large models) in Settings → Models and every bot's picker,
   the plan's picks first, Free and Large tags, and the models a full allowance stops. When a limit stops a reply,
   Hermes's offer of the plan's model is a button (Hermes switches the chat and sends the message again); `/model`,
