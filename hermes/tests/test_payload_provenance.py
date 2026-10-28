@@ -1,5 +1,6 @@
 """Payload provenance: what a build records in its stamp, and the checks a release runs against it."""
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -24,7 +25,7 @@ def make_repo(root: Path) -> Path:
     (repo / "hermes" / "pin.json").write_text(
         json.dumps({"commit": "abc", "baseVersion": "2026.9.24", "patches": [{"file": "0001-fix.patch"}]}), encoding="utf-8"
     )
-    (repo / "packaging" / "payload" / "selection.json").write_text('{"extras": ["voice"]}', encoding="utf-8")
+    (repo / "packaging" / "payload" / "selection.json").write_bytes(b'{\n  "extras": ["voice"]\n}\n')
     git(repo, "init", "-q")
     git(repo, "add", "-A")
     git(repo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-q", "-m", "repo")
@@ -84,6 +85,16 @@ class ProvenanceTests(unittest.TestCase):
         self.assertTrue(any("0001-fix.patch" in p for p in provenance.check(self.payload, self.repo)))
         (self.repo / "packaging" / "payload" / "selection.json").write_text('{"extras": []}', encoding="utf-8")
         self.assertTrue(any("selection.json" in p for p in provenance.check(self.payload, self.repo)))
+
+    def test_the_same_selection_built_from_a_crlf_checkout_passes(self):
+        # A clone made with core.autocrlf (Git for Windows' default) builds from the same text with CRLF endings.
+        provenance.record(self.payload, self.repo)
+        stamp_path = self.payload / "hermes-agent" / "install-stamp.json"
+        stamp = json.loads(stamp_path.read_text(encoding="utf-8"))
+        crlf = (self.repo / "packaging" / "payload" / "selection.json").read_bytes().replace(b"\n", b"\r\n")
+        stamp["provenance"]["selection"] = hashlib.sha256(crlf).hexdigest()
+        stamp_path.write_text(json.dumps(stamp), encoding="utf-8")
+        self.assertEqual(provenance.check(self.payload, self.repo), [])
 
     def test_a_build_from_uncommitted_payload_inputs_or_an_unknown_commit_is_refused(self):
         (self.repo / "hermes" / "patches" / "0001-fix.patch").write_text("--- a\n+++ dirty\n", encoding="utf-8")

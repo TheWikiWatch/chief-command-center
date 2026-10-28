@@ -369,6 +369,9 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Payload provenance refuses a dirty or unknown build** unless its tree digest is in
   `packaging/payload/accepted-trees.json`; `stage.py` refuses a Hermes checkout that isn't the pin plus one patch
   commit, before it builds.
+- **A clean clone to build from has CRLF text** with Git for Windows' default (`core.autocrlf=true` in its system
+  config), while this repository has LF: the 0.22.5 payload recorded the CRLF `selection.json` and the release refused
+  it. The check takes the same text with either line ending (`provenance.text_digests`); patches are `-text`.
 - **No `phoneServe` record means no phone access** (proxy.ts needs `CHIEF_PHONE_HOST`). `ensurePhoneHost` adopts a
   Serve entry that points at the dashboard's port; one pointing elsewhere is never adopted.
 - **The phone's device cookie must stay `SameSite=Lax`**: Strict isn't sent when a phone opens Chief from its home

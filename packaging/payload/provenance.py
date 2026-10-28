@@ -3,7 +3,8 @@
 The stamp (hermes-agent/install-stamp.json) gains a `provenance` block:
 
 - `patches`: the SHA-256 of every patch in hermes/pin.json, as applied;
-- `selection`: the SHA-256 of packaging/payload/selection.json (which Python extras and tools went in);
+- `selection`: the SHA-256 of packaging/payload/selection.json (which Python extras and tools went in; the check
+  takes the same text with either line ending);
 - `builder`: this repository's commit when the payload was built, and whether the files that shape the payload
   (hermes/, packaging/payload/) had uncommitted changes;
 - `tree`: one SHA-256 over every file in the payload (path, size and content; compiled Python, caches and the
@@ -48,6 +49,13 @@ def sha256_file(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def text_digests(path: Path) -> set[str]:
+    """The SHA-256 of a text file with LF and with CRLF line endings: a clone made with core.autocrlf (Git for
+    Windows' default, so a builder clone or a Windows runner) has the same text as CRLF."""
+    lf = path.read_bytes().replace(b"\r\n", b"\n")
+    return {hashlib.sha256(lf).hexdigest(), hashlib.sha256(lf.replace(b"\n", b"\r\n")).hexdigest()}
 
 
 def tree_digest(payload: Path) -> str:
@@ -164,7 +172,7 @@ def check(payload: Path, repo: Path = REPO) -> list[str]:
     if have.get("patches") != want["patches"]:
         changed = sorted(set(have.get("patches", {}).items()) ^ set(want["patches"].items()))
         problems.append("the payload was built with different patches than hermes/pin.json lists: " + ", ".join(sorted({name for name, _ in changed})))
-    if have.get("selection") != want["selection"]:
+    if have.get("selection") not in text_digests(repo / "packaging" / "payload" / "selection.json"):
         problems.append("packaging/payload/selection.json changed since the payload was built")
     if have.get("tree") != tree_digest(payload):
         changed = differences(payload)
