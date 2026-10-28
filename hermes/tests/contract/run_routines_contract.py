@@ -108,7 +108,8 @@ check("a new run is relayed once, a silent one isn't", routines.relay() == 1 and
 row = [r for r in outbox.read_outbox(limit=1000) if "Three new papers" in r.get("message", "")]
 check(
     "into the chosen thread, labelled with the bot",
-    len(row) == 1 and row[0]["chat_id"] == threads.chat_id(thread) and "(Sam)" in row[0]["message"] and row[0]["source"] == "cron",
+    # The bot is named on the routine's card (`routine.bot`), not in the message text.
+    len(row) == 1 and row[0]["chat_id"] == threads.chat_id(thread) and (row[0].get("routine") or {}).get("bot") == "Sam" and row[0]["source"] == "cron",
     row,
 )
 listed = routines.list_routines()

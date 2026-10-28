@@ -118,7 +118,7 @@ _nous_sessions: dict[str, tuple[str, float]] = {}  # our session id -> (Hermes's
 
 def _prune_nous(now: float | None = None) -> None:
     """Forget sign-ins that are old or that Hermes has ended (it drops its own after a while)."""
-    from hermes_cli.web_routers.oauth import _oauth_sessions, _oauth_sessions_lock
+    from hermes_cli.web_server_oauth import _oauth_sessions, _oauth_sessions_lock
 
     now = time.time() if now is None else now
     with _nous_lock, _oauth_sessions_lock:
@@ -135,10 +135,15 @@ def nous_start() -> dict[str, Any]:
 
     _prune_nous()
     with chief_scope():
+        # Since 0.22.5 Hermes signs a second account in over the first instead of refusing: never by accident here.
+        signed = _nous_state()
+        if signed.get("signedIn"):
+            who = f" as {signed['account']}" if signed.get("account") else ""
+            raise ConnectionsError(f"You're already signed in to Nous{who}. Sign out first to use another account.")
         try:
             started = asyncio.run(_start_nous_device_code("chief"))
         except Exception as exc:
-            # Hermes's refusal before any code (already signed in, free tier unavailable) is its own sentence.
+            # Hermes's refusal before any code (free tier unavailable, the service down) is its own sentence.
             if type(exc).__name__ == "HTTPException" and getattr(exc, "status_code", 0) == 400:
                 raise ConnectionsError(_plain(str(getattr(exc, "detail", "") or ""), "Nous couldn't start a sign-in. Try again.")) from exc
             raise
@@ -157,7 +162,7 @@ def nous_start() -> dict[str, Any]:
 
 def _hermes_session(sid: str) -> tuple[str, dict[str, Any] | None]:
     """(Hermes's session id, a copy of its session) for one of ours; the session is None once Hermes dropped it."""
-    from hermes_cli.web_routers.oauth import _oauth_sessions, _oauth_sessions_lock
+    from hermes_cli.web_server_oauth import _oauth_sessions, _oauth_sessions_lock
 
     with _nous_lock:
         hid = (_nous_sessions.get(sid) or ("", 0.0))[0]
@@ -177,6 +182,8 @@ def nous_poll(sid: str) -> dict[str, Any]:
             _nous_sessions.pop(sid, None)
         return {"ok": True, "status": "expired"}
     status = str(sess.get("status") or "pending")
+    if status == "error" and sess.get("reason") == "timeout":
+        status = "expired"  # Hermes 0.22.5 ends an unused code as an error with reason "timeout"
     if status != "pending":
         with _nous_lock:
             _nous_sessions.pop(sid, None)
@@ -185,11 +192,18 @@ def nous_poll(sid: str) -> dict[str, Any]:
     out: dict[str, Any] = {"ok": True, "status": status}
     if status == "error":
         out["error"] = _plain(str(sess.get("error_message") or ""), "The Nous sign-in didn't finish.")
+    if status == "approved":
+        # Who signed in; what moved from the free guest (Hermes's own lines: apps moved, apps to connect again); and
+        # the chief's model when Hermes moved it off the free one.
+        out["account"] = str(sess.get("account_email") or "") or None
+        out["handoff"] = [line for line in (_plain(str(h), "") for h in (sess.get("handoff") or [])[:6]) if line]
+        if sess.get("model"):
+            out["model"] = str(sess["model"])
     return out
 
 
 def nous_cancel(sid: str) -> dict[str, Any]:
-    from hermes_cli.web_routers.oauth import _oauth_sessions, _oauth_sessions_lock
+    from hermes_cli.web_server_oauth import _oauth_sessions, _oauth_sessions_lock
 
     with _nous_lock:
         hid = (_nous_sessions.pop(sid, None) or ("", 0.0))[0]
@@ -313,12 +327,15 @@ def _quick_connect(slug: str, *, name: str | None = None, repair_id: str | None 
         try:
             drive_operation(
                 operation,
-                managed.managed_kind(managed.managed_client(initiator=managed.DESKTOP_PAGE), action, force=False),
+                # A connect may create the guest identity (Hermes 0.22.5 makes every caller say so).
+                managed.managed_kind(managed.managed_client(creates_guest=True, initiator=managed.DESKTOP_PAGE), action, force=False),
                 connection_callback=lambda _payload: ready.set(),
                 tick_seconds=managed.WATCH_TICK_SECONDS,
                 with_urls_in_result=False,
             )
         except Exception as exc:
+            # A client that couldn't be made never reached the runner, whose own cleanup closes the operation.
+            live.close(operation)
             failure.append(exc)
             logger.warning(
                 "chief-dashboard-bridge: quick connect %s failed: %s code=%s status=%s",
@@ -700,8 +717,9 @@ def _row(svc: Service, *, nous: dict[str, Any], quick: dict[str, dict[str, Any]]
         # Quick accounts, each its own sign-in: bots pick one by name; the default is the newest.
         "accounts": list(quick.get(svc.quick, {}).get("accounts") or []) if svc.quick and via in ("quick", None) else [],
         "backends": backends,
-        # A service Nous carries that this account can't use yet: the page offers the sign-in.
-        "needsNous": bool(svc.quick) and not nous.get("connectors") and not backends,
+        # A service Nous carries that this account can't use yet: the page offers the sign-in. Not to a signed-in
+        # owner: since Hermes 0.22.5 a sign-in replaces the account that's signed in.
+        "needsNous": bool(svc.quick) and not nous.get("connectors") and not nous.get("signedIn") and not backends,
         **({"category": svc.category} if svc.category else {}),
     }
     return row

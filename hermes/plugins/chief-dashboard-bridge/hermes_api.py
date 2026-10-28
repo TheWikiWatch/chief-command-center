@@ -88,7 +88,9 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "utils": ("atomic_write_text",),
     },
     "fleet": {
-        "hermes_cli.profiles": ("create_profile", "export_profile", "import_profile", "launch_model_seed"),
+        "hermes_cli.profiles": ("create_profile", "export_profile", "import_profile"),
+        # A new bot's model and the endpoint it runs on (moved out of hermes_cli.profiles in 0.22.5).
+        "hermes_cli.profile_model_seed": ("launch_model_seed", "merge_endpoint_seed"),
     },
     "routines": {
         "cron.jobs": (
@@ -180,8 +182,10 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         "tools.registry": ("registry",),
     },
     "connections": {
-        # Nous sign-in: Hermes's dashboard device-code flow, its session table, and sign-out.
-        "hermes_cli.web_routers.oauth": ("_start_nous_device_code", "_oauth_sessions", "_oauth_sessions_lock"),
+        # Nous sign-in: Hermes's dashboard device-code flow, its session table (owned by web_server_oauth since
+        # 0.22.5; the router only re-imports it), and sign-out.
+        "hermes_cli.web_routers.oauth": ("_start_nous_device_code",),
+        "hermes_cli.web_server_oauth": ("_oauth_sessions", "_oauth_sessions_lock"),
         "hermes_cli.auth": ("clear_provider_auth", "invalidate_nous_auth_status_cache"),
         "hermes_cli.nous_account": ("get_nous_portal_account_info",),
         # Quick connections (Nous Connectors).

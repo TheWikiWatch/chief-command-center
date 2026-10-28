@@ -172,7 +172,7 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
             raise FleetError("A new bot can't start with a photo; give it a bubble, blob or shape (a photo can be added later).")
     chief_model = _chief_model()
     with data.chief_config_scope():
-        from hermes_cli.profiles import create_profile, launch_model_seed
+        from hermes_cli.profiles import create_profile
 
         home = Path(create_profile(name, no_alias=True, no_skills=True, description=description[:300] or None))
     try:
@@ -180,10 +180,12 @@ def mint(name: str, display_name: str, role: str, description: str, soul: str, *
         if not cfg.get("model"):
             # Hermes seeds the active profile's model; make sure it's the chief's (the owner's default).
             from hermes_cli.config import read_user_config_raw
+            from hermes_cli.profile_model_seed import launch_model_seed, merge_endpoint_seed
 
             seed = launch_model_seed(read_user_config_raw(data.chief_home() / "config.yaml") or {})
             if seed:
-                _write_yaml(home / "config.yaml", {**cfg, **seed})
+                # The chief's model and the endpoint it runs on, over any entry of the bot's that claims the same name.
+                _write_yaml(home / "config.yaml", {**merge_endpoint_seed(cfg, seed), "model": seed["model"]})
         workdir = _workdir(cwd) if cwd else _root() / "workspaces" / name
         workdir.mkdir(parents=True, exist_ok=True)
         from cli import save_config_value

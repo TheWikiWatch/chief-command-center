@@ -144,7 +144,13 @@ class MintTests(FleetTestCase):
 
         self.saved_config: list[tuple] = []
         fake_module(self, "hermes_cli")
-        fake_module(self, "hermes_cli.profiles", create_profile=create_profile, launch_model_seed=lambda raw: {"model": dict(raw["model"])})
+        fake_module(self, "hermes_cli.profiles", create_profile=create_profile)
+        fake_module(
+            self,
+            "hermes_cli.profile_model_seed",
+            launch_model_seed=lambda raw: {"model": dict(raw["model"])},
+            merge_endpoint_seed=lambda dst, seed: {**dst, **{k: v for k, v in seed.items() if k != "model"}},
+        )
         fake_module(self, "hermes_cli.config", read_user_config_raw=lambda path: yaml.safe_load(Path(path).read_text(encoding="utf-8")))
         fake_module(self, "cli", save_config_value=lambda key, value: self.saved_config.append((key, value)) or True)
         for target, name, value in (

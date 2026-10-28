@@ -467,6 +467,11 @@ class OverviewTests(unittest.TestCase):
     def test_signed_out_a_nous_service_still_shows_with_the_sign_in(self):
         self.assertTrue(self.rows()["outlook"]["needsNous"])
 
+    def test_a_signed_in_account_without_quick_connections_isnt_offered_the_sign_in_again(self):
+        # Signing in again would replace the account (Hermes 0.22.5); the Nous group says what the account lacks.
+        self.nous = {"signedIn": True, "guest": False, "account": "owner@example.com", "connectors": False}
+        self.assertNotIn("outlook", self.rows())
+
     def test_quick_needs_nous_and_says_so(self):
         with self.assertRaisesRegex(connections.ConnectionsError, "Nous"):
             connections.connect("outlook")
@@ -507,7 +512,7 @@ class QuickConnectTests(unittest.TestCase):
     """The connect runner says why Nous refused (Hermes's own account runner swallows it) and returns the link."""
 
     def setUp(self):
-        self.opened = []
+        self.opened, self.closed = [], []
 
         class Operation:
             def __init__(self, targets, session_key):
@@ -531,14 +536,15 @@ class QuickConnectTests(unittest.TestCase):
             return made
 
         self.target = target
-        fake_module(self, "tools.connectors.live", open=lambda op: self.opened.append(op))
+        fake_module(self, "tools.connectors.live", open=lambda op: self.opened.append(op), close=lambda op: self.closed.append(op))
         fake_module(self, "tools.connectors.operation", ConnectionOperation=Operation, Target=self.target)
         self.kinds = []
         fake_module(
             self,
             "tools.connectors.managed",
             managed_kind=lambda client, action, force: self.kinds.append((client, action)),
-            managed_client=lambda initiator=None: f"client:{initiator}",
+            # Keyword-only and required, as in Hermes 0.22.5: a call without `creates_guest` fails here too.
+            managed_client=lambda *, creates_guest, initiator=None: f"client:{initiator}:{'guest' if creates_guest else 'read'}",
             WATCH_TICK_SECONDS=1.0,
             DESKTOP_PAGE="desktop_page",
         )
@@ -567,6 +573,7 @@ class QuickConnectTests(unittest.TestCase):
             self.run_with(drive)
         self.assertIn("GatewayUnavailable code=connector_not_found", logs.output[0])
         self.assertEqual(len(self.opened), 1)
+        self.assertEqual(self.closed, self.opened, "a failed connect leaves no operation open")
 
     def test_an_expired_nous_sign_in_says_sign_in_again(self):
         class GatewayAuthError(RuntimeError):
@@ -584,7 +591,8 @@ class QuickConnectTests(unittest.TestCase):
         operation, url = self.run_with(drive)
         self.assertEqual(url, "https://connect.example.com/link/1")
         self.assertIsInstance(operation, self.Operation)
-        self.assertEqual(self.kinds, [("client:desktop_page", "connect")])  # attributed to the page
+        # Attributed to the page, and allowed to make the guest identity (a connect is the owner's own action).
+        self.assertEqual(self.kinds, [("client:desktop_page:guest", "connect")])
 
     def test_another_account_by_name_and_one_account_signed_in_again(self):
         def drive(op, kind, connection_callback, **kw):
@@ -744,10 +752,13 @@ class NousSignInTests(unittest.TestCase):
         for name in ("hermes_cli", "hermes_cli.web_routers"):
             if name not in sys.modules:
                 fake_module(self, name)
-        fake_module(self, "hermes_cli.web_routers.oauth", _start_nous_device_code=start, _oauth_sessions=self.sessions, _oauth_sessions_lock=threading.Lock())
-        p = patch.object(connections, "chief_scope", _noscope)
-        p.start()
-        self.addCleanup(p.stop)
+        fake_module(self, "hermes_cli.web_routers.oauth", _start_nous_device_code=start)
+        fake_module(self, "hermes_cli.web_server_oauth", _oauth_sessions=self.sessions, _oauth_sessions_lock=threading.Lock())
+        self.signed_in = {"signedIn": False, "guest": False, "account": None, "connectors": False}
+        for name, value in (("chief_scope", _noscope), ("_nous_state", lambda: dict(test.signed_in))):
+            p = patch.object(connections, name, value)
+            p.start()
+            self.addCleanup(p.stop)
 
     def test_a_sign_in_hermes_dropped_is_expired_then_ended(self):
         sid = connections.nous_start()["session"]
@@ -773,9 +784,45 @@ class NousSignInTests(unittest.TestCase):
                 super().__init__(detail)
                 self.status_code, self.detail = status_code, detail
 
-        self.refusal = HTTPException(400, "You're already signed in to Nous.")
-        with self.assertRaisesRegex(connections.ConnectionsError, "^You're already signed in to Nous.$"):
+        self.refusal = HTTPException(400, "Free sign-ins are paused right now.")
+        with self.assertRaisesRegex(connections.ConnectionsError, "^Free sign-ins are paused right now.$"):
             connections.nous_start()
+
+    def test_a_signed_in_owner_is_never_signed_in_over(self):
+        # Hermes 0.22.5 replaces the signed-in account instead of refusing, so the bridge refuses first.
+        self.signed_in.update(signedIn=True, account="owner@example.com")
+        with self.assertRaisesRegex(connections.ConnectionsError, "already signed in to Nous as owner@example.com. Sign out first"):
+            connections.nous_start()
+        self.assertEqual(self.sessions, {}, "no sign-in was started")
+
+    def test_an_unused_code_reads_as_expired(self):
+        sid = connections.nous_start()["session"]
+        self.sessions["h1"].update(status="error", reason="timeout", error_message="Run `hermes auth add nous` again.")
+        self.assertEqual(connections.nous_poll(sid), {"ok": True, "status": "expired"})
+
+    def test_the_result_names_the_account_what_moved_and_the_model(self):
+        sid = connections.nous_start()["session"]
+        self.sessions["h1"].update(
+            status="approved",
+            account_email="owner@example.com",
+            handoff=["Moved to your account: Gmail, Notion.", "Connect again: Linear.", "Traceback (most recent call last)"],
+            model="nous/hermes-test",
+        )
+        self.assertEqual(
+            connections.nous_poll(sid),
+            {
+                "ok": True,
+                "status": "approved",
+                "account": "owner@example.com",
+                "handoff": ["Moved to your account: Gmail, Notion.", "Connect again: Linear."],
+                "model": "nous/hermes-test",
+            },
+        )
+
+    def test_a_plain_sign_in_reports_no_move_and_no_model(self):
+        sid = connections.nous_start()["session"]
+        self.sessions["h1"].update(status="approved", account_email="owner@example.com", handoff=[], model=None)
+        self.assertEqual(connections.nous_poll(sid), {"ok": True, "status": "approved", "account": "owner@example.com", "handoff": []})
 
 
 class QuickReuseTests(unittest.TestCase):

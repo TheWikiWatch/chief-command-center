@@ -407,6 +407,16 @@ class ListAndChangeTests(RoutineTestCase):
         routines.run_now("chief", self.daily["id"])
         self.assertEqual(self.jobs.calls, [("trigger", self.daily["id"])])
 
+    def test_a_pause_hermes_made_itself_is_said_plainly(self):
+        for reason in ("Canonical cron unknown; no automatic re-execution", "Cron execution unverified; reconcile C:/x/cron/admissions/a.json: boom"):
+            with self.subTest(reason=reason[:20]):
+                held = self.jobs.add(self.chief, name="Held", prompt="p", schedule={"kind": "cron", "expr": "0 8 * * *"}, state="paused", paused_reason=reason)
+                shown = next(r for r in routines.list_routines()["routines"] if r["id"] == held["id"])
+                self.assertIn("couldn't be confirmed", shown["pausedReason"])
+                self.assertNotIn("reconcile", shown["pausedReason"])
+        mine = self.jobs.add(self.chief, name="Mine", prompt="p", schedule={"kind": "cron", "expr": "0 8 * * *"}, state="paused", paused_reason="Back in May")
+        self.assertEqual(next(r for r in routines.list_routines()["routines"] if r["id"] == mine["id"])["pausedReason"], "Back in May")
+
     def test_a_one_off_that_already_ran_says_so_in_words(self):
         once = self.jobs.add(self.chief, name="Once", prompt="p", schedule={"kind": "once"}, deliver="command_center", state="completed")
         with self.assertRaises(routines.RoutineError) as caught:
@@ -451,6 +461,9 @@ class RelayTests(RoutineTestCase):
         self.assertIsNone(routines._answer("## Response\n[SILENT] nothing new"))
         self.assertIsNone(routines._answer("## Response\n   "))
         self.assertIn("didn't finish", routines._answer("## Error\nTraceback"))
+        # A run Hermes refused before it started (0.22.5) has only its title and the reason.
+        self.assertIn("didn't finish", routines._answer("# Cron Job: c3fb20e654a0 (FAILED)\n\nGatewayUnavailableError: Gateway starting\n"))
+        self.assertIsNone(routines._answer("# Cron Job: Source sweep\n\nstill running"))
         self.assertIsNone(routines._answer("still running"))
 
     def test_nothing_to_relay_without_a_mapping(self):

@@ -1,7 +1,8 @@
 """Team & Routines: every scheduled routine, for the chief and every bot (contract `chief.routines.v1`).
 
 A routine is a Hermes cron job in the store of the bot that runs it, so it runs as that bot: its SOUL, model
-and skills. Hermes's in-process ticker visits every live profile's store. A routine reports into a thread
+and skills. Hermes's in-process ticker visits every live profile's store, and the chief's gateway runs a bot's
+job itself (Hermes patch 0007: since 0.22.5 Hermes would start the install root's own gateway for it). A routine reports into a thread
 of the chief's chat. The chief's routines deliver there themselves (`command_center:<thread chat>`; the main
 thread is the platform's home channel). A bot's profile doesn't serve the Command Center, and Hermes blocks
 a job whose delivery platform its profile doesn't know, so a bot's routine is saved as `local` and the
@@ -285,6 +286,18 @@ def _muted(job: dict[str, Any]) -> bool:
     return str(job.get("failure_deliver") or "").strip() == "local"
 
 
+# The pauses Hermes makes by itself (0.22.5) when it can't confirm whether a run happened, so it never runs twice.
+_UNCONFIRMED_PAUSES = ("Canonical cron unknown", "Cron execution unverified")
+_UNCONFIRMED = "Paused after a run that couldn't be confirmed, so it wouldn't run twice. Turn it back on when you're ready."
+
+
+def _paused_reason(job: dict[str, Any]) -> str:
+    if job.get("state") != "paused":
+        return ""
+    reason = str(job.get("paused_reason") or "")
+    return _UNCONFIRMED if reason.startswith(_UNCONFIRMED_PAUSES) else reason
+
+
 def _model_view(home: Path, job: dict[str, Any]) -> dict[str, Any]:
     pinned = str(job.get("model") or "").strip()
     provider, current = _profile_model(home)
@@ -329,7 +342,7 @@ def _describe(profile: str, home: Path, job: dict[str, Any], jobs: Any) -> dict[
         "skills": list(job.get("skills") or []),
         # Follows the bot's model when it fires, or pinned to one.
         "model": _model_view(home, job),
-        "pausedReason": str(job.get("paused_reason") or "") if job.get("state") == "paused" else "",
+        "pausedReason": _paused_reason(job),
         # Failure alerts: "on" (where results go), "muted", or "elsewhere" (a bot sent them outside the app).
         "failureAlerts": "muted" if _muted(job) else ("elsewhere" if destination(job.get("failure_deliver"))[1] and job.get("failure_deliver") else "on"),
         "failureStreak": int(job.get("failure_streak") or 0),
@@ -510,7 +523,9 @@ def _answer(text: str) -> str | None:
     if "## Response" in text:
         answer = text.rpartition("## Response")[2].strip()
         return None if not answer or answer.upper().startswith("[SILENT]") else answer
-    if "## Error" in text:
+    # A failed run has Hermes's "## Error" section, or (one Hermes refused before it ran, 0.22.5) only its title.
+    first = text.lstrip().partition("\n")[0].rstrip()
+    if "## Error" in text or (first.startswith("# Cron Job:") and first.endswith("(FAILED)")):
         return _FAILED_RUN
     return None
 
