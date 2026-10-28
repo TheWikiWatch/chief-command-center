@@ -1,0 +1,55 @@
+diff --git a/cron/_chief_standalone.py b/cron/_chief_standalone.py
+new file mode 100644
+index 0000000000..b8a1e047ab
+--- /dev/null
++++ b/cron/_chief_standalone.py
+@@ -0,0 +1,28 @@
++"""Chief patch 0007 (2026-10-28): a standalone gateway runs the agent jobs of the sibling profiles it ticks.
++
++Chief Command Center runs one gateway, the chief profile's (``gateway.standalone: true``), and its ticker also
++visits the profiles it doesn't serve (``_cron_tick_profile_homes``: the bots, the default). Since 0.22.5 an agent
++job whose home has no owner in this process goes through ``run_canonical_job``, which starts the install root's
++host gateway to own it (``connect_gateway`` -> ``ensure_gateway_runtime``): a second gateway, on the root's own
++profile and its platforms, that outlives the app. Here the ticking gateway runs such a job itself, in-process, as
++before 0.22.5. A multiplexer (the default profile is never standalone) and a CLI process (it owns no home) keep
++the canonical path. Stdlib only at import; never raises.
++"""
++
++import os
++from pathlib import Path
++
++
++def runs_here(home) -> bool:
++    """Whether an agent job for *home* runs in this process instead of through a home owner: this process is a
++    gateway whose own homes are all standalone, and none of them is *home*."""
++    try:
++        from gateway.session_cron import _owners, owner_for_home
++        from hermes_cli.profiles import profile_is_standalone
++
++        if owner_for_home(home) is not None:
++            return False
++        mine = [owned for owned, bound in list(_owners.items()) if bound[0] == os.getpid()]
++        return bool(mine) and Path(home).resolve() not in mine and all(profile_is_standalone(owned) for owned in mine)
++    except Exception:
++        return False
+diff --git a/cron/scheduler.py b/cron/scheduler.py
+index 6e711cff81..7fc167affb 100644
+--- a/cron/scheduler.py
++++ b/cron/scheduler.py
+@@ -2582,9 +2582,13 @@ def run_job(
+     if owner_execution is not None and owner_execution[2:] != (job['id'], execution_id):
+         owner_execution = None
+     if not job.get("no_agent") and owner_execution is None:
+-        from cron.scheduler_authority import run_canonical_job
+-        return run_canonical_job(job, extra_prompt=extra_prompt, cancel_event=cancel_event,
+-                                 execution_id=execution_id)
++        # Chief patch 0007: a standalone gateway runs a sibling profile's job itself, never starting the host.
++        from cron._chief_standalone import runs_here
++        from hermes_constants import get_hermes_home
++        if not runs_here(get_hermes_home()):
++            from cron.scheduler_authority import run_canonical_job
++            return run_canonical_job(job, extra_prompt=extra_prompt, cancel_event=cancel_event,
++                                     execution_id=execution_id)
+     job_id = job["id"]
+     job_name = str(job.get("name") or job.get("prompt") or job_id or "cron job")
+ 

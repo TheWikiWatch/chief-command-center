@@ -40,6 +40,21 @@ def check(name: str, cond: bool, detail: object = "") -> None:
         failures.append(name)
 
 
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _pid(path: Path) -> int:
+    """The pid in a gateway.pid file, or 0."""
+    try:
+        return int(json.loads(path.read_text(encoding="utf-8")).get("pid") or 0)
+    except (OSError, ValueError, AttributeError):
+        return 0
+
+
 def main() -> int:
     p = compat.Payload(Path(sys.argv[1]).resolve())
     work = Path(sys.argv[2]).resolve() if len(sys.argv) > 2 else Path(tempfile.mkdtemp(prefix="chief-controls-"))
@@ -434,7 +449,18 @@ def main() -> int:
         check("the chief's routine reports into its thread, not the main one", chief_note is not None and notice_with("main", "CHIEFPING") is None)
         listed = {r["name"]: r for r in call("/routines").get("routines") or []}
         check("the routine list shows the last run", bool(listed.get("Ping", {}).get("lastRun")), listed.get("Ping"))
+        # Hermes 0.22.5 started the install root's own gateway to run a bot's routine (patch 0007 keeps it in the
+        # chief's gateway): a second, detached gateway on the root profile.
+        check(
+            "no second gateway starts on the root profile",
+            not any((root / name).exists() for name in ("gateway.pid", "gateway-starts.log")),
+            _read(root / "gateway_state.json"),
+        )
     finally:
+        # One that did start runs detached: it must not outlive the suite.
+        stray = _pid(root / "gateway.pid")
+        if stray:
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(stray)], capture_output=True)
         if gateway is not None:
             try:
                 pid = int(json.loads((profile / "gateway.pid").read_text(encoding="utf-8")).get("pid") or 0)

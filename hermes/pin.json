@@ -28,6 +28,11 @@
       "file": "0006-local-models-folder.patch",
       "why": "Local models: `local_runtime.models_dir` puts models, their companions and download partials in a folder the owner chooses (a model is 16 GB or more; Hermes keeps them under its own root, and its partials on that drive, so a finished file couldn't be renamed into a folder on another drive). `local_runtime.catalog_refresh: false` keeps the catalog the release shipped instead of upstream main's newest, unsigned list.",
       "upstream": "not upstream"
+    },
+    {
+      "file": "0007-standalone-gateway-runs-sibling-cron.patch",
+      "why": "The app runs one gateway, the chief's (`gateway.standalone: true`), whose ticker also runs the bots' routines. Since 0.22.5 an agent job whose profile has no owner in the process starts the install root's host gateway to own it: a second, detached gateway on the root profile (and any chat platforms it has) that outlives the app. A standalone gateway runs those jobs itself again, as before 0.22.5.",
+      "upstream": "not upstream; upstream calls `gateway.standalone` a temporary shim and plans one host gateway per install. Drop this when the app runs the host multiplexer itself."
     }
   ]
 }
