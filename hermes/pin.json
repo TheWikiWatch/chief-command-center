@@ -1,8 +1,8 @@
 {
   "upstream": "https://github.com/NousResearch/hermes-agent.git",
-  "commit": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
-  "baseVersion": "0.22.0",
-  "note": "upstream v0.22.0 (candidate from packaging/upstream, compatibility suite passed)",
+  "commit": "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
+  "baseVersion": "0.22.5",
+  "note": "upstream v0.22.5 (candidate from packaging/upstream, compatibility suite passed)",
   "patches": [
     {
       "file": "0001-gateway-windows-start-breakaway.patch",
@@ -16,18 +16,13 @@
     },
     {
       "file": "0003-hermes-bin-and-faulthandler.patch",
-      "why": "Under the PM layout, restarts and cron bot-chat delivery honor HERMES_BIN (the bare store Python cannot import Hermes once the child env drops its path); native-crash stacks go to logs/faulthandler.log.",
-      "upstream": "not upstream"
+      "why": "Under the PM layout, restarts honor HERMES_BIN (the bare store Python cannot import Hermes once the child env drops its path); native-crash stacks go to logs/faulthandler.log.",
+      "upstream": "not upstream. Since v0.22.5 cron's Bot Chat delivery hands the turn to the running profile in-process, so the hunk that pointed its subprocess at HERMES_BIN went."
     },
     {
       "file": "0004-payload-venv-launchers-on-another-pc.patch",
       "why": "The payload's venv is built on the release PC and its pyvenv.cfg names that PC's folder, so its launchers (venv\\Scripts\\python.exe, which Hermes puts first on PATH) exit 103 on every other PC. When that folder is gone, children get the interpreter itself first on PATH instead.",
-      "upstream": "half upstream since v0.21.6: a sealed payload's venv Scripts no longer go on PATH on Windows. Still ours: the interpreter's own folder goes on PATH, so a child's bare `python` is the bundled one. `.next` is that remainder written for v0.22.0's activate_dependencies."
-    },
-    {
-      "file": "0005-edge-tts-7.3.1.patch",
-      "why": "Microsoft changed the token its free Edge speech service requires (2026-10-13); edge-tts 7.2.7 gets 403 and every Edge voice reply fails. 7.3.1 (same author, reviewed: the new token and a progress helper, no new endpoints) works. Moves the pin in pyproject.toml and uv.lock.",
-      "upstream": "not upstream; drop when upstream pins edge-tts 7.3.1 or later"
+      "upstream": "half upstream since v0.21.6: a sealed payload's venv Scripts no longer go on PATH on Windows. Still ours: the interpreter's own folder goes on PATH, so a child's bare `python` is the bundled one."
     },
     {
       "file": "0006-local-models-folder.patch",

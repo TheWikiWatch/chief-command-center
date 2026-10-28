@@ -1,5 +1,5 @@
 diff --git a/hermes_cli/local_runtime/bootstrap.py b/hermes_cli/local_runtime/bootstrap.py
-index e553fee980..fcaded73a6 100644
+index b23950044b..85fcbbc366 100644
 --- a/hermes_cli/local_runtime/bootstrap.py
 +++ b/hermes_cli/local_runtime/bootstrap.py
 @@ -54,14 +54,39 @@ def _detect_gpu_vendor() -> str | None:
@@ -44,10 +44,10 @@ index e553fee980..fcaded73a6 100644
      """Non-model companion files (mmproj projectors, spec-decode drafts). A subdirectory so the
      router's model listing — and staged_models() — never mistakes an asset for a servable model."""
 diff --git a/hermes_cli/local_runtime/catalog.py b/hermes_cli/local_runtime/catalog.py
-index 7d9884237b..24cbad8295 100644
+index 95cb8f55bd..5f7a79a458 100644
 --- a/hermes_cli/local_runtime/catalog.py
 +++ b/hermes_cli/local_runtime/catalog.py
-@@ -347,6 +347,17 @@ def _packaged_catalog() -> tuple[CatalogEntry, ...]:
+@@ -367,6 +367,17 @@ def _packaged_catalog() -> tuple[CatalogEntry, ...]:
  CATALOG: tuple[CatalogEntry, ...] = _packaged_catalog()
  
  
@@ -65,8 +65,8 @@ index 7d9884237b..24cbad8295 100644
  def refresh_catalog(force: bool = False) -> bool:
      """Fetch the current catalog from the repo and swap it in memory. Best-effort: any failure
      (offline, GitHub down, unreadable schema) leaves the running catalog untouched and retries
-@@ -358,6 +369,8 @@ def refresh_catalog(force: bool = False) -> bool:
-         if not force and now - _last_refresh_attempt < _REFRESH_TTL_S:
+@@ -378,6 +389,8 @@ def refresh_catalog(force: bool = False) -> bool:
+         if not force and _last_refresh_attempt is not None and now - _last_refresh_attempt < _REFRESH_TTL_S:
              return False
          _last_refresh_attempt = now
 +    if not _refresh_allowed():
@@ -75,10 +75,10 @@ index 7d9884237b..24cbad8295 100644
          req = urllib.request.Request(_CATALOG_URL, headers={"User-Agent": "hermes-local-runtime"})
          with urllib.request.urlopen(req, timeout=10) as r:
 diff --git a/hermes_cli/web_routers/local_models.py b/hermes_cli/web_routers/local_models.py
-index 44ad06134a..2b7fd2deac 100644
+index 123c1813c9..da7e0becc5 100644
 --- a/hermes_cli/web_routers/local_models.py
 +++ b/hermes_cli/web_routers/local_models.py
-@@ -442,7 +442,8 @@ def _download_progress_hook(job: dict[str, Any]):
+@@ -471,7 +471,8 @@ def _download_progress_hook(job: dict[str, Any]):
  def _download_job(job: dict[str, Any], plan) -> None:
      """Model bytes use the same resumable transfer as pinned PM archives."""
      running = _RUNNING.get(job["job_id"], {})
