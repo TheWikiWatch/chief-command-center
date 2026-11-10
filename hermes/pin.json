@@ -1,8 +1,8 @@
 {
   "upstream": "https://github.com/NousResearch/hermes-agent.git",
-  "commit": "bf0203a794a07aac3ff764972ab9087baa4e4f4e",
-  "baseVersion": "0.22.5",
-  "note": "upstream v0.22.5 (candidate from packaging/upstream, compatibility suite passed)",
+  "commit": "3b421578588243f920886e6fe79a6faa87ea026e",
+  "baseVersion": "0.23.1",
+  "note": "upstream 0.23.1 (candidate from packaging/upstream, compatibility suite passed)",
   "patches": [
     {
       "file": "0001-gateway-windows-start-breakaway.patch",

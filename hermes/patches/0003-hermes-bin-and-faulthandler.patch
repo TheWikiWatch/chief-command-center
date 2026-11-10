@@ -1,8 +1,8 @@
 diff --git a/gateway/run.py b/gateway/run.py
-index 6c9556d10f..5ccd5f9cfa 100644
+index 2de09616f0..3eddbef98a 100644
 --- a/gateway/run.py
 +++ b/gateway/run.py
-@@ -2937,6 +2937,11 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
+@@ -2914,6 +2914,11 @@ def _resolve_hermes_bin() -> Optional[list[str]]:
      (exactly this install), else ``hermes`` on PATH, else None. The module argv must win: a
      PATH-first lookup lets an attacker-planted ``hermes`` shadow the running install when
      /update or /restart re-execs it (#111569)."""
@@ -15,10 +15,10 @@ index 6c9556d10f..5ccd5f9cfa 100644
          import importlib.util
          if importlib.util.find_spec("hermes_cli") is not None:
 diff --git a/gateway/run_startup.py b/gateway/run_startup.py
-index 03f113734e..11cc532add 100644
+index b9f60477b8..b5e13ba1d6 100644
 --- a/gateway/run_startup.py
 +++ b/gateway/run_startup.py
-@@ -857,7 +857,9 @@ class GatewayStartupMixin:
+@@ -948,7 +948,9 @@ class GatewayStartupMixin:
              # Enable faulthandler for stack dumps on freezes/crashes (#70344). Falls back to a log file when
              # sys.stderr is None (Windows VBS / pythonw / detached service) — otherwise the gateway would
              # die here and take every adapter offline. See #71671.
@@ -68,11 +68,11 @@ index 0000000000..c733efae06
 +
 +install()
 diff --git a/hermes_cli/main.py b/hermes_cli/main.py
-index 3007cd9c4d..50b9db4097 100644
+index 5394bbde62..d9bafeac02 100644
 --- a/hermes_cli/main.py
 +++ b/hermes_cli/main.py
 @@ -18,6 +18,12 @@ except ModuleNotFoundError as exc:
-     if exc.name != "hermes_bootstrap":
+     if exc.name != "hermes_bootstrap" and not "hermes_bootstrap".startswith(f"{exc.name}."):
          raise  # the bootstrap exists but cannot load: skipping it would skip PM activation
  
 +# Fleet patch 2026-09-26: native-crash stacks into $HERMES_HOME/logs/faulthandler.log.
