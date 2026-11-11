@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { builtInFeed, builtInReportEmail, effectiveFeed, githubSource, newestRelease, parseGithub } from "../src/release-source";
+import { builtInFeed, builtInReportEmail, effectiveFeed, githubSource, MAX_REDIRECTS, newestRelease, parseGithub } from "../src/release-source";
 import { Updater } from "../src/updater";
 
 describe("the update source a build carries", () => {
@@ -156,6 +156,42 @@ it("a public release repository is read without a key, and no Authorization head
   expect((await src.read("release.json")).toString()).toBe("{}");
   expect(gh.calls.length).toBeGreaterThan(0);
   expect(gh.calls.every((c) => c.auth === null)).toBe(true);
+});
+
+describe("a download's redirects", () => {
+  const link = "https://github.com/me/r/releases/download/v1/pkg.msix";
+  /** The release's download link, then a redirect to each of `chain` in turn, the last one answering with the file. */
+  function redirecting(chain: string[]) {
+    const seen: string[] = [];
+    const impl = (async (input: string | URL) => {
+      const url = String(input);
+      seen.push(url);
+      if (url.endsWith("/releases/latest")) return Response.json({ assets: [{ id: 0, name: "pkg.msix", browser_download_url: link }] });
+      const next = url === link ? 0 : chain.indexOf(url) + 1;
+      return next < chain.length ? new Response(null, { status: 302, headers: { location: chain[next] } }) : new Response("package bytes", { status: 200 });
+    }) as typeof fetch;
+    return { impl, seen };
+  }
+  const read = async (chain: string[]) => {
+    const gh = redirecting(chain);
+    const src = githubSource("me", "r", "", gh.impl);
+    await src.refresh();
+    return { body: src.read("pkg.msix").then((b) => b.toString()), seen: gh.seen };
+  };
+  const hops = (n: number) => Array.from({ length: n }, (_, i) => `https://objects.example/hop-${i}`);
+
+  it(`follows up to ${MAX_REDIRECTS}, all https`, async () => {
+    expect(await (await read(hops(MAX_REDIRECTS))).body).toBe("package bytes");
+  });
+
+  it("refuses one more, and any that leaves https, before fetching it", async () => {
+    // Before: redirects were followed without end, to any scheme the fetch would take.
+    await expect((await read(hops(MAX_REDIRECTS + 1))).body).rejects.toThrow(/redirected too many times/);
+    const plain = await read(["https://objects.example/a", "http://objects.example/b"]);
+    await expect(plain.body).rejects.toThrow(/away from https/);
+    expect(plain.seen).not.toContain("http://objects.example/b");
+    await expect((await read(["file:///C:/Windows/win.ini"])).body).rejects.toThrow(/away from https/);
+  });
 });
 
 it("without a key, a private or missing repository and the rate limit are explained", async () => {

@@ -4,9 +4,11 @@ import path from "node:path";
 
 /**
  * Where everything is (PLAN §5 "New installs"). Packaged: inside the app's resources. Unpackaged (a developer,
- * or Phase 7's throwaway runs): the repo, plus CHIEF_PAYLOAD_DIR for a built Hermes payload.
+ * or Phase 7's throwaway runs): the repo, plus CHIEF_PAYLOAD_DIR for a built Hermes payload. The installed app ignores
+ * the developer overrides (CHIEF_PAYLOAD_DIR, CHIEF_DESKTOP_DATA, CHIEF_GOOGLE_CLIENT_FILE): a variable in the user's
+ * environment must not point it at another payload, data folder or OAuth client.
  *
- *   %LOCALAPPDATA%\ChiefCommandCenter\     (CHIEF_DESKTOP_DATA overrides, e.g. for a throwaway run)
+ *   %LOCALAPPDATA%\ChiefCommandCenter\     (CHIEF_DESKTOP_DATA overrides it unpackaged, e.g. for a throwaway run)
  *     hermes\          HERMES_HOME for a new install (an adopted install keeps its own, see desktop.json)
  *     app\             settings.json (shared with the dashboard server), desktop.json, secrets\, restore state
  *     locks\           this install's gateway lock directory
@@ -37,8 +39,9 @@ export type DesktopPaths = {
 
 export function resolvePaths(opts: { packaged: boolean; resourcesPath: string; appPath: string; env: NodeJS.ProcessEnv }): DesktopPaths {
   const { env } = opts;
+  const dev: NodeJS.ProcessEnv = opts.packaged ? {} : env;
   const local = env.LOCALAPPDATA || path.join(env.USERPROFILE || os.homedir(), "AppData", "Local");
-  const data = env.CHIEF_DESKTOP_DATA ? path.resolve(env.CHIEF_DESKTOP_DATA) : path.join(local, "ChiefCommandCenter");
+  const data = dev.CHIEF_DESKTOP_DATA ? path.resolve(dev.CHIEF_DESKTOP_DATA) : path.join(local, "ChiefCommandCenter");
   const appDir = path.join(data, "app");
   const repo = path.resolve(opts.appPath, "..", "..");
   const res = opts.resourcesPath;
@@ -50,7 +53,7 @@ export function resolvePaths(opts: { packaged: boolean; resourcesPath: string; a
     secrets: path.join(appDir, "secrets"),
     locks: path.join(data, "locks"),
     logs: path.join(data, "logs"),
-    payload: env.CHIEF_PAYLOAD_DIR ? path.resolve(env.CHIEF_PAYLOAD_DIR) : path.join(res, "payload"),
+    payload: dev.CHIEF_PAYLOAD_DIR ? path.resolve(dev.CHIEF_PAYLOAD_DIR) : path.join(res, "payload"),
     webServer: path.join(webRoot, "server.js"),
     webStatic: webRoot,
     plugins: packaged ? path.join(res, "plugins") : path.join(repo, "hermes", "plugins"),
@@ -60,7 +63,7 @@ export function resolvePaths(opts: { packaged: boolean; resourcesPath: string; a
     notices: packaged ? path.join(res, "THIRD_PARTY_NOTICES.md") : path.join(opts.appPath, "build", "THIRD_PARTY_NOTICES.md"),
     icon: packaged ? path.join(res, "icon.png") : path.join(repo, "apps", "web", "public", "icons", "icon-192.png"),
     trayIcon: packaged ? path.join(res, "tray.png") : path.join(repo, "apps", "web", "public", "icons", "tray-32.png"),
-    googleClient: env.CHIEF_GOOGLE_CLIENT_FILE ? path.resolve(env.CHIEF_GOOGLE_CLIENT_FILE) : packaged ? path.join(res, "google-client.json") : "",
+    googleClient: dev.CHIEF_GOOGLE_CLIENT_FILE ? path.resolve(dev.CHIEF_GOOGLE_CLIENT_FILE) : packaged ? path.join(res, "google-client.json") : "",
   };
 }
 

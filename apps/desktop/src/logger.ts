@@ -6,7 +6,7 @@ import path from "node:path";
  * refused IPC, errors), rotated at 5 MB with three older files kept. Every line passes through `redact`, so the
  * bridge token, the session secret and anything that looks like a credential never reach the disk.
  *
- * The children's raw output (gateway.log, dashboard.log) is rotated with the same helper.
+ * The children's raw output (gateway.log, dashboard.log) is rotated with the same helper and piped with `pipeToLog`.
  */
 export type LogLevel = "info" | "warn" | "error";
 
@@ -23,6 +23,20 @@ export function rotate(file: string, maxBytes = LOG_BYTES, keep = LOG_KEEP): voi
   } catch {
     /* a log that can't rotate keeps growing; never stop the app for it */
   }
+}
+
+/**
+ * A child's output into its own log. When the log can't be written (a full disk), the output is still read, and
+ * dropped: Node stops piping into a stream that failed, and a child whose pipe nobody reads blocks on its next write.
+ */
+export function pipeToLog(log: NodeJS.WritableStream, streams: (NodeJS.ReadableStream | null | undefined)[]): void {
+  for (const stream of streams) stream?.pipe(log, { end: false });
+  log.on("error", () => {
+    for (const stream of streams) {
+      stream?.unpipe(log);
+      stream?.resume();
+    }
+  });
 }
 
 const PATTERNS: [RegExp, string][] = [

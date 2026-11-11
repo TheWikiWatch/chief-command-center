@@ -12,7 +12,7 @@ namespace ChiefUpdater;
 /// <summary>
 /// apply: the popup's flow. Close (0–10 %) → install (10–90 %) → open (90–100 %) → wait for the new app's ready file.
 /// Whatever happens Chief is reopened, the outcome lands in resultFile for the next boot's card, and the process
-/// ends on its own (a hard cap of six minutes).
+/// ends on its own (a hard cap of six minutes, which reopens Chief too).
 /// </summary>
 static class ApplyMode
 {
@@ -54,6 +54,8 @@ sealed class ApplyFlow
     string step = "close";
     bool resultWritten;
     bool exiting;
+    /// <summary>The popup showed and said so (shownFile): the app quits on that, so from here on Chief must be reopened.</summary>
+    bool shown;
 
     public ApplyFlow(Job job, Options options, Log log, Application app)
     {
@@ -76,6 +78,7 @@ sealed class ApplyFlow
             cap.Stop();
             log.Note($"stopped after {ApplyMode.HardCap.TotalMinutes:0} minutes (step {step})");
             WriteResult(false, step, "The updater stopped after six minutes.", "");
+            Reopen();
             Exit(1);
         };
         cap.Start();
@@ -103,20 +106,32 @@ sealed class ApplyFlow
         var (message, code) = Errors.Describe(e);
         log.Note($"unexpected error at step {step}: {message} ({code})");
         WriteResult(false, step, message, code);
-        // Chief is never left closed: once it has been asked to close, try to open whatever version is installed.
-        if (step != "close")
-        {
-            try
-            {
-                var family = installed?.FamilyName ?? "";
-                if (family.Length > 0 && !options.Simulate) deployment.ActivateAsync($"{family}!{job.AppId}").Wait(TimeSpan.FromSeconds(15));
-            }
-            catch (Exception reopen)
-            {
-                log.Note($"reopening failed: {Errors.OneLine(reopen.Message)}");
-            }
-        }
+        Reopen();
         Exit(1);
+    }
+
+    /// <summary>
+    /// Chief is never left closed: once it has been asked to close (the popup showed), open whatever version is
+    /// installed. Activating a copy that is still running only brings it forward.
+    /// </summary>
+    void Reopen()
+    {
+        if (!shown || options.Simulate) return;
+        try
+        {
+            var family = installed?.FamilyName ?? "";
+            if (family.Length == 0)
+            {
+                log.Note("nothing to reopen: the installed package isn't known");
+                return;
+            }
+            bool opened = deployment.ActivateAsync($"{family}!{job.AppId}").Wait(TimeSpan.FromSeconds(15));
+            log.Note(opened ? $"reopened {Assistant}" : $"reopening {Assistant} didn't answer within 15 s");
+        }
+        catch (Exception reopen)
+        {
+            log.Note($"reopening failed: {Errors.OneLine(reopen.Message)}");
+        }
     }
 
     static DeploymentFailure AsFailure(Exception e) =>
@@ -129,6 +144,7 @@ sealed class ApplyFlow
         window.Show();
         await window.Shown;
         Touch(job.ShownFile);
+        shown = true;
         log.Note("popup shown");
 
         // 1. Closing (0–10 %).

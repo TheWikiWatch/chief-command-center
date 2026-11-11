@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { validAssistantName } from "./guards";
 import type { HandOffResult, Release } from "./updater";
 
 /**
@@ -158,6 +159,21 @@ export function resultMessage(result: UpdateResult | null, running: string): str
   if (!result || result.ok) return null;
   const why = (result.message || "").trim().replace(/\s+/g, " ").slice(0, 300).replace(/[.\s]+$/, "");
   return `The update to ${result.to || "the new version"} didn't finish${why ? `: ${why}` : ""}. You're still on ${running}; nothing was changed.`;
+}
+
+/** What the update window shows of Chief: its face (PNG), its colour and name, as the page gave them. */
+export type ChiefLook = { png: Buffer | null; accent: string; name: string; reducedMotion: boolean };
+
+/**
+ * The page's `window.__chiefLook()` answer, checked: a PNG under 2 MB, a `#rrggbb` colour, a name the shell would take
+ * from the page anyway (guards.ts validAssistantName). Anything else is left out, and the window falls back to the app
+ * icon, its red and the name the shell knows.
+ */
+export function lookFromPage(look: unknown): ChiefLook {
+  const v = (look && typeof look === "object" ? look : {}) as { png?: unknown; accent?: unknown; name?: unknown; reducedMotion?: unknown };
+  const png = typeof v.png === "string" && v.png.startsWith("data:image/png;base64,") ? Buffer.from(v.png.slice(22), "base64") : null;
+  const accent = typeof v.accent === "string" && /^#[0-9a-f]{6}$/i.test(v.accent.trim()) ? v.accent.trim() : "";
+  return { png: png && png.length < 2_000_000 ? png : null, accent, name: validAssistantName(v.name) ?? "", reducedMotion: v.reducedMotion === true };
 }
 
 /** Announces this start to a waiting helper: it closes its window once the reopened app's window is up. */

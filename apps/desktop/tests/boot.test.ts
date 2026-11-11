@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createBoot, MISSING_FILES, recoversBoot, type BootDeps } from "../src/boot";
+import { countedStart, createBoot, MISSING_FILES, recoversBoot, type BootDeps, type BootResult, type StartDeps } from "../src/boot";
 
 function deps(over: Partial<BootDeps> = {}) {
   const calls: string[] = [];
@@ -12,11 +12,13 @@ function deps(over: Partial<BootDeps> = {}) {
     missing: () => [],
     loadToken: () => void calls.push("token"),
     newerDataError: () => null,
+    endLeftovers: async () => void calls.push("leftovers"),
     choosePorts: async () => void calls.push("ports"),
     restoreJournalExists: () => false,
     recover: async () => (calls.push("recover"), { ok: true, action: "none" }),
     provisionKey: () => "k2",
     lastProvisionKey: () => "k1",
+    pluginEdited: async () => false,
     provision: async () => (calls.push("provision"), { ok: true }),
     saveProvisionKey: (k) => void calls.push(`saved:${k}`),
     backupNeeded: () => null,
@@ -41,9 +43,10 @@ describe("boot", () => {
     const { d, calls, steps } = deps();
     expect(await createBoot(d).run()).toBe("ready");
     const order = calls.filter((c) => !c.startsWith("log:"));
-    expect(order.slice(0, 6)).toEqual(["page", "token", "ports", "provision", "saved:k2", "record"]);
-    expect(order.slice(6, 8).sort()).toEqual(["gateway", "web"]); // started together
-    expect(order[8]).toBe("dashboard");
+    // What an earlier run left on this data folder goes before the ports are chosen, or they move.
+    expect(order.slice(0, 7)).toEqual(["page", "token", "leftovers", "ports", "provision", "saved:k2", "record"]);
+    expect(order.slice(7, 9).sort()).toEqual(["gateway", "web"]); // started together
+    expect(order[9]).toBe("dashboard");
     expect(steps.filter((s) => s.endsWith(":done")).sort()).toEqual(["gateway:done", "prepare:done", "runtime:done", "web:done"]);
     expect(calls).toContain("log:boot.ready");
   });
@@ -57,6 +60,33 @@ describe("boot", () => {
     const withJournal = deps({ restoreJournalExists: () => true });
     await createBoot(withJournal.d).run();
     expect(withJournal.calls).toContain("recover");
+  });
+
+  it("never starts on a folder an interrupted restore left partly put back", async () => {
+    const half = deps({
+      restoreJournalExists: () => true,
+      recover: async () => ({ ok: false, action: "rollback-failed", error: "Nothing was deleted; the next start tries again." }),
+    });
+    expect(await createBoot(half.d).run()).toBe("error");
+    expect(half.steps).toContain("prepare:error:Nothing was deleted; the next start tries again.");
+    expect(half.calls).not.toContain("provision");
+    expect(half.calls).toContain("log:boot.prepare.reason:restore recovery: rollback-failed");
+  });
+
+  it("puts back an edited copy of the bridge plugin in the profile, though nothing else changed, and says so in the log", async () => {
+    // Before: the key covered only the packaged plugin, so a copy the agent had edited was loaded at every start.
+    const { d, calls } = deps({ lastProvisionKey: () => "k2", pluginEdited: async () => true });
+    expect(await createBoot(d).run()).toBe("ready");
+    expect(calls).toContain("provision");
+    expect(calls).toContain("saved:k2");
+    expect(calls).toContain("log:boot.provision.plugin-edited:the profile's copy of the bridge plugin isn't the app's; putting it back");
+    expect(calls).not.toContain("log:boot.provision.skipped");
+    // A changed key provisions anyway: the copy isn't even compared.
+    let compared = false;
+    const changed = deps({ pluginEdited: async () => ((compared = true), false) });
+    await createBoot(changed.d).run();
+    expect(compared).toBe(false);
+    expect(changed.calls).toContain("provision");
   });
 
   it("starts the dashboard without waiting for Chief", async () => {
@@ -155,5 +185,50 @@ describe("a start that recovers", () => {
     // recovery (Try now, the 10-minute retry, a phone restart of the dashboard server) loaded the start screen over it.
     const errored = [{ state: "done" }, { state: "error" }];
     expect(recoversBoot({ type: "state", state: "running" }, errored, false, false)).toBe(false);
+  });
+});
+
+describe("going back after failed starts", () => {
+  function counted(results: BootResult[], over: Partial<StartDeps> = {}) {
+    let attempts: { version: string; count: number } | null = null;
+    let healthy = "";
+    const offers: string[] = [];
+    const deps: StartDeps = {
+      version: "1.1.0",
+      attempts: () => attempts,
+      healthyVersion: () => healthy,
+      saveAttempts: (a, ok) => {
+        attempts = a;
+        if (ok) healthy = "1.1.0";
+      },
+      boot: async () => results.shift() ?? "ready",
+      previous: async () => "1.0.0",
+      offer: (version) => void offers.push(version),
+      ...over,
+    };
+    return { start: () => countedStart(deps), offers, attempts: () => attempts };
+  }
+
+  it("offers the previous version after two failed starts, and withdraws it once a start reaches the dashboard", async () => {
+    const c = counted(["error", "error", "ready"]);
+    await c.start();
+    expect(c.offers).toEqual([]); // one failure isn't a pattern
+    await c.start();
+    expect(c.offers).toEqual(["1.0.0"]);
+    // Before: the offer stood after a later start succeeded, so the boot page (quitting, a page that didn't load) could
+    // still go back from a version that works.
+    await c.start();
+    expect(c.offers).toEqual(["1.0.0", ""]);
+    expect(c.attempts()).toEqual({ version: "1.1.0", count: 0 });
+  });
+
+  it("never for a version that has started before, or when no earlier package is kept", async () => {
+    const started = counted(["ready", "error", "error"]);
+    for (let i = 0; i < 3; i++) await started.start();
+    expect(started.offers).toEqual([""]);
+    const nothingKept = counted(["error", "error"], { previous: async () => "" });
+    await nothingKept.start();
+    await nothingKept.start();
+    expect(nothingKept.offers).toEqual([]);
   });
 });

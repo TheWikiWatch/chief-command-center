@@ -1,9 +1,14 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, fsyncSync, mkdirSync, openSync, readFileSync, renameSync, writeSync } from "node:fs";
 import path from "node:path";
 
 /**
  * The shell's own settings: `app\desktop.json` (separate from the dashboard's settings.json, so the two
  * processes never write the same file).
+ *
+ * A damaged file used to reset the app silently, and the next save wrote the defaults over it (an adopted install lost
+ * its Hermes root). Each save now goes through a temporary file that reaches the disk before it replaces the real one,
+ * the previous file stays as `desktop.json.bak`, a file that can't be read is read from that backup, and a file that
+ * can't be read either way is never saved over.
  */
 export type DesktopSettings = {
   /** An adopted Hermes root (the migration); empty = the app's own `hermes\` folder. */
@@ -84,27 +89,79 @@ export const DEFAULTS: DesktopSettings = {
   phoneServe: null,
 };
 
+function parse(text: string): Partial<DesktopSettings> {
+  const value: unknown = JSON.parse(text);
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("not a settings object");
+  return value as Partial<DesktopSettings>;
+}
+
+/** `text` into a temporary file that is on the disk before it replaces `file`: a crash or a power cut leaves the old file or the new one, never half of one. */
+function writeDurably(file: string, text: string) {
+  const tmp = `${file}.tmp`;
+  const fd = openSync(tmp, "w");
+  try {
+    writeSync(fd, text);
+    fsyncSync(fd);
+  } finally {
+    closeSync(fd);
+  }
+  renameSync(tmp, file);
+}
+
 export class Store {
   private file: string;
   value: DesktopSettings;
+  /** "restored": desktop.json couldn't be read and its backup was used; "unreadable": neither could be, so the app runs
+   * on defaults and never saves over the file (it may still be fixed by hand). */
+  readonly problem: "" | "restored" | "unreadable" = "";
+  /** The file on disk is one this store read or wrote, so it may become the backup. */
+  private sound = false;
 
   constructor(appDir: string) {
     this.file = path.join(appDir, "desktop.json");
-    let raw: Partial<DesktopSettings> = {};
+    let text: string | null = null;
+    let failed = false;
     try {
-      raw = JSON.parse(readFileSync(this.file, "utf8")) as Partial<DesktopSettings>;
-    } catch {
-      /* first run */
+      text = readFileSync(this.file, "utf8");
+    } catch (e) {
+      failed = (e as NodeJS.ErrnoException).code !== "ENOENT"; // there, but locked or out of reach
     }
+    let raw: Partial<DesktopSettings> | null = null;
+    if (text?.trim()) {
+      try {
+        raw = parse(text);
+        this.sound = true;
+      } catch {
+        failed = true;
+      }
+    }
+    if (!raw && (failed || text !== null)) {
+      // Damaged, out of reach or empty: the last good file, when there is one.
+      try {
+        raw = parse(readFileSync(`${this.file}.bak`, "utf8"));
+        this.problem = "restored";
+      } catch {
+        // An empty file held nothing to keep (a first run, then); anything else may still be fixed by hand.
+        if (failed) this.problem = "unreadable";
+      }
+    }
+    raw ??= {};
     this.value = { ...DEFAULTS, ...raw, ports: { ...DEFAULTS.ports, ...(raw.ports || {}) }, webEnv: { ...(raw.webEnv || {}) } };
   }
 
   save(change: Partial<DesktopSettings>): DesktopSettings {
     this.value = { ...this.value, ...change };
+    if (this.problem === "unreadable") return this.value;
     mkdirSync(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    writeFileSync(tmp, JSON.stringify(this.value, null, 2));
-    renameSync(tmp, this.file);
+    if (this.sound) {
+      try {
+        copyFileSync(this.file, `${this.file}.bak`);
+      } catch {
+        /* no backup this time; the save still goes ahead */
+      }
+    }
+    writeDurably(this.file, JSON.stringify(this.value, null, 2));
+    this.sound = true;
     return this.value;
   }
 }

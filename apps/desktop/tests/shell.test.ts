@@ -1,3 +1,4 @@
+import { EventEmitter } from "node:events";
 import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
@@ -7,30 +8,55 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 
 import { activeWork, fromBridgeSnapshot } from "../src/active-work";
 import { curatedEnv, leakedKeys, payloadLayout } from "../src/env";
+import { resolvePaths } from "../src/paths";
+import { envFor } from "../src/runtime";
+import { ctx } from "../src/state";
 import { gatewayOwner } from "../src/gateway";
 import { Notifier, snippet } from "../src/notifier";
 import { isFree, pickPort } from "../src/ports";
 import { applyRestore } from "../src/restore";
 import { bridgeToken, legacyTokenFiles, rotateBridgeToken } from "../src/secrets";
 import { Store } from "../src/store";
-import { BACKOFF_MS, FAILED_RETRY_MS, HEALTH_EVERY_MS, HEALTH_FAILURES, MAX_RESTARTS, Supervisor, type SupervisorEvent } from "../src/supervisor";
+import { BACKOFF_MS, FAILED_RETRY_MS, HEALTH_EVERY_MS, HEALTH_FAILURES, MAX_RESTARTS, Supervisor, type ChildHandle, type SupervisorEvent } from "../src/supervisor";
+import { launchWeb } from "../src/web";
 
 const tmp = mkdtempSync(path.join(tmpdir(), "chief-desktop-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
 
+// runtime.ts (the children's environments) asks Electron only for the app's version.
+vi.mock("electron", () => ({ app: { getVersion: () => "1.0.0" } }));
+
 /* ------------------------------------------------------------------ supervisor */
 
-function harness(opts: { failLaunch?: boolean; failReady?: boolean; healthy?: () => boolean; launches?: { n: number } } = {}) {
+/**
+ * `pid`: "late" is Electron's utilityProcess (no pid until 'spawn', which comes a moment after the launch), "never" the
+ * dashboard server before the fix (its handle kept the pid read straight after fork(): undefined). Either way the exit
+ * arrives while stop() waits for it, as it does from web.ts.
+ */
+function harness(opts: { failLaunch?: boolean; failReady?: boolean; healthy?: () => boolean; launches?: { n: number }; pid?: "late" | "never" } = {}) {
   let now = 0;
   const timers: { at: number; fn: () => void }[] = [];
   const events: SupervisorEvent[] = [];
   let pid = 100;
   const stops: boolean[] = [];
-  const sup = new Supervisor({
+  const sup: Supervisor = new Supervisor({
     launch: async () => {
       if (opts.launches) opts.launches.n += 1;
       if (opts.failLaunch) throw new Error("no launcher");
       const mine = ++pid;
+      if (opts.pid) {
+        const child: ChildHandle = {
+          pid: undefined,
+          stop: async (graceful: boolean) => {
+            stops.push(graceful);
+            // The exit comes a moment later; a late pid has arrived by then.
+            await new Promise((r) => setTimeout(r, 0));
+            sup.exited(1, child.pid);
+          },
+        };
+        if (opts.pid === "late") setTimeout(() => (child.pid = mine), 0);
+        return child;
+      }
       return { pid: mine, stop: async (graceful: boolean) => void stops.push(graceful) };
     },
     ready: async () => {
@@ -163,6 +189,62 @@ describe("Supervisor", () => {
     expect(h.sup.state).toBe("running");
   });
 
+  it("a child it ended that never had a pid isn't a second crash: one restart, not two (the dashboard server's loop)", async () => {
+    // Before: the dashboard's handle had no pid, so its own health restart also counted the exit as a crash; two restarts
+    // were scheduled, the second hit EADDRINUSE, and the loop could end in "failed" beside an untracked server.
+    let healthy = true;
+    const h = harness({ pid: "never", healthy: () => healthy });
+    await h.sup.start();
+    healthy = false;
+    for (let i = 0; i < HEALTH_FAILURES; i++) await h.advance(HEALTH_EVERY_MS);
+    expect(h.sup.state).toBe("backoff");
+    expect(h.sup.detail).toBe("It stopped answering.");
+    expect(h.events.filter((e) => e.type === "restart-scheduled")).toHaveLength(1);
+    expect(h.timers).toHaveLength(1);
+    healthy = true;
+    await h.advance(BACKOFF_MS[0]);
+    expect(h.sup.state).toBe("running");
+  });
+
+  it("a child whose pid comes after its launch (Electron sets it at 'spawn') is recognised when it is ended", async () => {
+    // Not ready: ended before its pid was known, its exit then carries the pid it learned meanwhile. Before: nothing was
+    // recorded for it, so that exit was a second crash (two restarts).
+    const notReady = harness({ pid: "late", failReady: true });
+    await notReady.sup.start();
+    await notReady.advance(0);
+    expect(notReady.events.filter((e) => e.type === "crashed")).toEqual([{ type: "crashed", reason: "never ready" }]);
+    expect(notReady.timers).toHaveLength(1);
+    // Stopped: no crash, no restart.
+    const stopped = harness({ pid: "late" });
+    await stopped.sup.start();
+    await stopped.advance(0);
+    await stopped.sup.stop(true);
+    expect(stopped.sup.state).toBe("stopped");
+    expect(stopped.events.some((e) => e.type === "crashed")).toBe(false);
+    expect(stopped.timers).toHaveLength(0);
+  });
+
+  it("a start while it stops owns the state: stop doesn't report 'stopped' over it", async () => {
+    let release!: () => void;
+    let n = 0;
+    const sup = new Supervisor({
+      launch: async () => {
+        const mine = ++n;
+        // The first child takes its time to end.
+        return { pid: mine, stop: () => (mine === 1 ? new Promise<void>((r) => (release = r)) : Promise.resolve()) };
+      },
+      ready: async () => undefined,
+    });
+    await sup.start();
+    const stopping = sup.stop(true);
+    await sup.start(); // Try now, meanwhile
+    expect(sup.state).toBe("running");
+    release();
+    await stopping;
+    // Before: "stopped", with the new child running and nobody watching it.
+    expect(sup.state).toBe("running");
+  });
+
   it("after failing, it tries again every 10 minutes", async () => {
     const launches = { n: 0 };
     const h = harness({ failLaunch: true, launches });
@@ -175,6 +257,26 @@ describe("Supervisor", () => {
     await h.advance(FAILED_RETRY_MS);
     expect(launches.n).toBe(n + 1);
     expect(h.sup.state).toBe("backoff");
+  });
+});
+
+describe("the dashboard server's handle", () => {
+  it("learns the pid when Electron reports 'spawn', and its exit carries it", async () => {
+    // Electron's utilityProcess has no pid until 'spawn'. Before: the handle kept the undefined read straight after
+    // fork(), so the supervisor could match neither the exit of a server it ended nor a stale one's.
+    const events = new EventEmitter();
+    const child = Object.assign(events, { pid: undefined as number | undefined, stdout: null, stderr: null, kill: () => events.emit("exit", 0) });
+    const exits: (number | undefined)[] = [];
+    // The log is a folder, so it can't be written: the server runs regardless (and the test keeps no file open).
+    const logFile = path.join(tmp, "dashboard-log-folder");
+    mkdirSync(logFile, { recursive: true });
+    const handle = launchWeb({ fork: () => child } as never, { serverJs: path.join(tmp, "web", "server.js"), port: 3999, env: {}, logFile }, (_code, pid) => exits.push(pid));
+    expect(handle.pid).toBeUndefined();
+    child.pid = 4321;
+    child.emit("spawn");
+    expect(handle.pid).toBe(4321);
+    await handle.stop(true);
+    expect(exits).toEqual([4321]);
   });
 });
 
@@ -221,6 +323,18 @@ describe("curatedEnv", () => {
     const env = curatedEnv(ambient, { payload, set: {}, inheritUserPath: true });
     expect(env.PATH).toContain("GitHub CLI");
     expect(env.GH_TOKEN).toBeUndefined();
+  });
+
+  it("leaves the per-user site-packages out of the dashboard's Python children, never out of the gateway's", () => {
+    // The gateway hands its environment on to the agent's terminal, whose `python` must keep the owner's packages; the
+    // gateway's own Python gets -s instead (gateway.ts launchGateway).
+    const data = path.join(tmp, "env-data");
+    ctx.paths = resolvePaths({ packaged: false, resourcesPath: tmp, appPath: path.join(tmp, "desktop"), env: { LOCALAPPDATA: tmp, CHIEF_DESKTOP_DATA: data, CHIEF_PAYLOAD_DIR: path.join(tmp, "env-payload") } });
+    ctx.store = new Store(ctx.paths.appDir);
+    ctx.hermesRoot = path.join(data, "hermes");
+    expect(envFor("web").PYTHONNOUSERSITE).toBe("1");
+    expect(envFor("gateway").PYTHONNOUSERSITE).toBeUndefined();
+    expect(curatedEnv({ ...ambient, PYTHONNOUSERSITE: "1" }, { payload, set: {} }).PYTHONNOUSERSITE).toBeUndefined(); // nor from the user's session
   });
 });
 
@@ -388,6 +502,20 @@ describe("applyRestore", () => {
     expect(res.error).toMatch(/previous setup was put back/);
   });
 
+  it("doesn't start Chief on a setup only partly put back, and says a restart finishes it", async () => {
+    const { log, deps: d } = deps({
+      gatewayHealthy: async () => false,
+      engine: async (args) => {
+        log.push(`engine ${args[0]}`);
+        return args[0] === "apply" ? { ok: true } : { ok: false, action: "rollback-failed", error: "A file in it may be open." };
+      },
+    });
+    const res = await applyRestore(d);
+    expect(log).toEqual(["stop", "engine apply", "start", "stop", "engine rollback"]);
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/isn't finished: A file in it may be open\. Restart Chief Command Center/);
+  });
+
   it("a refused apply changes nothing and restarts Chief", async () => {
     const { log, deps: d } = deps({ engine: async (args) => (log.push(`engine ${args[0]}`), { ok: false, error: "Chief is still running. Stop it before restoring." }) });
     const res = await applyRestore(d);
@@ -471,5 +599,50 @@ describe("secrets and settings", () => {
     expect(store.value.ports).toEqual({ ui: 3000, bridge: 7790 });
     store.save({ ports: { ui: 3004, bridge: 7791 }, closeNoticeShown: true });
     expect(new Store(dir).value).toMatchObject({ ports: { ui: 3004, bridge: 7791 }, closeNoticeShown: true, startAtLogin: true });
+  });
+
+  it("keeps the previous file as a backup and leaves no temporary file behind", () => {
+    const dir = path.join(tmp, "app-bak");
+    const store = new Store(dir);
+    store.save({ hermesRoot: "D:\\Adopted\\hermes" });
+    store.save({ hermesRoot: "D:\\Adopted\\hermes", closeNoticeShown: true });
+    expect(JSON.parse(readFileSync(path.join(dir, "desktop.json.bak"), "utf8"))).toMatchObject({ hermesRoot: "D:\\Adopted\\hermes", closeNoticeShown: false });
+    expect(readdirSync(dir).sort()).toEqual(["desktop.json", "desktop.json.bak"]);
+  });
+
+  it("reads a damaged file from its backup, and never saves over one it can't read at all", () => {
+    // Before: a damaged desktop.json silently reset the app, and the next save wrote the defaults over it (an adopted
+    // install lost its Hermes root).
+    const dir = path.join(tmp, "app-damaged");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "desktop.json"), '{"hermesRoot": "D:\\\\Adop');
+    writeFileSync(path.join(dir, "desktop.json.bak"), JSON.stringify({ hermesRoot: "D:\\Adopted\\hermes", adopted: true }));
+    const restored = new Store(dir);
+    expect(restored.problem).toBe("restored");
+    expect(restored.value).toMatchObject({ hermesRoot: "D:\\Adopted\\hermes", adopted: true });
+    restored.save({ closeNoticeShown: true });
+    // The damaged file was never copied over the good backup.
+    expect(JSON.parse(readFileSync(path.join(dir, "desktop.json.bak"), "utf8")).closeNoticeShown).toBeUndefined();
+    expect(new Store(dir).value).toMatchObject({ hermesRoot: "D:\\Adopted\\hermes", closeNoticeShown: true });
+
+    const lost = path.join(tmp, "app-lost");
+    mkdirSync(lost, { recursive: true });
+    writeFileSync(path.join(lost, "desktop.json"), "{ not json");
+    const store = new Store(lost);
+    expect(store.problem).toBe("unreadable");
+    expect(store.value.hermesRoot).toBe("");
+    store.save({ ports: { ui: 3001, bridge: 7791 } });
+    expect(readFileSync(path.join(lost, "desktop.json"), "utf8")).toBe("{ not json");
+    expect(store.value.ports.ui).toBe(3001); // still used for this run
+  });
+
+  it("an empty file held nothing to keep: it's a first run, and saves go ahead", () => {
+    const dir = path.join(tmp, "app-empty");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "desktop.json"), "");
+    const store = new Store(dir);
+    expect(store.problem).toBe("");
+    store.save({ closeNoticeShown: true });
+    expect(new Store(dir).value.closeNoticeShown).toBe(true);
   });
 });

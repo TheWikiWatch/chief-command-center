@@ -9,15 +9,15 @@ The Windows app around the dashboard. It is the only supervisor of the chief's H
 - The boot screen shows each step: runtime, preparing Chief, Chief, dashboard. A failed step shows the reason, **Try again** and **Open logs**.
 
 **Preparing Hermes** (`python/provision.py`, run with the payload's Python through Hermes's own config code)
-- Copies the bundled bridge plugin into the profile when it has changed.
+- Copies the bundled bridge plugin into the profile when it has changed, and puts it back when the profile's copy (the one the gateway loads) was edited.
 - Installs the app's skills and the Second Brain toolkit, recording what it wrote (`.chief-bundled.json`): a file someone has edited since is kept, and Fleet Health's ledger knows the rest as the app's own writes. Toolkit commands call plain `python`, never a path into the installed app (its folder changes with every version).
 - Enables it in `config.yaml` and sets the bridge port in the profile `.env`.
 - Before that, an interrupted restore is rolled back (`chief_backup recover`).
 
 **Running the gateway**
-- Launches `hermes -p chief gateway run` in the foreground with an explicit `HERMES_HOME`, this install's own gateway lock folder, the bridge port and token, and `HERMES_BIN`.
+- Launches `hermes -p chief gateway run` in the foreground with an explicit `HERMES_HOME`, this install's own gateway lock folder, the bridge port and token, and `HERMES_BIN`. The payload's Python runs the launcher's program itself, with `-s`, so nothing in the per-user site-packages loads into the gateway. The app's other Python tools run with `-s` too, and the dashboard's get `PYTHONNOUSERSITE`; the gateway's environment never does, because the agent's terminal inherits it.
 - Supervised with restarts after 1 s, 5 s and 30 s. After 5 restarts in 10 minutes it stops trying and shows the error with Retry.
-- A gateway started by another launcher gets a choice: **Take over** or **Use it as is**. An orphan from a crashed run of this app is ended.
+- A gateway started by another launcher gets a choice: **Take over** or **Use it as is**. What a crashed or force-quit run of this app left on the same data folder (its gateway, its dashboard server) is ended before the ports are chosen, so they keep their ports.
 
 **Running the dashboard server**
 - The Next.js standalone server runs under Electron's Node (`utilityProcess`), on 127.0.0.1, with the same restart rules.
@@ -38,8 +38,8 @@ The Windows app around the dashboard. It is the only supervisor of the chief's H
 - A crashed page reloads.
 
 **Quitting**
-- Quit checks for work in progress: a reply being written, a pending approval, a specialist working. It then offers Wait for Chief, Quit now or Cancel.
-- The gateway is stopped through `hermes gateway stop` (25 s), and only then is the process tree ended.
+- Quit checks for work in progress: a reply being written, a pending approval, a specialist working, a backup the dashboard is making. It then offers Wait for Chief, Quit now or Cancel.
+- The gateway is asked to stop with Hermes's own planned-stop marker, written in this profile's home for this gateway's pid; after about 25 s, only its own process tree is ended. Never `hermes gateway stop`: it can stop another install's gateway on the same PC.
 
 **Notifications**
 - While the window is hidden or unfocused, a new reply or approval request becomes a Windows notification. Electron has no Web Push; the phone still uses it.

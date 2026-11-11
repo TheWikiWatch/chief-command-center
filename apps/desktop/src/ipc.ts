@@ -23,7 +23,7 @@ import { answerQuitWait, applyThemeMode, currentWork, refreshTray, setJumpList }
 
 /**
  * Every IPC channel goes through here: the call must come from this app's window, from a frame showing the
- * dashboard (or the boot page, for boot channels), and the handler validates its own arguments.
+ * dashboard (boot channels: the boot page, and only it), and the handler validates its own arguments.
  */
 function handle(channel: string, fn: (...args: unknown[]) => unknown, opts: { boot?: boolean } = {}) {
   ipcMain.handle(channel, (event, ...args: unknown[]) => {

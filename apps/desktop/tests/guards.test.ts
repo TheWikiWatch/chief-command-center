@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import path from "node:path";
+
+import { describe, expect, it, vi } from "vitest";
 
 import {
   actionFromArgv,
@@ -25,6 +28,13 @@ const ORIGIN = "http://127.0.0.1:3000";
 // User-info look-alike (`origin` + "@" + another host), assembled so the privacy scan doesn't read it as an address.
 const USERINFO = `${ORIGIN}${"@"}evil.example/`;
 const BOOT = BOOT_URL;
+
+// What the preload hands each page (contextBridge), for "the boot page's API".
+const exposed = vi.hoisted(() => [] as string[]);
+vi.mock("electron", () => ({
+  contextBridge: { exposeInMainWorld: (name: string) => void exposed.push(name) },
+  ipcRenderer: { invoke: () => Promise.resolve(null), on: () => undefined, removeListener: () => undefined },
+}));
 
 describe("origins are compared exactly, never by prefix", () => {
   it("accepts the dashboard's own pages", () => {
@@ -84,6 +94,40 @@ describe("IPC senders", () => {
     expect(senderAllowed(USERINFO, ORIGIN, BOOT)).toBe(false);
     expect(senderAllowed("https://evil.example/", ORIGIN, BOOT, { boot: true })).toBe(false);
     expect(senderAllowed(undefined, ORIGIN, BOOT)).toBe(false);
+  });
+
+  it("answers boot channels (Retry, Go back, Quit now) from the boot page only, never the dashboard", () => {
+    // Before: the dashboard's origin passed for boot channels too, so a page could call boot:rollback itself.
+    expect(senderAllowed("http://127.0.0.1:3000/", ORIGIN, BOOT, { boot: true })).toBe(false);
+    expect(senderAllowed(`${BOOT}#steps`, ORIGIN, BOOT, { boot: true })).toBe(true);
+  });
+});
+
+describe("the boot page's API", () => {
+  it("is given to the boot page only; every page gets the desktop API", async () => {
+    // Before: the dashboard (and any window it opened) had window.chiefBoot as well.
+    for (const [page, apis] of [
+      [BOOT, ["chiefDesktop", "chiefBoot"]],
+      ["http://127.0.0.1:3000/settings", ["chiefDesktop"]],
+      ["chief-boot://app/other.html", ["chiefDesktop"]],
+    ] as const) {
+      exposed.length = 0;
+      vi.resetModules();
+      vi.stubGlobal("location", new URL(page));
+      await import("../src/preload");
+      expect(exposed, page).toEqual(apis);
+    }
+    vi.unstubAllGlobals();
+  });
+});
+
+describe("navigation", () => {
+  it("has one guard, for every web contents: a second one on the main window opened each external link twice", () => {
+    const dir = path.join(__dirname, "..", "src");
+    const sources = readdirSync(dir).filter((f) => f.endsWith(".ts")).map((f) => readFileSync(path.join(dir, f), "utf8"));
+    expect(sources.join("\n").match(/"will-navigate"/g)).toHaveLength(1);
+    expect(sources.join("\n").match(/\.setWindowOpenHandler\(/g)).toHaveLength(1);
+    expect(readFileSync(path.join(dir, "main.ts"), "utf8")).toMatch(/app\.on\("web-contents-created"[\s\S]*?"will-navigate"/);
   });
 });
 

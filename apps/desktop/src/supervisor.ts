@@ -51,8 +51,12 @@ export class Supervisor {
   private wanted = false;
   private generation = 0;
   private starting: Promise<void> | null = null;
-  /** Children this supervisor ended itself: their exit is expected, never a crash. */
-  private ended = new Set<number>();
+  /**
+   * Children this supervisor ended itself: their exit is expected, never a crash. Kept by handle, not by pid: a child's
+   * pid can arrive after its launch (Electron's utilityProcess learns it at 'spawn'), and one that never had a pid still
+   * exits.
+   */
+  private ended = new Set<ChildHandle>();
   private readonly now: () => number;
   private readonly setTimer: (fn: () => void, ms: number) => unknown;
   private readonly clearTimer: (handle: unknown) => void;
@@ -122,6 +126,8 @@ export class Supervisor {
       if (generation !== this.generation) return;
       this.child = null;
       await this.end(child, false);
+      // Stopped or started again meanwhile: that decides what comes next, not this start.
+      if (generation !== this.generation) return;
       this.crashed("It started but didn't answer.", e instanceof Error ? e.message : String(e));
       return;
     }
@@ -134,7 +140,7 @@ export class Supervisor {
 
   /** End a child on purpose; its exit is then not a crash. */
   private async end(child: ChildHandle, graceful: boolean) {
-    if (child.pid !== undefined) this.ended.add(child.pid);
+    this.ended.add(child);
     await child.stop(graceful).catch(() => undefined);
   }
 
@@ -162,15 +168,24 @@ export class Supervisor {
       this.scheduleHealth(generation);
       return;
     }
-    this.generation++;
+    const ending = ++this.generation;
     this.child = null;
     await this.end(child, false);
+    if (ending !== this.generation) return; // stopped or started again while it ended
     this.crashed("It stopped answering.", `no answer to ${HEALTH_FAILURES} health checks in a row`);
   }
 
-  /** The child exited. Expected exits (stop, or a child this supervisor ended) are ignored; others restart with backoff. */
+  /**
+   * The child exited. Expected exits (stop, or a child this supervisor ended) are ignored; others restart with backoff.
+   * An exit without a pid belongs to an ended child that never had one, when there is such a child.
+   */
   exited(code: number | null, pid?: number): void {
-    if (pid !== undefined && this.ended.delete(pid)) return;
+    for (const child of this.ended) {
+      if (child.pid === pid) {
+        this.ended.delete(child);
+        return;
+      }
+    }
     if (pid !== undefined && this.child?.pid !== undefined && pid !== this.child.pid) return; // a stale child
     if (!this.child && this.state !== "running" && this.state !== "starting") return; // nothing of ours was running
     this.child = null;
@@ -213,7 +228,7 @@ export class Supervisor {
   /** Stop on purpose (Quit, restore). `graceful` asks the child to finish first. */
   async stop(graceful = true): Promise<void> {
     this.wanted = false;
-    this.generation++;
+    const stopping = ++this.generation;
     this.clearTimers();
     const child = this.child;
     this.child = null;
@@ -225,7 +240,8 @@ export class Supervisor {
     try {
       await this.end(child, graceful);
     } finally {
-      this.set("stopped");
+      // A start while it stopped (Try now, a dashboard restart) owns the state now.
+      if (stopping === this.generation) this.set("stopped");
     }
   }
 }

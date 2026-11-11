@@ -1,7 +1,8 @@
 import { createWriteStream, mkdirSync } from "node:fs";
 import path from "node:path";
 
-import { rotate } from "./logger";
+import type { ProcessRecord } from "./gateway";
+import { pipeToLog, rotate } from "./logger";
 import type { ChildHandle } from "./supervisor";
 
 /**
@@ -21,7 +22,8 @@ type Utility = {
     stdout: NodeJS.ReadableStream | null;
     stderr: NodeJS.ReadableStream | null;
     kill: () => boolean;
-    once: (event: "exit", fn: (code: number) => void) => void;
+    once(event: "spawn", fn: () => void): void;
+    once(event: "exit", fn: (code: number) => void): void;
   };
 };
 
@@ -36,10 +38,12 @@ export function launchWeb(utility: Utility, cfg: WebConfig, onExit: (code: numbe
     stdio: "pipe",
     serviceName: "Chief dashboard server",
   });
-  child.stdout?.pipe(log, { end: false });
-  child.stderr?.pipe(log, { end: false });
+  pipeToLog(log, [child.stdout, child.stderr]);
   let exited = false;
-  const pid = child.pid;
+  // Electron knows the pid only from 'spawn' on: read straight after fork() it is undefined, and the supervisor then
+  // can't tell the exit of a server it ended itself (or of a stale one) from a crash.
+  let pid = child.pid;
+  child.once("spawn", () => (pid = child.pid));
   const done = new Promise<void>((resolve) =>
     child.once("exit", (code) => {
       exited = true;
@@ -49,13 +53,37 @@ export function launchWeb(utility: Utility, cfg: WebConfig, onExit: (code: numbe
     }),
   );
   return {
-    pid,
+    get pid() {
+      return pid;
+    },
     stop: async () => {
       if (exited) return;
       child.kill();
       await Promise.race([done, new Promise((r) => setTimeout(r, 5000))]);
     },
   };
+}
+
+/** The Electron profile folder a Chromium child process names on its command line (`--user-data-dir`), normalized; "" when it names none. */
+export function userDataOf(command: string): string {
+  const m = /--user-data-dir=(?:"([^"]*)"|(\S+))/.exec(command);
+  const dir = m ? m[1] ?? m[2] : "";
+  return dir ? path.normalize(dir).toLowerCase() : "";
+}
+
+/**
+ * Dashboard servers an earlier run of this app left behind (a forced quit, a crash): Electron's Node service process
+ * (what `utilityProcess` runs) of this very executable and Electron profile folder, whose parent isn't this process.
+ * Only one app runs per profile folder (the single-instance lock), so such a server's app is gone. The installed app is
+ * another executable, so a run from source never matches it.
+ */
+export function leftoverDashboards(procs: ProcessRecord[], ours: { exe: string; userData: string; pid: number }): number[] {
+  const same = (a: string, b: string) => !!a && !!b && path.normalize(a).toLowerCase() === path.normalize(b).toLowerCase();
+  return procs
+    .filter((p) => p.pid !== ours.pid && p.parent !== ours.pid && same(p.path, ours.exe))
+    .filter((p) => /\s--type=utility(\s|$)/.test(p.command) && /\s--utility-sub-type=node\.mojom\.NodeService(\s|$)/.test(p.command))
+    .filter((p) => userDataOf(p.command) === path.normalize(ours.userData).toLowerCase())
+    .map((p) => p.pid);
 }
 
 export async function webHealth(port: number, timeoutMs = 2500): Promise<{ ok: boolean; detail?: string }> {

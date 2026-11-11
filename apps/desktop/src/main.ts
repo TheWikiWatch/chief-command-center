@@ -3,17 +3,32 @@ import path from "node:path";
 
 import { app, crashReporter, dialog, nativeTheme, protocol, safeStorage, screen, session, shell, utilityProcess } from "electron";
 
-import { createBoot, recoversBoot } from "./boot";
+import { countedStart, createBoot, recoversBoot } from "./boot";
 import { registerBootScheme, serveBootPage } from "./boot-protocol";
 import { payloadLayout } from "./env";
-import { bridgeHealth, gatewayOwner, isOrphan, killTree, launchGateway, profileHome, requestScopedStop, stillTheGateway, waitFor } from "./gateway";
+import {
+  bridgeHealth,
+  gatewayOwner,
+  installedPlugin,
+  isOrphan,
+  killTree,
+  launchGateway,
+  leftoverGateway,
+  pidFileWritten,
+  pluginDigest,
+  processesWhere,
+  profileHome,
+  requestScopedStop,
+  stillTheGateway,
+  waitFor,
+} from "./gateway";
 import { actionFromArgv, lookTheme, navigateDecision, permissionAllowed, permissionCheckAllowed, windowOpenDecision, BOOT_URL } from "./guards";
 import { fallbackCommandLine, installScript, launchDetached } from "./install-package";
 import { checkForUpdates, registerIpc, sendEngineState, syncHistory } from "./ipc";
 import { Notifier } from "./notifier";
 import { missing, resolvePaths } from "./paths";
 import { ensurePhoneHost, resumeServe } from "./phone";
-import { decidePorts } from "./ports";
+import { decidePorts, isFree } from "./ports";
 import { cacheRelease, readReleases, recordInstall } from "./release-history";
 import { RELEASE_KEYS } from "./release-key";
 import { builtInFeed, builtInReportEmail, effectiveFeed, folderSource, githubSource, parseGithub } from "./release-source";
@@ -22,9 +37,9 @@ import { bridgeToken, legacyTokenFiles, readUpdateKey, rotateBridgeToken } from 
 import { assistantName, bootSteps, ctx, hiddenLaunch, log, setStep, uiOrigin, uiUrl } from "./state";
 import { Store } from "./store";
 import { Supervisor, type SupervisorEvent } from "./supervisor";
-import { APP_ID, handOff, helperCopy, markReady, PACKAGE_NAME, readResult, resultFile, resultMessage, runStage, updaterDir } from "./update-helper";
+import { APP_ID, type ChiefLook, handOff, helperCopy, lookFromPage, markReady, PACKAGE_NAME, readResult, resultFile, resultMessage, runStage, updaterDir } from "./update-helper";
 import { compareVersions, Updater, type Release } from "./updater";
-import { launchWeb, webHealth } from "./web";
+import { launchWeb, leftoverDashboards, webHealth } from "./web";
 import {
   announceUpdate,
   bootPageShown,
@@ -45,24 +60,19 @@ import {
 } from "./window";
 
 /** What the update window shows of Chief: its face (PNG), its colour and name, from the page (`window.__chiefLook`). */
-let chiefLook: { png: Buffer | null; accent: string; name: string; reducedMotion: boolean } = { png: null, accent: "", name: "", reducedMotion: false };
+let chiefLook: ChiefLook = lookFromPage(null);
 
-async function readChiefLook(): Promise<typeof chiefLook> {
-  const empty = { png: null, accent: "", name: "", reducedMotion: false };
+async function readChiefLook(): Promise<ChiefLook> {
   const contents = ctx.window?.webContents;
-  if (!contents || contents.isDestroyed()) return empty;
+  if (!contents || contents.isDestroyed()) return lookFromPage(null);
   try {
-    const look = (await Promise.race([
+    const look = await Promise.race([
       contents.executeJavaScript("typeof window.__chiefLook === 'function' ? window.__chiefLook() : null", true),
       new Promise((resolve) => setTimeout(() => resolve(null), 2500)),
-    ])) as { png?: unknown; accent?: unknown; name?: unknown; reducedMotion?: unknown } | null;
-    if (!look) return empty;
-    const png = typeof look.png === "string" && look.png.startsWith("data:image/png;base64,") ? Buffer.from(look.png.slice(22), "base64") : null;
-    const accent = typeof look.accent === "string" && /^#[0-9a-f]{6}$/i.test(look.accent.trim()) ? look.accent.trim() : "";
-    const name = typeof look.name === "string" ? look.name.trim().slice(0, 40) : "";
-    return { png: png && png.length < 2_000_000 ? png : null, accent, name, reducedMotion: look.reducedMotion === true };
+    ]);
+    return lookFromPage(look);
   } catch {
-    return empty;
+    return lookFromPage(null);
   }
 }
 
@@ -90,6 +100,42 @@ async function choosePorts() {
   // A gateway on the bridge port (ours, or another launcher's) keeps it; so does this run's own dashboard server.
   const chosen = await decidePorts({ saved, first, bridgeHeld: owner.state !== "none" || alive(ctx.gateway), uiHeld: alive(ctx.web) });
   if (first || chosen.ui !== saved.ui || chosen.bridge !== saved.bridge) store.save({ ports: chosen });
+}
+
+/**
+ * What an earlier run of this app left running on this data folder (a forced quit, a crash): its gateway and its
+ * dashboard server keep their ports for a while, and this start moved to other ports or took the EADDRINUSE that
+ * followed for a crash. Each is ended only when it is surely ours (gateway.ts leftoverGateway, web.ts
+ * leftoverDashboards), and Windows is asked only when the pid file names a live orphan or the saved dashboard port is
+ * taken, so a normal start costs nothing. Then their ports are given a moment to close.
+ */
+async function endLeftovers() {
+  const { store, paths, hermesRoot } = ctx;
+  const { ui, bridge } = store.value.ports;
+  const launcher = payloadLayout(paths.payload).launcher;
+  const owner = gatewayOwner(hermesRoot, launcher);
+  const ended: string[] = [];
+  const freeing: number[] = [];
+  if (owner.state === "ours" && isOrphan(owner, ctx.gateway)) {
+    const [proc] = await processesWhere(`ProcessId = ${owner.pid}`);
+    if (leftoverGateway(proc, launcher, pidFileWritten(hermesRoot), !app.isPackaged)) {
+      await killTree(owner.pid);
+      ended.push(`gateway ${owner.pid}`);
+      freeing.push(bridge);
+    }
+  }
+  if (!alive(ctx.web) && !(await isFree(ui))) {
+    const servers = leftoverDashboards(await processesWhere("CommandLine LIKE '%node.mojom.NodeService%'"), { exe: process.execPath, userData: app.getPath("userData"), pid: process.pid });
+    for (const pid of servers) {
+      await killTree(pid);
+      ended.push(`dashboard ${pid}`);
+    }
+    if (servers.length) freeing.push(ui);
+  }
+  if (!ended.length) return;
+  log.info("boot.leftovers-ended", { ended });
+  const freed = await waitFor(async () => ({ ok: (await Promise.all(freeing.map((p) => isFree(p)))).every(Boolean) }), 10_000, 250);
+  if (!freed.ok) log.warn("boot.leftovers-ports-held", { ports: freeing });
 }
 
 /** Another launcher runs this profile's gateway: take it over (stop only that one), use it as is, or quit. */
@@ -159,11 +205,17 @@ const boot = createBoot({
     const newer = ctx.store.value.lastVersion;
     return `Your data was last opened by a newer version of the app${newer ? ` (${newer})` : ""}, which this version can't read. Install ${newer || "that version"} or a newer one, and ${assistantName()} opens as before.`;
   },
+  endLeftovers: () => endLeftovers().catch((error) => log.warn("boot.leftovers-failed", { error })),
   choosePorts,
   restoreJournalExists: () => existsSync(path.join(ctx.paths.appDir, "restore", "restore-journal.json")),
   recover: () => engine()(["recover", "--state-dir", path.join(ctx.paths.appDir, "restore")]) as Promise<{ ok: boolean; action?: string }>,
   provisionKey,
   lastProvisionKey: () => ctx.store.value.provisionKey || "",
+  // About a hundred small files on each side; one that can't be read counts as changed (provisioning puts it back).
+  pluginEdited: async () => {
+    const digests = await Promise.all([pluginDigest(path.join(ctx.paths.plugins, "chief-dashboard-bridge")), pluginDigest(installedPlugin(ctx.hermesRoot))]).catch(() => null);
+    return !digests || digests[0] !== digests[1];
+  },
   provision: () =>
     runPython(ctx.paths.provision, ["--plugins-src", ctx.paths.plugins, "--bridge-port", String(ctx.store.value.ports.bridge), ...(ctx.store.value.adopted ? ["--adopted"] : [])], {
       ...toolEnv("gateway"),
@@ -216,30 +268,25 @@ const boot = createBoot({
   log: (event, fields) => log.info(event, fields),
 });
 
-/**
- * A start, counted per version: a version that reaches the dashboard is "healthy". One that fails to start twice
- * (and never did) gets "Go back to X.Y.Z" on the boot page, when that version's package is still on this PC.
- */
+/** A start, counted per version (boot.ts countedStart): two failed starts of a new version offer going back. */
 async function runBoot() {
   if (boot.running) return boot.run();
   const version = app.getVersion();
-  const last = ctx.store.value.bootAttempts;
-  const count = last?.version === version ? last.count + 1 : 1;
-  ctx.store.save({ bootAttempts: { version, count } });
-  const result = await boot.run();
-  if (result === "ready") {
-    ctx.store.save({ bootAttempts: { version, count: 0 }, healthyVersion: version });
-    return result;
-  }
-  if (result === "error" && count >= 2 && ctx.store.value.healthyVersion !== version) {
-    const [previous] = await ctx.updater.rollbackOptions().catch(() => []);
-    if (previous) {
-      ctx.rollbackOffer = previous.version;
-      log.warn("boot.rollback-offered", { from: version, to: previous.version, attempts: count });
-      ctx.window?.webContents.send("boot:offer", { rollback: previous.version });
-    }
-  }
-  return result;
+  return countedStart({
+    version,
+    attempts: () => ctx.store.value.bootAttempts,
+    healthyVersion: () => ctx.store.value.healthyVersion,
+    saveAttempts: (bootAttempts, healthy) => ctx.store.save({ bootAttempts, ...(healthy ? { healthyVersion: version } : {}) }),
+    boot: () => boot.run(),
+    previous: async () => (await ctx.updater.rollbackOptions().catch(() => []))[0]?.version ?? "",
+    offer: (to, attempts) => {
+      // The boot page's Go back works only while the offer stands (ipc.ts boot:rollback).
+      ctx.rollbackOffer = to;
+      if (!to) return;
+      log.warn("boot.rollback-offered", { from: version, to, attempts });
+      ctx.window?.webContents.send("boot:offer", { rollback: to });
+    },
+  });
 }
 
 /** Supervisor events: logged, sent to the page's banner, and a Windows notification when Chief stops for good. */
@@ -281,7 +328,8 @@ if (app.isPackaged && debugging) {
   app.exit(1);
 }
 
-// Every web contents, not only the main window's: exact-origin navigation and window rules, no webviews.
+// Every web contents, not only the main window's: exact-origin navigation and window rules, no webviews. The only
+// guard: a second one on the main window (window.ts had one) opened each external link twice.
 app.on("web-contents-created", (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
     const decision = windowOpenDecision(url, uiOrigin());
@@ -317,6 +365,8 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
     ctx.paths = resolvePaths({ packaged: app.isPackaged, resourcesPath: process.resourcesPath, appPath: app.getAppPath(), env: process.env });
     ctx.store = new Store(ctx.paths.appDir);
     log.info("app.start", { version: app.getVersion(), packaged: app.isPackaged, hidden: hiddenLaunch() });
+    if (ctx.store.problem === "restored") log.warn("settings.restored", { detail: "desktop.json couldn't be read; its backup was used" });
+    if (ctx.store.problem === "unreadable") log.error("settings.unreadable", { detail: "desktop.json and its backup couldn't be read; running on defaults, and the file is left as it is" });
     serveBootPage(protocol, ctx.paths.staticDir);
     ctx.shippedFeed = builtInFeed(app.getAppPath());
     ctx.reportEmail = builtInReportEmail(app.getAppPath());
@@ -364,6 +414,8 @@ if (!app.requestSingleInstanceLock() || (process.argv.includes("--quit") && !app
         return ctx.updateSource;
       },
       currentVersion: app.getVersion(),
+      // The layout the data was last written in: a release that reads only an older one can't be gone back to.
+      dataSchema: () => ctx.store.value.dataSchema || 0,
       publicKey: RELEASE_KEYS,
       // Beside the backups when the owner moved those off a full system drive.
       updatesDir: ctx.store.value.backupDir ? path.join(path.dirname(ctx.store.value.backupDir), "updates") : path.join(ctx.paths.data, "updates"),

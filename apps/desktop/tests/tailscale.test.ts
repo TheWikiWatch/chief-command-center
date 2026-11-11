@@ -1,8 +1,13 @@
 import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 
-import { choosePort, consentUrl, disableServe, enableServe, parseServe, parseStatus, phoneUrl, readState, type Exec } from "../src/tailscale";
+import { restartWeb } from "../src/phone";
+import { ctx } from "../src/state";
+import { choosePort, consentUrl, disableServe, enableServe, findTailscale, parseServe, parseStatus, phoneUrl, readState, type Exec } from "../src/tailscale";
 
 const STATUS = JSON.stringify({
   BackendState: "Running",
@@ -117,5 +122,61 @@ describe("changing Serve", () => {
     expect(r).toEqual({ ok: true, port: 443 });
     expect(calls[0]).toEqual(["serve", "--yes", "--https=443", "http://127.0.0.1:3000", "off"]);
     expect(calls.flat()).not.toContain("reset");
+  });
+});
+
+describe("finding tailscale.exe", () => {
+  const root = mkdtempSync(path.join(tmpdir(), "chief-tailscale-"));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const folder = (name: string, exe?: string) => {
+    const dir = path.join(root, name);
+    mkdirSync(exe ? path.dirname(path.join(dir, exe)) : dir, { recursive: true });
+    if (exe) writeFileSync(path.join(dir, exe), "");
+    return dir;
+  };
+
+  it("takes it from its install folder under Program Files, never from PATH", () => {
+    const programFiles = folder("pf", "Tailscale\\tailscale.exe");
+    const x86 = folder("pf86");
+    const onPath = folder("bin", "tailscale.exe");
+    expect(findTailscale({ ProgramFiles: programFiles, "ProgramFiles(x86)": x86, PATH: onPath })).toBe(path.join(programFiles, "Tailscale", "tailscale.exe"));
+    // Before: a tailscale.exe anywhere on PATH was run, and handed the dashboard's port.
+    expect(findTailscale({ ProgramFiles: folder("empty"), "ProgramFiles(x86)": x86, PATH: onPath })).toBe("");
+  });
+});
+
+describe("a phone-access change while a backup runs", () => {
+  const calls: string[] = [];
+  ctx.web = { stop: async () => void calls.push("stop"), start: async () => void calls.push("start") } as never;
+
+  it("restarts the dashboard server at once when nothing is running", async () => {
+    calls.length = 0;
+    expect(await restartWeb(async () => false, 5)).toEqual({ deferred: false });
+    expect(calls).toEqual(["stop", "start"]);
+  });
+
+  it("waits for the backup (it would end with the server), and makes one restart for every change meanwhile", async () => {
+    calls.length = 0;
+    let running = true;
+    const busy = async () => running;
+    expect(await restartWeb(busy, 5)).toEqual({ deferred: true });
+    expect(await restartWeb(busy, 5)).toEqual({ deferred: true }); // another change while it waits
+    await new Promise((r) => setTimeout(r, 30));
+    expect(calls).toEqual([]);
+    running = false;
+    await vi.waitFor(() => expect(calls).toEqual(["stop", "start"]));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(calls).toEqual(["stop", "start"]);
+  });
+
+  it("doesn't restart anything once the app is closing", async () => {
+    calls.length = 0;
+    let running = true;
+    await restartWeb(async () => running, 5);
+    ctx.quitting = true;
+    running = false;
+    await new Promise((r) => setTimeout(r, 40));
+    expect(calls).toEqual([]);
+    ctx.quitting = false;
   });
 });

@@ -2,8 +2,8 @@ import path from "node:path";
 
 import { app, BrowserWindow, dialog, Menu, nativeImage, nativeTheme, Notification, screen, session, shell, Tray } from "electron";
 
-import { activeWork, fromBridgeSnapshot } from "./active-work";
-import { BOOT_URL, DESKTOP_ACTIONS, isBootPage, navigateDecision, sameOrigin, windowColors, windowOpenDecision, type DesktopAction, type ThemeMode } from "./guards";
+import { activeWork, backupRunning, fromBridgeSnapshot } from "./active-work";
+import { BOOT_URL, DESKTOP_ACTIONS, isBootPage, sameOrigin, windowColors, type DesktopAction, type ThemeMode } from "./guards";
 import { pauseServe } from "./phone";
 import { createQuitter, type WaitChoice } from "./quitting";
 import { logLine } from "./runtime";
@@ -157,18 +157,6 @@ export function createWindow() {
   });
   ctx.window = window;
   window.once("ready-to-show", () => log.info("window.first-paint", { msSinceStart: Math.round(process.uptime() * 1000) }));
-  // Exact origins (guards.ts): a window the dashboard opens inherits the preload, so only its own pages may.
-  window.webContents.setWindowOpenHandler(({ url }) => {
-    const decision = windowOpenDecision(url, uiOrigin());
-    if (decision === "external") void shell.openExternal(url);
-    return { action: decision === "allow" ? "allow" : "deny" };
-  });
-  window.webContents.on("will-navigate", (event, url) => {
-    const decision = navigateDecision(url, uiOrigin(), BOOT_URL);
-    if (decision === "allow") return;
-    event.preventDefault();
-    if (decision === "external") void shell.openExternal(url);
-  });
   // The dashboard didn't load (its server went away between the health check and the page): the boot page, with Retry.
   window.webContents.on("did-fail-load", (_event, code, description, url, isMainFrame) => {
     if (!isMainFrame || code === -3 /* aborted by a newer navigation */ || !sameOrigin(url, uiOrigin()) || ctx.quitting) return;
@@ -268,11 +256,13 @@ export function refreshTray() {
 }
 
 export async function currentWork() {
+  // A backup the dashboard is making counts too, with or without Chief: it ends with the dashboard server.
+  const backup = await backupRunning(ctx.paths.appDir);
   try {
     const res = await fetch(`http://127.0.0.1:${ctx.store.value.ports.bridge}/snapshot`, { headers: { Authorization: `Bearer ${ctx.token}` }, signal: AbortSignal.timeout(3000) });
-    return activeWork(fromBridgeSnapshot(await res.json()));
+    return activeWork({ ...fromBridgeSnapshot(await res.json()), backup });
   } catch {
-    return { busy: false, reasons: [] };
+    return activeWork({ backup });
   }
 }
 

@@ -89,6 +89,19 @@ export function parseGithub(feed: string): { owner: string; repo: string } | nul
 
 type Fetch = typeof fetch;
 
+/** How many redirects a release download follows (GitHub's own take one or two). */
+export const MAX_REDIRECTS = 5;
+
+/** `url` (read against `base` when it's relative) when it is an https address; "" otherwise. */
+function httpsUrl(url: string, base?: string): string {
+  try {
+    const u = new URL(url, base || undefined);
+    return u.protocol === "https:" ? u.href : "";
+  } catch {
+    return "";
+  }
+}
+
 /**
  * A GitHub release repository: the API calls both the updater and the history use.
  *
@@ -145,17 +158,23 @@ export function githubApi(owner: string, repo: string, key: string, fetchImpl: F
     if (!res.ok) throw refused(res.status);
     return (await res.json()) as T;
   };
-  /** A redirect's target, fetched without any key (the key is never sent to the download host). */
-  const follow = async (res: Response, range?: string): Promise<Response> => {
+  /**
+   * A redirect's target, fetched without any key (the key is never sent to the download host). At most
+   * MAX_REDIRECTS of them, and only to https: a download that wanders off anywhere else is refused.
+   */
+  const follow = async (res: Response, range?: string, hops = 0): Promise<Response> => {
     if (res.status >= 300 && res.status < 400) {
       const location = res.headers.get("location");
       if (!location) throw new SourceError("GitHub sent an empty redirect.");
+      if (hops >= MAX_REDIRECTS) throw new SourceError("the download was redirected too many times.");
+      const target = httpsUrl(location, res.url);
+      if (!target) throw new SourceError("the download was redirected away from https, so it was refused.");
       try {
-        res = await fetchImpl(location, { headers: range ? { Range: range } : {}, redirect: "manual" });
+        res = await fetchImpl(target, { headers: range ? { Range: range } : {}, redirect: "manual" });
       } catch {
         throw new SourceError("the download host isn't reachable (offline?).");
       }
-      return follow(res, range);
+      return follow(res, range, hops + 1);
     }
     if (!res.ok) throw refused(res.status);
     return res;
@@ -164,9 +183,11 @@ export function githubApi(owner: string, repo: string, key: string, fetchImpl: F
   const asset = async (id: number, range?: string): Promise<Response> => follow(await call(`${api}/releases/assets/${id}`, "application/octet-stream", "manual"), range);
   /** An asset by its plain download link (a public repository: no API call). */
   const download = async (url: string, range?: string): Promise<Response> => {
+    const link = httpsUrl(url);
+    if (!link) throw new SourceError("the release's download link isn't https, so it was refused.");
     let res: Response;
     try {
-      res = await fetchImpl(url, { headers: { "User-Agent": "ChiefCommandCenter", ...(range ? { Range: range } : {}) }, redirect: "manual" });
+      res = await fetchImpl(link, { headers: { "User-Agent": "ChiefCommandCenter", ...(range ? { Range: range } : {}) }, redirect: "manual" });
     } catch {
       throw new SourceError("GitHub isn't reachable (offline?).");
     }

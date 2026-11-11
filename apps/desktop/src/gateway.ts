@@ -1,15 +1,15 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
-import { createWriteStream, existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createWriteStream, existsSync, mkdirSync, promises as fs, readFileSync, statSync, type Dirent } from "node:fs";
 import path from "node:path";
 
 import { systemCwd, systemTool } from "./guards";
-import { rotate } from "./logger";
+import { pipeToLog, rotate } from "./logger";
 import type { ChildHandle } from "./supervisor";
 
 /**
- * The chief's Hermes gateway (PLAN §4): the payload launcher in the foreground (`hermes -p chief gateway run`),
- * with an explicit HERMES_HOME, this install's own gateway lock directory (unless adopted), the bridge port
+ * The chief's Hermes gateway (PLAN §4): the payload launcher's program in the foreground (`hermes -p chief gateway
+ * run`), with an explicit HERMES_HOME, this install's own gateway lock directory (unless adopted), the bridge port
  * and token, and HERMES_BIN pointing at the payload launcher.
  *
  * Stopping NEVER uses `hermes gateway stop`: on Windows it ends the per-user scheduled task named after the
@@ -30,6 +30,40 @@ export type GatewayConfig = {
 
 export function profileHome(hermesRoot: string, profile = "chief"): string {
   return path.join(hermesRoot, "profiles", profile);
+}
+
+/** The bridge plugin the gateway loads: the profile's own copy, which provisioning keeps (and the agent's tools can reach). */
+export function installedPlugin(hermesRoot: string, profile = "chief"): string {
+  return path.join(profileHome(hermesRoot, profile), "plugins", "chief-dashboard-bridge");
+}
+
+/**
+ * A plugin folder's file names and contents, without what provisioning never copies (`__pycache__`, `.token`), so the
+ * packaged plugin and the profile's copy compare equal until one changes. A link isn't followed: it counts as a
+ * difference. A folder that isn't there has the digest of an empty one.
+ */
+export async function pluginDigest(dir: string): Promise<string> {
+  const hash = createHash("sha256");
+  const walk = async (rel: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(path.join(dir, rel), { withFileTypes: true });
+    } catch (e) {
+      if (!rel && (e as NodeJS.ErrnoException).code === "ENOENT") return;
+      throw e;
+    }
+    for (const entry of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      if (entry.name === "__pycache__" || entry.name === ".token") continue;
+      const name = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) await walk(name);
+      else if (entry.isFile()) {
+        const bytes = await fs.readFile(path.join(dir, name));
+        hash.update(`${name}\0${bytes.length}\0`).update(bytes);
+      } else hash.update(`${name}\0link\0`);
+    }
+  };
+  await walk("");
+  return hash.digest("hex");
 }
 
 function logStream(file: string) {
@@ -72,8 +106,8 @@ export async function killTree(pid: number): Promise<void> {
 /** Ask one gateway, in one profile home, to drain and exit (Hermes's own marker). Nothing else is touched. */
 export async function requestScopedStop(cfg: Pick<GatewayConfig, "python" | "pythonPath" | "hermesRoot" | "profile" | "env">, gatewayPid: number): Promise<boolean> {
   const script = "import sys\nfrom gateway.status import write_planned_stop_marker\nsys.exit(0 if write_planned_stop_marker(int(sys.argv[1])) else 1)";
-  // -P: nothing from the working folder is imported ahead of Hermes's own modules.
-  const child = spawn(cfg.python, ["-B", "-P", "-c", script, String(gatewayPid)], {
+  // -P: nothing from the working folder is imported ahead of Hermes's own modules; -s: nor from the per-user site-packages.
+  const child = spawn(cfg.python, ["-B", "-P", "-s", "-c", script, String(gatewayPid)], {
     env: { ...cfg.env, HERMES_HOME: profileHome(cfg.hermesRoot, cfg.profile), PYTHONPATH: cfg.pythonPath.join(";") },
     windowsHide: true,
     stdio: "ignore",
@@ -98,7 +132,8 @@ export type ProcessInfo = { path: string; startedMs: number };
 export function processInfo(pid: number): Promise<ProcessInfo | null> {
   const script = `$p = Get-Process -Id ${Math.trunc(pid)} -ErrorAction Stop; [Console]::Out.Write((@{ path = [string]$p.Path; started = $p.StartTime.ToUniversalTime().ToString('o') } | ConvertTo-Json -Compress))`;
   return new Promise((resolve) => {
-    const child = spawn(systemTool("powershell"), ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, cwd: systemCwd() });
+    // Nothing reads its stderr, so it isn't a pipe: one that filled up would leave PowerShell blocked.
+    const child = spawn(systemTool("powershell"), ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, cwd: systemCwd(), stdio: ["ignore", "pipe", "ignore"] });
     let out = "";
     child.stdout?.on("data", (c) => (out += String(c)));
     child.on("error", () => resolve(null));
@@ -108,6 +143,37 @@ export function processInfo(pid: number): Promise<ProcessInfo | null> {
         resolve(code === 0 ? { path: String(v.path || ""), startedMs: Date.parse(String(v.started || "")) } : null);
       } catch {
         resolve(null);
+      }
+    });
+  });
+}
+
+export type ProcessRecord = { pid: number; parent: number; path: string; command: string; startedMs: number };
+
+/**
+ * The processes a WMI filter selects (`ProcessId = 42`, `CommandLine LIKE '%…%'`), with their command lines (Windows'
+ * own PowerShell); [] when none match or they can't be read. The filter is the app's own text, never the page's.
+ */
+export function processesWhere(filter: string): Promise<ProcessRecord[]> {
+  const script = [
+    `$items = @(Get-CimInstance Win32_Process -Filter '${filter.replace(/'/g, "''")}' -ErrorAction Stop | ForEach-Object {`,
+    "@{ pid = [int]$_.ProcessId; parent = [int]$_.ParentProcessId; path = [string]$_.ExecutablePath; command = [string]$_.CommandLine;",
+    "started = $(if ($_.CreationDate) { $_.CreationDate.ToUniversalTime().ToString('o') } else { '' }) } });",
+    "[Console]::Out.Write((ConvertTo-Json -InputObject $items -Compress))",
+  ].join(" ");
+  return new Promise((resolve) => {
+    const child = spawn(systemTool("powershell"), ["-NoProfile", "-NonInteractive", "-Command", script], { windowsHide: true, cwd: systemCwd(), stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    child.stdout?.on("data", (c) => (out += String(c)));
+    child.on("error", () => resolve([]));
+    child.on("close", (code) => {
+      try {
+        const items = code === 0 ? (JSON.parse(out) as { pid?: unknown; parent?: unknown; path?: unknown; command?: unknown; started?: unknown }[]) : [];
+        resolve(
+          items.map((p) => ({ pid: Number(p.pid), parent: Number(p.parent), path: String(p.path || ""), command: String(p.command || ""), startedMs: Date.parse(String(p.started || "")) })),
+        );
+      } catch {
+        resolve([]);
       }
     });
   });
@@ -128,6 +194,28 @@ export async function stillTheGateway(pid: number, hermesRoot: string, profile =
   if (!info || !Number.isFinite(info.startedMs)) return false;
   if (!["python.exe", "pythonw.exe", "hermes.exe"].includes(path.basename(info.path).toLowerCase())) return false;
   return info.startedMs <= written + 60_000;
+}
+
+/** When this profile's pid file was written (0 when there is none). */
+export function pidFileWritten(hermesRoot: string, profile = "chief"): number {
+  try {
+    return statSync(path.join(profileHome(hermesRoot, profile), "gateway.pid")).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * A gateway an earlier run of this app left on this data folder (a forced quit, a crash): the process this profile's
+ * pid file names, still a Python or Hermes program running this payload's launcher as `gateway run`, and started before
+ * the file was written (Windows reuses pids). From source, never a process of the installed app (under WindowsApps).
+ */
+export function leftoverGateway(proc: ProcessRecord | undefined, launcher: string, pidFileMs: number, fromSource: boolean): boolean {
+  if (!proc || !Number.isFinite(proc.startedMs) || proc.startedMs > pidFileMs + 60_000) return false;
+  if (!["python.exe", "pythonw.exe", "hermes.exe"].includes(path.basename(proc.path).toLowerCase())) return false;
+  if (fromSource && /\\windowsapps\\/i.test(proc.path)) return false;
+  const command = proc.command.replace(/\//g, "\\").toLowerCase();
+  return command.includes(path.normalize(launcher).toLowerCase()) && /\sgateway\s+run(\s|$)/.test(command);
 }
 
 /** The gateway's own pid (the Python process), from this profile's pid file. */
@@ -154,14 +242,17 @@ function waitExit(child: ChildProcess, ms: number): Promise<boolean> {
 export function launchGateway(cfg: GatewayConfig, onExit: (code: number | null, pid?: number) => void): ChildHandle & { process: ChildProcess } {
   const log = logStream(cfg.logFile);
   log.write(`\n--- ${new Date().toISOString()} starting gateway\n`);
-  const child = spawn(cfg.launcher, ["-p", cfg.profile, "gateway", "run"], {
+  // The launcher is a stub that starts the payload's Python on the program zipped inside it. Running that Python here
+  // adds -s, which the stub can't: a .pth or usercustomize.py in the per-user site-packages would otherwise run inside
+  // the gateway. Not PYTHONNOUSERSITE: the gateway hands its environment on to the agent's terminal, whose `python`
+  // keeps the owner's own packages.
+  const child = spawn(cfg.python, ["-s", cfg.launcher, "-p", cfg.profile, "gateway", "run"], {
     env: cfg.env,
     cwd: profileHome(cfg.hermesRoot, cfg.profile),
     windowsHide: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
-  child.stdout?.pipe(log, { end: false });
-  child.stderr?.pipe(log, { end: false });
+  pipeToLog(log, [child.stdout, child.stderr]);
   const pid = child.pid;
   child.once("exit", (code) => {
     log.write(`--- ${new Date().toISOString()} gateway exited (${code})\n`);

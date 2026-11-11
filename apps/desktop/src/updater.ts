@@ -69,6 +69,9 @@ export type UpdaterDeps = {
   /** Where releases come from: a folder or a GitHub releases repository (release-source.ts); null when none is set. */
   source: () => ReleaseSource | null;
   currentVersion: string;
+  /** The data layout the data was last written in (desktop.json `dataSchema`): a release whose `data.schema` is older
+   * can't read it, so it is never gone back to. */
+  dataSchema?: () => number;
   publicKey: ReleaseKeys;
   updatesDir: string;
   skipped: () => string[];
@@ -186,6 +189,27 @@ export class Updater {
     return this.deps.now ? this.deps.now() : Date.now();
   }
 
+  /**
+   * Checking, preparing, installing a chosen version and going back take turns: each one sets the release in hand that a
+   * restart acts on, and going back used to back up and stage beside a prepare under way.
+   */
+  private turn: Promise<unknown> = Promise.resolve();
+
+  private exclusive<T>(run: () => Promise<T>): Promise<T> {
+    const next = this.turn.then(run);
+    this.turn = next.catch(() => undefined);
+    return next;
+  }
+
+  /** A release that can't read the data any more: a later version wrote it in a newer layout. */
+  private readsOlderData(release: Release): boolean {
+    return (Number(release.data?.schema) || 0) < (this.deps.dataSchema?.() ?? 0);
+  }
+
+  private olderDataError(version: string): UpdateState {
+    return this.set({ status: "error", error: `Version ${version} can't read your data any more (a later version changed how it's saved), so the app can't go back to it.` });
+  }
+
   /** Earlier versions whose verified package is still in `updates\`, newest first (Settings → "Go back to X.Y.Z"). */
   async rollbackOptions(): Promise<RollbackOption[]> {
     const out: RollbackOption[] = [];
@@ -193,6 +217,7 @@ export class Updater {
     for (const release of this.deps.history?.() ?? []) {
       if (compareVersions(release.version, this.deps.currentVersion) >= 0) continue;
       if (belowFloor(release.version, floor)) continue;
+      if (this.readsOlderData(release)) continue;
       const file = path.join(this.deps.updatesDir, release.package.file);
       try {
         if ((await fs.stat(file)).size !== release.package.bytes) continue;
@@ -206,19 +231,23 @@ export class Updater {
 
   /**
    * Go back to an earlier version: its package is checked against its signed description again, then it installs
-   * like an update (backup first, Chief stopped, Windows installs it and relaunches the app).
+   * like an update (backup first, Chief stopped, Windows installs it and relaunches the app). Never to one that can't
+   * read the data, and never beside a prepare: the restart that follows is for this version only.
    */
-  async rollback(version: string, force = false): Promise<UpdateState> {
-    const option = (await this.rollbackOptions()).find((o) => o.version === version);
-    const release = this.deps.history?.().find((r) => r.version === version);
-    if (!option || !release) return this.set({ status: "error", error: `Version ${version} isn't kept on this PC any more, so the app can't go back to it.` });
-    if ((await sha256(option.file)) !== release.package.sha256) {
-      await fs.rm(option.file, { force: true });
-      return this.set({ status: "error", error: `The kept package for ${version} doesn't match its description, so it was deleted.` });
-    }
-    const prepared = await this.backupAndStage(release, option.file);
-    if (prepared.status !== "ready") return prepared;
-    return this.restart(force);
+  rollback(version: string, force = false): Promise<UpdateState> {
+    return this.exclusive(async () => {
+      const release = this.deps.history?.().find((r) => r.version === version);
+      if (release && this.readsOlderData(release)) return this.olderDataError(version);
+      const option = (await this.rollbackOptions()).find((o) => o.version === version);
+      if (!option || !release) return this.set({ status: "error", error: `Version ${version} isn't kept on this PC any more, so the app can't go back to it.` });
+      if ((await sha256(option.file)) !== release.package.sha256) {
+        await fs.rm(option.file, { force: true });
+        return this.set({ status: "error", error: `The kept package for ${version} doesn't match its description, so it was deleted.` });
+      }
+      const prepared = await this.backupAndStage(release, option.file);
+      if (prepared.status !== "ready") return prepared;
+      return this.restart(force, version);
+    });
   }
 
   private source(): ReleaseSource | null {
@@ -240,18 +269,25 @@ export class Updater {
    * description comes from the kept, verified history; its package from that version's release (or `updates\` when
    * it's still there), checked against the description; then it prepares and restarts like any update.
    */
-  async installVersion(version: string): Promise<UpdateState> {
-    if (version === this.deps.currentVersion) return this.set({ status: "error", error: `Version ${version} is the one running.` });
-    const release = this.deps.history?.().find((r) => r.version === version);
-    if (!release) return this.set({ status: "error", error: `Version ${version} isn't known on this PC yet. Check for updates first, then try again.` });
-    const floor = releaseFloor(this.deps.history?.() ?? []);
-    if (belowFloor(version, floor)) return this.set({ status: "error", error: `Version ${version} can't be installed any more: a later release fixed a security problem in it. ${floor} is the oldest you can go back to.` });
-    this.chosen = version;
-    this.set({ status: "available", checkedAt: this.now(), release });
-    return this.prepare();
+  installVersion(version: string): Promise<UpdateState> {
+    return this.exclusive(async () => {
+      if (version === this.deps.currentVersion) return this.set({ status: "error", error: `Version ${version} is the one running.` });
+      const release = this.deps.history?.().find((r) => r.version === version);
+      if (!release) return this.set({ status: "error", error: `Version ${version} isn't known on this PC yet. Check for updates first, then try again.` });
+      const floor = releaseFloor(this.deps.history?.() ?? []);
+      if (belowFloor(version, floor)) return this.set({ status: "error", error: `Version ${version} can't be installed any more: a later release fixed a security problem in it. ${floor} is the oldest you can go back to.` });
+      if (this.readsOlderData(release)) return this.olderDataError(version);
+      this.chosen = version;
+      this.set({ status: "available", checkedAt: this.now(), release });
+      return this.runPrepare();
+    });
   }
 
-  async check(): Promise<UpdateState> {
+  check(): Promise<UpdateState> {
+    return this.exclusive(() => this.runCheck());
+  }
+
+  private async runCheck(): Promise<UpdateState> {
     const inHandState = this.state;
     const inHand = ["downloading", "preparing", "ready", "busy", "restarting"].includes(inHandState.status) ? (inHandState as { release: Release }).release : null;
     if (inHandState.status === "restarting") return inHandState;
@@ -303,7 +339,7 @@ export class Updater {
    */
   prepare(): Promise<UpdateState> {
     if (this.preparing) return this.preparing;
-    this.preparing = this.runPrepare().finally(() => {
+    this.preparing = this.exclusive(() => this.runPrepare()).finally(() => {
       this.preparing = null;
     });
     return this.preparing;
@@ -447,18 +483,30 @@ export class Updater {
   }
 
   private restarting: Promise<UpdateState> | null = null;
+  /** The version the restart under way installs. */
+  private restartingTo = "";
 
   /**
    * Restart into the prepared release. `force`: the owner chose "Restart now" although Chief is busy. One at a time:
    * a second click (or the card's "restart when Chief's done" retry, or the same card in Settings) joins the first
-   * instead of handing Windows the package twice.
+   * instead of handing Windows the package twice. `intended`: the version this restart is for (going back); when
+   * another release is in hand, or restarting, it is refused and that one is left as it is.
    */
-  restart(force = false): Promise<UpdateState> {
-    if (this.restarting) return this.restarting;
+  restart(force = false, intended?: string): Promise<UpdateState> {
+    if (this.restarting) return intended && intended !== this.restartingTo ? Promise.resolve(this.notInHand(intended)) : this.restarting;
+    const state = this.state;
+    const inHand = state.status === "ready" || state.status === "busy" ? state.release.version : "";
+    if (intended && intended !== inHand) return Promise.resolve(this.notInHand(intended));
+    this.restartingTo = inHand;
     this.restarting = this.runRestart(force).finally(() => {
       this.restarting = null;
     });
     return this.restarting;
+  }
+
+  /** Not set as the state: the release in hand stays offered. */
+  private notInHand(version: string): UpdateState {
+    return { status: "error", error: `${version} wasn't installed: another update got ready in the meantime. Try again.` };
   }
 
   private async runRestart(force: boolean): Promise<UpdateState> {

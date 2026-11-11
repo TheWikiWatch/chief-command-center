@@ -90,12 +90,14 @@ export function consentUrl(output: string): string {
   return /https:\/\/login\.tailscale\.com\/[^\s"']+/.exec(output)?.[0] || "";
 }
 
-/** tailscale.exe: the standard install folder, else PATH. "" when not installed. */
+/**
+ * tailscale.exe from its install folder under Program Files; "" when it isn't installed there. Never from PATH, where
+ * something else could sit under that name and be handed the dashboard's port (like guards.ts systemTool).
+ */
 export function findTailscale(env: NodeJS.ProcessEnv = process.env): string {
   const candidates = [
     path.join(env.ProgramFiles || "C:\\Program Files", "Tailscale", "tailscale.exe"),
     path.join(env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Tailscale", "tailscale.exe"),
-    ...(env.PATH || "").split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "tailscale.exe")),
   ];
   return candidates.find((p) => existsSync(p)) || "";
 }

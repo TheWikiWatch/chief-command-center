@@ -65,7 +65,14 @@ export async function applyRestore(deps: RestoreDeps): Promise<{ ok: boolean; er
   if (!healthy) {
     deps.progress?.("Chief didn't start cleanly; putting the previous setup back…");
     await deps.stopGateway().catch(() => undefined);
-    await deps.engine(["rollback", "--state-dir", deps.stateDir]);
+    const rolledBack = await deps.engine(["rollback", "--state-dir", deps.stateDir]);
+    // Never start Chief on a folder only partly put back: the engine keeps its journal, and the next start finishes it.
+    if (!rolledBack.ok) {
+      return {
+        ok: false,
+        error: `Chief didn't start with the restored data, and putting the previous setup back isn't finished: ${rolledBack.error || "a file may be open"} Restart Chief Command Center to finish it.`,
+      };
+    }
     await deps.startGateway().catch(() => undefined);
     return { ok: false, error: "Chief didn't start with the restored data, so the previous setup was put back. The backup may be from an incompatible setup." };
   }

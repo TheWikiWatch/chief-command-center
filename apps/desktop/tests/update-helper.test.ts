@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
-import { handOff, type HandOffDeps, helperCopy, markReady, parseStageLine, readResult, readyFile, resultFile, resultMessage, shownFile } from "../src/update-helper";
+import { handOff, type HandOffDeps, helperCopy, lookFromPage, markReady, parseStageLine, readResult, readyFile, resultFile, resultMessage, shownFile } from "../src/update-helper";
 
 const root = mkdtempSync(path.join(tmpdir(), "chief-helper-"));
 afterAll(() => rmSync(root, { recursive: true, force: true }));
@@ -111,6 +111,15 @@ describe("the helper's other files", () => {
     expect(readResult(dir)).toBeNull();
     expect(resultMessage(result, "1.0.0")).toBe("The update to 1.1.0 didn't finish: Deployment failed with HRESULT 0x80073CF6. You're still on 1.0.0; nothing was changed.");
     expect(resultMessage({ ...result!, ok: true }, "1.1.0")).toBeNull();
+  });
+
+  it("takes Chief's look from the page only as it should be, its name as the shell takes names", () => {
+    const png = `data:image/png;base64,${Buffer.from("png bytes").toString("base64")}`;
+    expect(lookFromPage({ png, accent: " #E5484D ", name: "  Nova ", reducedMotion: true })).toEqual({ png: Buffer.from("png bytes"), accent: "#E5484D", name: "Nova", reducedMotion: true });
+    // Before: any text up to 40 characters reached the update window, direction-changing characters included.
+    for (const name of ["Nova‮evil", "Nova\nQuit", "x".repeat(41), "   ", 7]) expect(lookFromPage({ png, name }).name, String(name)).toBe("");
+    expect(lookFromPage({ png: "data:image/jpeg;base64,AAAA", accent: "red", reducedMotion: "yes" })).toEqual({ png: null, accent: "", name: "", reducedMotion: false });
+    expect(lookFromPage(null)).toEqual({ png: null, accent: "", name: "", reducedMotion: false });
   });
 
   it("marks this start ready for a waiting helper", () => {

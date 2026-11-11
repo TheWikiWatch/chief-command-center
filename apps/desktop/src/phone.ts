@@ -1,5 +1,6 @@
+import { backupRunning } from "./active-work";
 import { choosePort, disableServe, enableServe, findTailscale, phoneUrl, readState } from "./tailscale";
-import { ctx } from "./state";
+import { ctx, log } from "./state";
 
 /* Phone access: Tailscale Serve in front of the dashboard (Settings → Phone). */
 
@@ -50,10 +51,29 @@ export async function ensurePhoneHost() {
   }
 }
 
-/** Restart only the dashboard server so it reads a new allow-list (the window keeps its page). */
-async function restartWeb() {
+let restartWaiting = false;
+
+/**
+ * Restart only the dashboard server so it reads a new allow-list (the window keeps its page). A backup the dashboard is
+ * making would end with the server, so while one runs the restart waits for it, checking every `everyMs`: the setting
+ * is saved already, and the server reads it when it starts. Changes made meanwhile share that one restart.
+ */
+export async function restartWeb(busy = () => backupRunning(ctx.paths.appDir), everyMs = 5_000): Promise<{ deferred: boolean }> {
+  if (await busy()) {
+    if (!restartWaiting) {
+      restartWaiting = true;
+      log.info("web.restart-deferred", { reason: "a backup is running" });
+      void (async () => {
+        while (!ctx.quitting && (await busy())) await new Promise((r) => setTimeout(r, everyMs));
+        restartWaiting = false;
+        if (!ctx.quitting) await restartWeb(busy, everyMs);
+      })();
+    }
+    return { deferred: true };
+  }
   await ctx.web.stop(true).catch(() => undefined);
   await ctx.web.start();
+  return { deferred: false };
 }
 
 export async function setPhoneAccess(mode: "owner" | "tailnet", login?: string) {

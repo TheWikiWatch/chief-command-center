@@ -80,11 +80,10 @@ export function navigateDecision(url: string, origin: string, boot: string): Nav
   return "deny";
 }
 
-/** IPC may come only from the dashboard (or, for boot channels, the boot page) in the main frame's origin. */
+/** IPC may come only from the dashboard in the main frame's origin; boot channels only from the boot page (Retry, Go back). */
 export function senderAllowed(frameUrl: string | undefined, origin: string, boot: string, opts: { boot?: boolean } = {}): boolean {
   if (!frameUrl) return false;
-  if (sameOrigin(frameUrl, origin)) return true;
-  return !!opts.boot && isBootPage(frameUrl, boot);
+  return opts.boot ? isBootPage(frameUrl, boot) : sameOrigin(frameUrl, origin);
 }
 
 /** A port Tailscale Serve can use for HTTPS. */

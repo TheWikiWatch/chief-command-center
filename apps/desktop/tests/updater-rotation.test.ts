@@ -71,7 +71,7 @@ describe("release keys", () => {
 });
 
 describe("kept packages and going back", () => {
-  function setup(currentVersion: string, history: Release[] = [], body = Buffer.alloc(1024, 3)) {
+  function setup(currentVersion: string, history: Release[] = [], body = Buffer.alloc(1024, 3), dataSchema = 0) {
     const updates = path.join(mkdtempSync(path.join(root, "data-")), "updates");
     mkdirSync(updates, { recursive: true });
     const log: string[] = [];
@@ -80,6 +80,7 @@ describe("kept packages and going back", () => {
     const updater = new Updater({
       source: () => null,
       currentVersion,
+      dataSchema: () => dataSchema,
       publicKey: pub(keyA),
       updatesDir: updates,
       skipped: () => [],
@@ -134,5 +135,22 @@ describe("kept packages and going back", () => {
     put(packageName("1.1.0"), body);
     expect((await updater.rollbackOptions()).map((o) => o.version)).toEqual(["1.1.0"]);
     expect(await updater.installVersion("1.0.0")).toMatchObject({ status: "error", error: expect.stringContaining("security problem") });
+  });
+
+  it("never goes back to a release that can't read the data's layout any more", async () => {
+    // Before: going back never compared the signed release's data schema with the data's, so the older version then
+    // refused to open the data at all.
+    const body = Buffer.alloc(1024, 3);
+    const old = manifest("1.0.0", {}, body) as unknown as Release; // data schema 1
+    const { updater, put, log } = setup("1.2.0", [old], body, 2);
+    put(packageName("1.0.0"), body);
+    expect(await updater.rollbackOptions()).toEqual([]);
+    expect(await updater.rollback("1.0.0")).toMatchObject({ status: "error", error: expect.stringContaining("can't read your data") });
+    expect(await updater.installVersion("1.0.0")).toMatchObject({ status: "error", error: expect.stringContaining("can't read your data") });
+    expect(log).toEqual([]);
+    // The same layout is fine.
+    const same = setup("1.2.0", [old], body, 1);
+    same.put(packageName("1.0.0"), body);
+    expect((await same.updater.rollbackOptions()).map((o) => o.version)).toEqual(["1.0.0"]);
   });
 });

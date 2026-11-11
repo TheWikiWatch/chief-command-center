@@ -124,6 +124,10 @@ export function envFor(kind: "gateway" | "web"): Record<string, string> {
         store.value.ownLedger && store.value.learningTool ? store.value.learningTool : path.join(paths.plugins, "chief-dashboard-bridge", "ledger", "learning_ledger.py"),
       CHIEF_HERMES_PYTHON: layout.python,
       CHIEF_PYTHONPATH: layout.pythonPath.join(";"),
+      // The dashboard's own Python children (a backup from Settings, the ledger) leave the per-user site-packages out,
+      // like the shell's (-s). Never in the gateway's environment: the agent's terminal inherits that one, and its
+      // `python` keeps the owner's own packages.
+      PYTHONNOUSERSITE: "1",
       CHIEF_BACKUP_ENGINE: paths.backupEngine,
       CHIEF_APP_VERSION: app.getVersion(),
       ...(ctx.reportEmail ? { CHIEF_REPORT_EMAIL: ctx.reportEmail } : {}),
@@ -149,11 +153,18 @@ export function engine() {
   return engineRunner(layout.python, ctx.paths.backupEngine, toolEnv("web"), layout.pythonPath);
 }
 
-export function preUpdateBackup(onProgress?: (fraction: number) => void): Promise<{ ok: boolean; error?: string }> {
-  return engine()([
-    "backup", "--dest", backupsDir(), "--parts", "setup", "--kind", "pre-update", "--local", "--keep", "2",
-    "--hermes-root", ctx.hermesRoot, "--app-dir", path.join(ctx.paths.appDir, "settings-backup"), "--app-version", app.getVersion(),
-  ], onProgress).then((r) => ({ ok: !!r.ok, error: r.error }));
+export async function preUpdateBackup(onProgress?: (fraction: number) => void): Promise<{ ok: boolean; error?: string }> {
+  const run = (dest: string) =>
+    engine()([
+      "backup", "--dest", dest, "--parts", "setup", "--kind", "pre-update", "--local", "--keep", "2",
+      "--hermes-root", ctx.hermesRoot, "--app-dir", path.join(ctx.paths.appDir, "settings-backup"), "--app-version", app.getVersion(),
+    ], onProgress);
+  let result = await run(backupsDir());
+  // Its keys are in the clear, so its file must be private: a chosen folder on a FAT or exFAT drive can't be, and the
+  // app's own data folder (on the system drive) always can. Without the backup the update wouldn't start.
+  const own = path.join(ctx.paths.data, "backups");
+  if (!result.ok && result.code === "not-private" && path.resolve(backupsDir()) !== path.resolve(own)) result = await run(own);
+  return { ok: !!result.ok, error: result.error };
 }
 
 /**

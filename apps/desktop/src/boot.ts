@@ -3,8 +3,10 @@
  * failure exits are tested without Electron or processes (tests/boot.test.ts).
  *
  * - One boot at a time: Retry while a boot is running joins it.
+ * - What an earlier run left running on this data folder is ended before the ports are chosen.
  * - An interrupted restore is recovered only when its journal exists.
- * - Provisioning is skipped when nothing it depends on changed since it last succeeded.
+ * - Provisioning is skipped when nothing it depends on changed since it last succeeded and the profile's copy of the
+ *   bridge plugin is still the app's.
  * - The dashboard server starts beside Chief's gateway rather than after it.
  */
 export type StepState = "waiting" | "working" | "done" | "error";
@@ -18,11 +20,15 @@ export type BootDeps = {
   loadToken: () => void;
   /** Set when this data was written by a newer app. */
   newerDataError: () => string | null;
+  /** Ends the gateway and dashboard server an earlier run of this app left on this data folder, and waits for their ports. */
+  endLeftovers: () => Promise<void>;
   choosePorts: () => Promise<void>;
   restoreJournalExists: () => boolean;
-  recover: () => Promise<{ ok: boolean; action?: string }>;
+  recover: () => Promise<{ ok: boolean; action?: string; error?: string }>;
   provisionKey: () => string;
   lastProvisionKey: () => string;
+  /** The profile's copy of the bridge plugin (the one the gateway loads) isn't the app's any more. */
+  pluginEdited: () => Promise<boolean>;
   provision: () => Promise<{ ok: boolean; error?: string }>;
   saveProvisionKey: (key: string) => void;
   /** A first start of a newer version with a different Hermes: the backup message, or null when none is needed. */
@@ -59,6 +65,42 @@ export function recoversBoot(event: { type: string; state?: string }, steps: { s
 
 /** What the start screen says when something the app needs isn't there (the list goes to the log). */
 export const MISSING_FILES = "Some of the app's files are missing. Reinstall Chief from its setup folder.";
+
+export type StartDeps = {
+  version: string;
+  /** Starts of a version that haven't reached the dashboard yet (desktop.json `bootAttempts`). */
+  attempts: () => { version: string; count: number } | null;
+  healthyVersion: () => string;
+  /** `healthy`: this version reached the dashboard. */
+  saveAttempts: (attempts: { version: string; count: number }, healthy: boolean) => void;
+  boot: () => Promise<BootResult>;
+  /** The newest earlier version whose package is still on this PC, or "". */
+  previous: () => Promise<string>;
+  /** "Go back to `version`" on the boot page; "" withdraws it. */
+  offer: (version: string, attempts: number) => void;
+};
+
+/**
+ * A start, counted per version: a version that reaches the dashboard is "healthy", and an offer to go back ends there
+ * (the boot page could still ask for it later: quitting, a page that didn't load). One that fails to start twice (and
+ * never did) gets "Go back to X.Y.Z" on the boot page, when that version's package is still on this PC.
+ */
+export async function countedStart(deps: StartDeps): Promise<BootResult> {
+  const last = deps.attempts();
+  const count = last?.version === deps.version ? last.count + 1 : 1;
+  deps.saveAttempts({ version: deps.version, count }, false);
+  const result = await deps.boot();
+  if (result === "ready") {
+    deps.saveAttempts({ version: deps.version, count: 0 }, true);
+    deps.offer("", 0);
+    return result;
+  }
+  if (result === "error" && count >= 2 && deps.healthyVersion() !== deps.version) {
+    const previous = await deps.previous();
+    if (previous) deps.offer(previous, count);
+  }
+  return result;
+}
 
 export function createBoot(deps: BootDeps) {
   let running: Promise<BootResult> | null = null;
@@ -98,13 +140,20 @@ export function createBoot(deps: BootDeps) {
     step("prepare", "working");
     const newer = deps.newerDataError();
     if (newer) return fail("prepare", newer);
+    await deps.endLeftovers();
     await deps.choosePorts();
     if (deps.restoreJournalExists()) {
       const recovered = await deps.recover();
       if (recovered.ok && recovered.action === "rolled-back") step("prepare", "working", "An interrupted restore was undone.");
+      // Never start on a folder an interrupted restore left partly put back; the engine keeps its journal for the next try.
+      if (!recovered.ok) return fail("prepare", recovered.error || "An interrupted restore couldn't be undone yet. Try again.", `restore recovery: ${recovered.action || "failed"}`);
     }
     const key = deps.provisionKey();
-    if (key !== deps.lastProvisionKey()) {
+    // The key covers the packaged plugin only; the agent's file tools can reach the profile's copy, which the gateway
+    // loads, so an edited copy is put back even when nothing else changed.
+    const edited = key === deps.lastProvisionKey() && (await deps.pluginEdited());
+    if (edited) deps.log("boot.provision.plugin-edited", { reason: "the profile's copy of the bridge plugin isn't the app's; putting it back" });
+    if (key !== deps.lastProvisionKey() || edited) {
       const provisioned = await deps.provision();
       if (!provisioned.ok) return fail("prepare", `The app couldn't get ${name} ready for this start. Try again.`, provisioned.error || "provisioning failed");
       deps.saveProvisionKey(key);

@@ -3,10 +3,10 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { folderSource } from "../src/release-source";
-import { compareVersions, Updater, type UpdateState, type UpdaterDeps } from "../src/updater";
+import { compareVersions, Updater, type Release, type UpdateState, type UpdaterDeps } from "../src/updater";
 
 const { publicKey, privateKey } = generateKeyPairSync("ed25519");
 const PUB = publicKey.export({ type: "spki", format: "der" }).toString("base64");
@@ -238,6 +238,69 @@ describe("Updater", () => {
     expect(progress.length).toBeGreaterThan(1);
     expect(progress.length).toBeLessThan(12); // ~50 chunks of 64 KB, at most one report per 250 ms
     expect(progress.at(-1)).toMatchObject({ done: pkg.length, total: pkg.length });
+  });
+
+  it("going back and a background prepare take turns: the restart after going back is into the version gone back to", async () => {
+    publish("1.2.0");
+    const old = { ...JSON.parse(readFileSync(path.join(feed, "release.json"), "utf8")), version: "1.0.0", package: { file: "ChiefCommandCenter-1.0.0.msix", bytes: pkg.length, sha256: createHash("sha256").update(pkg).digest("hex") } } as Release;
+    mkdirSync(updates, { recursive: true });
+    writeFileSync(path.join(updates, old.package.file), pkg);
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const steps: string[] = [];
+    const { updater, log } = make({
+      currentVersion: "1.1.0",
+      history: () => [old],
+      // Going back backs up first (minutes on a large setup).
+      backup: async (r) => {
+        steps.push(`backup ${r.version}`);
+        if (r.version === "1.0.0") await gate;
+        return { ok: true };
+      },
+      stage: async (_file, r) => (steps.push(`stage ${r.version}`), { ok: true }),
+    });
+    const goingBack = updater.rollback("1.0.0");
+    await vi.waitFor(() => expect(steps).toEqual(["backup 1.0.0"]));
+    // Meanwhile the daily check finds 1.2.0 and prepares it in the background.
+    const daily = updater.check().then(() => updater.prepare());
+    await new Promise((r) => setTimeout(r, 50));
+    // Before: that prepare ran beside it (its download even pruned the package going back needs), and the restart
+    // after going back took whatever had been staged last.
+    expect(steps).toEqual(["backup 1.0.0"]);
+    open();
+    expect(await goingBack).toMatchObject({ status: "restarting", release: { version: "1.0.0" } });
+    expect(steps).toEqual(["backup 1.0.0", "stage 1.0.0"]);
+    expect(log.filter((l) => l.startsWith("hand off"))).toEqual(["hand off ChiefCommandCenter-1.0.0.msix (staged)"]);
+    await daily;
+    expect(steps).toEqual(["backup 1.0.0", "stage 1.0.0"]); // restarting: the check leaves it alone
+  });
+
+  it("a restart meant for one version refuses another in hand, and leaves that one offered", async () => {
+    publish("1.1.0");
+    const { updater, log } = make();
+    await updater.check();
+    await updater.prepare();
+    expect(await updater.restart(false, "1.0.9")).toMatchObject({ status: "error", error: expect.stringMatching(/another update got ready/) });
+    expect(updater.state).toMatchObject({ status: "ready", release: { version: "1.1.0" } });
+    expect(log).toEqual(["backup"]);
+  });
+
+  it("a check waits while a prepare is under way", async () => {
+    publish("1.1.0");
+    let open!: () => void;
+    const gate = new Promise<void>((r) => (open = r));
+    const { updater } = make({ stage: async () => (await gate, { ok: true }) });
+    await updater.check();
+    const preparing = updater.prepare();
+    await vi.waitFor(() => expect(updater.state).toMatchObject({ status: "preparing", step: "stage" }));
+    const checking = updater.check();
+    let answered = false;
+    void checking.then(() => (answered = true));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(answered).toBe(false); // it takes its turn
+    open();
+    await preparing;
+    expect(await checking).toMatchObject({ status: "ready", release: { version: "1.1.0" } });
   });
 
   it("compares versions numerically", () => {

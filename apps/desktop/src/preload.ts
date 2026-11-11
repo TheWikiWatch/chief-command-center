@@ -72,8 +72,10 @@ contextBridge.exposeInMainWorld("chiefDesktop", {
   },
 });
 
-// The boot screen (static/boot.html) only.
-contextBridge.exposeInMainWorld("chiefBoot", {
+// The boot screen (static/boot.html) only: no other page gets these, and their channels answer only it (ipc.ts). Its
+// address is guards.ts BOOT_URL, spelt out because a sandboxed preload can't require the app's own modules.
+const bootPage = location.protocol === "chief-boot:" && location.host === "app" && location.pathname === "/boot.html";
+if (bootPage) contextBridge.exposeInMainWorld("chiefBoot", {
   /** The steps, and what the heading needs ({ name }). */
   onStatus: (fn: (steps: unknown, meta: unknown) => void) => ipcRenderer.on("boot:status", (_e, steps, meta) => fn(steps, meta)),
   retry: () => ipcRenderer.invoke("boot:retry"),

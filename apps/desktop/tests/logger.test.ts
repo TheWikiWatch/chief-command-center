@@ -1,10 +1,11 @@
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { PassThrough, Writable } from "node:stream";
 
 import { afterAll, describe, expect, it } from "vitest";
 
-import { Logger, rotate } from "../src/logger";
+import { Logger, pipeToLog, rotate } from "../src/logger";
 
 const tmp = mkdtempSync(path.join(tmpdir(), "chief-logger-"));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -48,5 +49,23 @@ describe("the desktop log", () => {
     expect(readFileSync(`${file}.1`, "utf8")).toContain("round 4");
     expect(readFileSync(`${file}.3`, "utf8")).toContain("round 2");
     expect(existsSync(`${file}.4`)).toBe(false);
+  });
+
+  it("keeps reading a child's output once its log can't be written (a full disk), so the child never blocks", async () => {
+    // Before: no one listened for the log's error. Node stopped piping into it, the output was no longer read, and a
+    // child blocks on its next write once its pipe is full (the error itself was thrown in the main process too).
+    const output = new PassThrough({ highWaterMark: 1024 });
+    const log = new Writable({ highWaterMark: 1024, write: (_chunk, _encoding, done) => done(Object.assign(new Error("no space left on device"), { code: "ENOSPC" })) });
+    pipeToLog(log, [output, null]);
+    const chunk = Buffer.alloc(4096, 1);
+    let written = 0;
+    const pump = async () => {
+      for (let i = 0; i < 256; i++) {
+        if (!output.write(chunk)) await new Promise((r) => output.once("drain", r));
+        written += chunk.length;
+      }
+    };
+    await Promise.race([pump(), new Promise((_, reject) => setTimeout(() => reject(new Error("the output stopped being read")), 5000))]);
+    expect(written).toBe(256 * 4096); // a megabyte, far past every buffer on the way
   });
 });

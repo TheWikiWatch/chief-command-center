@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
+import { afterAll, describe, expect, it } from "vitest";
+
+import { activeWork, backupRunning } from "../src/active-work";
 import { createQuitter, type QuitDeps, type Work } from "../src/quitting";
 
 const settle = async () => {
@@ -129,6 +134,13 @@ describe("quitting", () => {
     expect(calls.slice(-2)).toEqual(["relaunch:--action=today", "exit"]);
   });
 
+  it("a backup the dashboard is making is work: Quit asks first, as for a reply", async () => {
+    // Before: a manual backup runs under the dashboard server, and Quit (or Restart to update) ended it without a word.
+    const { quitter, calls } = harness({ ask: async (reasons) => (calls.push(`ask:${reasons.join(",")}`), "cancel") }, [activeWork({ backup: true })]);
+    await quitter.quit();
+    expect(calls).toEqual(["ask:A backup is running."]);
+  });
+
   it("a slow stop gets the closing screen; a quick one doesn't flash it", async () => {
     let release!: () => void;
     const slow = harness({ feedbackMs: 5, stopGateway: () => new Promise<void>((r) => (release = r)) });
@@ -142,5 +154,32 @@ describe("quitting", () => {
     await quick.quitter.shutdown();
     await new Promise((r) => setTimeout(r, 70));
     expect(quick.calls).not.toContain("closing-screen");
+  });
+});
+
+describe("a running backup", () => {
+  const appDir = mkdtempSync(path.join(tmpdir(), "chief-backup-lock-"));
+  afterAll(() => rmSync(appDir, { recursive: true, force: true }));
+  const startedAt = Date.parse("2026-11-10T10:00:00Z");
+  const record = (pid: number, at = startedAt) => writeFileSync(path.join(appDir, "backup-running.json"), JSON.stringify({ pid, kind: "manual", startedAt: at }));
+  const engine = async () => ({ path: "C:\\App\\resources\\payload\\tools\\python-3.14\\python.exe", startedMs: startedAt + 300 });
+
+  it("is read from the dashboard's record: the engine's pid, still a Python that started with the backup", async () => {
+    expect(await backupRunning(appDir, engine, startedAt + 60_000)).toBe(false); // no record
+    record(4242);
+    expect(await backupRunning(appDir, engine, startedAt + 60_000)).toBe(true);
+    // The engine is gone, or Windows gave its pid to another program since.
+    expect(await backupRunning(appDir, async () => null, startedAt + 60_000)).toBe(false);
+    expect(await backupRunning(appDir, async () => ({ path: "C:\\Tools\\editor.exe", startedMs: startedAt }), startedAt + 60_000)).toBe(false);
+    expect(await backupRunning(appDir, async () => ({ path: "C:\\Python\\python.exe", startedMs: startedAt + 3_600_000 }), startedAt + 4_000_000)).toBe(false);
+    // Over six hours old, like the dashboard's own rule.
+    expect(await backupRunning(appDir, engine, startedAt + 7 * 3600 * 1000)).toBe(false);
+    writeFileSync(path.join(appDir, "backup-running.json"), "{ half a reco");
+    expect(await backupRunning(appDir, engine, startedAt + 60_000)).toBe(false);
+  });
+
+  it("says so in the reasons, with Chief or without it", () => {
+    expect(activeWork({ backup: true })).toEqual({ busy: true, reasons: ["A backup is running."] });
+    expect(activeWork({ generating: true, backup: true }, "Nova").reasons).toEqual(["Nova is writing a reply.", "A backup is running."]);
   });
 });

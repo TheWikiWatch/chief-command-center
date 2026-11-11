@@ -2,11 +2,6 @@
 # An entry expires on its date and the scan fails again: look again then (a fix may exist by then).
 
 [[IgnoredVulns]]
-id = "GHSA-ch52-4w7c-c8xp"
-ignoreUntil = 2026-11-12T00:00:00Z
-reason = "http-cache-semantics: build time only, inside electron-builder's Electron downloader on the release PC (one user, no shared cache); not in the app. No fixed version yet (2026-10-13)."
-
-[[IgnoredVulns]]
-id = "GHSA-hp3w-g68c-fv3c"
-ignoreUntil = 2026-11-12T00:00:00Z
-reason = "sprintf-js: build time only, inside electron-builder's logging; not in the app. No fixed version yet (2026-10-13)."
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-12-10T00:00:00Z
+reason = "minimatch 10.2.6 and 9.0.9: build time only, inside electron-builder on the release PC (app-builder-lib, and @electron/universal for macOS builds), matching the build config's own file patterns; not in the app. Fixed only in minimatch 11, which neither asks for yet: app-builder-lib 26.18.1 needs ^10.2.5, and electron-builder 26.15.3 pins @electron/universal 2.0.3, which needs ^9.0.3 (2026-11-10)."
