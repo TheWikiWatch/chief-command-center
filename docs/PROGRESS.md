@@ -1336,3 +1336,45 @@ happy-dom 21 (the dashboard's tests run on it, unchanged), Vitest 5.0.5, Vite 8.
 payload has Pillow 12.3.0, so the next release also fixes the app's own copy). Both are newer than that file's
 two-week rule; its header says how to regenerate it until 2026-11-04. http-cache-semantics (no fix yet) is still
 passed over until 2026-11-12.
+
+**A deep review, and Hermes v0.23.1 (2026-11-10).** Plan: `docs/PLAN-2026-11-10-review-and-hermes-0231.md`. Five
+read-only reviews (the dashboard, the desktop shell, the bridge, packaging and CI, and what Hermes v0.22.6 to v0.23.1
+changed), each finding checked against the code, then fixed. Upstream's v0.22.6 to v0.23.1 had all been blocked by
+patch 0002.
+
+- Hermes v0.23.1: patches 0002 and 0003 re-anchored, the rest unchanged; the compatibility suite passed all 16 checks.
+- What Hermes changed under the app: a message its safety filter refuses stays in the chat, greyed, and the refusal
+  is a notice in the app's words (the chat's long-poll used to spin on it); the mail guard's "Exact call" box survives
+  Hermes's new escaping; a streamed reply's linked images aren't sent again as messages; Bot Chat's `llm-wiki` is an
+  optional skill now; Nous subscription models aren't tagged "Free"; a finished background task reads as finished;
+  Chief's questions wait half an hour again (0.23.1 gave up after 90 s); Hermes's lines that name its commands are in
+  the app's words.
+- New: stop a routine that's running ("Stopped", not "Failed"); choose whether a routine the PC missed runs once
+  later; take a chat switched to another model back to the usual one; a new personality reaches the open chat at its
+  next message.
+- Security: a vault SVG opened on its own can't run script, and PDF previews show again (Next.js put the page's
+  headers over the file routes' own); a file path in a chat that names another computer (`\\host\share`) is never
+  touched, so Windows can't send the owner's credentials to it; the image provider's links are fetched only over
+  https from the public internet;
+  the app's Python processes ignore the per-user site-packages; an edited copy of the bridge plugin in the profile is
+  put back at start; the start screen's controls answer only the start screen; the installed app ignores developer
+  overrides; downloads follow at most five https redirects; CI's untrusted build can't write the cache, and the
+  upstream bots trust only their own PRs and issues.
+- Steadier: Quit, Restart to update and phone-access changes wait for a running backup; going back to a version can't
+  race a background update; a damaged settings file is recovered from its backup; leftovers of a forced quit are ended
+  so the ports stay the same; the dashboard's supervisor knows its child (a restart could loop); the update window
+  reopens Chief when it gives up; a streamed reply no longer wakes every panel each second.
+- The dashboard: a message written offline goes to the thread it was written in; no flash of another thread at
+  start, and your own message animates in once; uploads get time in proportion to their size; file names with
+  accents download; screen readers hear one status line and who wrote each message; the thread switcher is a
+  dialog; "Always allow" works with a click; status colours pass AA on every surface in both looks; the routines
+  list shows a run as it starts and ends; Hermes's notices read as plain words, an approval that timed out included.
+- Under the hood: the dashboard's server modules are marked `server-only`; Vitest resolves `@/` itself (Vite 8); the
+  checks, the smoke test and the release ignore a live Chief's environment (a session started from Chief's terminal).
+- Backups: an encrypted backup never exists unencrypted on disk, every backup is read back before it's kept,
+  junctions are skipped, and restore is crash-safe: a rollback that can't finish says so and the next start finishes
+  it, never starting Chief on a half-restored folder. A pre-update backup that can't be made private on a chosen
+  FAT or exFAT drive is made in the app's own folder instead.
+- Release tools: the SBOM lists Electron and Chromium with hashes, `verify` re-hashes the package, Ctrl+C during a
+  release cleans up, Update Chief.cmd works from a folder with an apostrophe in its name. One minimatch advisory (dev
+  and build tools only, no compatible fix yet) is passed over until 2026-12-10.

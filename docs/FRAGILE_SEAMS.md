@@ -207,7 +207,7 @@ Two Hermes profile helpers reach outside the profile they are given:
 
 - **Origins are parsed, never prefix-matched.** A window the dashboard opens inherits the preload (the whole `chiefDesktop` API), so `windowOpenDecision`, `navigateDecision` and the permission handlers compare `new URL(url).origin` exactly. Every IPC channel goes through `handle()` in `main.ts`, which checks the sender frame.
 - **The boot page has its own scheme** (`chief-boot://app/boot.html`). With the `grantFileProtocolExtraPrivileges` fuse off, a `file://` page can't read inside `app.asar` (found by booting an unpacked fused build: ERR_FILE_NOT_FOUND and a hung window). The main process serves it. Fuses only exist in a packaged build: check a change to them with `electron-builder --win dir` and `npx @electron/fuses read --app <exe>`, then boot that build on a throwaway data folder.
-- **The loopback session.** With `CHIEF_SESSION_SECRET` set (the desktop app sets it each launch), the proxy (`proxy.ts`) admits a direct-loopback request only with the `chief_session_<port>` cookie the app sets on its window; `/api/healthz` is the only exception (the readiness probe). Anything the desktop app itself fetches from the dashboard must send the cookie (`finishInDashboard` does). A browser on the PC gets in through the tray's Open in browser (a 60-second HMAC ticket). Without the variable (dev servers) nothing changes. `NextRequest.nextUrl` says `localhost` for `127.0.0.1`, so the ticket redirect is built from the Host header, or the cookie lands in the wrong jar.
+- **The loopback session.** With `CHIEF_SESSION_SECRET` set (the desktop app sets it each launch), the proxy (`proxy.ts`) admits a direct-loopback request only with the `chief_session_<port>` cookie the app sets on its window; `/api/healthz` is the only exception (the readiness probe). Anything the desktop app itself fetches from the dashboard must send the cookie (`finishInDashboard` does). A browser on the PC gets in through the tray's Open in browser (a 15-second HMAC ticket, `TICKET_TTL_MS`). Without the variable (dev servers) nothing changes. `NextRequest.nextUrl` says `localhost` for `127.0.0.1`, so the ticket redirect is built from the Host header, or the cookie lands in the wrong jar.
 - **Running the unpackaged app beside the installed one** needs its own `--user-data-dir`: both are `@chief/desktop`, so they share Electron's single-instance lock, and the second launch only asks the installed app to show its window.
 - **The CSP** allows inline scripts (Next's bootstrap) but limits connections, pictures, media, fonts and frames to the dashboard itself. A feature that loads anything from another host (a CDN, an external image) needs a deliberate change in `securityHeaders`. Next's config loader doesn't resolve local imports, which is why the headers live in `next.config.ts`.
 
@@ -232,9 +232,9 @@ Two Hermes profile helpers reach outside the profile they are given:
 
 `apps/desktop/src/supervisor.ts`, `boot.ts`, `runtime.ts` (`provisionKey`, `pycacheDir`), `logger.ts`, `diagnostics.ts`; `apps/web/lib/server/backup.ts` (the backup lock). Test map: `apps/desktop/tests/shell.test.ts` (Supervisor), `boot.test.ts`, `logger.test.ts`, `diagnostics.test.ts`; `apps/web/tests/backup-routes.test.ts`.
 
-- **A child the supervisor ends itself** (not ready in time, or failing health checks) is recorded by pid, so its exit isn't a second crash. A new way of ending a child must go through `end()`, or its exit restarts it again.
+- **A child the supervisor ends itself** (not ready in time, or failing health checks) is recorded by its handle (a `utilityProcess` has no pid until its 'spawn' event), so its exit isn't a second crash. A new way of ending a child must go through `end()`, or its exit restarts it again.
 - **Health checks** call `/health` (gateway) and `/api/healthz` (dashboard) every 30 s with a 5 s timeout; three failures in a row restart the child. A slow machine that can't answer `/health` in 5 s while busy would be restarted: raise the timeout before lowering the interval.
-- **Provisioning is skipped** while `provisionKey()` is unchanged: app version, Hermes build, bridge port, adoption, Hermes root, and the plugin files' names, sizes and times. Something new that provisioning depends on must go into the key, or it won't run when that changes.
+- **Provisioning is skipped** while `provisionKey()` is unchanged (app version, Hermes build, bridge port, adoption, Hermes root, and the plugin files' names, sizes and times) and the profile's own copy of the bridge plugin still has the packaged copy's digest (`pluginDigest`: the agent's file tools can reach that copy). Something new that provisioning depends on must go into the key, or it won't run when that changes.
 - **`PYTHONPYCACHEPREFIX`** points at `<data>\pycache` for every bundled Python. Deleting that folder is safe (the next start compiles again, about 6 s longer).
 - **The log redacts** the token and session secret by value (`log.addSecret`), plus `Bearer …`, `token=`, `key=`, `open=` and similar. A new secret must be added with `addSecret` as soon as it exists.
 - **The backup lock** (`<app data>\backup-running.json`) holds the engine's pid; a pid that is gone, or a record older than 6 hours, is cleared. Windows can reuse a pid, so a stale record within 6 hours can at worst make the dashboard say a backup is running until the record expires.
@@ -282,7 +282,7 @@ Two Hermes profile helpers reach outside the profile they are given:
 - **Hermes's own chat texts are recognised by their wording** (`chat_state.py`: `approval_announcement` reads `EA_HEADER_TEXT` from `gateway.platforms.base_exec_approval` through `hermes_api`, with a copy as fallback; `unwrap_cron_failure` matches the "⚠️ Cron '<name>' failed: <error>. …" line from `cron/scheduler_failure_copy.py` and the "failed N runs in a row" sentence from `cron/scheduler.py`). A rewording upstream shows the approval twice (the chat-controls contract fails at "its announcement is not shown as a notice") or turns a failure card back into Hermes's text (`test_chat_state.py` CronFailureTests cover the three shapes, bare and inside the "Cronjob Response" envelope). The card's Run again and Pause assume the job belongs to the `chief` profile, whose gateway posts the notice.
 - **The long-poll's "I track this" keys must survive a blank value.** `/transcript?wait=` breaks on a change only for keys the caller sent (`clarify`, `notice`, `bg`, `draft`); a caller with none yet sends the key blank. `server.py` parses the query with `keep_blank_values=True`; with Python's default the blank was dropped, read as "not tracked", and a conversation's first question, notice or draft frame never woke a waiting poll (found while adding drafts; `test_bridge.py` "blank query values reach the long-poll"). A new helper that reads `req.q(name)` must treat "" as a value, not as absence.
 - **Replies stream as Hermes draft frames** (`adapter.supports_draft_streaming` / `send_draft`, kept in `chat_state.record_draft`; `streaming.enabled` set by provisioning, Hermes's stream consumer in `gateway/stream_consumer_transport.py`). `send_draft` must never fail: a refused frame makes Hermes fall back to real partial sends (`send` + `edit_message`), which would land in the outbox as notices. The draft stays until the turn ends (`live_transcript` clears it once `generating` is false; clearing at the final send flashed "thinking" before the stored row landed), and the chat drops a draft once a reply has landed for it (`settledDraft` in `chief-chat.tsx`), never by comparing text: a repeated reply would match an older one. The cursor glyph is stripped by name (`▉`, Hermes's default `streaming.cursor`). The chat-controls contract fails at "the reply streams as a draft" if Hermes stops probing the adapter.
-- **Retry after a failed start runs the whole sequence again against children that may still be running.** `choosePorts` must treat a port this run's own supervisor holds as ours (`decidePorts` in `ports.ts`), `claimGateway` must not end the gateway this run's supervisor is starting or running (`isOrphan` in `gateway.ts`: the pid file names Hermes's Python process, the supervisor's child is the launcher, so the rule goes by the supervisor's state, not the pid), and a supervisor that recovers on its own re-runs the boot (`recoversBoot` in `boot.ts`). A new step that starts something must survive being run twice. Test map: `tests/boot-seams.test.ts`, `tests/boot.test.ts` "a start that recovers".
+- **Retry after a failed start runs the whole sequence again against children that may still be running.** `choosePorts` must treat a port this run's own supervisor holds as ours (`decidePorts` in `ports.ts`), `claimGateway` must not end the gateway this run's supervisor is starting or running (`isOrphan` in `gateway.ts`: the rule goes by the supervisor's state, not the pid; since 0.1.49 the supervisor's child is the payload's Python itself, `python -s <launcher>`, rather than the launcher stub), and a supervisor that recovers on its own re-runs the boot (`recoversBoot` in `boot.ts`). A new step that starts something must survive being run twice. Test map: `tests/boot-seams.test.ts`, `tests/boot.test.ts` "a start that recovers".
 - **Nothing in the main process may block.** `killTree`, `requestScopedStop` (`gateway.ts`) and `zipFolder` (`diagnostics.ts`) are asynchronous; a `spawnSync` of a slow helper froze the window for its whole wait. The one left is `installPackage`, which hands the package to Windows and quits.
 - **The design-rules test reads every component** (`tests/design-rules.test.ts`): a text field must use `field()`/`Input`/`Textarea`/`Select` unless its file is on the bare-field list (a field drawn inside a framed search box or the composer), a button must carry `press`, `btn(` or a role (or be a text link, by `underline`), and no `rounded-[…]`. A new one-off style fails the test; the answer is a primitive or a token, or a reviewed entry on the allow-list. The parser tracks braces so an arrow function inside a prop doesn't end the tag early (the first measurement didn't, and counted 105 offenders where there were 18).
 - **Each surface sits in a `SurfaceErrorBoundary`** (`components/ui/error-boundary.tsx`, mounted in `command-shell.tsx`). A new surface must be wrapped too, or its crash goes to the app's error page and takes the chat with it. The boundary catches render errors only; an error inside an event handler or a promise still needs its own `try`.
@@ -492,3 +492,83 @@ Two Hermes profile helpers reach outside the profile they are given:
   (reading 'edgesOut')", in npm's peer-set code, through Vitest's optional plugins). Update Vitest to its newest patch
   first (`npm update vitest`), then the rest. Asking for an older Vitest exactly (`vitest@5.0.3` while 5.0.5 is out)
   fails the same way.
+
+## Hermes 0.23.1 (2026-11-10)
+
+- **A refused turn is archived but its message stays on display**: `active = 0`, `compacted = 1`, `display_kind`
+  `content_refused`, the notice in `display_metadata`. The live chat reads `data._shown` (live rows plus refused ones)
+  and the long-poll's head counts them, or the head falls below a reader's cursor and the long-poll returns at once,
+  over and over. Load earlier reads Hermes's display projection (`active = 1 OR compacted = 1`), never rows taken back.
+  The refusal's answer is taken back too, so `_reply_texts` counts only shown rows and the answer arrives as a notice
+  (`refusal`, in the app's words); Hermes's first "❌ …safety filter refused…" line is hidden. Hermes counts any HTTP
+  400 in a chat of more than 50 messages as a context overflow, which skips the archive (`is_context_overflow_failure_result`):
+  then the message stays an ordinary one and only the notice tells. The scripted model's REFUSEME on the e2e home's long
+  chat goes that way.
+- **Approval texts arrive with invisible characters escaped** (`agent/redact.py`): the mail guard's U+2063 mark is the six
+  characters `⁣` on the sheet. `mail_guard._clean` strips both spellings from what it quotes.
+- **A streamed reply's linked images are sent apart** (`send_image`, `send_animation`) and taken out of the text it sends;
+  the stored row keeps them. The adapter accepts those sends without posting, and replies are compared without image
+  tags (`chat_state._reply_key`), or the reply shows again as a notice.
+- **Questions give up after 90 s** (`agent.clarify_timeout`; a stored 3600 is lowered by migration 53). Provisioning
+  writes 1800 when the key is absent or 3600, before the gateway's migration runs.
+- **A profile's routine runs live under its own home** (`cron/executions.db`), not in its cron store: `routines._store`
+  enters both `profile_scope(home)` and `use_cron_store(home)`, or a bot's running routine is neither seen nor stopped.
+- **An open conversation keeps its system prompt** until a refresh epoch says otherwise (`SessionDB.request_prompt_refresh`):
+  the bridge asks after a personality is saved, provisioning after it changed skills or the plugin.
+- **A chat switched to another model stays on it** through Settings → Models changes, until `/model reset`. The bridge
+  reads the override from Hermes's `sessions/sessions.json` mirror (`data.model_override`) and sends the reset
+  (`/model-reset`). In a very long chat Hermes asks before switching (a large-context warning), so `/model` alone
+  may not pin it.
+- **Network paths are refused before anything resolves them** (`data._network_path`): `Path.resolve()` or `is_file()` on
+  `\\host\share\…` already makes Windows connect to the host with the owner's credentials.
+- **The live channel skips a change made only of draft frames** (`changes.reasons`): the chat gets those through its
+  long-poll, and every panel used to refetch on each one.
+- **`llm-wiki` is an optional skill now**: new profiles don't have it, so the Second Brain skill routes sources to
+  `obsidian-save` and names `llm-wiki` only where it is installed.
+- **A skill lock (`skill_usage.set_locked`) refuses the owner's own edits too** (`tools/skill_manager_guards.py`
+  refuses every mutating action, foreground turns included), so the app doesn't lock its skills.
+
+## Review fixes (2026-11-10)
+
+- **The gateway starts as `python -s <launcher>`**: the launcher stub can't pass `-s`, so the shell runs the Python the
+  stub would. That Python must be the one the payload's manifest names. Never put `PYTHONNOUSERSITE` in the gateway's
+  environment: the agent's terminal inherits it, and the owner's own Python would lose their packages.
+- **Leftovers of a forced quit are ended at start** (`endLeftovers` in `main.ts`): the gateway only when this data
+  folder's pid file names a live orphan running this payload's launcher as `gateway run`; a dashboard only when it is
+  Electron's Node service (`--utility-sub-type=node.mojom.NodeService`) of this executable and `--user-data-dir`. If
+  Electron renames those switches, nothing is found and the ports move as before.
+- **`backupRunning` (desktop) reads the dashboard's `backup-running.json`**: keep the two formats in step.
+- **A tool can turn `\b` in a Windows path into backspace bytes** (it did in `osb_vendor.py`); the privacy scan refuses
+  control characters in tracked files.
+- **`actions/cache/restore` doesn't stop the job's token from writing the cache**: untrusted jobs need `cache-mode: read`
+  (or `none`). In an `if:`, an output a skipped step never set is null, and `null == '0'` is true.
+- **Anyone can reuse the bots' titles**: their lookups filter by `app/github-actions` (issues) or by the candidate
+  branch in this repository (PRs; #8 was opened from the owner's account).
+- **Every restore rename is in the flushed journal before it happens**; recovery reads the disk, and journals from
+  earlier versions are settled first. A rollback that can't finish keeps the journal (`rolling-back`), and the shell
+  then never starts Chief on that folder (`boot.ts`, `restore.ts`).
+- **Backups are written straight to `.partial`** (zipfile's no-seek layout, encrypted on the way); database copies go to
+  `chief-backup-<pid>-*` beside the Hermes root, swept at start once their process has ended.
+- **Next.js applies `next.config.ts` headers before a route handler's**, and the handler's only where none is set. The
+  page headers skip the file routes (`APP_HEADERS_SOURCE`), which send their own (`fileSecurityHeaders` in
+  `lib/proxy-policy.ts`). A new route that serves files must be added to both, or it gets the page's CSP and framing.
+- **Hermes escapes invisible characters in approval text** (`⁣` arrives as six characters): the mail guard's mark
+  and the sheet's hidden-character check read both spellings (`mail_guard._MARK_SPELLINGS`, `lib/mail-approval.ts`,
+  `lib/command-display.ts`).
+- **A message is greyed as refused only after the chat re-reads the transcript** on the `refusal` notice: the live
+  rows carry `refused` from `data._shown`, the notice itself doesn't.
+- **Tests:** importing `next.config.ts` needs `next/constants` mocked; Vitest resolves `react-resizable-panels` to its
+  edge-light (server) build, where panels never lay out, so a test of the split imports the browser build
+  (`shell-start.test.tsx`); `server-only` resolves to `tests/shims/server-only.ts` (Next resolves it itself). A new
+  module in `lib/server/` starts with `import "server-only"`.
+- **Status colours are tuned for text on a /10 or /15 tint of themselves** (`tests/contrast.test.ts`, both looks,
+  every surface). A heavier tint behind status text fails the test; so does a token change that drops below 4.5:1.
+- **"Run now" starts at the scheduler's next tick** (up to a minute): the routines list re-reads itself every
+  `RUN_WATCH_MS` for 90 s after it, and while any routine is running, so the running state shows and clears.
+- **Hermes's notices are matched by their wording** (`chat_state.plain_notice`: refusal, unanswered, approval timed
+  out). A reworded notice shows in Hermes's own words again; the chat-state tests hold the current wording.
+- **A shell started from Chief's terminal carries the live gateway's environment**: `HERMES_HOME` is the live profile,
+  `COMMAND_CENTER_HOME_CHANNEL` the owner's chat id, `CHIEF_DASHBOARD_PORT` the live bridge, and PATH starts with the
+  live Hermes's Python 3.11 and the installed app's tools (inside WindowsApps, which nothing else may run: git there
+  is "Access is denied"). `scripts/slim-env.mjs` strips all of it for `npm run check`, the smoke test and the
+  release; a test run by hand from such a shell does not get that, so open a fresh terminal for it.
