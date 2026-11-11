@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
-import { deniedFilePath, permittedOperation, protectFileHeaders, validMutationOrigin } from "@/lib/proxy-policy";
+import { deniedFilePath, fileSecurityHeaders, permittedOperation, protectFileHeaders, validMutationOrigin } from "@/lib/proxy-policy";
+import { uploadTimeoutMs } from "@/lib/upload-limits";
 import { bridgeUrl } from "@/lib/server/app-config";
 import { isDirectLoopback } from "@/lib/tailnet-guard";
 import { invalidateSecondBrain } from "@/lib/server/second-brain";
@@ -23,13 +24,23 @@ function token() {
   return process.env.CHIEF_DASHBOARD_TOKEN || "";
 }
 
+const FILE_ROUTES = new Set(["file", "preview", "thumb"]);
+
 async function proxy(req: NextRequest, path: string[]) {
+  const res = await forward(req, path);
+  // next.config.ts leaves the file routes out of the app-wide headers: every answer they give, a refusal too, carries
+  // the file set (lib/proxy-policy.ts).
+  if (path.length === 1 && FILE_ROUTES.has(path[0])) fileSecurityHeaders(res.headers);
+  return res;
+}
+
+async function forward(req: NextRequest, path: string[]) {
   if (!permittedOperation("bridge", req.method, path)) return Response.json({ ok: false, error: "Unsupported operation" }, { status: 404 });
   if (req.method !== "GET" && !validMutationOrigin(req.headers, req.url)) return Response.json({ ok: false, error: "Invalid request origin" }, { status: 403 });
   const pcOnly = PC_ONLY.get(`${req.method} ${path.join("/")}`);
   if (pcOnly && !isDirectLoopback(req.headers)) return Response.json({ ok: false, error: pcOnly }, { status: 403 });
   const url = new URL(req.url);
-  if (path[0] === "file" || path[0] === "preview" || path[0] === "thumb") {
+  if (FILE_ROUTES.has(path[0])) {
     const file = url.searchParams.get("path") || "";
     if (deniedFilePath(file)) return Response.json({ ok: false, error: "not found" }, { status: 404 });
   }
@@ -67,7 +78,7 @@ async function proxy(req: NextRequest, path: string[]) {
 
   // A long-poll (/transcript?wait=N) is held by the bridge for up to N seconds (at most 25).
   const wait = path[0] === "transcript" ? Math.min(25, Math.max(0, Number(url.searchParams.get("wait")) || 0)) : 0;
-  const timeoutMs = wait ? (wait + 10) * 1000 : answerWithin(path);
+  const timeoutMs = wait ? (wait + 10) * 1000 : answerWithin(path, Number(length) || 0);
 
   // The time limit is for the bridge to start answering. Once it has, the answer streams to the browser for as long
   // as that takes: a limit over the whole body cut big answers off half-way to a phone ("failed to pipe response"),
@@ -115,7 +126,7 @@ async function proxy(req: NextRequest, path: string[]) {
     const v = upstream.headers.get(key);
     if (v) out.set(key, v);
   }
-  if (path[0] === "file" || path[0] === "preview" || path[0] === "thumb") protectFileHeaders(out, upstream.ok ? path[0] : "file");
+  if (FILE_ROUTES.has(path[0])) protectFileHeaders(out, upstream.ok ? path[0] : "file");
   return new Response(upstream.body ? passThrough(upstream.body, rel, finish) : null, { status: upstream.status, headers: out });
 }
 
@@ -124,9 +135,10 @@ const BODY_GRACE_MS = 5 * 60_000;
 
 /**
  * How long the bridge may take to start answering a route: at least as long as the page's own client waits for it
- * (lib/*-client.ts, lib/local-models.ts), so a slow answer reaches the page instead of a cut-off from here.
+ * (lib/*-client.ts, lib/local-models.ts), so a slow answer reaches the page instead of a cut-off from here. `bytes` is
+ * the request body's size: a send streams its files through here first.
  */
-function answerWithin(path: string[]): number {
+function answerWithin(path: string[], bytes = 0): number {
   const top = path[0];
   const rel = path.join("/");
   // A generated portrait waits on the image service (the bridge allows it 150 s); installing a pet downloads its
@@ -152,10 +164,11 @@ function answerWithin(path: string[]): number {
   if (rel === "tools/test") return 180_000;
   if (rel === "report/draft") return 60_000;
   if (top === "tools") return 30_000;
-  if (top === "file" || top === "preview" || top === "thumb" || top === "transcribe" || top === "speak") return 180_000;
+  if (FILE_ROUTES.has(top) || top === "transcribe" || top === "speak") return 180_000;
   if (top === "snapshot" || top === "settings") return 15_000;
   if (top === "health") return 2_000;
-  if (top === "send") return 120_000;
+  // As long as the page waits for a send with files of this size (lib/bridge.ts), and a little more.
+  if (top === "send") return uploadTimeoutMs(bytes) + 5_000;
   return 8_000;
 }
 

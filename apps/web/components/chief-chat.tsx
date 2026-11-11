@@ -20,11 +20,11 @@ import { CheckIcon, PaperclipIcon, XIcon } from "@/components/icons";
 import { type MicStatus } from "@/components/mic-button";
 import { meterStream } from "@/lib/audio-level";
 import { fx } from "@/lib/fx";
-import { answerQuestion, chooseOption, fetchEarlier, fetchTranscript, fetchVoiceConfig, resolveApproval, sendToChief, stopTurn, type OutboundAttachment } from "@/lib/bridge";
+import { answerQuestion, chooseOption, fetchEarlier, fetchTranscript, fetchVoiceConfig, resetChatModel, resolveApproval, sendToChief, stopTurn, type OutboundAttachment } from "@/lib/bridge";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { SHOW_APPROVAL_EVENT } from "@/lib/open-target";
 import { chatTone, isMachineNote } from "@/lib/chat-tone";
-import { computeThinkingChrome, shouldClearPendingReply } from "@/lib/thinking-chrome";
+import { computeThinkingChrome, messageTimeMs, shouldClearPendingReply } from "@/lib/thinking-chrome";
 import { visibleMessages } from "@/lib/compact-filter";
 import { fullPhotosOn, useDashboardPrefs, VOICE_EVENT } from "@/lib/dashboard-prefs";
 import { getSpeechPhase, blobToDataUrl, stopSpeech, subscribeSpeaking, toggleSpeechPause } from "@/lib/voice-client";
@@ -32,7 +32,7 @@ import type { ApprovalChoice, ChatAttachment, ChatMessage, ChatNotice, ExecAppro
 import { BackgroundWork, backgroundTaskCount } from "@/components/chat/background-work";
 import { admitFiles } from "@/lib/upload-limits";
 import { shrinkImage } from "@/lib/image-shrink";
-import { retryable, type QueuedSend } from "@/lib/outbox";
+import { queuedThread, retryable, timedOut, type QueuedSend } from "@/lib/outbox";
 import { useOutbox } from "@/components/chat/use-outbox";
 import { logSpeech } from "@/lib/speech-log";
 import { dropReplays, sameText } from "@/lib/replay-guard";
@@ -60,6 +60,15 @@ const VoiceMode = dynamic(() => import("@/components/chat/voice-mode").then((m) 
  */
 const draftKey = (thread: string) => (thread === "main" ? "chief-chat-draft" : `chief-chat-draft:${thread}`);
 const afterKey = (thread: string) => `chief-chat-after:${thread}`;
+
+/** Text back in another thread's saved draft (a chat holds only its own), unless that thread has a draft already. */
+function restoreDraft(thread: string, text: string) {
+  try {
+    if (!localStorage.getItem(draftKey(thread))) localStorage.setItem(draftKey(thread), text);
+  } catch {
+    /* private mode */
+  }
+}
 
 type AfterItem = { id: string; text: string };
 function readAfter(thread: string): AfterItem[] {
@@ -209,10 +218,22 @@ export function ChiefChat({
   const [question, setQuestion] = useState<PendingQuestion | null>(null);
   // A choice Hermes offers as buttons (a plan limit's model switch, its /model and /reasoning pickers).
   const [choice, setChoice] = useState<PendingChoice | null>(null);
+  /** A model this chat was switched to (a limit's one-tap switch, or /model): it outlasts Settings → Models until reset. */
+  const [modelOverride, setModelOverride] = useState<Transcript["modelOverride"]>(null);
+  const [resettingModel, setResettingModel] = useState(false);
   const questionRef = useRef<PendingQuestion | null>(null);
   questionRef.current = question;
   const [notices, setNotices] = useState<ChatNotice[]>([]);
   const noticeSince = useRef(0);
+  // A refusal (Hermes 0.23) marks the owner's message it answers `refused`, a row this page has already: the next read
+  // is from the top, applied like a reset, so that row shows its marker.
+  const reread = useRef(false);
+  // Bumped whenever what's shown is replaced (a reset, a new conversation): a Load earlier answer from before then
+  // belongs to rows no longer there.
+  const generation = useRef(0);
+  // The owner loaded earlier rows and is reading them: nothing is trimmed (MAX_KEPT_MESSAGES) until they're back at the
+  // newest, or the oldest rows, the ones just loaded, would go from under them.
+  const readingEarlier = useRef(false);
   const [activity, setActivity] = useState<TurnActivity | null>(null);
   // The reply as it's being written (Hermes's draft frames); gone once the stored reply lands.
   const [replyDraft, setReplyDraft] = useState<ReplyDraft | null>(null);
@@ -280,11 +301,18 @@ export function ChiefChat({
     fx("approval");
   }, [question?.id]);
   const retrySend = useRef<{ signature: string; id: string } | null>(null);
-  // Messages waiting for the chief (lib/outbox.ts): sent in order when it is reachable again.
+  // Messages waiting for the chief (lib/outbox.ts): sent in order when it is reachable again, each to its own thread.
   const onQueuedDelivered = useCallback((item: QueuedSend, previews: string[]) => {
+    // Written in another thread: that one shows it (its stored copy lands there).
+    if (queuedThread(item) !== thread) {
+      for (const url of previews) URL.revokeObjectURL(url);
+      return;
+    }
     const images = item.files.filter(f => f.mime.startsWith("image/"));
     const bubble: ChatMessage = {
       id: Date.now(),
+      // The queued bubble's row, so it stays the same one (lib/types.ts rowKey).
+      rowKey: `q-${item.id}`,
       role: "user",
       content: item.text,
       timestamp: new Date().toISOString(),
@@ -296,13 +324,15 @@ export function ChiefChat({
     pendingSince.current = Date.now() / 1000;
     setPendingReply(true);
     fx("send");
-  }, []);
+  }, [thread]);
   const onQueuedDropped = useCallback((item: QueuedSend, reason: string) => {
-    setSendError(`A queued message wasn't sent: ${reason}${item.text ? " Its text is back in your draft." : ""}`);
-    if (item.text) setText(current => (current.trim() ? current : item.text));
+    const own = queuedThread(item) === thread;
+    setSendError(`A queued message wasn't sent: ${reason}${item.text ? (own ? " Its text is back in your draft." : " Its text is back in its thread's draft.") : ""}`);
+    if (item.text && own) setText(current => (current.trim() ? current : item.text));
+    else if (item.text) restoreDraft(queuedThread(item), item.text);
     fx("error");
-  }, [setText]);
-  const outbox = useOutbox({ ready: connected && !authFailed, onDelivered: onQueuedDelivered, onDropped: onQueuedDropped });
+  }, [setText, thread]);
+  const outbox = useOutbox({ thread, ready: connected && !authFailed, onDelivered: onQueuedDelivered, onDropped: onQueuedDropped });
   const cancelQueued = useCallback(
     (queueId: string) => {
       const item = outbox.cancel(queueId);
@@ -450,6 +480,8 @@ export function ChiefChat({
         noticeSince.current = 0;
         setEarlier({ more: true, loading: false, error: "" });
         earlierCursor.current = null;
+        generation.current += 1;
+        readingEarlier.current = false;
         stopSpeech();
         if (after) return;
       }
@@ -461,6 +493,7 @@ export function ChiefChat({
         }
         if (!canPrime) return;
         lastIdRef.current = data.lastId || 0;
+        generation.current += 1;
         setMessages(data.messages || []);
         if (typeof data.more === "boolean") setEarlier((e) => ({ ...e, more: !!data.more }));
         primeFromSnapshot(data);
@@ -475,19 +508,23 @@ export function ChiefChat({
         raiseSpeakFloor(lastCopy || rows.reduce((n, m) => Math.max(n, m.id), data.lastId || 0));
         lastIdRef.current = data.lastId || 0;
         earlierCursor.current = null;
+        generation.current += 1;
+        readingEarlier.current = false;
         setMessages(rows);
         if (typeof data.more === "boolean") setEarlier((e) => ({ ...e, more: !!data.more }));
         return;
       }
       lastIdRef.current = data.lastId || after;
       if (!after) {
+        generation.current += 1;
+        readingEarlier.current = false;
         setMessages(data.messages || []);
         if (typeof data.more === "boolean") setEarlier((e) => ({ ...e, more: !!data.more }));
         if (data.sessionKey && data.sessionKey !== sessionKeyRef.current) primeFromSnapshot(data);
         return;
       }
       if (data.messages?.length) {
-        setMessages((prev) => mergeMsgs(prev, data.messages));
+        setMessages((prev) => mergeMsgs(prev, data.messages, readingEarlier.current ? Number.POSITIVE_INFINITY : MAX_KEPT_MESSAGES));
         const replays = data.messages.filter((m) => m.replay).length;
         if (replays) {
           // Hermes compacted the chief's context and re-sent the conversation it kept. Not new: not shown or spoken.
@@ -508,10 +545,12 @@ export function ChiefChat({
   );
 
   useEffect(() => poll(async signal => {
-    const after = historyPrimed.current ? lastIdRef.current || 0 : 0;
+    const fromTop = reread.current && historyPrimed.current;
+    reread.current = false;
+    const after = historyPrimed.current && !fromTop ? lastIdRef.current || 0 : 0;
     // What the bridge last told us, not local guesses: a difference would return the long-poll at once.
     const state = bridgeState.current;
-    const live = longpollRef.current && historyPrimed.current
+    const live = longpollRef.current && historyPrimed.current && !fromTop
       ? { wait: 25, gen: state.generating, approval: state.approval, clarify: state.clarify, notice: state.notice, bg: state.bg, draft: state.draft, choice: state.choice }
       : undefined;
     const started = Date.now();
@@ -519,8 +558,11 @@ export function ChiefChat({
     if (live) transcriptHealth.pending();
     try {
       const data = await fetchTranscript(after, signal, live, after ? noticeSince.current : 0);
-      if (signal.aborted) return;
-      applyTranscript(data, after);
+      if (signal.aborted) {
+        reread.current ||= fromTop;
+        return;
+      }
+      applyTranscript(fromTop ? { ...data, reset: true } : data, after);
       setLoadedOnce(true);
       markStart("chat");
       bridgeState.current = {
@@ -546,16 +588,18 @@ export function ChiefChat({
       setBackground(Array.isArray(data.background) ? data.background : []);
       if ("clarify" in data) setQuestion(data.clarify ?? null);
       if ("choice" in data) setChoice(data.choice ?? null);
+      if ("modelOverride" in data) setModelOverride((was) => (was?.model === data.modelOverride?.model ? was : data.modelOverride ?? null));
       if (Array.isArray(data.previous)) setPrevious(data.previous);
       setActivity(data.activity ?? null);
       if (Array.isArray(data.notices)) {
         const fresh = data.notices;
+        if (after && fresh.some((n) => n.refusal && n.at > noticeSince.current)) reread.current = true;
         setNotices((prev) => {
           const base = after ? prev : [];
           const have = new Set(base.map((n) => n.id));
           const next = [...base, ...fresh.filter((n) => !have.has(n.id))].sort((a, b) => a.at - b.at);
           noticeSince.current = next.length ? next[next.length - 1].at : noticeSince.current;
-          return next.length === base.length && after ? prev : next;
+          return next.length === base.length && after ? prev : trimNotices(next, messagesRef.current);
         });
       }
       if ("approval" in data) approvalUpdate.current?.(data.approval ?? null);
@@ -568,14 +612,15 @@ export function ChiefChat({
       transcriptHealth.success();
       failStreak.current = 0;
     } catch (error) {
+      reread.current ||= fromTop;
       if (!signal.aborted) {
         transcriptHealth.failure(error);
         failStreak.current += 1;
       }
     }
     // After a failure, wait before the next try (1 s, 2 s, 4 s … 10 s): two tries 150 ms apart fail for the same
-    // reason, and "two failures in a row" (a real error) needs them to be separate.
-  }, () => (failStreak.current ? Math.min(1000 * 2 ** (failStreak.current - 1), 10_000) : longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript, transcriptHealth, historyPrimed]);
+    // reason, and "two failures in a row" (a real error) needs them to be separate. A read from the top goes at once.
+  }, () => (failStreak.current ? Math.min(1000 * 2 ** (failStreak.current - 1), 10_000) : reread.current ? 0 : longpollRef.current ? (quickReturns.current > 3 ? 2500 : 150) : awaitingRef.current ? 800 : 2500)), [applyTranscript, transcriptHealth, historyPrimed]);
 
   // Load earlier: pages of older rows before the oldest one shown.
   // Where the next page starts: the bridge's cursor, so rows skipped here are never asked for again.
@@ -588,6 +633,9 @@ export function ChiefChat({
     // shows its kept tail as the copies Hermes re-inserted (flagged replay), so skip their originals.
     const copies = new Set(messages.filter(m => m.replay).map(m => `${m.role}|${sameText(m.content || "")}`));
     const have = new Set(messages.map(m => m.id));
+    // A reset (Send again's /retry) can land while the pages are on their way: then they're older rows of a
+    // conversation no longer shown, and must not go in front of the new one.
+    const asked = generation.current;
     setEarlier(e => ({ ...e, loading: true, error: "" }));
     try {
       let found: ChatMessage[] = [];
@@ -595,17 +643,30 @@ export function ChiefChat({
       // A page can be all tool calls or copies: read on (a few pages) until something shows.
       for (let page = 0; page < 3 && more && !found.length; page++) {
         const data = await fetchEarlier(before);
+        if (asked !== generation.current) break;
         found = data.messages.filter(m => !have.has(m.id) && !m.replay && m.id < oldest && !copies.has(`${m.role}|${sameText(m.content || "")}`));
         more = !!data.more;
         before = typeof data.cursor === "number" ? Math.min(before, data.cursor) : before;
       }
+      if (asked !== generation.current) {
+        setEarlier(e => ({ ...e, loading: false }));
+        return;
+      }
       earlierCursor.current = before;
-      if (found.length) setMessages(prev => [...found.filter(m => !prev.some(p => p.id === m.id)), ...prev]);
+      if (found.length) {
+        readingEarlier.current = true;
+        setMessages(prev => [...found.filter(m => !prev.some(p => p.id === m.id)), ...prev]);
+      }
       setEarlier({ more, loading: false, error: "" });
     } catch (error) {
-      setEarlier(e => ({ ...e, loading: false, error: friendlyError(error, "Couldn't load earlier messages.") }));
+      setEarlier(e => ({ ...e, loading: false, error: asked === generation.current ? friendlyError(error, "Couldn't load earlier messages.") : "" }));
     }
   }, [messages]);
+
+  // Back at the newest messages: the rows Load earlier added may be trimmed again.
+  const releaseEarlier = useCallback(() => {
+    readingEarlier.current = false;
+  }, []);
 
   useEffect(() => {
     if (!pendingReply || generating || busy) return;
@@ -613,10 +674,11 @@ export function ChiefChat({
     return () => window.clearTimeout(timer);
   }, [pendingReply, generating, busy]);
 
-  // Hermes answered the send by pausing the conversation, or the turn failed (a limit, a provider down): no reply is
-  // coming, so the chat isn't "thinking" (a few seconds' slack for the two clocks).
+  // Hermes answered the send by pausing the conversation, the turn failed (a limit, a provider down), or the model's
+  // safety filter refused the message: no reply is coming, so the chat isn't "thinking" (a few seconds' slack for the
+  // two clocks).
   useEffect(() => {
-    if (pendingReply && notices.some((n) => (n.paused || n.turnFailure) && n.at >= pendingSince.current - 5)) setPendingReply(false);
+    if (pendingReply && notices.some((n) => (n.paused || n.turnFailure || n.refusal) && n.at >= pendingSince.current - 5)) setPendingReply(false);
   }, [notices, pendingReply]);
 
 
@@ -629,23 +691,24 @@ export function ChiefChat({
     void Promise.all(picked.map(file => (fullPhotosOn() ? file : shrinkImage(file)))).then(admit);
   }
 
+  // The box's files as last set here, ahead of the next render: two drops in a row both count against the limits.
+  const pendingRef = useRef(pendingFiles);
+  pendingRef.current = pendingFiles;
   function admit(incoming: File[]) {
-    setPendingFiles(current => {
-      const next = [...current];
-      const { accepted, error } = admitFiles(current.map(item => ({ name: item.name, size: item.file.size })), incoming);
-      if (error) setSendError(error);
-      for (const file of accepted) {
-        const mime = file.type || "application/octet-stream";
-        next.push({
-          id: `${file.name}-${file.size}-${file.lastModified}-${next.length}`,
-          name: file.name || "file",
-          mime,
-          previewUrl: URL.createObjectURL(file),
-          file,
-        });
-      }
-      return next;
-    });
+    // Worked out first, then set: an updater runs again under React's checks, and would make its previews twice.
+    const current = pendingRef.current;
+    const { accepted, error } = admitFiles(current.map(item => ({ name: item.name, size: item.file.size })), incoming);
+    if (error) setSendError(error);
+    if (!accepted.length) return;
+    const added: PendingFile[] = accepted.map((file, i) => ({
+      id: `${file.name}-${file.size}-${file.lastModified}-${current.length + i}`,
+      name: file.name || "file",
+      mime: file.type || "application/octet-stream",
+      previewUrl: URL.createObjectURL(file),
+      file,
+    }));
+    pendingRef.current = [...current, ...added];
+    setPendingFiles(list => [...list, ...added]);
   }
 
   function removeFile(id: string) {
@@ -698,7 +761,7 @@ export function ChiefChat({
       setBusy(true);
       setSendError("");
       try {
-        const result = await sendToChief(trimmed, [], newSendId());
+        const result = await sendToChief(trimmed, [], newSendId(), thread);
         if (!result.ok) throw new Error(result.error || `${assistantName()} did not accept the command.`);
         showNotice(`Sent ${trimmed.split(/\s/)[0]}.`);
         fx("send");
@@ -751,7 +814,9 @@ export function ChiefChat({
         mime: file.mime,
         data_url: await blobToDataUrl(file.file),
       })));
-      const result = await sendToChief(trimmed, attachments, clientId);
+      // This chat's own thread, named: a message that waited behind a slow upload goes where it was written, even if
+      // another thread is open by now.
+      const result = await sendToChief(trimmed, attachments, clientId, thread);
       // Accepted by the bridge but refused: not something a retry fixes.
       if (!result.ok) throw Object.assign(new Error(result.error || `${assistantName()} did not accept the message.`), { status: 422 });
       retrySend.current = null;
@@ -770,7 +835,7 @@ export function ChiefChat({
         // The chief before the failure the bridge drops the repeat.
         retrySend.current = null;
         const reason = friendlyError(error, `${assistantName()} is unreachable.`);
-        await outbox.enqueue(clientId, trimmed, files.map(file => ({ name: file.name, mime: file.mime, blob: file.file })), reason);
+        await outbox.enqueue(clientId, trimmed, files.map(file => ({ name: file.name, mime: file.mime, blob: file.file })), { reason, timedOut: timedOut(error) });
         releasePending(files);
         showNotice(`Couldn't reach ${assistantName()}. Queued; it will retry on its own.`);
         return;
@@ -904,14 +969,14 @@ export function ChiefChat({
   }, []);
 
   const answerOpenQuestion = useCallback(async (id: string, answer: string | string[]) => {
-    const result = await answerQuestion(id, answer);
+    const result = await answerQuestion(id, answer, thread);
     if (!result.ok) {
       if (result.code === "gone") setQuestion(null);
       throw new Error(result.error || `${assistantName()} didn't get the answer.`);
     }
     setQuestion((q) => (q?.id === id ? null : q));
     fx("send");
-  }, []);
+  }, [thread]);
 
   const mood: ChiefMood = approval || question
     ? "approval"
@@ -1005,7 +1070,7 @@ export function ChiefChat({
         mood={mood}
         status={
           question && !approval
-            ? { text: "Has a question for you", tone: "text-warn" }
+            ? { text: "Has a question for you", tone: "text-warn", announce: `${assistant} has a question for you: ${question.question}` }
             : backgroundTasks && mood === "online"
               ? { text: `Working in the background · ${backgroundTasks} task${backgroundTasks === 1 ? "" : "s"}`, tone: "text-fg-2" }
               : null
@@ -1044,6 +1109,7 @@ export function ChiefChat({
         onRetryQueued={outbox.retryNow}
         earlier={messages.length ? earlier : undefined}
         onLoadEarlier={loadEarlier}
+        onPinned={releaseEarlier}
         chief={chief}
         awaiting={awaiting}
         waitingApproval={!!approval}
@@ -1159,6 +1225,31 @@ export function ChiefChat({
             ))}
           </ul>
         ) : null}
+        {modelOverride ? (
+          <div className="flex items-center gap-2 px-4 pb-1.5 text-caption text-fg-3">
+            <span className="min-w-0 flex-1 truncate">
+              This chat uses <span className="font-medium text-fg-2">{modelOverride.model}</span>
+            </span>
+            <button
+              type="button"
+              disabled={resettingModel}
+              onClick={async () => {
+                setResettingModel(true);
+                try {
+                  const res = await resetChatModel();
+                  if (!res.ok) showNotice(res.error || "Couldn't switch back. Try again.");
+                } catch (error) {
+                  showNotice(friendlyError(error, "Couldn't switch back. Try again."));
+                } finally {
+                  setResettingModel(false);
+                }
+              }}
+              className="press min-h-11 shrink-0 rounded-full px-2.5 font-medium text-fg-2 hover:text-fg disabled:opacity-50"
+            >
+              {resettingModel ? "Switching back…" : "Back to your usual model"}
+            </button>
+          </div>
+        ) : null}
         <DraftComposer
           draft={draft}
           pendingFiles={pendingFiles}
@@ -1235,30 +1326,44 @@ function newSendId() {
 
 /** An all-day session keeps growing; the oldest rows go once the chat holds this many. */
 export const MAX_KEPT_MESSAGES = 600;
+/** Notices go with them: at most this many are kept. */
+export const MAX_KEPT_NOTICES = 200;
 
 
 /**
- * New rows after the ones we have; each user row that arrived replaces one "Sending…" bubble.
- * The stored text can differ from what was typed (whitespace, inlined file notes, attachment-only
- * sends), so match loosely, oldest bubble first, rather than leave a bubble stuck forever.
+ * New rows after the ones we have; each user row that arrived replaces one "Sending…" bubble, and takes over its
+ * row (`rowKey`), so it doesn't animate in a second time. The stored text can differ from what was typed (whitespace,
+ * inlined file notes, attachment-only sends), so match loosely, oldest bubble first, rather than leave a bubble stuck
+ * forever. `cap`: the rows kept (no limit while the owner reads rows Load earlier added).
  */
-export function mergeMsgs(prev: ChatMessage[], incoming: ChatMessage[]) {
+export function mergeMsgs(prev: ChatMessage[], incoming: ChatMessage[], cap = MAX_KEPT_MESSAGES) {
   const stable = prev.filter((m) => m.id < 1e12);
   let optimistic = prev.filter((m) => m.id >= 1e12);
   const seen = new Set(stable.map((m) => m.id));
   // Compaction copies are history the thread already shows (lib/replay-guard.ts).
   const extra = dropReplays(stable, incoming).filter((m) => !seen.has(m.id));
-  const merged = extra.length ? [...stable, ...extra] : stable;
-  for (const row of extra) {
-    if (row.role !== "user" || !optimistic.length) continue;
+  const arrived = extra.map((row) => {
+    if (row.role !== "user" || !optimistic.length) return row;
     const body = sameText(row.content || "");
     let at = optimistic.findIndex((o) => sameText(o.content || "") === body);
     if (at < 0 && body) at = optimistic.findIndex((o) => !!sameText(o.content || "") && body.includes(sameText(o.content || "")));
     if (at < 0 && row.attachments?.length) at = optimistic.findIndex((o) => !!o.attachments?.length && !sameText(o.content || ""));
-    if (at >= 0) optimistic = optimistic.filter((_, i) => i !== at);
-  }
-  const kept = merged.length > MAX_KEPT_MESSAGES ? merged.slice(merged.length - MAX_KEPT_MESSAGES) : merged;
+    if (at < 0) return row;
+    const bubble = optimistic[at];
+    optimistic = optimistic.filter((_, i) => i !== at);
+    return { ...row, rowKey: bubble.rowKey ?? `m-${bubble.id}` };
+  });
+  const merged = arrived.length ? [...stable, ...arrived] : stable;
+  const kept = merged.length > cap ? merged.slice(merged.length - cap) : merged;
   return [...kept, ...optimistic];
+}
+
+/** Notices trimmed with the messages: once the chat is full, none from before the oldest row it keeps, and never more
+ * than MAX_KEPT_NOTICES. */
+export function trimNotices(notices: ChatNotice[], messages: ChatMessage[]): ChatNotice[] {
+  const oldest = messages.length >= MAX_KEPT_MESSAGES ? messageTimeMs(messages.find((m) => m.id > 0 && m.id < 1e12)?.timestamp) : NaN;
+  const kept = Number.isFinite(oldest) ? notices.filter((n) => n.at * 1000 >= oldest) : notices;
+  return kept.length > MAX_KEPT_NOTICES ? kept.slice(kept.length - MAX_KEPT_NOTICES) : kept;
 }
 
 /** The message box, subscribed to the draft (the rest of the chat isn't). */

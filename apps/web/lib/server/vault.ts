@@ -1,3 +1,5 @@
+import "server-only";
+
 import { promises as fs, realpathSync } from "node:fs";
 import path from "node:path";
 

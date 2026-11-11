@@ -59,9 +59,9 @@ it("shows the open thread and flags a question waiting in another", async () => 
   const pill = await screen.findByRole("button", { name: "Thread: Main. Switch threads" });
   await waitFor(() => expect(within(pill).getByRole("img", { name: "Needs you" })).toBeInTheDocument());
   fireEvent.click(pill);
-  const menu = await screen.findByRole("menu");
-  expect(within(menu).getByRole("img", { name: "Working" })).toBeInTheDocument();
-  expect(within(menu).getByRole("menuitemradio", { name: /Main/ })).toHaveAttribute("aria-checked", "true");
+  const list = await screen.findByRole("dialog", { name: "Threads with Nova" });
+  expect(within(list).getByRole("img", { name: "Working" })).toBeInTheDocument();
+  expect(within(list).getByRole("button", { name: /^Main/ })).toHaveAttribute("aria-current", "true");
 });
 
 it("switches threads and makes a new one", async () => {
@@ -69,7 +69,7 @@ it("switches threads and makes a new one", async () => {
   const onChange = vi.fn();
   render(<ThreadSwitcher current="main" onChange={onChange} onFresh={() => {}} phone={false} />);
   fireEvent.click(await screen.findByRole("button", { name: /Switch threads/ }));
-  fireEvent.click(await screen.findByRole("menuitemradio", { name: /Trip planning/ }));
+  fireEvent.click((await screen.findByText("Trip planning")).closest("button")!);
   expect(onChange).toHaveBeenCalledWith("t-1234abcd");
 
   fireEvent.click(screen.getByRole("button", { name: /Switch threads/ }));
@@ -107,6 +107,51 @@ it("a thread that is working can't be fresh-started", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "More for Trip planning" }));
   fireEvent.click(screen.getByRole("button", { name: "Fresh start" }));
   expect(screen.getByRole("button", { name: "Working…" })).toBeDisabled();
+});
+
+// A1: a small dialog, not a menu (it holds forms), that keyboard and screen-reader users can move through.
+it("opens with the open thread focused, and Escape gives the focus back to the pill", async () => {
+  route();
+  render(<ThreadSwitcher current="t-1234abcd" onChange={() => {}} onFresh={() => {}} phone={false} />);
+  const pill = await screen.findByRole("button", { name: "Thread: Trip planning. Switch threads" });
+  expect(pill).toHaveAttribute("aria-haspopup", "dialog");
+  pill.focus();
+  fireEvent.click(pill);
+  const list = await screen.findByRole("dialog", { name: "Threads with Nova" });
+  expect(list).not.toHaveAttribute("aria-modal");
+  await waitFor(() => expect(document.activeElement).toHaveAttribute("aria-current", "true"));
+  expect(document.activeElement).toHaveTextContent("Trip planning");
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(document.activeElement).toBe(pill);
+});
+
+it("tabbing out closes it, and after a pick the newly opened thread's pill has the focus", async () => {
+  route();
+  const onChange = vi.fn();
+  const view = render(
+    <>
+      <ThreadSwitcher key="main" current="main" onChange={onChange} onFresh={() => {}} phone={false} />
+      <button type="button">Elsewhere</button>
+    </>,
+  );
+  const pill = await screen.findByRole("button", { name: /Switch threads/ });
+  fireEvent.click(pill);
+  const list = await screen.findByRole("dialog", { name: "Threads with Nova" });
+  fireEvent.focusOut(within(list).getByRole("button", { name: /^Main/ }), { relatedTarget: screen.getByRole("button", { name: "Elsewhere" }) });
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+  fireEvent.click(pill);
+  fireEvent.click((await screen.findByText("Taxes")).closest("button")!);
+  expect(onChange).toHaveBeenCalledWith("t-5678abcd");
+  // The shell remounts the chat on the thread picked, and its switcher with it.
+  view.rerender(
+    <>
+      <ThreadSwitcher key="t-5678abcd" current="t-5678abcd" onChange={onChange} onFresh={() => {}} phone={false} />
+      <button type="button">Elsewhere</button>
+    </>,
+  );
+  await waitFor(() => expect(document.activeElement).toHaveAccessibleName(/Switch threads/));
 });
 
 it("the proxy forwards the thread routes", () => {

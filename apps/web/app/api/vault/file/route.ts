@@ -2,6 +2,7 @@ import { createReadStream, promises as fs } from "node:fs";
 import { Readable } from "node:stream";
 import { NextRequest } from "next/server";
 
+import { fileSecurityHeaders } from "@/lib/proxy-policy";
 import { vaultFail } from "@/lib/server/vault-http";
 import { kindOf, mimeOf, resolveInVault, resolveLink } from "@/lib/server/vault";
 
@@ -15,6 +16,13 @@ const INLINE = new Set(["note", "image", "pdf", "video", "audio", "canvas", "tex
  * relative to `from`. Supports Range so videos and audio can seek.
  */
 export async function GET(req: NextRequest) {
+  const res = await read(req);
+  // next.config.ts leaves this route out of the app-wide headers: every answer here carries the file set itself.
+  fileSecurityHeaders(res.headers);
+  return res;
+}
+
+async function read(req: NextRequest): Promise<Response> {
   const params = req.nextUrl.searchParams;
   try {
     let rel = params.get("path") || "";
@@ -30,12 +38,12 @@ export async function GET(req: NextRequest) {
       "Content-Type": mimeOf(clean),
       "Accept-Ranges": "bytes",
       "Cache-Control": "private, max-age=60",
-      "X-Content-Type-Options": "nosniff",
       "Last-Modified": new Date(st.mtimeMs).toUTCString(),
     });
-    // Anything opened as a page is sandboxed (no scripts), except PDFs, which need the browser's viewer.
-    if (kind !== "pdf") headers.set("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; frame-ancestors 'self'");
-    const download = params.get("download") === "1" || !INLINE.has(kind);
+    // An SVG is a document that can carry script: shown in place only as a picture (an <img> asks for an image),
+    // downloaded when it is opened in a tab.
+    const svgPage = mimeOf(clean) === "image/svg+xml" && req.headers.get("sec-fetch-dest") !== "image";
+    const download = params.get("download") === "1" || !INLINE.has(kind) || svgPage;
     headers.set("Content-Disposition", `${download ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(name)}`);
 
     const range = /^bytes=(\d*)-(\d*)$/.exec(req.headers.get("range") || "");

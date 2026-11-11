@@ -7,7 +7,11 @@ import type { Person } from "@/lib/types";
 
 /* What the shell keeps on this device: the split, the surface, the phone tab, the fleet view and the last-known chief. */
 
+/** The split as the app saved it before the panel group kept it itself: now only the group's first default. */
 export const STORAGE_KEY = "chief-split";
+
+/** The panel group's own saved split (react-resizable-panels `autoSaveId`). */
+export const SPLIT_SAVE_ID = "chief-shell-split";
 
 export const SURFACE_KEY = "chief-surface";
 
@@ -39,6 +43,15 @@ export function loadSurface(): Surface {
     /* ignore */
   }
   return "today";
+}
+
+export function loadFleetView(): FleetView {
+  try {
+    if (localStorage.getItem(FLEET_VIEW_KEY) === "health") return "health";
+  } catch {
+    /* ignore */
+  }
+  return "crew";
 }
 
 export function loadPhoneTab(): PhoneTab {

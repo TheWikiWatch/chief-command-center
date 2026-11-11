@@ -144,7 +144,7 @@
   --c-data: 57 135 229;
   --c-ok: 61 214 140;
   --c-warn: 255 197 61;
-  --c-danger: 255 99 105;
+  --c-danger: 255 107 113;
 
   --line-1: rgb(var(--c-ink) / 0.06);
   --line-2: rgb(var(--c-ink) / 0.1);
@@ -197,9 +197,11 @@
   --c-accent-solid: 196 36 42;
   --c-accent-text: 176 30 36;
   --c-data: 29 98 199;
-  --c-ok: 21 128 61;
-  --c-warn: 161 98 7;
-  --c-danger: 200 30 38;
+  /* Status text: 4.5:1 or more on every surface, in both modes, and on a /10 or /15 tint of itself (the chips and
+     notes); text never sits on a heavier tint (tests/contrast.test.ts). */
+  --c-ok: 18 105 50;
+  --c-warn: 130 79 6;
+  --c-danger: 174 26 33;
 
   --line-1: rgb(0 0 0 / 0.07);
   --line-2: rgb(0 0 0 / 0.12);

@@ -2,6 +2,7 @@ import type { ApprovalChoice, ChatAttachment, ExecApproval, Person, Snapshot, Tr
 import { requestJson, RequestError, friendlyError } from "@/lib/request";
 import { VOICE_FALLBACK_EVENT } from "@/lib/voice-events";
 import { currentChatThread } from "@/lib/chat-thread";
+import { uploadTimeoutMs } from "@/lib/upload-limits";
 export { poll as subscribeBridge } from "@/lib/poll";
 
 const PREFIX = "/api/bridge";
@@ -10,11 +11,8 @@ const get = <T>(path: string, signal?: AbortSignal, timeout = 10_000) =>
 const write = <T>(path: string, body: unknown, timeout = 10_000, method = "POST") =>
   requestJson<T>(`${PREFIX}/${path}`, { method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, timeout);
 
-// The chat's requests carry the thread it shows (lib/chat-thread.ts).
-const withThread = <T extends Record<string, unknown>>(body: T): T => {
-  const thread = currentChatThread();
-  return thread === "main" ? body : { ...body, thread };
-};
+// The chat's requests carry the thread it shows (lib/chat-thread.ts), or the one they name.
+const withThread = <T extends Record<string, unknown>>(body: T, thread = currentChatThread()): T => (thread === "main" ? body : { ...body, thread });
 const threadQuery = () => (currentChatThread() === "main" ? "" : `&thread=${encodeURIComponent(currentChatThread())}`);
 
 export type HealthResult = {
@@ -134,8 +132,8 @@ export async function fetchApprovals(signal?: AbortSignal): Promise<{ ok: boolea
   return data;
 }
 /** Answer the chief's open question: a choice's text, several choices (multi-select), or the owner's own words. */
-export const answerQuestion = (id: string, answer: string | string[]) =>
-  write<{ ok: boolean; error?: string; code?: string }>("clarify", withThread({ id, answer }));
+export const answerQuestion = (id: string, answer: string | string[], thread = currentChatThread()) =>
+  write<{ ok: boolean; error?: string; code?: string }>("clarify", withThread({ id, answer }, thread));
 /** Pick one of the choices Hermes offered as buttons: Hermes acts on it and says what it did in the chat. */
 export const chooseOption = (id: string, value: string) => write<{ ok: boolean; error?: string; code?: string; message?: string }>("choice", withThread({ id, value }), 60_000);
 /** Rename a bot (the chief too): its title, and unless `updateSoul` is false, its SOUL's "You are …". */
@@ -148,9 +146,15 @@ export const renameProfile = (profile: string, name: string, role: string, updat
 export const resolveApproval = (requestId: string, choice: ApprovalChoice) =>
   write<{ ok: boolean; resolved?: number; error?: string }>("approve", withThread({ request_id: requestId, choice }));
 export type OutboundAttachment = { name: string; mime: string; data_url: string };
-/** `clientId` lets the bridge drop a retry of a send that already reached the chief before timing out. */
-export const sendToChief = (text: string, attachments: OutboundAttachment[] = [], clientId = "") =>
-  write<{ ok: boolean; error?: string; duplicate?: boolean }>("send", withThread({ text, attachments, client_id: clientId }), attachments.length ? 120_000 : 20_000);
+/**
+ * `clientId` lets the bridge drop a retry of a send that already reached the chief before timing out. `thread` is the one
+ * it was written in, which by the time it goes may not be the one on screen (a send that waited behind another, or was
+ * queued). Files get time in proportion to their size (lib/upload-limits.ts).
+ */
+export function sendToChief(text: string, attachments: OutboundAttachment[] = [], clientId = "", thread = currentChatThread()) {
+  const bytes = attachments.reduce((n, a) => n + a.data_url.length, text.length);
+  return write<{ ok: boolean; error?: string; duplicate?: boolean }>("send", withThread({ text, attachments, client_id: clientId }, thread), attachments.length ? uploadTimeoutMs(bytes) : 20_000);
+}
 
 export async function fetchVoiceConfig(): Promise<VoiceConfig> {
   try { return await get<VoiceConfig>("voice-config"); }
@@ -227,6 +231,9 @@ export const stopHelper = (task: string) => write<{ ok: boolean; error?: string 
 export const retryTurn = () => write<{ ok: boolean; error?: string }>("retry", withThread({}), 15_000);
 /** A conversation Hermes paused after a restart cut a reply off: drop that reply (never re-run) and go on. */
 export const discardLostTurn = () => write<{ ok: boolean; error?: string }>("discard", withThread({}), 15_000);
+/** Hermes's `/model reset` (0.23): the chat leaves a model it was switched to (a one-tap limit switch, /model) for the
+ * one chosen in Settings → Models. */
+export const resetChatModel = () => write<{ ok: boolean; error?: string; action?: string; generating?: boolean }>("model-reset", withThread({}), 15_000);
 export const transcribeAudio = (dataUrl: string, mimeType: string) =>
   write<{ ok: boolean; transcript?: string; error?: string; code?: string; filtered?: boolean; no_speech?: boolean }>("transcribe", { data_url: dataUrl, mime_type: mimeType }, 185_000);
 export async function speakText(text: string, timeoutMs = 185_000) {

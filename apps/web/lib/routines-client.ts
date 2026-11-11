@@ -56,9 +56,13 @@ export type TeamRoutine = {
   failureAlerts?: "on" | "muted" | "elsewhere";
   /** Runs that failed in a row (0 after a good one). */
   failureStreak?: number;
+  /** A run in progress (Hermes 0.23), and when it started (ISO), when Hermes knows. */
+  running?: { since: string | null } | null;
+  /** A time it was due while the PC was off: run once later (true) or skip it (false). */
+  catchUp?: boolean;
 };
 export type RoutineBot = { id: string; name: string };
-export type RoutineOptions = { paused?: boolean; pin?: boolean; alerts?: "on" | "muted" };
+export type RoutineOptions = { paused?: boolean; pin?: boolean; alerts?: "on" | "muted"; catchUp?: boolean };
 export type RoutineDraft = { profile: string; name: string; prompt: string; schedule: RoutineSchedule; thread: string } & RoutineOptions;
 
 type One = { ok: boolean; error?: string; routine?: TeamRoutine };
@@ -68,9 +72,11 @@ const post = <T>(path: string, body: unknown) =>
 export const routinesApi = {
   list: () => requestJson<{ ok: boolean; error?: string; routines: TeamRoutine[]; bots: RoutineBot[] }>("/api/bridge/routines", { cache: "no-store" }, 15_000),
   create: (draft: RoutineDraft) => post<One>("routines", draft),
-  update: (profile: string, id: string, changes: Partial<Pick<RoutineDraft, "name" | "prompt" | "schedule" | "thread" | "pin" | "alerts">> & { enabled?: boolean }) =>
+  update: (profile: string, id: string, changes: Partial<Pick<RoutineDraft, "name" | "prompt" | "schedule" | "thread" | "pin" | "alerts" | "catchUp">> & { enabled?: boolean }) =>
     post<One>("routines/update", { profile, id, ...changes }),
   run: (profile: string, id: string) => post<One>("routines/run", { profile, id }),
+  /** Stop its run in progress (it keeps its schedule); `stopped` is false when the run had already finished. */
+  stop: (profile: string, id: string) => post<{ ok: boolean; error?: string; stopped?: boolean; message?: string }>("routines/stop", { profile, id }),
   remove: (profile: string, id: string) => post<{ ok: boolean; error?: string }>("routines/delete", { profile, id }),
 };
 
@@ -99,11 +105,13 @@ export function whenLabel(iso: string | null | undefined, now = new Date()): str
   return `${at.toLocaleDateString(undefined, { day: "numeric", month: "short" })} ${time}`;
 }
 
-/** The last run's outcome in a word, and whether it went wrong. */
-export function lastResult(r: Pick<TeamRoutine, "lastRun" | "lastStatus">): { text: string; bad: boolean } | null {
+/** The last run's outcome in a word, and whether it went wrong (a run the owner stopped didn't: it says so plainly). */
+export function lastResult(r: Pick<TeamRoutine, "lastRun" | "lastStatus">): { text: string; bad: boolean; stopped?: true } | null {
   if (!r.lastRun) return null;
   const status = String(r.lastStatus || "");
   if (!status || status === "ok" || status === "success") return { text: "Ran fine", bad: false };
+  // Hermes 0.23: stopped from the app (or Hermes's own cancel) before it finished.
+  if (status === "cancelled") return { text: "Stopped", bad: false, stopped: true };
   if (status.startsWith("blocked")) return { text: "Blocked", bad: true };
   if (status === "delivery_failed") return { text: "Ran, not delivered", bad: true };
   return { text: "Failed", bad: true };

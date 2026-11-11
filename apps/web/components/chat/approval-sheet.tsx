@@ -87,11 +87,15 @@ export function ApprovalSheet({
                 </button>
               ) : null}
               {always ? (
+                // One per request: a confirmation asked for one approval must never carry over to the next.
                 <HoldButton
+                  key={approval.requestId}
                   className="approve-always"
+                  armedClassName="approve-always-armed"
                   disabled={resolving}
                   ariaLabel="Always allow (press and hold)"
                   holdingLabel="Keep holding…"
+                  confirmLabel="Yes, always allow"
                   onConfirm={() => onChoose("always")}
                 >
                   Always allow

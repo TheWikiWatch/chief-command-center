@@ -134,8 +134,9 @@ export function ChatHeader({
   onVoiceMode?: () => void;
   /** The chief's presence renders here when provided (Phase 3); falls back to the plain face. */
   face?: ReactNode;
-  /** A status line that wins over the mood's own (e.g. "Has a question for you"). */
-  status?: { text: string; tone: string } | null;
+  /** A status line that wins over the mood's own (e.g. "Has a question for you"); `announce` is what screen readers
+   * hear instead (the question itself). */
+  status?: { text: string; tone: string; announce?: string } | null;
   /** The thread switcher, between the name and the header's buttons. */
   switcher?: ReactNode;
 }) {
@@ -203,6 +204,11 @@ export function ChatHeader({
           {/* DeepSeek's peak/off-peak pricing only matters when the chief runs on DeepSeek. */}
           {chief?.provider === "deepseek" ? <DeepseekChip /> : null}
         </div>
+        {/* Screen readers hear the line from one region that stays put: each animated line below is a new element,
+            and a live region that appears with its text is not announced. A new question is said in full. */}
+        <p role="status" className="sr-only">
+          {status?.announce ?? line.text}
+        </p>
         <AnimatePresence mode="wait" initial={false}>
           <motion.p
             key={line.text.replace(/\d/g, "")}
@@ -210,7 +216,7 @@ export function ChatHeader({
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0, transition: { duration: 0.18, ease: EASE.enter } }}
             exit={{ opacity: 0, y: -4, transition: { duration: 0.1 } }}
-            aria-live="polite"
+            aria-hidden="true"
           >
             {mood === "speaking" ? <SpeakingBars /> : null}
             {presence ? <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${presence}`} /> : null}

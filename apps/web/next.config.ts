@@ -29,8 +29,8 @@ function serveHosts(): string[] {
 }
 
 /**
- * Response headers for every page and route. They live here, not in lib/: Next's config loader doesn't resolve
- * local imports (tests import them from this file).
+ * Response headers for every page and route but the file routes (`APP_HEADERS_SOURCE`). They live here, not in lib/:
+ * Next's config loader doesn't resolve local imports (tests import them from this file).
  *
  * - Nothing may frame the dashboard (`frame-ancestors 'none'`, `X-Frame-Options`): over Tailscale, any site open
  *   on the phone could otherwise load it in a frame and trick a tap on "Allow" (identity comes from the network,
@@ -76,6 +76,16 @@ export function securityHeaders(dev: boolean): { key: string; value: string }[] 
   ];
 }
 
+/**
+ * Where `securityHeaders` apply: every path but the file routes (a vault file; the bridge's files, previews and
+ * thumbnails). Next sets a config header before the route runs and then adds the route's own only where none is set,
+ * so under this rule a file's sandbox never reached the browser (a vault SVG opened in a tab could run script here)
+ * and a PDF couldn't be framed by the Vault. Those routes send the whole set themselves (lib/proxy-policy.ts
+ * `fileSecurityHeaders`). Next matches it without regard to case, so a case variant of those paths gets no headers
+ * either: those reach no route, only the bare not-found page.
+ */
+export const APP_HEADERS_SOURCE = "/((?!api/(?:vault/file|bridge/(?:file|preview|thumb))/?$).*)";
+
 const config = (phase: string): NextConfig => ({
   // The desktop app runs the production server from `.next/standalone` (server.js plus only the
   // node_modules it needs); packaging copies `.next/static` and `public` next to it.
@@ -97,7 +107,7 @@ const config = (phase: string): NextConfig => ({
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: APP_HEADERS_SOURCE,
         headers: securityHeaders(phase === PHASE_DEVELOPMENT_SERVER),
       },
     ];

@@ -279,7 +279,7 @@ function ModelRow({
         aria-label={starred ? `Unstar ${model}` : `Star ${model}`}
         title={starred ? "Remove from favourites" : "Add to favourites"}
         onClick={() => onStar(!starred)}
-        className={`press grid size-9 shrink-0 place-items-center rounded-full hover:bg-fill-2 ${starred ? "text-warn" : "text-fg-4 hover:text-fg-2"}`}
+        className={`press grid size-9 shrink-0 place-items-center rounded-full hover:bg-fill-2 ${starred ? "text-warn" : "text-fg-3 hover:text-fg-2"}`}
       >
         <StarIcon className={`size-4 ${starred ? "fill-current" : ""}`} />
       </button>

@@ -30,6 +30,9 @@ import { SkeletonRows } from "@/components/ui/surface";
 type View = { mode: "list" } | { mode: "new" } | { mode: "edit"; id: string; profile: string };
 type Note = { tone: "ok" | "error"; text: string };
 
+/** How often the list is re-read while a run is due or in progress. */
+export const RUN_WATCH_MS = 4000;
+
 /**
  * Team & Routines → Routines: every scheduled routine, for the chief and every bot. A routine runs as the bot
  * that owns it and reports into a chat thread. The app's own routines (Second Brain, Fleet Health) can be
@@ -44,14 +47,14 @@ export function RoutinesTab({ people }: { people: Person[] }) {
   const [busy, setBusy] = useState("");
   const [note, setNote] = useState<Note | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (quiet = false) => {
     try {
       const res = await routinesApi.list();
       if (!res.ok) throw new Error(res.error || "Couldn't read the routines.");
       setRoutines(res.routines);
       setBots(res.bots);
     } catch (e) {
-      setNote({ tone: "error", text: friendlyError(e, "Couldn't read the routines.") });
+      if (!quiet) setNote({ tone: "error", text: friendlyError(e, "Couldn't read the routines.") });
       setRoutines((r) => r ?? []);
     }
   }, []);
@@ -61,6 +64,27 @@ export function RoutinesTab({ people }: { people: Person[] }) {
       .list()
       .then((r) => r.ok && setThreads(r.threads.filter((t) => !t.archived)))
       .catch(() => undefined);
+  }, [load]);
+
+  // A run started here waits for the scheduler's next tick (up to a minute), then runs until it's done: the list is
+  // re-read every few seconds meanwhile, so "Running now" and "Stop this run" come and go by themselves.
+  const [watchUntil, setWatchUntil] = useState(0);
+  const anyRunning = !!routines?.some((r) => r.running);
+  useEffect(() => {
+    if (!anyRunning && !watchUntil) return;
+    const timer = window.setInterval(() => {
+      if (!anyRunning && Date.now() > watchUntil) setWatchUntil(0);
+      else if (!document.hidden) void load(true);
+    }, RUN_WATCH_MS);
+    return () => window.clearInterval(timer);
+  }, [anyRunning, watchUntil, load]);
+  // Back in view after a while (the reading above pauses while the window is hidden): read it fresh.
+  useEffect(() => {
+    const onVisible = () => {
+      if (!document.hidden) void load(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
 
   const personFor = useCallback((profile: string) => (profile === "chief" ? people.find((p) => p.isChief) : people.find((p) => p.id === profile)), [people]);
@@ -156,6 +180,7 @@ export function RoutinesTab({ people }: { people: Person[] }) {
               setView({ mode: "list" });
             }}
             onChanged={load}
+            onRunStarted={() => setWatchUntil(Date.now() + 90_000)}
           />
         </motion.div>
       )}
@@ -203,7 +228,12 @@ function RoutineList({
                   {r.failureAlerts === "muted" ? " · failure alerts muted" : ""}
                   {r.thread && r.thread !== "main" ? ` · ${threads.find((t) => t.id === r.thread)?.title || "a thread"}` : ""}
                 </span>
-                {result?.bad ? (
+                {r.running ? (
+                  <span className="mt-0.5 flex items-center gap-1.5 text-caption text-accent-text">
+                    <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden />
+                    Running now
+                  </span>
+                ) : result?.bad ? (
                   <span className="mt-0.5 flex items-center gap-1 text-caption text-danger">
                     <CircleAlertIcon className="size-3.5" />
                     {result.text} {whenLabel(r.lastRun).toLowerCase()}
@@ -284,6 +314,7 @@ function RoutineEditor({
   onBack,
   onDone,
   onChanged,
+  onRunStarted,
 }: {
   routine?: TeamRoutine;
   bots: RoutineBot[];
@@ -292,6 +323,7 @@ function RoutineEditor({
   onBack: () => void;
   onDone: (text: string) => Promise<void>;
   onChanged: () => Promise<void>;
+  onRunStarted?: () => void;
 }) {
   const ids = useId();
   const creating = !routine;
@@ -303,6 +335,7 @@ function RoutineEditor({
   const [thread, setThread] = useState(routine?.thread ?? "main");
   const [pin, setPin] = useState(!!routine?.model?.pinned);
   const [alerts, setAlerts] = useState<"on" | "muted">(routine?.failureAlerts === "muted" ? "muted" : "on");
+  const [catchUp, setCatchUp] = useState(routine?.catchUp !== false);
   const [startNow, setStartNow] = useState(true);
   const [saving, setSaving] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -317,6 +350,7 @@ function RoutineEditor({
     if (routine.kind !== "script" && thread !== (routine.thread ?? "main")) changes.thread = thread;
     if (routine.kind !== "script" && pin !== !!routine.model?.pinned) changes.pin = pin;
     if (alerts !== (routine.failureAlerts === "muted" ? "muted" : "on") || (routine.failureAlerts === "elsewhere" && alerts === "on" && touchedAlerts)) changes.alerts = alerts;
+    if (catchUp !== (routine.catchUp !== false)) changes.catchUp = catchUp;
   }
   const dirty = creating ? !!(name.trim() && prompt.trim()) : Object.keys(changes).length > 0;
 
@@ -339,7 +373,7 @@ function RoutineEditor({
       "save",
       () =>
         creating
-          ? routinesApi.create({ profile, name: name.trim(), prompt: prompt.trim(), schedule: scheduleBody(schedule), thread, paused: !startNow, pin, alerts })
+          ? routinesApi.create({ profile, name: name.trim(), prompt: prompt.trim(), schedule: scheduleBody(schedule), thread, paused: !startNow, pin, alerts, catchUp })
           : routinesApi.update(routine.profile, routine.id, changes),
       () => onDone(creating ? (startNow ? `${name.trim()} is scheduled.` : `${name.trim()} is saved, paused. Switch it on when you're ready.`) : "Saved."),
     );
@@ -365,11 +399,16 @@ function RoutineEditor({
         <dl className="grid grid-cols-2 gap-2">
           <Stat label="Next run" value={routine.enabled ? whenLabel(routine.nextRun) || "Not scheduled" : "Switched off"} />
           <Stat
-            label="Last run"
-            value={routine.lastRun ? `${whenLabel(routine.lastRun)}` : "Not yet"}
+            label={routine.running ? "Now" : "Last run"}
+            value={routine.running ? "Running" : routine.lastRun ? `${whenLabel(routine.lastRun)}` : "Not yet"}
             extra={
-              result ? (
-                <span className={`text-caption ${result.bad ? "text-danger" : "text-ok"}`}>
+              routine.running ? (
+                <span className="flex items-center gap-1.5 text-caption text-accent-text">
+                  <span className="size-1.5 shrink-0 animate-pulse rounded-full bg-accent" aria-hidden />
+                  {routine.running.since ? `since ${whenLabel(routine.running.since).toLowerCase()}` : "started"}
+                </span>
+              ) : result ? (
+                <span className={`text-caption ${result.bad ? "text-danger" : result.stopped ? "text-fg-3" : "text-ok"}`}>
                   {result.text}
                   {result.bad && (routine.failureStreak || 0) > 1 ? ` · ${routine.failureStreak} times in a row` : ""}
                 </span>
@@ -552,6 +591,8 @@ function RoutineEditor({
         onPin={setPin}
         alerts={alerts}
         onAlerts={(next) => (setAlerts(next), setTouchedAlerts(true))}
+        catchUp={catchUp}
+        onCatchUp={setCatchUp}
         startNow={creating ? startNow : undefined}
         onStartNow={setStartNow}
       />
@@ -567,7 +608,25 @@ function RoutineEditor({
         >
           {saving === "save" ? "Saving…" : creating ? "Create routine" : "Save changes"}
         </button>
-        {routine ? (
+        {routine?.running ? (
+          <button
+            type="button"
+            disabled={!!saving}
+            onClick={() =>
+              void run(
+                "stop",
+                () => routinesApi.stop(routine.profile, routine.id),
+                async () => {
+                  setNote({ tone: "ok", text: "Stopping this run. The routine keeps its schedule." });
+                  await onChanged();
+                },
+              )
+            }
+            className="press min-h-11 rounded-full border border-line-2 px-4 text-callout font-medium text-danger hover:bg-danger/8 disabled:opacity-50"
+          >
+            {saving === "stop" ? "Stopping…" : "Stop this run"}
+          </button>
+        ) : routine ? (
           <button
             type="button"
             disabled={!!saving}
@@ -577,6 +636,7 @@ function RoutineEditor({
                 () => routinesApi.run(routine.profile, routine.id),
                 async () => {
                   setNote({ tone: "ok", text: "Started. Its report arrives in the chat when it's done." });
+                  onRunStarted?.();
                   await onChanged();
                 },
               )
@@ -621,6 +681,8 @@ function RoutineOptionsBox({
   onPin,
   alerts,
   onAlerts,
+  catchUp,
+  onCatchUp,
   startNow,
   onStartNow,
 }: {
@@ -630,6 +692,8 @@ function RoutineOptionsBox({
   onPin: (pin: boolean) => void;
   alerts: "on" | "muted";
   onAlerts: (alerts: "on" | "muted") => void;
+  catchUp: boolean;
+  onCatchUp: (catchUp: boolean) => void;
   startNow?: boolean;
   onStartNow: (now: boolean) => void;
 }) {
@@ -660,6 +724,12 @@ function RoutineOptionsBox({
       )}
       <Row title="Tell me when it fails" hint={routine?.failureAlerts === "elsewhere" && alerts === "on" ? "Its failure alerts go outside the app (set from a chat). Switch this off to mute them, or off and on to keep them here." : alerts === "muted" ? "Failures stay on this page only." : "A failed run says so where its results go."}>
         <Switch label="Tell me when it fails" checked={alerts === "on"} onChange={(on) => onAlerts(on ? "on" : "muted")} />
+      </Row>
+      <Row
+        title="Catch up after the PC was off"
+        hint={catchUp ? "A time it missed runs once when the PC is back on." : "A time it missed is skipped; it runs at the next one."}
+      >
+        <Switch label="Catch up after the PC was off" checked={catchUp} onChange={onCatchUp} />
       </Row>
       {startNow === undefined ? null : (
         <Row title="Start the schedule now" hint={startNow ? "Its first run is the next time on the schedule." : "Saved paused: switch it on in the list when you're ready."}>

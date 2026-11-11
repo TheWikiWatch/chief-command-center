@@ -1,7 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { CheckIcon, ChevronDownIcon, EllipsisIcon, PlusIcon } from "@/components/icons";
 import { Sheet } from "@/components/ui/sheet";
@@ -41,10 +41,18 @@ function Dot({ kind }: { kind: Attention }) {
   return <span className="size-2 shrink-0" aria-hidden="true" />;
 }
 
+// Picking a thread remounts the chat on it, and this switcher with it: the new one takes the focus back to its button
+// (only right after a pick).
+let pickedAt = 0;
+
 /**
  * The chat's thread switcher: separate conversations with the chief, side by side. The pill shows the open
- * thread; its menu lists the others with what each is doing (working, waiting on you, unread), and makes,
+ * thread; its list shows the others with what each is doing (working, waiting on you, unread), and makes,
  * renames, fresh-starts and archives threads. `onFresh` reloads the open thread after a fresh start.
+ *
+ * On the desktop the list is a small non-modal dialog (it holds forms, so it isn't a menu): it opens with the open
+ * thread focused, and Escape, a pick or a click elsewhere closes it, focus back on the pill unless the click put it
+ * somewhere else. On the phone it is a sheet.
  */
 export function ThreadSwitcher({
   current,
@@ -63,6 +71,15 @@ export function ThreadSwitcher({
   const [items, setItems] = useState<ChatThread[]>([]);
   const [seen, setSeen] = useState<Record<string, number>>({});
   const root = useRef<HTMLDivElement>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  const dialog = useRef<HTMLDivElement>(null);
+  const dialogId = useId();
+  const labelId = useId();
+  useEffect(() => {
+    if (Date.now() - pickedAt > 1000) return;
+    pickedAt = 0;
+    button.current?.focus();
+  }, []);
 
   const load = useCallback(async () => {
     try {
@@ -105,10 +122,15 @@ export function ThreadSwitcher({
   }, [open, phone]);
   useEffect(() => {
     if (!open || phone) return;
+    // A click elsewhere keeps the focus it gave; Escape puts it back on the pill.
     const onDown = (e: MouseEvent) => {
       if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      setOpen(false);
+      button.current?.focus();
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -116,6 +138,16 @@ export function ThreadSwitcher({
       document.removeEventListener("keydown", onKey);
     };
   }, [open, phone]);
+  // Opening focuses the open thread (once the list has it; until then the dialog itself), unless focus is already
+  // somewhere in the list. The phone's sheet does the same through `data-autofocus` (lib/use-modal.ts).
+  const listed = items.length > 0;
+  useEffect(() => {
+    const el = dialog.current;
+    if (!open || phone || !el) return;
+    const active = document.activeElement;
+    if (active && active !== el && el.contains(active)) return;
+    (el.querySelector<HTMLElement>("[data-autofocus]") ?? el).focus({ preventScroll: true });
+  }, [open, phone, listed]);
 
   const others = items.filter((t) => t.id !== current && !t.archived);
   const elsewhere: Attention = others.some((t) => t.question || t.approval)
@@ -127,10 +159,16 @@ export function ThreadSwitcher({
 
   const pick = (id: string) => {
     setOpen(false);
-    if (id !== current) onChange(id);
+    if (id === current) {
+      button.current?.focus();
+      return;
+    }
+    pickedAt = Date.now();
+    onChange(id);
   };
   const menu = (
     <ThreadMenu
+      labelId={labelId}
       items={items}
       current={current}
       seen={seen}
@@ -144,11 +182,20 @@ export function ThreadSwitcher({
   );
 
   return (
-    <div ref={root} className="thread-switcher relative flex min-w-19">
+    <div
+      ref={root}
+      className="thread-switcher relative flex min-w-19"
+      onBlur={(e) => {
+        // Tabbing out of the list closes it (a click inside lands on the dialog itself, which keeps focus within).
+        if (open && !phone && dialog.current && !root.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
       <button
+        ref={button}
         type="button"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
+        aria-controls={open && !phone ? dialogId : undefined}
         aria-label={`Thread: ${title}. Switch threads`}
         onClick={() => {
           setOpen((v) => !v);
@@ -168,12 +215,16 @@ export function ThreadSwitcher({
         <AnimatePresence>
           {open ? (
             <motion.div
-              role="menu"
+              ref={dialog}
+              id={dialogId}
+              role="dialog"
+              aria-labelledby={labelId}
+              tabIndex={-1}
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1, transition: { duration: 0.16, ease: EASE.enter } }}
               exit={{ opacity: 0, y: -4, transition: { duration: 0.1 } }}
               style={{ transformOrigin: "top right", width: place.width, right: place.right }}
-              className="absolute top-full z-50 mt-2 rounded-card border border-line-2 bg-raised p-2 shadow-e4"
+              className="absolute top-full z-50 mt-2 rounded-card border border-line-2 bg-raised p-2 shadow-e4 outline-hidden"
             >
               {menu}
             </motion.div>
@@ -185,6 +236,7 @@ export function ThreadSwitcher({
 }
 
 function ThreadMenu({
+  labelId,
   items,
   current,
   seen,
@@ -192,6 +244,8 @@ function ThreadMenu({
   onChanged,
   onFresh,
 }: {
+  /** The heading's id: it names the dialog. */
+  labelId: string;
   items: ChatThread[];
   current: string;
   seen: Record<string, number>;
@@ -227,7 +281,9 @@ function ThreadMenu({
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between px-1.5 pb-1 pt-0.5">
-        <p className="text-caption font-medium text-fg-3">Threads with {assistant}</p>
+        <p id={labelId} className="text-caption font-medium text-fg-3">
+          Threads with {assistant}
+        </p>
         <button
           type="button"
           disabled={busy}
@@ -378,7 +434,14 @@ function ThreadRow({
   return (
     <li className={`rounded-ctl ${current ? "bg-fill-2" : ""}`}>
       <div className="flex items-center gap-1">
-        <button type="button" role="menuitemradio" aria-checked={current} onClick={onPick} className="press flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-ctl px-2 text-left hover:bg-fill-1">
+        <button
+          type="button"
+          aria-current={current ? "true" : undefined}
+          // The open thread takes the focus when the list opens.
+          data-autofocus={current ? "" : undefined}
+          onClick={onPick}
+          className="press flex min-h-10 min-w-0 flex-1 items-center gap-2.5 rounded-ctl px-2 text-left hover:bg-fill-1"
+        >
           <Dot kind={attention} />
           <span className={`min-w-0 flex-1 truncate text-callout ${current ? "font-medium text-fg" : "text-fg-2"}`}>{t.title}</span>
           <span className="shrink-0 text-caption tabular text-fg-3">{attention === "question" ? "needs you" : ago(t.lastActivity)}</span>

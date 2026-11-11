@@ -4,6 +4,8 @@ import { NextRequest } from "next/server";
 import { GET, POST } from "@/app/api/bridge/[...path]/route";
 import { PUT as opsPut } from "@/app/api/ops/[...path]/route";
 import { deniedFilePath, permittedOperation, protectFileHeaders, validMutationOrigin } from "@/lib/proxy-policy";
+import { resetChatModel } from "@/lib/bridge";
+import { setChatThread } from "@/lib/chat-thread";
 
 afterEach(() => vi.unstubAllGlobals());
 describe("proxy trust boundary", () => {
@@ -46,6 +48,21 @@ describe("proxy trust boundary", () => {
     expect(permittedOperation("bridge", "POST", ["look", "chief", "avatar"])).toBe(false);
     expect(permittedOperation("bridge", "PUT", ["look", "chief"])).toBe(false);
     expect(permittedOperation("bridge", "PUT", ["settings"])).toBe(false);
+    // Hermes 0.23's /model reset, for the open chat: by POST only.
+    expect(permittedOperation("bridge", "POST", ["model-reset"])).toBe(true);
+    expect(permittedOperation("bridge", "GET", ["model-reset"])).toBe(false);
+  });
+  it("takes the open thread's chat back to its usual model", async () => {
+    const fetcher = vi.fn().mockResolvedValue(Response.json({ ok: true, action: "model_reset", generating: false }));
+    vi.stubGlobal("fetch", fetcher);
+    setChatThread("t-1234abcd");
+    try {
+      await expect(resetChatModel()).resolves.toMatchObject({ ok: true, action: "model_reset" });
+    } finally {
+      setChatThread("main");
+    }
+    const [url, init] = fetcher.mock.calls[0];
+    expect([url, init.method, JSON.parse(init.body)]).toEqual(["/api/bridge/model-reset", "POST", { thread: "t-1234abcd" }]);
   });
   it("blocks writes before forwarding and permits same-origin JSON mutations", async () => {
     const fetcher = vi.fn().mockResolvedValue(Response.json({ok:true})); vi.stubGlobal("fetch", fetcher);

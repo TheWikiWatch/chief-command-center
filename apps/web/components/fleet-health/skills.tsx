@@ -262,7 +262,7 @@ export function DiffView({ text }: { text: string }) {
       {lines.map((l, i) => (
         <div
           key={i}
-          className={`whitespace-pre-wrap wrap-break-word px-3 ${l.startsWith("+") ? "bg-ok/[0.07] text-ok" : l.startsWith("-") ? "bg-danger/[0.07] text-danger" : l.startsWith("@@") ? "text-fg-4" : "text-fg-3"}`}
+          className={`whitespace-pre-wrap wrap-break-word px-3 ${l.startsWith("+") ? "bg-ok/[0.07] text-ok" : l.startsWith("-") ? "bg-danger/[0.07] text-danger" : l.startsWith("@@") ? "bg-fill-1 text-fg-3" : "text-fg-3"}`}
         >
           {l || " "}
         </div>

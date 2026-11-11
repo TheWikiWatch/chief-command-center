@@ -100,7 +100,7 @@ export function Onboarding({
           <ol className="mt-4 flex flex-wrap gap-x-3 gap-y-2" aria-label="Steps">
             {steps.map((s, i) => (
               <li key={s.id} className="flex items-center gap-2 text-caption" aria-current={i === index ? "step" : undefined}>
-                <span className={`grid size-5 place-items-center rounded-full font-mono text-micro ${i < index ? "bg-ok/20 text-ok" : i === index ? "bg-fg text-canvas" : "bg-fill-2 text-fg-3"}`}>{i + 1}</span>
+                <span className={`grid size-5 place-items-center rounded-full font-mono text-micro ${i < index ? "bg-ok/15 text-ok" : i === index ? "bg-fg text-canvas" : "bg-fill-2 text-fg-3"}`}>{i + 1}</span>
                 <span className={i === index ? "text-fg-2" : "text-fg-3"}>{s.label}</span>
               </li>
             ))}

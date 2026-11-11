@@ -41,6 +41,8 @@ export function lastUserIndex(messages: ChatMessage[]) {
 export function awaitingReply(messages: ChatMessage[]) {
   const lastUser = lastUserIndex(messages);
   if (lastUser < 0) return false;
+  // The model's safety filter refused it (Hermes 0.23): it's out of the conversation and never answered.
+  if (messages[lastUser].refused) return false;
   for (let i = lastUser + 1; i < messages.length; i++) {
     const msg = messages[i];
     const tone = chatTone(msg);
@@ -88,6 +90,11 @@ export function shouldShowThinking(
 }
 
 export function notePreview(content: string) {
-  const line = content.split(/\r?\n/).find((s) => s.trim()) || content;
+  const line = plainMarkdown(content).split(/\r?\n/).find((s) => s.trim()) || content;
   return line.replace(/^\[(?:kanban|System note[^\]]*|CONTEXT COMPACTION[^\]]*)\]\s*/i, "").trim() || line;
+}
+
+/** Hermes's words without Markdown's markers (bold, code, a heading's #), where they show as plain text. */
+export function plainMarkdown(text: string) {
+  return text.replace(/\*\*|`/g, "").replace(/^#{1,6}\s+/gm, "");
 }

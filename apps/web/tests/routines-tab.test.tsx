@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { RoutinesTab, scheduleText } from "@/components/fleet/routines-tab";
+import { RoutinesTab, RUN_WATCH_MS, scheduleText } from "@/components/fleet/routines-tab";
 import { permittedOperation } from "@/lib/proxy-policy";
-import { lastResult } from "@/lib/routines-client";
+import { lastResult, routinesApi } from "@/lib/routines-client";
 import type { TeamRoutine } from "@/lib/routines-client";
 
 const base: Omit<TeamRoutine, "id" | "profile" | "bot" | "name" | "prompt" | "schedule"> = {
@@ -106,7 +106,7 @@ it("creates a weekly routine for a bot that reports into a thread", async () => 
   await waitFor(() =>
     expect(posts[0]).toEqual({
       path: "routines",
-      body: { profile: "research-desk", name: "Friday review", prompt: "Review the week.", schedule: { kind: "weekly", time: "16:00", days: [5] }, thread: "t-1234abcd", paused: false, pin: false, alerts: "on" },
+      body: { profile: "research-desk", name: "Friday review", prompt: "Review the week.", schedule: { kind: "weekly", time: "16:00", days: [5] }, thread: "t-1234abcd", paused: false, pin: false, alerts: "on", catchUp: true },
     }),
   );
   expect(await screen.findByText("Friday review is scheduled.")).toBeInTheDocument();
@@ -177,11 +177,94 @@ it("describes schedules and results in plain words", () => {
   expect(lastResult({ lastRun: "x", lastStatus: "ok" })).toEqual({ text: "Ran fine", bad: false });
   expect(lastResult({ lastRun: "x", lastStatus: "blocked_config" })).toEqual({ text: "Blocked", bad: true });
   expect(lastResult({ lastRun: "x", lastStatus: "delivery_failed" })?.bad).toBe(true);
+  // Hermes 0.23: a run the owner stopped is not a failure.
+  expect(lastResult({ lastRun: "x", lastStatus: "cancelled" })).toEqual({ text: "Stopped", bad: false, stopped: true });
+});
+
+it("a run the owner stopped says Stopped, not Failed", async () => {
+  ROUTINES.push({ ...ROUTINES[0], id: "e5", name: "Long research", lastRun: "2026-10-01T06:00:00", lastStatus: "cancelled", lastError: null });
+  try {
+    route();
+    render(<RoutinesTab people={[]} />);
+    const mine = (await screen.findByRole("heading", { name: "Your routines" })).closest("section")!;
+    const row = within(mine).getByRole("button", { name: /Long research/ });
+    expect(within(row).queryByText(/Failed|Stopped/)).toBeNull(); // the list calls out only what went wrong
+    fireEvent.click(row);
+    const said = await screen.findByText("Stopped");
+    expect(said).toHaveClass("text-fg-3");
+    expect(screen.queryByText("Failed")).toBeNull();
+  } finally {
+    ROUTINES.pop();
+  }
+});
+
+it("a running routine says so, and Stop takes the place of Run now", async () => {
+  ROUTINES.push({ ...ROUTINES[0], id: "f6", name: "Big crawl", running: { since: "2026-11-10T08:02:00" } });
+  try {
+    const posts = route();
+    render(<RoutinesTab people={[]} />);
+    const row = await screen.findByRole("button", { name: /Big crawl/ });
+    expect(within(row).getByText("Running now")).toBeInTheDocument();
+    fireEvent.click(row);
+    expect(await screen.findByText("Running")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Run now" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Stop this run" }));
+    await waitFor(() => expect(posts[0]).toEqual({ path: "routines/stop", body: { profile: "chief", id: "f6" } }));
+    expect(await screen.findByText(/keeps its schedule/)).toBeInTheDocument();
+  } finally {
+    ROUTINES.pop();
+  }
+});
+
+it("after Run now the list is re-read until the run shows, and again until it ends", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const before = ROUTINES[0];
+  try {
+    const posts = route();
+    const reads = () => vi.mocked(fetch).mock.calls.filter(([input]) => String(input).endsWith("/routines")).length;
+    render(<RoutinesTab people={[]} />);
+    fireEvent.click(await screen.findByRole("button", { name: /Morning brief/ }));
+    fireEvent.click(await screen.findByRole("button", { name: "Run now" }));
+    await waitFor(() => expect(posts[0]).toEqual({ path: "routines/run", body: { profile: "chief", id: "a1" } }));
+    // The scheduler picks it up at its next tick.
+    ROUTINES[0] = { ...before, running: { since: "2026-11-10T08:02:00" } };
+    await vi.advanceTimersByTimeAsync(RUN_WATCH_MS);
+    expect(await screen.findByRole("button", { name: "Stop this run" })).toBeInTheDocument();
+    ROUTINES[0] = { ...before, lastRun: "2026-11-10T08:03:00", lastStatus: "ok" };
+    await vi.advanceTimersByTimeAsync(RUN_WATCH_MS);
+    expect(await screen.findByRole("button", { name: "Run now" })).toBeInTheDocument();
+    // Done and past the watch: no more reading.
+    await vi.advanceTimersByTimeAsync(120_000);
+    const settled = reads();
+    await vi.advanceTimersByTimeAsync(RUN_WATCH_MS * 3);
+    expect(reads()).toBe(settled);
+  } finally {
+    ROUTINES[0] = before;
+    vi.useRealTimers();
+  }
+});
+
+it("a time the PC was off can be skipped, and only that is sent", async () => {
+  const posts = route();
+  render(<RoutinesTab people={[]} />);
+  fireEvent.click(await screen.findByRole("button", { name: /Morning brief/ }));
+  const catchUp = await screen.findByRole("switch", { name: "Catch up after the PC was off" });
+  expect(catchUp).toHaveAttribute("aria-checked", "true");
+  fireEvent.click(catchUp);
+  expect(screen.getByText(/missed is skipped/)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(posts[0]).toEqual({ path: "routines/update", body: { profile: "chief", id: "a1", catchUp: false } }));
+});
+
+it("stops a routine's run in progress through the bridge", async () => {
+  const posts = route();
+  await expect(routinesApi.stop("research-desk", "b2")).resolves.toMatchObject({ ok: true });
+  expect(posts).toEqual([{ path: "routines/stop", body: { profile: "research-desk", id: "b2" } }]);
 });
 
 it("the proxy forwards the routine routes and nothing else under routines", () => {
   expect(permittedOperation("bridge", "GET", ["routines"])).toBe(true);
-  for (const op of ["routines", "routines/update", "routines/run", "routines/delete"]) expect(permittedOperation("bridge", "POST", op.split("/"))).toBe(true);
+  for (const op of ["routines", "routines/update", "routines/run", "routines/stop", "routines/delete"]) expect(permittedOperation("bridge", "POST", op.split("/"))).toBe(true);
   expect(permittedOperation("bridge", "POST", ["routines", "purge"])).toBe(false);
   expect(permittedOperation("bridge", "GET", ["routines", "run"])).toBe(false);
 });

@@ -51,7 +51,12 @@ export async function requestJson<T>(url: string, init: RequestInit = {}, timeou
   const abort = () => controller.abort();
   init.signal?.addEventListener("abort", abort, { once: true });
   if (init.signal?.aborted) controller.abort();
-  const timer = setTimeout(abort, timeoutMs);
+  // Our own limit, told apart from the caller's abort: it fails as 408, which the outbox counts (lib/outbox.ts).
+  let late = false;
+  const timer = setTimeout(() => {
+    late = true;
+    abort();
+  }, timeoutMs);
   try {
     let response: Response;
     try {
@@ -72,7 +77,7 @@ export async function requestJson<T>(url: string, init: RequestInit = {}, timeou
     if (!data || typeof data !== "object" || Array.isArray(data)) throw new RequestError(PLAIN.garbled, response.status);
     return data;
   } catch (error) {
-    if (controller.signal.aborted) throw new RequestError(PLAIN.timeout, 0);
+    if (controller.signal.aborted) throw new RequestError(PLAIN.timeout, late ? 408 : 0);
     throw error;
   } finally {
     clearTimeout(timer);

@@ -102,8 +102,13 @@ export type ChatMessage = {
   queueId?: string;
   /** Client-only: why a queued bubble hasn't gone yet (the last network error). */
   queueNote?: string;
+  /** Client-only: its upload timed out twice, so it waits for the owner's Retry or Cancel. */
+  queueHeld?: boolean;
   /** Client-only: files in a queued bubble that have no preview to show. */
   queueFiles?: string[];
+  /** Client-only: the thread row it is shown in when that isn't `m-<id>`: a bubble's (optimistic or queued), carried
+   * onto its stored copy, so the row isn't mounted again and doesn't animate in a second time. */
+  rowKey?: string;
   /** Sent while the chief was working, so it was added to that work (steer), not a new turn: set on the bubble
    * as it's sent, and by the bridge on its stored copy. */
   steered?: boolean;
@@ -118,6 +123,9 @@ export type ChatMessage = {
   /** Bridge: why that turn ended unanswered (Hermes 0.22.5): a stop or restart cut it off (it never runs again),
    * or it didn't finish and some of its steps may already have run. */
   failedReason?: "restart" | "partial";
+  /** Bridge: the owner's message the model's safety filter refused (Hermes 0.23), with Hermes's notice. It stays in the
+   * chat, greyed; it is out of the conversation, never answered, so no reply is waited for. */
+  refused?: { notice: string };
 };
 
 export type ConnectRequest = { service: string; label: string; why: string };
@@ -148,6 +156,9 @@ export type ChatNotice = {
   paused?: { lostTurn: boolean };
   /** Files it carried (an image a routine made, or one handed over after a reply's text). */
   attachments?: ChatAttachment[];
+  /** Hermes's answer when the model's safety filter refused the owner's message (0.23): that message is marked
+   * `refused` in the transcript, which the chat reads again from the top to show it. */
+  refusal?: boolean;
   /** Client-only: the same notice repeated this many times in a row (restarts), and when the last one came. */
   repeat?: number;
   until?: number;
@@ -199,6 +210,9 @@ export type Transcript = {
   /** Hermes rewrote the conversation since the caller's `after` (Send again and Retry run its /retry, which writes every
    * row again with new ids; /undo takes rows back): this is the latest page, to show instead of what's there. */
   reset?: boolean;
+  /** The model this chat is switched to (a one-tap limit switch or /model, Hermes 0.23), off the one Settings → Models
+   * chose; null when it uses that one. */
+  modelOverride?: { model: string; provider: string } | null;
 };
 
 export type Peek = {

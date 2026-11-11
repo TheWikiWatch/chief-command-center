@@ -1,3 +1,5 @@
+import "server-only";
+
 import { bridgeUrl } from "@/lib/server/app-config";
 
 /** A server-side JSON call to the chief gateway's bridge. The token never leaves the server. */

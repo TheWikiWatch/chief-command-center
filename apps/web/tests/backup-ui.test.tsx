@@ -75,6 +75,33 @@ it("shows the suggested folder without applying it, and backs up only after a fo
   expect(await screen.findByRole("progressbar", { name: "Backup progress" })).toBeTruthy();
 });
 
+it("while a backup runs only its progress is read, once a second, and the list once when it's done", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  try {
+    const running = { kind: "manual", state: "running", startedAt: 1, done: 1, total: 10 };
+    let status: Record<string, unknown> = { ...STATUS, settings: { ...STATUS.settings, folder: "D:\\Backups" }, job: running };
+    const calls = route({ status: () => status, list: () => ({ ok: true, backups: [] }) });
+    const count = (path: string) => calls.filter((c) => c.path === path).length;
+    render(<BackupPanel />);
+    expect(await screen.findByRole("progressbar", { name: "Backup progress" })).toBeTruthy();
+    await waitFor(() => expect(count("list")).toBe(1)); // the first load
+    await vi.advanceTimersByTimeAsync(5000);
+    // A read a second after each answer (it was status and list every 800 ms, and the list starts Python each time).
+    expect(count("status")).toBeGreaterThanOrEqual(5);
+    expect(count("status")).toBeLessThanOrEqual(6);
+    expect(count("list")).toBe(1);
+    status = { ...status, job: { ...running, state: "done", done: 10, result: { path: "D:\\Backups\\b.chiefbackup", bytes: 1000, dropped_secrets: [] } } };
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await screen.findByText(/Saved b\.chiefbackup/)).toBeTruthy();
+    await waitFor(() => expect(count("list")).toBe(2));
+    const reads = count("status");
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect([count("status"), count("list")]).toEqual([reads, 2]);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 it("reminds after a month without a backup and reports a failed automatic one", async () => {
   route({
     status: () => ({

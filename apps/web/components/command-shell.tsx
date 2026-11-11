@@ -30,7 +30,7 @@ import { TodayPane } from "@/components/today-pane";
 import { WorkforcePane } from "@/components/workforce-pane";
 import { TeamButton, TeamSheet } from "@/components/fleet/team-sheet";
 import { fetchApprovals, fetchHealth, fetchSnapshot, subscribeBridge } from "@/lib/bridge";
-import { liveConnected, liveInterval, liveWake, useLiveConnected } from "@/lib/live";
+import { liveConnected, liveInterval, liveStateWake, liveWake, useLiveConnected } from "@/lib/live";
 import { useDashboardPrefs } from "@/lib/dashboard-prefs";
 import { SPRING } from "@/lib/motion";
 import { fx } from "@/lib/fx";
@@ -56,7 +56,7 @@ import { closeNotifications, SHOW_APPROVAL_EVENT, subscribeOpenTarget, takeLaunc
 import type { ExecApproval, Person, Snapshot } from "@/lib/types";
 import { FleetViewSwitch } from "@/components/shell/fleet-view-switch";
 import { useOpenedOnce, usePrefetchLater } from "@/components/shell/loading";
-import { FLEET_VIEW_KEY, FleetView, PHONE_TAB_KEY, STORAGE_KEY, SURFACE_KEY, loadChief, loadPhoneTab, loadSplit, loadSurface, rememberChief } from "@/components/shell/persisted";
+import { FLEET_VIEW_KEY, FleetView, PHONE_TAB_KEY, SPLIT_SAVE_ID, SURFACE_KEY, loadChief, loadFleetView, loadPhoneTab, loadSplit, loadSurface, rememberChief } from "@/components/shell/persisted";
 import type { PaletteCommand } from "@/components/command-palette";
 import { ShortcutList } from "@/components/shortcut-list";
 import { Sheet } from "@/components/ui/sheet";
@@ -109,7 +109,11 @@ export function CommandShell() {
   const [connected, setConnected] = useState(true);
   const onboarding = useNeedsOnboarding(connected);
   const [authFailed, setAuthFailed] = useState(false);
-  const [leftSize, setLeftSize] = useState(60);
+  // What this device remembers is read before the first render (the shell never renders on the server, app/page.tsx):
+  // read in effects, the first frame showed the defaults and then switched (the chat even mounted twice, on "main"
+  // and then on the saved thread). The split itself is restored by the panel group (`autoSaveId`).
+  const [firstSplit] = useState(loadSplit);
+  const [leftSize, setLeftSize] = useState(firstSplit);
   const [looking, setLooking] = useState<Person | null>(null);
   const [lookEl, setLookEl] = useState<HTMLElement | null>(null);
   const [chiefThinking, setChiefThinking] = useState(false);
@@ -126,21 +130,14 @@ export function CommandShell() {
     approvalHealth.success();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [surface, setSurface] = useState<Surface>("today");
-  const [phoneTab, setPhoneTab] = useState<PhoneTab>("chat");
+  const [surface, setSurface] = useState<Surface>(loadSurface);
+  const [phoneTab, setPhoneTab] = useState<PhoneTab>(loadPhoneTab);
   const appConfig = useAppConfig();
   const fleetHealthOn = appConfig.features.fleetHealth;
-  const [savedFleetView, setFleetView] = useState<FleetView>("crew");
+  const [savedFleetView, setFleetView] = useState<FleetView>(loadFleetView);
   // Fleet Health is an optional connector; without it the fleet surface is the crew only.
   const fleetView: FleetView = fleetHealthOn ? savedFleetView : "crew";
   const fleetFlags = useUnseenFleetFlags(fleetHealthOn);
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(FLEET_VIEW_KEY) === "health") setFleetView("health");
-    } catch {
-      /* ignore */
-    }
-  }, []);
   const changeFleetView = (next: FleetView) => {
     setFleetView(next);
     try {
@@ -152,8 +149,13 @@ export function CommandShell() {
   const chatSender = useRef<ChatSend | null>(null);
   const registerSender = useCallback((send: ChatSend | null) => { chatSender.current = send; }, []);
   // The chat's thread (separate conversations with the chief), remembered on this device. The chat remounts
-  // per thread; `fresh` bumps after a fresh start so the thread reloads.
-  const [thread, setThread] = useState("main");
+  // per thread; `fresh` bumps after a fresh start so the thread reloads. The chat reads the thread it opens with
+  // (lib/chat-thread.ts) as it first renders, so the saved one is set before then.
+  const [thread, setThread] = useState(() => {
+    const saved = readCurrentThread();
+    setChatThread(saved);
+    return saved;
+  });
   const [fresh, setFresh] = useState(0);
   const changeThread = useCallback((id: string) => {
     setChatThread(id);
@@ -161,7 +163,7 @@ export function CommandShell() {
     markSeen(id);
     setThread(id);
   }, []);
-  useEffect(() => changeThread(readCurrentThread()), [changeThread]);
+  useEffect(() => markSeen(readCurrentThread()), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsMounted = useOpenedOnce(settingsOpen);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory | null>(null);
@@ -174,8 +176,7 @@ export function CommandShell() {
     return () => window.removeEventListener(OPEN_SETTINGS_EVENT, open);
   }, []);
   // The usage strip under the galaxy: on or off per device.
-  const [usageStrip, setUsageStrip] = useState(false);
-  useEffect(() => setUsageStrip(readStripPref()), []);
+  const [usageStrip, setUsageStrip] = useState(readStripPref);
   const toggleUsageStrip = () =>
     setUsageStrip((on) => {
       writeStripPref(!on);
@@ -188,13 +189,11 @@ export function CommandShell() {
   const { state: updateState } = useUpdates();
   const offeredVersion = updateState && "release" in updateState && updateState.release && updateState.status !== "error" ? updateState.release.version : "";
   const [statusOpen, setStatusOpen] = useState(false);
-  const [lastChief, setLastChief] = useState<Person | null>(null);
-  useEffect(() => setLastChief(loadChief()), []);
+  const [lastChief] = useState<Person | null>(loadChief);
   useEffect(() => void refreshServiceWorker(), []);
   useEffect(() => markStart("app"), []);
   const [tabDir, setTabDir] = useState(0);
   const groupRef = useRef<ImperativePanelGroupHandle>(null);
-  const persistLayout = useRef(false);
   const approvalRef = useRef(false);
   const thinkingRef = useRef(false);
 
@@ -311,9 +310,10 @@ export function CommandShell() {
   }, [connected, authFailed]);
 
   // With the live channel up, the bridge says when anything changes: the ping only confirms the link now and
-  // then, and the snapshot and approvals refresh on each change (lib/live.ts). Without it, the old rates.
+  // then (and when the channel drops or returns, never on each change: a streamed reply makes one every frame), and
+  // the snapshot and approvals refresh on each change (lib/live.ts). Without it, the old rates.
   useEffect(() => {
-    return subscribeBridge(ping, () => liveInterval(2500, 15_000), { wake: liveWake });
+    return subscribeBridge(ping, () => liveInterval(2500, 15_000), { wake: liveStateWake });
   }, [ping]);
 
   useEffect(() => {
@@ -334,18 +334,6 @@ export function CommandShell() {
       approvalHealth.success();
     } catch (error) { if (!signal.aborted) approvalHealth.failure(error); }
   }, () => (Date.now() - approvalsViaChatAt.current < 60_000 ? 30_000 : liveConnected() ? 30_000 : approvalRef.current || thinkingRef.current ? 800 : 4000), { wake: liveWake }), [approvalHealth]);
-
-  useEffect(() => {
-    const n = loadSplit();
-    setLeftSize(n);
-    setSurface(loadSurface());
-    setPhoneTab(loadPhoneTab());
-    const id = window.requestAnimationFrame(() => {
-      groupRef.current?.setLayout([n, 100 - n]);
-      persistLayout.current = true;
-    });
-    return () => window.cancelAnimationFrame(id);
-  }, []);
 
   function changeSurface(next: Surface) {
     // A transition, so the desktop's <ViewTransition> animates the swap (globals.css "surface-in").
@@ -416,11 +404,6 @@ export function CommandShell() {
   function snapTo(next: number) {
     groupRef.current?.setLayout([next, 100 - next]);
     setLeftSize(next);
-    try {
-      localStorage.setItem(STORAGE_KEY, String(next));
-    } catch {
-      /* ignore */
-    }
   }
 
   const mode = phone ? "rail" : leftSize >= 52 ? "orbit" : "rail";
@@ -753,22 +736,17 @@ export function CommandShell() {
   return (
     <FxRoot>
       <div className={`relative flex h-app flex-col bg-canvas ${dim}`}>
+        {/* The library keeps the split and puts it back before the first paint (autoSaveId, under its own key). Until it
+            has one, the split this app saved before (`chief-split`) is the default. The panels are named so the saved
+            split is found by them, not by their sizes. */}
         <PanelGroup
           ref={groupRef}
+          autoSaveId={SPLIT_SAVE_ID}
           direction="horizontal"
           className="h-full"
-          onLayout={(sizes) => {
-            const left = sizes[0] ?? 60;
-            setLeftSize(left);
-            if (!persistLayout.current) return;
-            try {
-              localStorage.setItem(STORAGE_KEY, String(left >= 52 ? 60 : 40));
-            } catch {
-              /* ignore */
-            }
-          }}
+          onLayout={(sizes) => setLeftSize(sizes[0] ?? 60)}
         >
-          <Panel defaultSize={60} minSize={32} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-pane">
+          <Panel id="shell-surfaces" order={1} defaultSize={firstSplit} minSize={32} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-pane">
             <ViewTransition key={surface} enter="surface-in" exit="surface-out">
               <div id={surfacePanelId(surface)} role="tabpanel" aria-labelledby={surfaceTabId(surface)} className="relative flex h-full min-h-0 flex-col">
                 {surface === "today" ? today : surface === "vault" ? vault : fleet}
@@ -796,7 +774,7 @@ export function CommandShell() {
               {mode === "orbit" ? <ChevronLeftIcon size={14} /> : <ChevronRightIcon size={14} />}
             </button>
           </PanelResizeHandle>
-          <Panel defaultSize={40} minSize={32} className="h-full min-h-0">
+          <Panel id="shell-chat" order={2} defaultSize={100 - firstSplit} minSize={32} className="h-full min-h-0">
             {chat}
           </Panel>
         </PanelGroup>

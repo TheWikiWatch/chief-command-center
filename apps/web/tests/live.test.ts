@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { liveConnected, liveInterval, liveWake, onLiveChange, resetLiveForTests } from "@/lib/live";
+import { liveConnected, liveInterval, liveStateWake, liveWake, onLiveChange, resetLiveForTests } from "@/lib/live";
 import { poll } from "@/lib/poll";
 
 class FakeSource {
@@ -91,5 +91,29 @@ describe("the live channel", () => {
     await vi.advanceTimersByTimeAsync(60);
     expect(run.mock.calls.length).toBe(afterHello + 1);
     stop();
+  });
+
+  it("the health ping wakes when the channel drops or returns, never on the bridge's changes", async () => {
+    // Another poller holds the channel open, as the snapshot's does in the shell.
+    const off = onLiveChange(() => {});
+    const ping = vi.fn(async () => {});
+    const stop = poll(ping, 30_000, { wake: liveStateWake });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ping).toHaveBeenCalledTimes(1);
+    const es = FakeSource.all[0];
+    es.onmessage?.({ data: '{"type":"hello"}' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ping).toHaveBeenCalledTimes(2); // the channel came up
+    // A streamed reply: a change every frame.
+    for (let frame = 0; frame < 20; frame++) {
+      es.emit("change");
+      await vi.advanceTimersByTimeAsync(60);
+    }
+    expect(ping).toHaveBeenCalledTimes(2);
+    es.onerror?.();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ping).toHaveBeenCalledTimes(3); // the channel dropped
+    stop();
+    off();
   });
 });

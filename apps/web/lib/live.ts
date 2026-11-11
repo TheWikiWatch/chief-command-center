@@ -113,6 +113,15 @@ export function liveWake(fire: () => void): () => void {
   };
 }
 
+/** For poll()'s `wake` on what only checks the link (the health ping): when the channel drops or returns, never on
+ * the bridge's changes, which a streamed reply makes every frame. */
+export function liveStateWake(fire: () => void): () => void {
+  const off = onLiveState(fire);
+  return () => {
+    off();
+  };
+}
+
 /** Whether the live channel is up, as React state. */
 export function useLiveConnected(): boolean {
   return useSyncExternalStore(onLiveState, liveConnected, () => false);

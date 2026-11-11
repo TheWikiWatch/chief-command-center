@@ -54,4 +54,12 @@ describe("a Nous plan with usage windows", () => {
     expect(featuredFirst(null, ["a", "b"])).toEqual(["a", "b"]);
     expect([resetsIn(NOW + 59, NOW), resetsIn(NOW + 1200, NOW), resetsIn(NOW + 5 * 3600, NOW), resetsIn(NOW - 5, NOW)]).toEqual(["soon", "in 20m", "in 5h", "soon"]);
   });
+
+  it("a model a subscription pays for (Hermes 0.23) is never stopped by a full allowance, and isn't called Free", () => {
+    // The bridge lists it under `free` too: that keeps a full allowance from stopping it.
+    const subscribed = plan({ free: ["gratis", "paid-by-plan"], large: ["big", "paid-by-plan"], subscription: ["paid-by-plan"], gauges: [gauge({ used: 100, full: true })] });
+    expect(sizeWord(subscribed, "paid-by-plan")).toBe("");
+    expect(blocks(subscribed, "paid-by-plan")).toBe(false);
+    expect([sizeWord(subscribed, "gratis"), sizeWord(subscribed, "big")]).toEqual(["Free", "Large"]);
+  });
 });

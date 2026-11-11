@@ -4,9 +4,19 @@ import {
   awaitingReply,
   chatTone,
   isMachineNote,
+  notePreview,
   orphanedUserAsk,
+  plainMarkdown,
   shouldShowThinking,
 } from "@/lib/chat-tone";
+
+describe("plain words from Hermes's Markdown", () => {
+  it("drops bold, code and heading markers where they'd show as characters", () => {
+    expect(plainMarkdown("⚠️ **Large Context Switch Warning**\n## Next\nalready using `tiny-local`")).toBe("⚠️ Large Context Switch Warning\nNext\nalready using tiny-local");
+    expect(notePreview("\n**Heads up:** the `Daily` routine ran")).toBe("Heads up: the Daily routine ran");
+    expect(plainMarkdown("snake_case and 2 * 3")).toBe("snake_case and 2 * 3");
+  });
+});
 
 function msg(partial: Partial<ChatMessage> & Pick<ChatMessage, "role" | "content">): ChatMessage {
   return {

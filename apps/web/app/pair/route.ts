@@ -23,9 +23,9 @@ h1{font-size:20px;font-weight:600;margin:0 0 6px}p{margin:0 0 18px;color:#a1a1aa
 label{display:block;font-size:13px;color:#a1a1aa;margin-bottom:6px}
 input{width:100%;box-sizing:border-box;font:600 22px/1 ui-monospace,"Cascadia Mono",monospace;letter-spacing:.18em;text-align:center;padding:14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);background:#09090b;color:#ededef}
 button{margin-top:14px;width:100%;min-height:46px;border:0;border-radius:999px;background:#ededef;color:#09090b;font:600 15px system-ui,sans-serif}
-.err{color:#ff6369;font-size:14px;margin:12px 0 0}
+.err{color:#ff6b71;font-size:14px;margin:12px 0 0}
 @media (prefers-color-scheme:light){body{background:#f6f6f8;color:#18181b}main{background:#fff;border-color:rgba(0,0,0,.12)}p,label{color:#484850}
-input{background:#f6f6f8;color:#18181b;border-color:rgba(0,0,0,.2)}button{background:#18181b;color:#fff}.err{color:#c81e26}}
+input{background:#f6f6f8;color:#18181b;border-color:rgba(0,0,0,.2)}button{background:#18181b;color:#fff}.err{color:#ae1a21}}
 </style></head><body><main>
 <h1>Pair this phone</h1>
 <p>On your PC, open Chief, then Settings, Phone, and choose Pair a phone. Enter the code it shows.</p>

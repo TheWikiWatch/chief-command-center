@@ -88,3 +88,41 @@ it("a draft is done with once its reply has landed, even while the turn is still
   await waitFor(() => expect(screen.queryByLabelText("Nova is writing")).toBeNull());
   expect(screen.getAllByText("Here is the plan: one, two.")).toHaveLength(1);
 }, 20_000);
+
+it("a page Load earlier asked for before a reset never goes in front of the rewritten conversation", async () => {
+  let page!: (v: unknown) => void;
+  api.earlier.mockReturnValueOnce(new Promise((r) => (page = r)));
+  api.transcript
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 150, messages: rows(101, 150), generating: false, longpoll: true })
+    // Send again ran Hermes's /retry while the page was on its way: every row written again with new ids.
+    .mockImplementationOnce(() => new Promise((r) => setTimeout(() => r({ sessionKey: "s", lastId: 250, messages: rows(201, 250), generating: false, longpoll: true, reset: true, more: true }), 300)))
+    .mockReturnValue(new Promise(() => {}));
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact />);
+  fireEvent.click(await screen.findByRole("button", { name: "Load earlier" }));
+  expect(await screen.findByText("reply 201", {}, { timeout: 6000 })).toBeInTheDocument();
+  page({ sessionKey: "s", lastId: 41, messages: rows(41, 100), more: true, cursor: 41 });
+  expect(await screen.findByRole("button", { name: "Load earlier" })).toBeEnabled();
+  expect(screen.queryByText("reply 41")).toBeNull();
+  expect(screen.queryByText("reply 101")).toBeNull();
+}, 12_000);
+
+it("rows Load earlier added stay while the owner reads them, and go once they're back at the newest", async () => {
+  let deliver!: (v: unknown) => void;
+  api.transcript
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 1600, messages: rows(1001, 1600), generating: false, longpoll: true, more: true })
+    .mockReturnValueOnce(new Promise((r) => (deliver = r)))
+    .mockResolvedValueOnce({ sessionKey: "s", lastId: 1602, messages: rows(1602, 1602), generating: false, longpoll: true })
+    .mockReturnValue(new Promise(() => {}));
+  api.earlier.mockResolvedValueOnce({ sessionKey: "s", lastId: 991, messages: rows(991, 1000), more: true, cursor: 991 });
+  render(<ChiefChat chief={undefined} lookAtEl={null} connected compact />);
+  fireEvent.click(await screen.findByRole("button", { name: "Load earlier" }, { timeout: 12_000 }));
+  expect(await screen.findByText("reply 991")).toBeInTheDocument();
+  // A reply lands while the owner is up there reading: the chat is past its limit, and keeps what was just loaded.
+  deliver({ sessionKey: "s", lastId: 1601, messages: rows(1601, 1601), generating: false, longpoll: true });
+  expect(await screen.findByText("reply 1601")).toBeInTheDocument();
+  expect(screen.getByText("reply 991")).toBeInTheDocument();
+  // Back at the newest (a scroll at the bottom): the next reply trims the oldest again.
+  fireEvent.scroll(screen.getByText("reply 1601").closest(".overflow-y-auto")!);
+  expect(await screen.findByText("reply 1602", {}, { timeout: 6000 })).toBeInTheDocument();
+  await waitFor(() => expect(screen.queryByText("reply 991")).toBeNull());
+}, 20_000);

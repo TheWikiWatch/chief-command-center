@@ -6,6 +6,7 @@ import { Streamdown } from "streamdown";
 
 import { BotFace, faceProps } from "@/components/bot-face";
 import { BellIcon, CheckIcon, CircleAlertIcon, ClockIcon } from "@/components/icons";
+import { plainMarkdown } from "@/lib/chat-tone";
 import { useAssistantName } from "@/lib/identity";
 import { EASE } from "@/lib/motion";
 import type { AskedQuestion, ChatNotice, PendingChoice, PendingQuestion, Person } from "@/lib/types";
@@ -624,7 +625,7 @@ export function NoticeBody({ notice, onQuickReply }: { notice: ChatNotice; onQui
         className="press group flex w-full items-start gap-2 rounded-ctl px-2 py-1.5 text-left text-callout text-fg-3 hover:bg-fill-1 hover:text-fg-2"
       >
         <BellIcon size={14} className="mt-0.5 shrink-0" />
-        <span className={`min-w-0 flex-1 ${open ? "whitespace-pre-wrap" : "truncate"}`}>{open ? notice.text.trim() : notice.text.replace(/\s+/g, " ").trim()}</span>
+        <span className={`min-w-0 flex-1 ${open ? "whitespace-pre-wrap" : "truncate"}`}>{open ? plainMarkdown(notice.text).trim() : plainMarkdown(notice.text).replace(/\s+/g, " ").trim()}</span>
         {times ? <span className="shrink-0 rounded-chip bg-fill-2 px-1.5 font-mono text-micro text-fg-3">{times}</span> : null}
       </button>
     );

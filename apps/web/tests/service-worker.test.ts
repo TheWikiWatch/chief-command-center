@@ -20,7 +20,7 @@ function loadWorker(windows: Array<{ url: string; focused?: boolean; visibilityS
     registration: { showNotification: vi.fn(async () => undefined) },
     addEventListener: (type: string, fn: Listener) => (listeners[type] = fn),
   };
-  runInNewContext(readFileSync(path.join(process.cwd(), "public/sw.js"), "utf8"), { self, clients, URL });
+  runInNewContext(readFileSync(path.join(__dirname, "..", "public", "sw.js"), "utf8"), { self, clients, URL });
   return { listeners, clients, clientList, show: self.registration.showNotification };
 }
 

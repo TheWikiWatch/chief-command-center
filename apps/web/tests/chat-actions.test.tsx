@@ -30,7 +30,7 @@ it("sends several files with the caption and keeps them when Nova rejects",async
   fireEvent.click(screen.getByRole("button",{name:"Send"}));
   await screen.findByText(/The network was lost/);
   expect(await screen.findByLabelText("Remove notes.txt")).toBeInTheDocument();
-  expect(api.send).toHaveBeenCalledWith("see this", [expect.objectContaining({name:"notes.txt",mime:"text/plain"})], expect.any(String));
+  expect(api.send).toHaveBeenCalledWith("see this", [expect.objectContaining({name:"notes.txt",mime:"text/plain"})], expect.any(String), "main");
 });
 it("recovers approval buttons after a failed request and reports stale approval",async()=>{
   api.approve.mockRejectedValueOnce(new Error("The network was lost.")).mockResolvedValue({ok:true,resolved:0});
@@ -85,7 +85,7 @@ it("while Nova is offline a message queues, survives a reload, and goes when it 
   expect(api.send).not.toHaveBeenCalled();
   view.unmount();
   render(<ChiefChat chief={undefined} lookAtEl={null} connected compact/>);
-  await waitFor(()=>expect(api.send).toHaveBeenCalledWith("for later",[],expect.any(String)));
+  await waitFor(()=>expect(api.send).toHaveBeenCalledWith("for later",[],expect.any(String),"main"));
   await waitFor(()=>expect(localStorage.getItem("chief-outbox")).toBeNull());
 });
 it("Cancel takes a queued message back into the draft",async()=>{

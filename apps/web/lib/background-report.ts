@@ -87,7 +87,8 @@ function batch(text: string): BackgroundReport {
 
 function single(text: string): BackgroundReport {
   const goal = /^Original goal: (.*)$/m.exec(text)?.[1] || "";
-  const statusLine = /^Status: (\S+)\s+API calls: \S+\s+Duration: ([\d.]+)s(.*)$/m.exec(text);
+  // Hermes 0.23 leaves "API calls" out when it has no count, and the duration can be "?".
+  const statusLine = /^Status: (\S+)(?:\s+API calls: \S+)?\s+Duration: ([\d.?]+)s(.*)$/m.exec(text);
   const status = statusLine?.[1] || "?";
   const truncated = !!statusLine?.[3]?.includes("TRUNCATED");
   const at = text.indexOf("--- RESULT ---");

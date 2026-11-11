@@ -12,7 +12,8 @@ export type RateLimit = { scope: "account"; until: string } | { scope: "models";
 export type PlanGauge = { label: string; title: string; used: number; full: boolean; resetsAt: number | null; scope: "all" | "large" };
 /** A Nous plan with usage windows: its allowances, the plan's picks, which models are Large or Free, a pause, and
  * whether credits pay once an allowance is full. */
-export type NousPlan = { name: string; gauges: PlanGauge[]; paused: string | null; creditsPay: boolean | null; featured: string[]; large: string[]; free: string[] };
+/** `subscription` (Hermes 0.23): models a subscription the account holds pays for; they are in `free` too. */
+export type NousPlan = { name: string; gauges: PlanGauge[]; paused: string | null; creditsPay: boolean | null; featured: string[]; large: string[]; free: string[]; subscription?: string[] };
 export type ModelGroup = {
   provider: string;
   name: string;

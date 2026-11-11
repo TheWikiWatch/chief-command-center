@@ -16,7 +16,8 @@ function walk(dir: string, out: string[] = []): string[] {
 
 describe("source encoding guard", () => {
   it("UI/runtime sources have no double-encoded UTF-8 markers", () => {
-    const files = walk(process.cwd()).filter((p) => /[\\/](components|lib|app)[\\/]/.test(p));
+    // The dashboard's own sources, from wherever the tests are run.
+    const files = walk(join(__dirname, "..")).filter((p) => /[\\/](components|lib|app)[\\/]/.test(p));
     const bad: string[] = [];
     for (const file of files) {
       const text = readFileSync(file, "utf8");

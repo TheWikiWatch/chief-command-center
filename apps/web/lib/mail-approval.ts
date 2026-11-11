@@ -24,7 +24,10 @@ export type MailAction = {
 
 /** The mark before the exact call (mail_guard.EXACT_MARK): an invisible separator stripped from everything else. */
 export const EXACT_MARK = "⁣";
-const EXACT_HEAD = `${EXACT_MARK}Exact call:\n`;
+// Hermes 0.23 shows an approval's invisible characters as escapes, so the mark can also arrive as the six characters
+// `\u2063`; the guard strips both spellings from the text it quotes. Its own mark follows a blank line, which the
+// one-line fields and message preview never hold.
+const EXACT_HEAD = /\n\n(?:\u2063|\\u2063)Exact call:\n/;
 
 const RULES: Record<MailRule, { title: string; always: string | null }> = {
   "mail-send": { title: "Send this email?", always: "send email without asking" },
@@ -42,9 +45,9 @@ export function mailAction(approval: Pick<ExecApproval, "patternKey" | "reason">
   const rule = match?.[1] as MailRule | undefined;
   if (!rule || !(rule in RULES)) return null;
   const reason = approval.reason || "";
-  const at = reason.indexOf(EXACT_HEAD);
-  const exact = at >= 0 ? reason.slice(at + EXACT_HEAD.length) : "";
-  const lines = (at >= 0 ? reason.slice(0, at) : reason).replace(/\n+$/, "").split("\n");
+  const head = EXACT_HEAD.exec(reason);
+  const exact = head ? reason.slice(head.index + head[0].length) : "";
+  const lines = (head ? reason.slice(0, head.index) : reason).replace(/\n+$/, "").split("\n");
   const what = (lines.shift() || "").trim();
   const fields: MailAction["fields"] = [];
   while (lines.length && FIELD.test(lines[0])) {

@@ -11,7 +11,7 @@ export function FleetViewSwitch({ view, onChange, flags = 0 }: { view: FleetView
     <>
       Health
       {flags ? (
-        <span className="ml-1.5 inline-grid min-w-[18px] place-items-center rounded-full bg-warn/20 px-1 font-mono text-micro leading-[18px] text-warn tabular" aria-label={`${flags} new ${flags === 1 ? "flag" : "flags"}`}>
+        <span className="ml-1.5 inline-grid min-w-[18px] place-items-center rounded-full bg-warn/15 px-1 font-mono text-micro leading-[18px] text-warn tabular" aria-label={`${flags} new ${flags === 1 ? "flag" : "flags"}`}>
           {flags}
         </span>
       ) : null}

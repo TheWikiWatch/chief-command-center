@@ -1,3 +1,5 @@
+import "server-only";
+
 /**
  * The environment for this server's Python children (backup engine, learning ledger): the server's own,
  * minus the secrets it holds for itself. Neither child talks to the bridge or the dashboard.

@@ -3,14 +3,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { sendToChief, type OutboundAttachment } from "@/lib/bridge";
-import { deleteFiles, expired, getFile, loadOutbox, putFile, retryable, saveOutbox, type QueuedSend } from "@/lib/outbox";
+import { deleteFiles, expired, getFile, loadOutbox, putFile, queuedThread, retryable, saveOutbox, timedOut, type QueuedSend } from "@/lib/outbox";
 import type { ChatAttachment, ChatMessage } from "@/lib/types";
 import { blobToDataUrl } from "@/lib/voice-client";
 import { assistantName } from "@/lib/identity";
 
 const RETRY_MS = 15_000;
+/** Timeouts after which an upload waits for the owner instead of trying again on its own. */
+const HOLD_AFTER_TIMEOUTS = 2;
 
 export type QueueFile = { name: string; mime: string; blob: Blob };
+/** A send that just failed on the network, so the queue waits before its retry. */
+export type QueueFailure = { reason: string; timedOut: boolean };
+
+// The page's queue, not one chat's: the chat remounts per thread, and a send still on its way from the thread just
+// left can queue (or finish) after the next one has mounted. Every chat works on this list and follows the others'.
+const queue = { current: [] as QueuedSend[] };
+const followers = new Set<(list: QueuedSend[]) => void>();
 
 const kindOf = (mime: string): ChatAttachment["kind"] =>
   mime.startsWith("image/") ? "image" : mime.startsWith("video/") ? "video" : mime.startsWith("audio/") ? "audio" : "file";
@@ -20,21 +29,23 @@ function gone(message: string) {
 }
 
 /**
- * Messages waiting for the chief (lib/outbox.ts): kept across reloads, sent in order once `ready`, retried
- * every 15s while the network fails. `onDelivered` gets the item and its image previews (the caller
- * owns them from then on); `onDropped` gets one that expired or was refused.
+ * Messages waiting for the chief (lib/outbox.ts): kept across reloads, sent in order once `ready`, each to the thread
+ * it was written in, retried every 15s while the network fails. An upload that timed out twice waits for the owner's
+ * Retry or Cancel. Only `thread`'s own show as bubbles here. `onDelivered` gets the item and its image previews (the
+ * caller owns them from then on); `onDropped` gets one that expired or was refused.
  */
 export function useOutbox({
+  thread,
   ready,
   onDelivered,
   onDropped,
 }: {
+  thread: string;
   ready: boolean;
   onDelivered: (item: QueuedSend, previews: string[]) => void;
   onDropped: (item: QueuedSend, reason: string) => void;
 }) {
   const [queued, setQueued] = useState<QueuedSend[]>([]);
-  const queueRef = useRef<QueuedSend[]>([]);
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const previewRef = useRef(previews);
   previewRef.current = previews;
@@ -44,16 +55,22 @@ export function useOutbox({
   callbacks.current = { onDelivered, onDropped };
 
   const commit = useCallback((next: QueuedSend[]) => {
-    queueRef.current = next;
-    setQueued(next);
+    queue.current = next;
     saveOutbox(next);
+    for (const follow of followers) follow(next);
+  }, []);
+  useEffect(() => {
+    followers.add(setQueued);
+    return () => {
+      followers.delete(setQueued);
+    };
   }, []);
 
-  // After a reload: the queue from storage, with previews of its images rebuilt from IndexedDB.
+  // On mount (a reload, another thread): the queue from storage, with previews of its images rebuilt from IndexedDB.
   useEffect(() => {
     const saved = loadOutbox();
-    if (!saved.length) return;
     commit(saved);
+    if (!saved.length) return;
     let alive = true;
     void (async () => {
       const built: Record<string, string> = {};
@@ -86,10 +103,10 @@ export function useOutbox({
     return urls;
   }, []);
 
-  /** Queue a message. `failed`: it was just tried and failed on the network, so wait before the retry. */
+  /** Queue a message written in this thread. `failed`: it was just tried and failed on the network, so wait before the retry. */
   const enqueue = useCallback(
-    async (id: string, text: string, files: QueueFile[], failed?: string) => {
-      if (queueRef.current.some((q) => q.id === id)) return;
+    async (id: string, text: string, files: QueueFile[], failed?: QueueFailure) => {
+      if (queue.current.some((q) => q.id === id)) return;
       const stored = [];
       const made: Record<string, string> = {};
       for (const [i, f] of files.entries()) {
@@ -100,17 +117,18 @@ export function useOutbox({
       }
       setPreviews((p) => ({ ...p, ...made }));
       const now = Date.now();
-      commit([...queueRef.current, { id, text, files: stored, at: now, attempts: failed ? 1 : 0, ...(failed ? { lastError: failed, nextAt: now + RETRY_MS } : {}) }]);
+      const tried = failed ? { lastError: failed.reason, nextAt: now + RETRY_MS, timeouts: failed.timedOut && stored.length ? 1 : 0 } : {};
+      commit([...queue.current, { id, text, files: stored, at: now, attempts: failed ? 1 : 0, thread, ...tried }]);
     },
-    [commit],
+    [commit, thread],
   );
 
   /** Take a message back out of the queue (its text is returned so it can go back in the draft). */
   const cancel = useCallback(
     (id: string) => {
-      const item = queueRef.current.find((q) => q.id === id);
+      const item = queue.current.find((q) => q.id === id);
       if (!item) return null;
-      commit(queueRef.current.filter((q) => q.id !== id));
+      commit(queue.current.filter((q) => q.id !== id));
       takePreviews(item, true);
       void deleteFiles(item.files.map((f) => f.key));
       return item;
@@ -135,15 +153,21 @@ export function useOutbox({
     clearTimeout(retryTimer.current);
     void (async () => {
       let wait = 0;
-      for (const item of [...queueRef.current]) {
+      // A held upload waits for the owner's Retry or Cancel, and keeps the order: nothing after it goes first.
+      let held = false;
+      for (const item of [...queue.current]) {
         if (!alive.current) break;
-        if (!queueRef.current.some((q) => q.id === item.id)) continue; // cancelled meanwhile
+        if (!queue.current.some((q) => q.id === item.id)) continue; // cancelled meanwhile
+        if (item.held) {
+          held = true;
+          break;
+        }
         if (item.nextAt && item.nextAt > Date.now()) {
           wait = item.nextAt - Date.now(); // keep the order: nothing after it goes first
           break;
         }
         const drop = (reason: string) => {
-          commit(queueRef.current.filter((q) => q.id !== item.id));
+          commit(queue.current.filter((q) => q.id !== item.id));
           takePreviews(item, true);
           void deleteFiles(item.files.map((f) => f.key));
           callbacks.current.onDropped(item, reason);
@@ -159,52 +183,62 @@ export function useOutbox({
             if (!blob) throw gone(`${f.name} was lost when the app reloaded.`);
             attachments.push({ name: f.name, mime: f.mime, data_url: await blobToDataUrl(blob) });
           }
-          const res = await sendToChief(item.text, attachments, item.id);
+          // To the thread it was written in, whichever thread is open now.
+          const res = await sendToChief(item.text, attachments, item.id, queuedThread(item));
           if (!res.ok) throw gone(res.error || `${assistantName()} did not accept the message.`);
-          commit(queueRef.current.filter((q) => q.id !== item.id));
+          commit(queue.current.filter((q) => q.id !== item.id));
           const urls = takePreviews(item, false);
           void deleteFiles(item.files.map((f) => f.key));
           callbacks.current.onDelivered(item, urls);
         } catch (error) {
           if (retryable(error)) {
             const reason = error instanceof Error ? error.message : `${assistantName()} is unreachable`;
-            commit(queueRef.current.map((q) => (q.id === item.id ? { ...q, attempts: q.attempts + 1, lastError: reason, nextAt: Date.now() + RETRY_MS } : q)));
-            wait = RETRY_MS;
+            // Sending the same files again after two timeouts would most likely time out again, every 15 s for a day.
+            const timeouts = (item.timeouts || 0) + (item.files.length && timedOut(error) ? 1 : 0);
+            held = timeouts >= HOLD_AFTER_TIMEOUTS;
+            commit(queue.current.map((q) => (q.id === item.id ? { ...q, attempts: q.attempts + 1, lastError: reason, timeouts, held, nextAt: held ? undefined : Date.now() + RETRY_MS } : q)));
+            if (!held) wait = RETRY_MS;
             break;
           }
           drop(error instanceof Error ? error.message : `${assistantName()} did not accept the message.`);
         }
       }
       flushing.current = false;
-      if (!alive.current) return;
+      if (!alive.current || held) return;
       // Try again later after a network failure; at once if more were queued while this ran.
       if (wait) retryTimer.current = setTimeout(() => setRetryTick((n) => n + 1), wait);
-      else if (queueRef.current.length) setRetryTick((n) => n + 1);
+      else if (queue.current.length) setRetryTick((n) => n + 1);
     })();
   }, [ready, queued.length, retryTick, commit, takePreviews]);
 
-  /** Queued messages as chat bubbles (after everything else in the thread). */
+  /** This thread's queued messages as chat bubbles (after everything else in the thread). */
   const bubbles = useMemo<ChatMessage[]>(
     () =>
-      queued.map((q, i) => ({
-        // Local bubble ids sit at 1e12 and up, like other not-yet-stored sends; `at` is unique per send.
-        id: Math.max(q.at, 1e12) + i / 100,
-        role: "user",
-        content: q.text,
-        timestamp: new Date(q.at).toISOString(),
-        // Only what can be shown from this device: images with a local preview. Other files are named.
-        attachments: q.files.filter((f) => previews[f.key]).map((f) => ({ path: previews[f.key], name: f.name, kind: kindOf(f.mime), mime: f.mime })),
-        delivery: "queued",
-        queueId: q.id,
-        queueNote: q.lastError,
-        queueFiles: q.files.filter((f) => !previews[f.key]).map((f) => f.name),
-      })),
-    [queued, previews],
+      queued
+        .filter((q) => queuedThread(q) === thread)
+        .map((q, i) => ({
+          // Local bubble ids sit at 1e12 and up, like other not-yet-stored sends; `at` is unique per send.
+          id: Math.max(q.at, 1e12) + i / 100,
+          // The row stays the same one when it goes out and when its stored copy lands (no second entrance).
+          rowKey: `q-${q.id}`,
+          role: "user",
+          content: q.text,
+          timestamp: new Date(q.at).toISOString(),
+          // Only what can be shown from this device: images with a local preview. Other files are named.
+          attachments: q.files.filter((f) => previews[f.key]).map((f) => ({ path: previews[f.key], name: f.name, kind: kindOf(f.mime), mime: f.mime })),
+          delivery: "queued",
+          queueId: q.id,
+          queueNote: q.lastError,
+          queueHeld: q.held,
+          queueFiles: q.files.filter((f) => !previews[f.key]).map((f) => f.name),
+        })),
+    [queued, previews, thread],
   );
 
-  /** Try every waiting message now instead of after the retry pause ("Retry now" under a failed send). */
+  /** Try every waiting message now instead of after the retry pause ("Retry now" under a failed send, Retry under a
+   * held upload, which then gets two more tries). */
   const retryNow = useCallback(() => {
-    commit(queueRef.current.map((q) => ({ ...q, nextAt: undefined })));
+    commit(queue.current.map((q) => ({ ...q, nextAt: undefined, held: false, timeouts: 0 })));
     clearTimeout(retryTimer.current);
     setRetryTick((n) => n + 1);
   }, [commit]);

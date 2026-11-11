@@ -33,6 +33,10 @@ it("reads one finished task, an early task failure and background commands", () 
   const single = parseBackgroundReport(samples.single);
   expect(single?.kind === "tasks" && [single.tasks[0].goal, single.tasks[0].ok, single.tasks[0].body]).toEqual(["Summarise the findings", true, "All three lanes agree: go in the second week."]);
   expect(reportTitle(single!)).toBe("Background task finished: Summarise the findings");
+  // Hermes 0.23 leaves "API calls" out when it has no count: still a finished task.
+  const uncounted = parseBackgroundReport(samples.single_no_count);
+  expect(uncounted?.kind === "tasks" && [uncounted.tasks[0].status, uncounted.tasks[0].ok, uncounted.tasks[0].seconds, uncounted.tasks[0].body]).toEqual(["completed", true, 41.2, "Open 10:00 to 18:00, closed on Mondays."]);
+  expect(reportTitle(uncounted!)).toBe("Background task finished: Check the venue opening hours");
 
   const failed = parseBackgroundReport(samples.failed);
   expect(failed?.kind === "taskFailed" && [failed.index, failed.of, failed.task.goal, failed.task.body]).toEqual([3, 4, "Lane C", "model refused the request"]);

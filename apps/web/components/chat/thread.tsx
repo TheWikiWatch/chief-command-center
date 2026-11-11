@@ -207,7 +207,8 @@ export function buildRows(messages: ChatMessage[]): Row[] {
     const next = messages[i + 1];
     // A notice or a past question is its own block: the message after it starts a new group (with the face).
     const sameSide = (o?: ChatMessage) => !!o && !o.notice && !o.asked && !o.connect && (o.role === "user" && !isMachineNote(chatTone(o))) === mine;
-    rows.push(msgRow(m, `m-${m.id}`, mine, !sameSide(prev), !sameSide(next)));
+    // A stored copy keeps its bubble's row (`rowKey`): the same element, so it doesn't animate in twice.
+    rows.push(msgRow(m, m.rowKey ?? `m-${m.id}`, mine, !sameSide(prev), !sameSide(next)));
   }
   return rows;
 }
@@ -222,6 +223,7 @@ export function Thread({
   onSuggestion,
   onCancelQueued,
   onRetryQueued,
+  onPinned,
   earlier,
   onLoadEarlier,
   header,
@@ -247,8 +249,10 @@ export function Thread({
   onSuggestion: (text: string) => void;
   /** Takes a message waiting in the outbox back out (lib/outbox.ts). */
   onCancelQueued?: (queueId: string) => void;
-  /** Tries the outbox again now (a failed send's "Retry now"). */
+  /** Tries the outbox again now (a failed send's "Retry now", a held upload's Retry). */
   onRetryQueued?: () => void;
+  /** The owner is at the newest messages again (scrolled or brought there): rows Load earlier added may be trimmed. */
+  onPinned?: () => void;
   /** Load earlier at the top of the thread: whether older messages remain, and its progress. */
   earlier?: { more: boolean; loading: boolean; error: string };
   onLoadEarlier?: () => void;
@@ -407,6 +411,7 @@ export function Thread({
           stick.current.scroll(el.scrollTop, el.scrollHeight, el.clientHeight, Date.now());
           heightBefore.current = el.scrollHeight;
           if (stick.current.pinned && unread) setUnread(0);
+          if (stick.current.pinned) onPinned?.();
         }}
       >
         {messages.length === 0 && header ? <div className="mx-auto max-w-3xl">{header}</div> : null}
@@ -527,7 +532,11 @@ type RowProps = {
   onReport?: (m: ChatMessage) => void;
 };
 
+/** Under a refused message when Hermes stored no notice of its own. */
+const REFUSED = "The model's safety filter refused this message, so it wasn't answered.";
+
 const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueued, onRetryQueued, onQuickReply, onReport }: RowProps) {
+  const assistant = useAssistantName();
   const { m, first, last, mine } = row;
   const tone = chatTone(m);
   const text = stripMediaTags(m.content || "");
@@ -582,27 +591,34 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
     );
   }
 
+  // Each message is an article that says who wrote it, for screen readers moving from one to the next.
   if (mine) {
     return (
-      <motion.div {...motionProps} style={{ originX: 1, originY: 1 }} className={`flex flex-col items-end ${first ? "mt-4" : "mt-1"}`}>
+      <motion.article {...motionProps} style={{ originX: 1, originY: 1 }} className={`flex flex-col items-end ${first ? "mt-4" : "mt-1"}`}>
+        <span className="sr-only">You</span>
         <div
-          className={`max-w-[82%] rounded-sheet bg-well px-3.5 py-2 text-fg shadow-[inset_0_0_0_1px_rgb(var(--c-ink)/0.04)] [overflow-wrap:anywhere] ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
+          className={`max-w-[82%] rounded-sheet bg-well px-3.5 py-2 shadow-[inset_0_0_0_1px_rgb(var(--c-ink)/0.04)] [overflow-wrap:anywhere] ${m.refused ? "text-fg-3" : "text-fg"} ${last ? "rounded-br-md" : ""} ${m.id >= OPTIMISTIC ? "opacity-80" : ""}`}
         >
           {text ? <EmojiText text={text} /> : null}
           <MessageMedia attachments={m.attachments} />
         </div>
         {m.steered ? <span className="mt-1 pr-1 text-caption text-fg-3">Added while working</span> : null}
-        {m.delivery === "queued" ? (
+        {m.refused ? (
+          // Greyed, with Hermes's notice as a quiet line (like a failed turn's marker): out of the conversation, never
+          // answered, never read aloud.
+          <p className="mt-1 max-w-[82%] pr-1 text-right text-caption text-fg-3">{m.refused.notice || REFUSED}</p>
+        ) : m.delivery === "queued" ? (
           <QueuedFooter m={m} onCancel={onCancelQueued} onRetry={onRetryQueued} />
         ) : last && time ? (
           <span className="mt-1 pr-1 text-caption text-fg-3">{m.id >= OPTIMISTIC ? (m.delivery === "sent" ? "Sent" : "Sending…") : time}</span>
         ) : null}
-      </motion.div>
+      </motion.article>
     );
   }
 
   return (
-    <motion.div {...motionProps} className={`group flex gap-2.5 ${first ? "mt-5" : "mt-2"}`}>
+    <motion.article {...motionProps} className={`group flex gap-2.5 ${first ? "mt-5" : "mt-2"}`}>
+      <span className="sr-only">{time ? `${assistant}, ${time}` : assistant}</span>
       <div className="w-7 shrink-0 pt-0.5">
         {first && chief ? (
           <BotFace {...faceProps(chief)} size={28} still />
@@ -619,7 +635,7 @@ const MessageRow = memo(function MessageRow({ row, chief, animate, onCancelQueue
           </div>
         ) : null}
       </div>
-    </motion.div>
+    </motion.article>
   );
 }, sameRow);
 
@@ -642,19 +658,20 @@ function sameRow(a: RowProps, b: RowProps) {
   );
 }
 
-/** Under a message waiting in the outbox: why it hasn't gone, and a way to take it back. */
+/** Under a message waiting in the outbox: why it hasn't gone, and a way to take it back. An upload that timed out twice
+ * waits for the owner: Retry or Cancel. */
 function QueuedFooter({ m, onCancel, onRetry }: { m: ChatMessage; onCancel?: (queueId: string) => void; onRetry?: () => void }) {
   const assistant = useAssistantName();
   const files = m.queueFiles?.length ? ` · with ${m.queueFiles.join(", ")}` : "";
   return (
     <span className="mt-1 flex max-w-[82%] flex-wrap items-center justify-end gap-x-2 pr-1 text-caption text-warn">
       <span>
-        {m.queueNote ? `Couldn't reach ${assistant} · retrying` : `Queued · sends when ${assistant} is back`}
+        {m.queueHeld ? "The upload timed out twice" : m.queueNote ? `Couldn't reach ${assistant} · retrying` : `Queued · sends when ${assistant} is back`}
         {files}
       </span>
-      {onRetry && m.queueNote ? (
+      {onRetry && (m.queueNote || m.queueHeld) ? (
         <button type="button" className="press min-h-11 font-medium text-fg-2 underline hover:text-fg" onClick={onRetry}>
-          Retry now
+          {m.queueHeld ? "Retry" : "Retry now"}
         </button>
       ) : null}
       {onCancel && m.queueId ? (

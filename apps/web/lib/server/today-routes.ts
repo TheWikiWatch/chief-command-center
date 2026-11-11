@@ -1,3 +1,5 @@
+import "server-only";
+
 import { friendlyError } from "@/lib/request";
 import { promises as fs } from "node:fs";
 

@@ -1,3 +1,5 @@
+import "server-only";
+
 import { VaultPathError } from "@/lib/server/vault";
 
 /** Vault errors never reveal paths: bad or outside paths look the same as missing ones. */

@@ -17,6 +17,11 @@ export type QueuedSend = {
   lastError?: string;
   /** Not before this time (ms): set after a failed attempt, so a retry doesn't hammer a dead network. */
   nextAt?: number;
+  /** The thread it was written in: it goes there, whichever thread is open by then. Missing ("main") on older ones. */
+  thread?: string;
+  /** How many times its upload timed out; `held` once that is two: it waits for the owner (Retry or Cancel). */
+  timeouts?: number;
+  held?: boolean;
 };
 
 export const OUTBOX_KEY = "chief-outbox";
@@ -55,6 +60,16 @@ export function retryable(error: unknown): boolean {
   if (typeof status === "number") return status === 0 || status === 408 || status === 429 || status >= 500;
   return true;
 }
+
+/** A send that didn't finish in time (the page's own limit, lib/request.ts, or a gateway's): an upload that times out
+ * twice would only time out again. */
+export function timedOut(error: unknown): boolean {
+  const status = (error as { status?: unknown })?.status;
+  return status === 408 || status === 504;
+}
+
+/** The thread a queued message goes to. */
+export const queuedThread = (q: Pick<QueuedSend, "thread">) => q.thread || "main";
 
 // Files: IndexedDB when there is one, otherwise this page's memory.
 const memory = new Map<string, Blob>();

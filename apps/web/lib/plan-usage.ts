@@ -51,8 +51,13 @@ export function resetsIn(at: number, now = Date.now() / 1000): string {
   return "soon";
 }
 
-/** "Free" or "Large", the words Hermes's pickers show; nothing for the rest. */
-export const sizeWord = (plan: NousPlan, model: string) => (isFree(plan, model) ? "Free" : isLarge(plan, model) ? "Large" : "");
+/** Billed by a subscription the account holds (Hermes 0.23): free of the allowance (`isFree`), not free of charge. */
+export const isSubscribed = (plan: NousPlan, model: string) => !!plan.subscription?.includes(model);
+
+/** "Free" or "Large", the words Hermes's pickers show; nothing for the rest, nor for a model a subscription pays for
+ * ("Free" would read as free of charge; Hermes's pickers tag those nothing either). */
+export const sizeWord = (plan: NousPlan, model: string) =>
+  isSubscribed(plan, model) ? "" : isFree(plan, model) ? "Free" : isLarge(plan, model) ? "Large" : "";
 
 /** The plan's picks first, in its order, then the rest as they were. */
 export function featuredFirst(plan: NousPlan | null | undefined, models: string[]) {

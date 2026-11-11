@@ -2,6 +2,6 @@
 # An entry expires on its date and the scan fails again: look again then (a fix may exist by then).
 
 [[IgnoredVulns]]
-id = "GHSA-vfj7-8cjw-p6xm"
-ignoreUntil = 2026-11-12T00:00:00Z
-reason = "braces: development only (the Next.js lint plugin's file matching); not in the dashboard the app ships. No fixed version yet (2026-10-13)."
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2026-12-10T00:00:00Z
+reason = "minimatch 10.2.6, inside typescript-eslint's parser (the lint step): development only, not in the dashboard the app ships, and the patterns it expands are the lint config's own. Fixed only in minimatch 11, which typescript-eslint asks for only in its 8.72.3 alphas; its latest release, 8.72.2, needs ^10.2.2 (2026-11-10)."

@@ -1,5 +1,5 @@
 const bridgeGet = new Set(["health", "snapshot", "transcript", "approvals", "voice-config", "settings", "file", "preview", "thumb", "events", "push/vapidPublicKey", "push/subscriptions","setup/status", "setup/providers", "setup/models", "setup/second-brain", "voice/model", "persona", "persona/soul/version", "fleet", "fleet/models", "fleet/effort", "fleet/helpers", "second-brain/routines", "usage", "about", "threads", "routines", "tools", "pets/catalog", "connections", "background/tail", "app-look", "local-models", "local-models/catalog"]);
-const bridgePost = new Set(["send", "stop", "steer", "queue", "retry", "discard", "choice", "approve", "transcribe", "speak", "push/subscribe", "push/unsubscribe", "push/test", "setup/key", "setup/model", "setup/endpoint/check", "setup/endpoint/save", "setup/test", "report/draft", "setup/second-brain", "setup/second-brain/inspect", "setup/soul/seed", "voice/model/download", "voice/model/cancel", "voice/model/delete", "persona/soul", "persona/soul/restore", "persona/memory", "fleet/model", "fleet/effort", "fleet/helpers", "fleet/favorite", "fleet/retire", "fleet/restore", "fleet/archive/remove", "setup/key/remove", "clarify", "second-brain/routines", "profile/rename", "usage/budget", "threads", "threads/rename", "threads/archive", "threads/fresh", "routines", "routines/update", "routines/run", "routines/delete", "tools/test", "connections/connect", "connections/cancel", "connections/disconnect", "connections/account/rename", "connections/account/remove", "connections/nous/start", "connections/nous/cancel", "connections/nous/signout", "background/steer", "background/stop", "app-look", "local-models/folder", "local-models/engine", "local-models/quickstart", "local-models/download", "local-models/pause", "local-models/resume", "local-models/remove", "local-models/activate", "local-models/server"]);
+const bridgePost = new Set(["send", "stop", "steer", "queue", "retry", "discard", "model-reset", "choice", "approve", "transcribe", "speak", "push/subscribe", "push/unsubscribe", "push/test", "setup/key", "setup/model", "setup/endpoint/check", "setup/endpoint/save", "setup/test", "report/draft", "setup/second-brain", "setup/second-brain/inspect", "setup/soul/seed", "voice/model/download", "voice/model/cancel", "voice/model/delete", "persona/soul", "persona/soul/restore", "persona/memory", "fleet/model", "fleet/effort", "fleet/helpers", "fleet/favorite", "fleet/retire", "fleet/restore", "fleet/archive/remove", "setup/key/remove", "clarify", "second-brain/routines", "profile/rename", "usage/budget", "threads", "threads/rename", "threads/archive", "threads/fresh", "routines", "routines/update", "routines/run", "routines/stop", "routines/delete", "tools/test", "connections/connect", "connections/cancel", "connections/disconnect", "connections/account/rename", "connections/account/remove", "connections/nous/start", "connections/nous/cancel", "connections/nous/signout", "background/steer", "background/stop", "app-look", "local-models/folder", "local-models/engine", "local-models/quickstart", "local-models/download", "local-models/pause", "local-models/resume", "local-models/remove", "local-models/activate", "local-models/server"]);
 const bridgePatch = new Set(["settings", "tools"]);
 // Routes with one id segment (`:id`: letters, digits, _ and -): a bot's look, photo, portrait and pet; pet pictures.
 const bridgeTemplates = new Set(["GET look/:id", "POST look/:id", "PUT look/:id/avatar", "POST look/:id/portrait", "POST look/:id/pet", "GET pet/:id/sheet", "GET pets/thumb/:id", "GET connections/op/:id", "GET connections/nous/:id", "GET local-models/job/:id"]);
@@ -27,10 +27,14 @@ export function permittedOperation(service: "bridge" | "ops", method: string, pa
 /**
  * Paths the proxy refuses before an older installed bridge sees them: the token,
  * Hermes SQLite files (state.db-wal holds recent chat) and NTFS stream paths (file::$DATA).
+ * Network paths (\\host\share, //host/share) too: opening one makes Windows connect to that host with the owner's
+ * sign-in, so a path written in a chat reply must never reach it. And NT-namespace paths (\\?\, \\.\, \??\), which
+ * reach past the usual path rules (one of them can name a network share too).
  */
 export function deniedFilePath(raw: string): boolean {
   if (/(^|[\\/])\.token(?:$|[\\/])/i.test(raw)) return true;
   if (/\.(db|sqlite3?)(-wal|-shm|-journal)?$/i.test(raw)) return true;
+  if (/^[\\/]{2}|^[\\/]\?\?[\\/]/.test(raw)) return true;
   return raw.replace(/^[A-Za-z]:/, "").includes(":");
 }
 
@@ -49,9 +53,23 @@ export function validMutationOrigin(headers: Headers, requestUrl: string): boole
   } catch { return false; }
 }
 
-export function protectFileHeaders(headers: Headers, route = "file"): void {
-  headers.set("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'none'");
+/**
+ * The security headers of every answer from a file route (a vault file; the bridge's files, previews and thumbnails).
+ * next.config.ts leaves those routes out of its app-wide set, because Next sets a config header before the route
+ * runs and keeps it over the route's own: under it, a file's sandbox never reached the browser. So these routes set
+ * the whole set themselves. Anything opened as a page is sandboxed (no scripts, an origin of its own) and can't be
+ * framed. A PDF needs the browser's viewer, which a sandbox turns off, and the Vault shows it in a frame of its own.
+ */
+export function fileSecurityHeaders(headers: Headers): void {
+  const pdf = (headers.get("content-type") || "").split(";")[0].trim().toLowerCase() === "application/pdf";
+  headers.set("Content-Security-Policy", pdf ? "frame-ancestors 'self'" : "sandbox; default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'none'");
+  headers.set("X-Frame-Options", pdf ? "SAMEORIGIN" : "DENY");
   headers.set("X-Content-Type-Options", "nosniff");
+  headers.set("Referrer-Policy", "no-referrer");
+  headers.set("Cross-Origin-Resource-Policy", "same-origin");
+}
+
+export function protectFileHeaders(headers: Headers, route = "file"): void {
   // Originals are never cached on the phone. Thumbnails are small derived frames, so a
   // PWA relaunch should not refetch every video poster in the history.
   headers.set("Cache-Control", route === "thumb" ? "private, max-age=3600" : "private, no-store");

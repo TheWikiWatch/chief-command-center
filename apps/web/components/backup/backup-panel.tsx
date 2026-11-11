@@ -38,36 +38,60 @@ export function BackupPanel() {
   const folderId = useId();
   const d = desktop();
 
-  const load = useCallback(async () => {
+  // The settings and the job. The list of backups is read apart, because each read of it starts a Python process: at
+  // first, after a change, and once when a job ends.
+  const loadStatus = useCallback(async (): Promise<BackupStatus | null> => {
     try {
       const s = await backups.status();
       if (!s.ok) {
         setError(s.error || "Backups aren't available on this install.");
-        return;
+        return null;
       }
       setStatus(s);
       setFolder((f) => f || s.settings.folder);
       setParts((p) => (s.settings.parts ? s.settings.parts : p));
       setError("");
-      if (s.settings.folder) {
-        const listed = await backups.list().catch(() => null);
-        if (listed?.ok) setFiles(listed.backups);
-      }
+      return s;
     } catch (e) {
       setError(friendlyError(e, "Backups aren't available right now."));
+      return null;
     }
   }, []);
+  const loadList = useCallback(async () => {
+    const listed = await backups.list().catch(() => null);
+    if (listed?.ok) setFiles(listed.backups);
+  }, []);
+  const load = useCallback(async () => {
+    const s = await loadStatus();
+    if (s?.settings.folder) await loadList();
+  }, [loadStatus, loadList]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   const running = status?.job?.state === "running";
+  // While a backup runs, only its progress is read: a second after each answer (two at most when answers are slow),
+  // never one on top of another. Then the list once, with the new file in it.
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(() => void load(), 800);
-    return () => window.clearInterval(timer);
-  }, [running, load]);
+    let timer = 0;
+    let stopped = false;
+    const tick = async () => {
+      const started = Date.now();
+      const s = await loadStatus();
+      if (s && s.job?.state !== "running") {
+        if (s.settings.folder) void loadList();
+        return;
+      }
+      if (!stopped) timer = window.setTimeout(() => void tick(), Math.min(2000, 1000 + Date.now() - started));
+    };
+    timer = window.setTimeout(() => void tick(), 1000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
+  }, [running, loadStatus, loadList]);
 
   async function save(change: Parameters<typeof backups.save>[0]) {
     setSaving(true);
@@ -98,7 +122,9 @@ export function BackupPanel() {
         setPass1("");
         setPass2("");
       }
-      await load();
+      // The list changes only when the job is done: read then (above), or now if it already is.
+      const s = await loadStatus();
+      if (res.ok && s?.settings.folder && s.job?.state !== "running") await loadList();
     } finally {
       setStarting(false);
     }
