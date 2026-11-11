@@ -230,6 +230,133 @@ class BackupContents(Case):
         self.assertNotIn("(I)", acl)  # nothing inherited from the folder
         self.assertNotRegex(acl, r"BUILTIN\\Users|Everyone|Authenticated Users")
 
+    def test_an_encrypted_backup_never_writes_its_plaintext_anywhere(self):
+        temp = self.tmp / "temp"
+        temp.mkdir()
+        markers = (b"synthetic-openrouter-value", b"Owner likes tea.", b"hermes/profiles/chief/SOUL.md")
+        found = []
+        real = archive._verify_zip
+
+        def look_first(*args, **kwargs):  # the moment before the rename: everything the backup wrote is still there
+            for path in self.tmp.rglob("*"):
+                if path.is_file() and not any(p in path.parents for p in (self.root, self.vault)):
+                    found.extend(f"{path.name}: {m.decode()}" for m in markers if m in path.read_bytes())
+            return real(*args, **kwargs)
+
+        with mock.patch.object(tempfile, "tempdir", str(temp)), mock.patch.object(archive, "_verify_zip", look_first):
+            result = self.backup(passphrase="correct horse battery")
+        self.assertEqual(found, [])
+        self.assertEqual(list(temp.iterdir()), [])
+        self.assertEqual([p.name for p in self.dest.iterdir()], [Path(result["path"]).name])
+        self.assertFalse(list(self.root.parent.glob("chief-backup-*")))  # the database copies' folder is gone too
+
+    def test_leftovers_of_killed_runs_are_swept_and_a_running_ones_are_kept(self):
+        long_ago = time.time() - 2 * 24 * 3600
+        temp = self.tmp / "temp"
+        temp.mkdir()
+        dead = self.root.parent / "chief-backup-999999-abcdefgh"
+        dead.mkdir()
+        (dead / "db.snapshot").write_bytes(b"x")
+        running = self.root.parent / "chief-backup-4242-abcdefgh"
+        running.mkdir()
+        old_style = temp / "chief-backup-abcd1234"  # an earlier version's, in %TEMP%: a whole plaintext zip
+        old_style.mkdir()
+        (old_style / "backup.zip").write_bytes(b"plain")
+        os.utime(old_style, (long_ago, long_ago))
+        recent = temp / "chief-restore-efgh5678"
+        recent.mkdir()
+        unrelated = temp / "chief-backup-test-abcdefgh"
+        unrelated.mkdir()
+        os.utime(unrelated, (long_ago, long_ago))
+        self.dest.mkdir()
+        abandoned = self.dest / ".Chief backup 2026-01-01 000000.chiefbackup.partial"
+        abandoned.write_bytes(b"x")
+        os.utime(abandoned, (long_ago, long_ago))
+        writing = self.dest / ".Chief backup 2026-01-02 000000.chiefbackup.partial"  # another PC's, on a shared folder
+        writing.write_bytes(b"x")
+        with mock.patch.object(tempfile, "tempdir", str(temp)), mock.patch.object(archive, "pid_alive", lambda pid: pid == 4242):
+            self.backup(parts=("setup",))
+        self.assertFalse(dead.exists())
+        self.assertTrue(running.exists())
+        self.assertFalse(old_style.exists())
+        self.assertTrue(recent.exists())
+        self.assertTrue(unrelated.exists())
+        self.assertFalse(abandoned.exists())
+        self.assertTrue(writing.exists())
+
+    def test_a_backup_that_reads_back_differently_is_not_kept(self):
+        real = os.fsync
+
+        def then_damage(fd):  # what a failing drive (or a tool rewriting the file) does after the write
+            real(fd)
+            for partial in self.dest.glob(".*.partial"):
+                with open(partial, "r+b") as handle:
+                    handle.seek(partial.stat().st_size // 2)
+                    byte = handle.read(1)
+                    handle.seek(-1, os.SEEK_CUR)
+                    handle.write(bytes([byte[0] ^ 0xFF]))
+
+        with mock.patch.object(archive.os, "fsync", then_damage):
+            with self.assertRaisesRegex(archive.BackupError, "didn't read back"):
+                self.backup(parts=("setup",))
+        self.assertEqual(list(self.dest.iterdir()), [])
+
+    def test_reading_the_backup_back_keeps_reporting_so_it_is_never_taken_for_a_hung_tool(self):
+        calls = []
+        clock = iter(range(0, 10**6, 5))  # every look at the clock is five seconds on
+        with mock.patch.object(archive.time, "monotonic", lambda: next(clock)):
+            self.backup(parts=("setup",), progress=lambda done, total: calls.append((done, total)))
+        total = calls[-1][1]
+        self.assertGreater(calls.count((total, total)), 2)  # the zip's own last step is one; the rest come from the read-back
+
+    def test_junctions_and_links_are_never_followed(self):
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        (elsewhere / "private.txt").write_text("not part of Chief", encoding="utf-8")
+        made = []
+        if os.name == "nt":  # a junction needs no special rights; os.path.islink is false for one
+            for link in (self.root / "profiles" / "chief" / "junction", self.vault / "junction"):
+                subprocess.run(["cmd", "/c", "mklink", "/J", str(link), str(elsewhere)], check=True, capture_output=True)
+                made.append(link.name)
+        try:
+            os.symlink(elsewhere / "private.txt", self.root / "profiles" / "chief" / "file-link.md")
+            os.symlink(elsewhere, self.vault / "folder-link", target_is_directory=True)
+            made += ["file-link.md", "folder-link"]
+        except OSError:
+            pass  # symbolic links need Developer Mode or an administrator on Windows
+        if not made:
+            self.skipTest("no link could be made here")
+        result = self.backup()
+        names = self.names(result["path"])
+        for name in made + ["private.txt"]:
+            self.assertFalse(any(name in n for n in names), name)
+        with zipfile.ZipFile(result["path"]) as zf:
+            self.assertFalse(any(b"not part of Chief" in zf.read(n) for n in names))
+
+    def test_a_backup_with_keys_in_the_clear_is_refused_when_it_cant_be_made_private(self):
+        with mock.patch.object(archive, "owner_only", return_value=False):
+            with self.assertRaisesRegex(archive.BackupError, "private to your Windows account"):
+                self.backup(parts=("setup",), kind="pre-update", secrets_plain=True)
+        self.assertEqual(list(self.dest.iterdir()), [])
+
+    @unittest.skipUnless(os.name == "nt", "Windows permissions")
+    def test_databases_are_copied_beside_the_hermes_root_in_an_owner_only_folder(self):
+        seen = []
+        real = archive._copy_sqlite
+
+        def copy(src, dst):
+            seen.append((dst.parent, subprocess.run(["icacls", str(dst.parent)], capture_output=True, text=True).stdout))
+            real(src, dst)
+
+        with mock.patch.object(archive, "_copy_sqlite", copy):
+            self.backup(parts=("setup",))
+        folder, acl = seen[0]
+        self.assertEqual(folder.parent, self.root.parent)
+        self.assertRegex(folder.name, r"^chief-backup-\d+-")
+        self.assertNotIn("(I)", acl)
+        self.assertNotRegex(acl, r"BUILTIN\\Users|Everyone|Authenticated Users")
+        self.assertFalse(folder.exists())
+
     def test_backups_before_updates_keep_the_newest_two_and_leave_the_others_alone(self):
         self.dest.mkdir()
         for day in range(1, 5):
@@ -265,6 +392,69 @@ class Crypto(Case):
         (self.tmp / "short.bin").write_bytes(full[: header_end + 4 + first])  # only the first chunk
         with self.assertRaisesRegex(crypto.CorruptBackup, "incomplete"), open(self.tmp / "y", "wb") as out:
             crypto.decrypt_file(self.tmp / "short.bin", out, "pass phrase")
+
+    @mock.patch.dict(crypto._SCRYPT, {"n": 1 << 10})  # the layout is what is tested here, not the key's cost
+    def test_the_streaming_encryptor_and_the_in_place_view_match_the_file_functions(self):
+        for size in (0, 1, crypto.CHUNK - 1, crypto.CHUNK, crypto.CHUNK + 1, 2 * crypto.CHUNK + 123):
+            plain = os.urandom(size)
+            streamed = self.tmp / f"streamed-{size}.bin"
+            with open(streamed, "wb") as out:
+                sink = crypto.Encryptor(out, "pass phrase")
+                for start in range(0, size, 70_001):  # pieces that never line up with the chunks
+                    sink.write(plain[start : start + 70_001])
+                self.assertEqual(sink.tell(), size)
+                sink.close()
+            with open(self.tmp / "back.bin", "wb") as out:
+                crypto.decrypt_file(streamed, out, "pass phrase")
+            self.assertEqual((self.tmp / "back.bin").read_bytes(), plain, size)
+            (self.tmp / "plain.bin").write_bytes(plain)
+            made = self.tmp / f"made-{size}.bin"
+            with open(made, "wb") as out:
+                crypto.encrypt_file(self.tmp / "plain.bin", out, "pass phrase")
+            for encrypted in (streamed, made):
+                view = crypto.DecryptedView(encrypted, "pass phrase")
+                try:
+                    self.assertEqual(view.read(), plain, size)
+                    for at in {0, size // 3, max(size - 5, 0), crypto.CHUNK - 2}:
+                        view.seek(at)
+                        self.assertEqual(view.read(7), plain[at : at + 7], (size, at))
+                    if size >= 3:
+                        self.assertEqual(view.seek(-3, os.SEEK_END), size - 3)
+                        self.assertEqual(view.read(), plain[-3:])
+                    with self.assertRaises(OSError):  # zipfile relies on this to find a small file's end record
+                        view.seek(-(size + 1), os.SEEK_END)
+                finally:
+                    view.close()
+
+    @mock.patch.dict(crypto._SCRYPT, {"n": 1 << 10})
+    def test_the_in_place_view_catches_a_wrong_passphrase_a_cut_off_file_and_a_changed_byte(self):
+        plain = os.urandom(crypto.CHUNK * 2 + 10)
+        (self.tmp / "plain.bin").write_bytes(plain)
+        enc = self.tmp / "enc.bin"
+        with open(enc, "wb") as out:
+            crypto.encrypt_file(self.tmp / "plain.bin", out, "pass phrase")
+        with self.assertRaises(crypto.BadPassphrase):
+            crypto.DecryptedView(enc, "another one")
+        full = enc.read_bytes()
+        header_end = len(crypto.MAGIC) + 4 + int.from_bytes(full[len(crypto.MAGIC) : len(crypto.MAGIC) + 4], "big")
+        first = int.from_bytes(full[header_end : header_end + 4], "big")
+        (self.tmp / "short.bin").write_bytes(full[: header_end + 4 + first])  # cut off where a chunk ends
+        view = crypto.DecryptedView(self.tmp / "short.bin", "pass phrase")
+        with self.assertRaisesRegex(crypto.CorruptBackup, "incomplete"):
+            view.seek(-22, os.SEEK_END)
+            view.read()
+        view.close()
+        (self.tmp / "torn.bin").write_bytes(full[:-100])  # cut off inside a chunk
+        with self.assertRaisesRegex(crypto.CorruptBackup, "incomplete"):
+            crypto.DecryptedView(self.tmp / "torn.bin", "pass phrase")
+        changed = bytearray(full)
+        changed[header_end + 4 + first + 4 + 50] ^= 1  # inside the second chunk
+        (self.tmp / "changed.bin").write_bytes(changed)
+        view = crypto.DecryptedView(self.tmp / "changed.bin", "pass phrase")
+        self.assertEqual(view.read(100), plain[:100])  # the first chunk is intact
+        with self.assertRaisesRegex(crypto.CorruptBackup, "damaged"):
+            view.read()
+        view.close()
 
 
 class Restore(Case):
@@ -554,6 +744,161 @@ class Restore(Case):
         self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "You are Chief.\n")
         self.assertIn("synthetic-openrouter-value", (self.root / "profiles" / "chief" / ".env").read_text(encoding="utf-8"))
 
+    def staged_same_pc(self, parts=("setup",)) -> Path:
+        result = self.backup(parts=parts)
+        (self.root / "profiles" / "chief" / "SOUL.md").write_text("Changed since the backup.\n", encoding="utf-8")
+        state = self.tmp / "state"
+        restore.stage(
+            Path(result["path"]),
+            "",
+            parts=list(parts),
+            hermes_root=self.root,
+            app_dir=self.app,
+            second_brain=None,
+            current_second_brain=None,
+            state_dir=state,
+            app_version="1.0.0",
+        )
+        return state
+
+    def leftovers(self) -> list[str]:
+        marks = (".before-restore-", ".rolled-back-", ".chief-restore")
+        return sorted(p.name for p in self.root.parent.iterdir() if any(m in p.name for m in marks))
+
+    def test_a_crash_right_after_the_live_folder_is_moved_aside_is_recovered(self):
+        state = self.staged_same_pc()
+        # Dies the moment the first rename returns: before anything after it could be written down.
+        script = (
+            f"import os, sys; sys.path.insert(0, {str(ROOT)!r})\n"
+            "from pathlib import Path; from chief_backup import restore\n"
+            "real = os.replace\n"
+            "def dying(src, dst):\n"
+            "    real(src, dst)\n"
+            f"    if os.fspath(src) == {str(self.root)!r}: os._exit(9)\n"
+            "os.replace = dying\n"
+            f"restore.apply(Path({str(state)!r}), safety_dir=Path({str(self.tmp / 'safety')!r}))\n"
+        )
+        self.assertEqual(subprocess.run([sys.executable, "-c", script]).returncode, 9)
+        self.assertFalse(self.root.exists())
+        self.assertEqual(restore.recover(state), {"ok": True, "action": "rolled-back"})
+        self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "Changed since the backup.\n")
+        self.assertTrue((self.app / "settings.json").is_file())
+        self.assertEqual(self.leftovers(), [])
+        self.assertFalse((state / restore.JOURNAL).exists())
+
+    def test_every_rename_is_in_the_journal_on_disk_before_it_happens(self):
+        state = self.staged_same_pc()
+        journal = os.fspath(state / restore.JOURNAL)
+        events = []
+        real_replace, real_fsync = os.replace, os.fsync
+
+        def replace(src, dst):
+            if os.fspath(dst) == journal:
+                events.append(("journal", json.loads(Path(src).read_text(encoding="utf-8"))))
+            else:
+                events.append(("rename", os.fspath(src)))
+            return real_replace(src, dst)
+
+        def fsync(fd):
+            events.append(("fsync", None))
+            return real_fsync(fd)
+
+        with mock.patch.object(restore.os, "replace", replace), mock.patch.object(restore.os, "fsync", fsync):
+            restore.apply(state, safety_dir=self.tmp / "safety", app_version="1.0.0")
+        moves = [i for i, (kind, what) in enumerate(events) if kind == "rename" and what in (str(self.root), str(self.app))]
+        self.assertEqual(len(moves), 2)
+        for i in moves:
+            last = max(j for j in range(i) if events[j][0] == "journal")
+            self.assertEqual(events[last - 1][0], "fsync")  # the journal's bytes reached the drive first
+            self.assertEqual(events[last][1]["steps"][-1]["target"], events[i][1])  # and it named this rename
+            self.assertFalse([e for e in events[last + 1 : i] if e[0] == "rename"])
+
+    def test_a_rollback_that_cant_move_the_restored_folder_says_so_and_the_next_start_finishes_it(self):
+        state = self.staged_same_pc()
+        restore.apply(state, safety_dir=self.tmp / "safety", app_version="1.0.0")
+        real = os.replace
+
+        def in_use(src, dst):
+            if os.fspath(dst).startswith(str(self.root) + ".rolled-back-"):
+                raise PermissionError(13, "The process cannot access the file because it is being used by another process")
+            return real(src, dst)
+
+        with mock.patch.object(restore.os, "replace", in_use):
+            self.assertEqual(restore.rollback(state), {"ok": False, "rolled_back": False, "error": restore._NOT_BACK})
+        self.assertEqual(json.loads((state / restore.JOURNAL).read_text(encoding="utf-8"))["state"], "rolling-back")
+        self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "You are Chief.\n")  # restored, intact
+        (previous,) = self.root.parent.glob("hermes.before-restore-*")
+        self.assertEqual((previous / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "Changed since the backup.\n")
+        self.assertEqual(restore.recover(state), {"ok": True, "action": "rolled-back"})
+        self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "Changed since the backup.\n")
+        self.assertTrue((self.root / "bin" / "hermes.cmd").is_file())  # carried back with it
+        self.assertEqual(self.leftovers(), [])
+        self.assertFalse((state / restore.JOURNAL).exists())
+
+    def test_a_rollback_that_cant_return_the_old_folder_leaves_the_restored_one_in_place(self):
+        state = self.staged_same_pc()
+        restore.apply(state, safety_dir=self.tmp / "safety", app_version="1.0.0")
+        real = os.replace
+
+        def in_use(src, dst):
+            if os.fspath(src).startswith(str(self.root) + ".before-restore-"):
+                raise PermissionError(13, "in use")
+            return real(src, dst)
+
+        with mock.patch.object(restore.os, "replace", in_use):
+            self.assertFalse(restore.rollback(state)["ok"])
+        self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "You are Chief.\n")  # never left empty
+        self.assertEqual(len(list(self.root.parent.glob("hermes.before-restore-*"))), 1)
+        self.assertEqual(restore.rollback(state), {"ok": True, "rolled_back": True})
+        self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "Changed since the backup.\n")
+        self.assertEqual(self.leftovers(), [])
+
+    def test_a_journal_from_an_earlier_version_is_still_rolled_back(self):
+        state = self.staged_same_pc()
+        restore.apply(state, safety_dir=self.tmp / "safety", app_version="1.0.0")
+        journal = json.loads((state / restore.JOURNAL).read_text(encoding="utf-8"))
+        for step in journal["steps"]:
+            del step["had_old"], step["aside"]
+        (state / restore.JOURNAL).write_text(json.dumps(journal), encoding="utf-8")
+        real = os.replace
+
+        def in_use(src, dst):
+            if os.fspath(src).startswith(str(self.root) + ".before-restore-"):
+                raise PermissionError(13, "in use")
+            return real(src, dst)
+
+        # Cut short once: what it worked out about the old folders must not be read again from its own renames.
+        with mock.patch.object(restore.os, "replace", in_use):
+            self.assertFalse(restore.rollback(state)["ok"])
+        self.assertEqual(restore.rollback(state), {"ok": True, "rolled_back": True})
+        self.assertEqual((self.root / "profiles" / "chief" / "SOUL.md").read_text(encoding="utf-8"), "Changed since the backup.\n")
+        self.assertTrue((self.app / "settings.json").is_file())
+        self.assertEqual(self.leftovers(), [])
+
+    def test_an_encrypted_backup_is_inspected_and_staged_without_a_decrypted_copy(self):
+        temp = self.tmp / "temp"
+        temp.mkdir()
+        result = self.backup(passphrase="pass phrase here")
+        root, app, vault, state, safety = self.new_pc()
+        nowhere = AssertionError("a temporary folder for a decrypted copy")
+        with mock.patch.object(tempfile, "tempdir", str(temp)), mock.patch.object(tempfile, "mkdtemp", side_effect=nowhere):
+            self.assertTrue(restore.inspect(Path(result["path"]), "pass phrase here", app_version="1.0.0")["secrets_included"])
+            restore.stage(
+                Path(result["path"]),
+                "pass phrase here",
+                parts=["setup", "second-brain"],
+                hermes_root=root,
+                app_dir=app,
+                second_brain=vault,
+                current_second_brain=None,
+                state_dir=state,
+                app_version="1.0.0",
+            )
+        self.assertEqual(list(temp.iterdir()), [])
+        self.assertEqual([p.name for p in state.iterdir()], [restore.JOURNAL])
+        self.assertEqual([p.name for p in self.dest.iterdir()], [Path(result["path"]).name])
+        self.assertEqual(list(self.tmp.rglob("*.zip")), [])
+
 
 class CommandLine(Case):
     def run_cli(self, argv, stdin=""):
@@ -595,6 +940,26 @@ class CommandLine(Case):
     def test_errors_are_plain_json(self):
         code, result = self.run_cli(["backup", "--dest", str(self.dest), "--parts", "setup", "--hermes-root", str(self.tmp / "missing")])
         self.assertEqual((code, result), (1, {"ok": False, "error": "Chief's data folder wasn't found."}))
+
+    def test_a_backup_that_cant_be_made_private_says_so_by_code(self):
+        # The app then makes the pre-update backup in its own data folder instead (apps/desktop runtime.ts).
+        args = [
+            "backup",
+            "--dest",
+            str(self.dest),
+            "--parts",
+            "setup",
+            "--kind",
+            "pre-update",
+            "--local",
+            "--hermes-root",
+            str(self.root),
+            "--app-version",
+            "1.0.0",
+        ]
+        with mock.patch.object(archive, "owner_only", return_value=False):
+            code, result = self.run_cli(args)
+        self.assertEqual((code, result.get("code")), (1, "not-private"))
 
 
 if __name__ == "__main__":

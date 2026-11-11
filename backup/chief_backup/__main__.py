@@ -123,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
             result = restore.rollback(Path(args.state_dir))
         else:
             result = restore.recover(Path(args.state_dir))
+    except archive.NotPrivate as exc:
+        result = {"ok": False, "error": str(exc), "code": "not-private"}
     except (archive.BackupError, restore.RestoreError, crypto.CorruptBackup) as exc:
         result = {"ok": False, "error": str(exc)}
     except crypto.BadPassphrase as exc:

@@ -3,16 +3,21 @@
 1. `inspect`: what a backup holds and whether this app can restore it (a backup from a newer app can't).
 2. `stage`: extract the chosen parts next to their targets (same drive, so the swap is a rename), refusing any
    path that would escape, and verify every file's SHA-256 against the manifest. Nothing live is touched.
+   Both read an encrypted backup in place (crypto.DecryptedView): no decrypted copy is written anywhere.
 3. `apply` (Chief stopped): a safety backup of what will be replaced, then a journaled swap. Each target is
-   renamed to `<name>.before-restore-<time>` and the staged folder takes its place. A failure part-way rolls
-   back; a crash part-way is rolled back by `recover` at the next start. Known paths are remapped
-   (OBSIDIAN_VAULT_PATH, WIKI_PATH, the Second Brain record and skill), secrets a backup left out are carried
-   over from the current setup when they exist, and any other old absolute paths are listed for review.
-4. `finish` (after Chief starts healthy) removes the old folders; `rollback` puts them back.
+   renamed to `<name>.before-restore-<time>` and the staged folder takes its place; every rename is in the
+   journal, on disk, before it happens. A failure part-way rolls back; a crash part-way is rolled back by
+   `recover` at the next start, from what is on disk. Known paths are remapped (OBSIDIAN_VAULT_PATH, WIKI_PATH,
+   the Second Brain record and skill), secrets a backup left out are carried over from the current setup when
+   they exist, and any other old absolute paths are listed for review.
+4. `finish` (after Chief starts healthy) removes the old folders; `rollback` puts them back. A rollback renames
+   the restored folders aside (`<name>.rolled-back-<time>`) and deletes them only once the old ones are back;
+   until then the journal stays and the next start tries again.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -22,12 +27,13 @@ import tempfile
 import time
 import zipfile
 from pathlib import Path, PurePosixPath
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 
 from . import archive, crypto
 
 JOURNAL = "restore-journal.json"
 _TEXT_REVIEW = ("config.yaml", "jobs.json", "cron.json")
+_NOT_BACK = "The data from before the restore couldn't all be put back yet (a file in it may be open). Nothing was deleted; the next start tries again."
 
 
 class RestoreError(RuntimeError):
@@ -38,24 +44,31 @@ def _version_tuple(value: str) -> tuple[int, ...]:
     return tuple(int(x) for x in re.findall(r"\d+", str(value or "0"))[:4]) or (0,)
 
 
-def _open_zip(path: Path, passphrase: str, work: Path) -> Path:
+@contextlib.contextmanager
+def _open_zip(path: Path, passphrase: str) -> Iterator[zipfile.ZipFile]:
+    """The backup's zip, read where it is: an encrypted one through its decryption, chunk by chunk."""
     if not path.is_file():
         raise RestoreError("That backup file wasn't found.")
-    if crypto.is_encrypted(path):
-        target = work / "backup.zip"
-        with open(target, "wb") as out:
-            crypto.decrypt_file(path, out, passphrase)
-        return target
-    return path
-
-
-def _read_manifest(zip_path: Path) -> dict:
+    source = crypto.DecryptedView(path, passphrase) if crypto.is_encrypted(path) else open(path, "rb")
     try:
-        with zipfile.ZipFile(zip_path) as zf:
-            manifest = json.loads(zf.read("manifest.json"))
+        try:
+            zf = zipfile.ZipFile(source)
+        except (zipfile.BadZipFile, OSError) as exc:
+            raise RestoreError("This file isn't a Chief backup, or it is damaged.") from exc
+        with zf:
+            yield zf
+    finally:
+        source.close()
+
+
+def _read_manifest(zf: zipfile.ZipFile) -> dict:
+    try:
+        manifest = json.loads(zf.read("manifest.json"))
+    except crypto.CorruptBackup:
+        raise
     except (zipfile.BadZipFile, KeyError, ValueError, OSError) as exc:
         raise RestoreError("This file isn't a Chief backup, or it is damaged.") from exc
-    if manifest.get("format") != archive.FORMAT:
+    if not isinstance(manifest, dict) or manifest.get("format") != archive.FORMAT:
         raise RestoreError("This file isn't a Chief backup.")
     return manifest
 
@@ -71,11 +84,8 @@ def inspect(path: Path, passphrase: str = "", *, app_version: str = "0.0.0") -> 
         raise RestoreError("That backup file wasn't found.")
     if crypto.is_encrypted(path) and not passphrase:
         return {"ok": True, "encrypted": True, "needs_passphrase": True}
-    work = Path(tempfile.mkdtemp(prefix="chief-restore-"))
-    try:
-        manifest = _read_manifest(_open_zip(path, passphrase, work))
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
+    with _open_zip(path, passphrase) as zf:
+        manifest = _read_manifest(zf)
     compat = _compatibility(manifest, app_version)
     return {
         "ok": True,
@@ -123,32 +133,31 @@ def stage(
     state_dir: Path,
     app_version: str = "0.0.0",
 ) -> dict:
-    work = Path(tempfile.mkdtemp(prefix="chief-restore-"))
+    archive.sweep(Path(tempfile.gettempdir()))  # decrypted copies that versions before this one left behind
     staged: dict[str, str] = {}
     try:
-        zip_path = _open_zip(path, passphrase, work)
-        manifest = _read_manifest(zip_path)
-        if _compatibility(manifest, app_version) != "ok":
-            raise RestoreError(f"This backup was made by a newer version of the app ({manifest.get('app_version')}). Update the app first.")
-        parts = [p for p in archive.PARTS if p in parts and p in manifest.get("parts", [])]
-        if not parts:
-            raise RestoreError("Choose at least one part of the backup to restore.")
-        targets: dict[str, Path] = {}
-        if "setup" in parts:
-            if not hermes_root:
-                raise RestoreError("Chief's data folder isn't known.")
-            targets["hermes"] = hermes_root
-            if app_dir:
-                targets["app"] = app_dir
-        if "second-brain" in parts:
-            if not second_brain:
-                raise RestoreError("Choose where the Second Brain should go.")
-            same = current_second_brain and os.path.normcase(os.path.abspath(second_brain)) == os.path.normcase(os.path.abspath(current_second_brain))
-            if second_brain.exists() and any(second_brain.iterdir()) and not same:
-                raise RestoreError("That folder already has files. Choose an empty or new folder, or your current Second Brain (it is backed up first).")
-            targets["second-brain"] = second_brain
-        expected = {f["path"]: f for f in manifest.get("files", [])}
-        with zipfile.ZipFile(zip_path) as zf:
+        with _open_zip(path, passphrase) as zf:
+            manifest = _read_manifest(zf)
+            if _compatibility(manifest, app_version) != "ok":
+                raise RestoreError(f"This backup was made by a newer version of the app ({manifest.get('app_version')}). Update the app first.")
+            parts = [p for p in archive.PARTS if p in parts and p in manifest.get("parts", [])]
+            if not parts:
+                raise RestoreError("Choose at least one part of the backup to restore.")
+            targets: dict[str, Path] = {}
+            if "setup" in parts:
+                if not hermes_root:
+                    raise RestoreError("Chief's data folder isn't known.")
+                targets["hermes"] = hermes_root
+                if app_dir:
+                    targets["app"] = app_dir
+            if "second-brain" in parts:
+                if not second_brain:
+                    raise RestoreError("Choose where the Second Brain should go.")
+                same = current_second_brain and os.path.normcase(os.path.abspath(second_brain)) == os.path.normcase(os.path.abspath(current_second_brain))
+                if second_brain.exists() and any(second_brain.iterdir()) and not same:
+                    raise RestoreError("That folder already has files. Choose an empty or new folder, or your current Second Brain (it is backed up first).")
+                targets["second-brain"] = second_brain
+            expected = {f["path"]: f for f in manifest.get("files", [])}
             for key, target in targets.items():
                 staging = _staging_for(target)
                 if staging.exists():
@@ -197,8 +206,6 @@ def stage(
         for folder in staged.values():
             shutil.rmtree(folder, ignore_errors=True)
         raise
-    finally:
-        shutil.rmtree(work, ignore_errors=True)
 
 
 def discard_staging(state_dir: Path) -> None:
@@ -213,9 +220,20 @@ def discard_staging(state_dir: Path) -> None:
 
 
 def _write_journal(state_dir: Path, journal: dict) -> None:
+    """On the drive before it returns: every rename a restore makes is written here first, so whatever moment a crash
+    or a power cut comes, the journal on disk names every folder that may have moved."""
     tmp = state_dir / (JOURNAL + ".tmp")
-    tmp.write_text(json.dumps(journal, indent=1), encoding="utf-8")
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps(journal, indent=1))
+        handle.flush()
+        os.fsync(handle.fileno())
     os.replace(tmp, state_dir / JOURNAL)
+    if os.name != "nt":  # elsewhere a rename lasts only once its folder is synced; NTFS logs it before the ones after it
+        folder = os.open(state_dir, os.O_RDONLY)
+        try:
+            os.fsync(folder)
+        finally:
+            os.close(folder)
 
 
 def _read_journal(state_dir: Path) -> dict | None:
@@ -287,24 +305,7 @@ def _gateway_running(hermes_root: Path, is_alive: Callable[[int], bool]) -> bool
     return False
 
 
-def pid_alive(pid: int) -> bool:
-    if pid <= 0:
-        return False
-    if os.name == "nt":
-        import ctypes
-
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return False
-        code = ctypes.c_ulong()
-        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return code.value == 259  # STILL_ACTIVE
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
+pid_alive = archive.pid_alive
 
 
 def apply(
@@ -347,7 +348,8 @@ def apply(
         )
     journal["safety_backup"] = safety["path"] if safety else ""
 
-    # 2. The swap, journaled step by step.
+    # 2. The swap. A step's renames are in the journal on disk before either happens; what a crash between them left
+    # is read from the disk itself (`_roll_back_steps`).
     stamp = time.strftime("%Y%m%d-%H%M%S")
     journal["state"] = "swapping"
     journal["steps"] = []
@@ -356,26 +358,36 @@ def apply(
         for key, target in targets.items():
             staged = Path(journal["staged"][key])
             previous = target.parent / f"{target.name}.before-restore-{stamp}"
-            step = {"key": key, "target": str(target), "previous": str(previous), "moved_old": False, "moved_new": False}
+            aside = target.parent / f"{target.name}.rolled-back-{stamp}"
+            step = {
+                "key": key,
+                "target": str(target),
+                "previous": str(previous),
+                "aside": str(aside),
+                "had_old": target.exists(),
+                "moved_old": False,
+                "moved_new": False,
+            }
             journal["steps"].append(step)
-            if target.exists():
+            _write_journal(state_dir, journal)
+            if step["had_old"]:
                 os.replace(target, previous)
                 step["moved_old"] = True
-                _write_journal(state_dir, journal)
             if hooks and hooks.get(f"after_old:{key}"):
                 hooks[f"after_old:{key}"]()
             target.parent.mkdir(parents=True, exist_ok=True)
             os.replace(staged, target)
             step["moved_new"] = True
-            _write_journal(state_dir, journal)
+        _write_journal(state_dir, journal)
     except BaseException:
-        _roll_back_steps(journal)
+        if not _roll_back_steps(journal):
+            raise RestoreError(_NOT_BACK) from None  # the journal on disk still says "swapping": the next start goes on
         journal["state"] = "rolled-back"
         _write_journal(state_dir, journal)
         raise
 
     # 3. Carry this PC's own pieces across, remap known paths, carry secrets over, list the rest for review.
-    _carry_machine_local(journal)
+    _carry_machine_local(journal, lambda: _write_journal(state_dir, journal))
     _write_journal(state_dir, journal)
     report = _remap(journal, manifest)
     journal["state"] = "applied"
@@ -384,9 +396,9 @@ def apply(
     return {"ok": True, "parts": journal["parts"], "safety_backup": journal["safety_backup"], **report}
 
 
-def _carry_machine_local(journal: dict) -> None:
+def _carry_machine_local(journal: dict, save: Callable[[], None]) -> None:
     """Launchers, install records and the speech model aren't in a backup; on the same PC they move into the
-    restored Hermes root (and back on rollback)."""
+    restored Hermes root (and back on rollback). Each move is saved in the journal before it is made."""
     for step in journal.get("steps", []):
         if step["key"] != "hermes" or not step.get("moved_old"):
             continue
@@ -398,20 +410,61 @@ def _carry_machine_local(journal: dict) -> None:
         carried = step.setdefault("carried", [])
         for src, dst in pairs:
             if src.exists() and not dst.exists():
-                os.replace(src, dst)
                 carried.append([str(src), str(dst)])
+                save()
+                os.replace(src, dst)
 
 
-def _roll_back_steps(journal: dict) -> None:
-    for step in reversed(journal.get("steps", [])):
-        for src, dst in reversed(step.get("carried", [])):
-            if Path(dst).exists() and not Path(src).exists():
-                os.replace(dst, src)
+def _settle(journal: dict) -> None:
+    """A journal from an earlier version doesn't say whether each target had a folder before the restore. Work it out
+    once, from the disk, before anything moves, and keep it in the journal: a rollback cut short then resumes from the
+    same facts instead of reading its own half-done renames as the restore's."""
+    for step in journal.get("steps", []):
         target, previous = Path(step["target"]), Path(step["previous"])
-        if step.get("moved_new") and target.exists():
-            shutil.rmtree(target, ignore_errors=True)
-        if step.get("moved_old") and previous.exists() and not target.exists():
+        step.setdefault("had_old", bool(step.get("moved_old")) or previous.exists() or (target.exists() and not step.get("moved_new")))
+        step.setdefault("aside", str(previous.with_name(previous.name.replace(".before-restore-", ".rolled-back-", 1))))
+
+
+def _is_back(step: dict) -> bool:
+    """The target holds what it held before the restore: its old folder back in place, or nothing if it had none."""
+    target, previous = Path(step["target"]), Path(step["previous"])
+    return (target.exists() and not previous.exists()) if step["had_old"] else not target.exists()
+
+
+def _undo(step: dict) -> None:
+    if _is_back(step):  # never moved, or already put back by a rollback that stopped before forgetting its journal
+        return
+    target, previous, aside = Path(step["target"]), Path(step["previous"]), Path(step["aside"])
+    for src, dst in reversed(step.get("carried", [])):
+        if Path(dst).exists() and not Path(src).exists():
+            os.replace(dst, src)
+    if target.exists():
+        os.replace(target, aside)  # the restored data: kept, not deleted, until the old data is back
+    if step["had_old"]:
+        try:
             os.replace(previous, target)
+        except OSError:
+            if aside.exists() and not target.exists():
+                os.replace(aside, target)  # never leave the target empty
+            raise
+
+
+def _roll_back_steps(journal: dict) -> bool:
+    """Undo a swap from what is on disk, newest step first. True only once every target verifiably holds its data from
+    before the restore again; then the set-aside and staged folders go. Until then nothing is deleted."""
+    steps = journal.get("steps", [])
+    for step in reversed(steps):
+        try:
+            _undo(step)
+        except OSError:
+            continue  # judged below, from the disk
+    if not all(_is_back(step) for step in steps):
+        return False
+    for step in steps:
+        shutil.rmtree(step["aside"], ignore_errors=True)
+    for folder in journal.get("staged", {}).values():
+        shutil.rmtree(folder, ignore_errors=True)
+    return True
 
 
 def _remap(journal: dict, manifest: dict) -> dict:
@@ -510,23 +563,29 @@ def finish(state_dir: Path) -> dict:
 
 def rollback(state_dir: Path) -> dict:
     journal = _read_journal(state_dir)
-    if not journal or journal.get("state") not in ("applied", "swapping"):
+    if not journal or journal.get("state") not in ("applied", "swapping", "rolling-back"):
         return {"ok": True, "rolled_back": False}
-    _roll_back_steps(journal)
-    journal["state"] = "rolled-back"
+    # Recorded first: a rollback cut short is finished by `recover` at the next start, never taken for a done restore.
+    _settle(journal)
+    journal["state"] = "rolling-back"
     _write_journal(state_dir, journal)
+    if not _roll_back_steps(journal):
+        return {"ok": False, "rolled_back": False, "error": _NOT_BACK}
     (state_dir / JOURNAL).unlink(missing_ok=True)
     return {"ok": True, "rolled_back": True}
 
 
 def recover(state_dir: Path) -> dict:
-    """At start-up: a restore interrupted mid-swap is rolled back; a staged one is discarded."""
+    """At start-up: a restore interrupted mid-swap (or mid-rollback) is rolled back; a staged one is discarded."""
     journal = _read_journal(state_dir)
     if not journal:
         return {"ok": True, "action": "none"}
     state = journal.get("state")
-    if state == "swapping":
-        _roll_back_steps(journal)
+    if state in ("swapping", "rolling-back"):
+        _settle(journal)
+        _write_journal(state_dir, journal)
+        if not _roll_back_steps(journal):
+            return {"ok": False, "action": "rollback-failed", "error": _NOT_BACK}
         (state_dir / JOURNAL).unlink(missing_ok=True)
         return {"ok": True, "action": "rolled-back"}
     if state == "staged":

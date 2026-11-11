@@ -9,9 +9,11 @@ Never included: the Hermes runtime, caches, logs, locks, the speech model, machi
 Secrets (`.env` values that look like keys, sign-in files, phone-alert keys, tokens) are included only when
 the backup is encrypted; otherwise they are left out and their names recorded so a restore can ask for them.
 
-A backup is zipped in a local temporary folder, verified (every entry's CRC and the manifest's SHA-256s), then
-encrypted if asked, written to the destination under a temporary name, and renamed only when complete.
-SQLite databases are copied with SQLite's online backup API, so Chief can keep running.
+A backup is zipped straight into its destination under a temporary name (encrypted on the way when asked, so an
+encrypted backup's plaintext is never a file anywhere), read back (the same bytes as written, every entry's CRC and
+the manifest's SHA-256s), and renamed only when complete. SQLite databases are copied with SQLite's online backup
+API, so Chief can keep running; those copies are made beside the Hermes root they come from, in a folder only the
+signed-in user can open. Links and junctions are never followed.
 """
 
 from __future__ import annotations
@@ -29,9 +31,11 @@ import subprocess
 import tempfile
 import time
 import zipfile
+import zlib
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 from collections.abc import Callable, Iterator
+from typing import BinaryIO
 
 from . import crypto
 
@@ -93,6 +97,10 @@ class BackupError(RuntimeError):
     pass
 
 
+class NotPrivate(BackupError):
+    """A backup holding keys in the clear, refused because its file couldn't be made private (a FAT or exFAT drive)."""
+
+
 @dataclass
 class Plan:
     """What a backup will contain: (archive path, source file, kind) plus the secrets left out."""
@@ -122,14 +130,20 @@ def sanitize_env(text: str) -> tuple[str, list[str]]:
     return "".join(kept), dropped
 
 
+def _is_link(path: str) -> bool:
+    """A symbolic link or an NTFS junction (os.path.islink is false for a junction): what it points at can be anywhere
+    on the PC, so it is never archived or walked into."""
+    return os.path.islink(path) or os.path.isjunction(path)
+
+
 def _walk(root: Path, *, skip: Callable[[PurePosixPath, bool], bool]) -> Iterator[tuple[PurePosixPath, Path]]:
     for current, dirs, files in os.walk(root):
         rel_dir = PurePosixPath(Path(current).relative_to(root).as_posix())
         rel_dir = PurePosixPath("") if str(rel_dir) == "." else rel_dir
-        dirs[:] = sorted(d for d in dirs if not skip(rel_dir / d, True) and not os.path.islink(os.path.join(current, d)))
+        dirs[:] = sorted(d for d in dirs if not skip(rel_dir / d, True) and not _is_link(os.path.join(current, d)))
         for name in sorted(files):
             rel = rel_dir / name
-            if not skip(rel, False):
+            if not skip(rel, False) and not _is_link(os.path.join(current, name)):
                 yield rel, Path(current) / name
 
 
@@ -200,11 +214,13 @@ def _copy_sqlite(src: Path, dst: Path) -> None:
         source.close()
 
 
-def _sha256(path: Path) -> str:
+def _sha256(path: Path, tick: Callable[[], None] | None = None) -> str:
     digest = hashlib.sha256()
     with open(path, "rb") as handle:
         for block in iter(lambda: handle.read(1 << 20), b""):
             digest.update(block)
+            if tick:
+                tick()
     return digest.hexdigest()
 
 
@@ -232,22 +248,24 @@ def _windows_tool(name: str) -> str:
 
 
 def owner_only(path: Path) -> bool:
-    """Only the signed-in user (and SYSTEM and Administrators, as in their own profile) can open this file; nothing
-    inherited from the folder, which may be one other accounts can read. Windows only; False when it couldn't be
-    done (a drive without permissions, such as FAT32 or exFAT, has none to set)."""
+    """Only the signed-in user (and SYSTEM and Administrators, as in their own profile) can open this file, or this
+    folder and what is made in it; nothing inherited from the folder above, which may be one other accounts can read.
+    False when it couldn't be done (a drive without permissions, such as FAT32 or exFAT, has none to set)."""
+    folder = path.is_dir()
     if os.name != "nt":
         try:
-            os.chmod(path, 0o600)
+            os.chmod(path, 0o700 if folder else 0o600)
             return True
         except OSError:
             return False
+    grant = "(OI)(CI)F" if folder else "F"
     try:
         out = subprocess.run([_windows_tool("whoami.exe"), "/user", "/fo", "csv", "/nh"], capture_output=True, text=True, timeout=15, check=True).stdout
         sid = out.strip().rsplit(",", 1)[-1].strip().strip('"')
         if not re.fullmatch(r"S-1-5-[0-9-]+", sid):
             return False
         subprocess.run(
-            [_windows_tool("icacls.exe"), str(path), "/inheritance:r", "/grant:r", f"*{sid}:F", "*S-1-5-18:F", "*S-1-5-32-544:F"],
+            [_windows_tool("icacls.exe"), str(path), "/inheritance:r", "/grant:r", f"*{sid}:{grant}", f"*S-1-5-18:{grant}", f"*S-1-5-32-544:{grant}"],
             capture_output=True,
             timeout=30,
             check=True,
@@ -255,6 +273,103 @@ def owner_only(path: Path) -> bool:
         return True
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+_WORK = re.compile(r"chief-backup-(\d+)-[a-z0-9_]{8}")
+# Before this version a backup was zipped, and a restore decrypted, in %TEMP% under these names: whole plaintext copies.
+_OLD_WORK = re.compile(r"chief-(?:backup|restore)-[a-z0-9_]{8}")
+_DAY = 24 * 3600
+
+
+def sweep(folder: Path, now: float | None = None) -> None:
+    """Remove the work folders that runs killed part-way left in `folder`: one named for a process that has ended, or an
+    older version's that hasn't changed for a day. A running backup's folder is never touched."""
+    now = now or time.time()
+    try:
+        children = list(folder.glob("chief-*"))
+    except OSError:
+        return
+    for child in children:
+        try:
+            ours = _WORK.fullmatch(child.name)
+            if ours:
+                stale = int(ours.group(1)) != os.getpid() and not pid_alive(int(ours.group(1)))
+            else:
+                stale = bool(_OLD_WORK.fullmatch(child.name)) and now - child.stat().st_mtime > _DAY
+            if stale and child.is_dir() and not _is_link(str(child)):
+                shutil.rmtree(child, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def sweep_partials(dest_dir: Path, now: float | None = None) -> None:
+    """Unfinished backup files a killed run left at the destination. The folder may be shared with other PCs (a synced
+    drive), so only age can tell: a backup being written changes its file all the time."""
+    now = now or time.time()
+    for partial in dest_dir.glob(f".*{SUFFIX}.partial"):
+        try:
+            if now - partial.stat().st_mtime > _DAY:
+                partial.unlink()
+        except OSError:
+            continue
+
+
+def _work_dir(parent: Path | None) -> Path:
+    """Where databases are snapshotted: beside the Hermes root they come from, never at the destination (a synced or
+    removable folder, where an encrypted backup must leave nothing readable). Owner-only, and named for this process so
+    a later run can tell a leftover from a running backup's."""
+    prefix = f"chief-backup-{os.getpid()}-"
+    try:
+        work = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    except OSError:
+        work = Path(tempfile.mkdtemp(prefix=prefix))
+    owner_only(work)  # at best: the snapshots copy files that already sit beside it, as open as their own folder
+    return work
+
+
+class _Hashed:
+    """The destination file as the zip (or the encryptor) writes it: hashed on the way, and without seek, so nothing
+    written is gone back over and the digest is of the file's exact bytes."""
+
+    def __init__(self, handle: BinaryIO):
+        self._handle = handle
+        self.digest = hashlib.sha256()
+        self.size = 0
+
+    def write(self, data: bytes, /) -> int:
+        self._handle.write(data)
+        self.digest.update(data)
+        self.size += len(data)
+        return len(data)
+
+    def tell(self) -> int:
+        return self.size
+
+    def flush(self) -> None:
+        self._handle.flush()
+
+    def close(self) -> None:
+        pass  # the file is the caller's to close
 
 
 def create(
@@ -273,7 +388,8 @@ def create(
     secrets_plain: bool = False,
 ) -> dict:
     """`secrets_plain` is only for the local safety backup a restore takes of the live data (which already
-    holds those secrets in plain files next to it); every backup a person carries elsewhere follows the rule."""
+    holds those secrets in plain files next to it); every backup a person carries elsewhere follows the rule.
+    `tmp_dir` is where databases are snapshotted (by default beside the Hermes root)."""
     parts = [p for p in PARTS if p in parts]
     if not parts:
         raise BackupError("Choose what to back up.")
@@ -282,6 +398,11 @@ def create(
     if "second-brain" in parts and not (second_brain and second_brain.is_dir()):
         raise BackupError("The Second Brain folder wasn't found.")
     dest_dir.mkdir(parents=True, exist_ok=True)
+    snapshots_in = tmp_dir or (hermes_root.parent if hermes_root else None)
+    # What earlier runs killed part-way left behind: their work folders, and their unfinished files at the destination.
+    for folder in {f for f in (snapshots_in, Path(tempfile.gettempdir())) if f}:
+        sweep(folder)
+    sweep_partials(dest_dir)
     exclude = [dest_dir] + ([tmp_dir] if tmp_dir else [])
     plan = Plan()
     if "setup" in parts:
@@ -295,72 +416,84 @@ def create(
         plan.entries += plan_second_brain(second_brain, exclude=exclude).entries
 
     final = dest_dir / backup_name(kind)
-    work = Path(tempfile.mkdtemp(prefix="chief-backup-", dir=tmp_dir))
     partial = dest_dir / f".{final.name}.partial"
+    work: Path | None = None
     try:
-        zip_path = work / "backup.zip"
+        if any(kind_ == "db" for _, _, kind_ in plan.entries):
+            work = _work_dir(snapshots_in)
+        if secrets_plain:
+            # Its secrets are in the clear: lock the file down before a byte of it is written (S13), or write nothing.
+            # The rename keeps it.
+            partial.touch()
+            if not owner_only(partial):
+                raise NotPrivate("This backup holds keys unencrypted and Chief couldn't make its file private to your Windows account, so it wasn't written.")
         files: list[dict] = []
         total = sum((src.stat().st_size if src.exists() else 0) for _, src, _ in plan.entries)
         done = 0
-        with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True, strict_timestamps=False) as zf:
-            for arc, src, kind_ in plan.entries:
-                try:
-                    if kind_ == "env":
-                        data = plan.sanitized_env[arc].encode("utf-8")
-                        zf.writestr(arc, data)
-                        files.append({"path": arc, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
-                        continue
-                    source = src
-                    if kind_ == "db":
-                        source = work / "db.snapshot"
-                        source.unlink(missing_ok=True)
-                        _copy_sqlite(src, source)
-                    zf.write(source, arc)
-                    files.append({"path": arc, "size": source.stat().st_size, "sha256": _sha256(source)})
-                except FileNotFoundError:
-                    continue  # removed while we were walking
-                except PermissionError:
-                    raise BackupError(f"Couldn't read {arc.split('/', 1)[1]}. Close the app using it and try again.") from None
-                except sqlite3.Error as exc:
-                    raise BackupError(f"Couldn't copy the database {arc.split('/', 1)[1]} ({exc}).") from None
-                done += src.stat().st_size if src.exists() else 0
-                if progress:
-                    progress(done, total)
-            manifest = {
-                "format": FORMAT,
-                "format_version": FORMAT_VERSION,
-                "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
-                "kind": kind,
-                "app_version": app_version,
-                "hermes_version": hermes_version,
-                "parts": parts,
-                "encrypted": bool(passphrase),
-                "secrets_included": bool(passphrase) or secrets_plain,
-                "dropped_secrets": plan.dropped,
-                "source": {
-                    "hermes_root": str(hermes_root) if hermes_root else "",
-                    "app_dir": str(app_dir) if app_dir else "",
-                    "second_brain": str(second_brain) if second_brain else "",
-                    "home": str(Path.home()),
-                    "user": getpass.getuser(),
-                },
-                "summary": {"profiles": _profiles(plan), "notes": _count_notes(plan), "files": len(files), "bytes": sum(f["size"] for f in files)},
-                "files": files,
-            }
-            zf.writestr("manifest.json", json.dumps(manifest, indent=1))
-        _verify_zip(zip_path)
-        if secrets_plain:
-            # Its secrets are in the clear: lock the file down before a byte of it is written (S13). The rename keeps it.
-            partial.touch()
-            owner_only(partial)
         with open(partial, "wb") as out:
-            if passphrase:
-                crypto.encrypt_file(zip_path, out, passphrase)
-            else:
-                with open(zip_path, "rb") as src_handle:
-                    shutil.copyfileobj(src_handle, out, 1 << 20)
+            written = _Hashed(out)
+            encryptor = crypto.Encryptor(written, passphrase) if passphrase else None
+            with zipfile.ZipFile(encryptor or written, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=6, allowZip64=True, strict_timestamps=False) as zf:
+                for arc, src, kind_ in plan.entries:
+                    try:
+                        if kind_ == "env":
+                            data = plan.sanitized_env[arc].encode("utf-8")
+                            zf.writestr(arc, data)
+                            files.append({"path": arc, "size": len(data), "sha256": hashlib.sha256(data).hexdigest()})
+                            continue
+                        source = src
+                        if kind_ == "db":
+                            assert work is not None  # made above whenever the plan has a database
+                            source = work / "db.snapshot"
+                            source.unlink(missing_ok=True)
+                            _copy_sqlite(src, source)
+                        zf.write(source, arc)
+                        files.append({"path": arc, "size": source.stat().st_size, "sha256": _sha256(source)})
+                    except FileNotFoundError:
+                        continue  # removed while we were walking
+                    except PermissionError:
+                        raise BackupError(f"Couldn't read {arc.split('/', 1)[1]}. Close the app using it and try again.") from None
+                    except sqlite3.Error as exc:
+                        raise BackupError(f"Couldn't copy the database {arc.split('/', 1)[1]} ({exc}).") from None
+                    done += src.stat().st_size if src.exists() else 0
+                    if progress:
+                        progress(done, total)
+                manifest = {
+                    "format": FORMAT,
+                    "format_version": FORMAT_VERSION,
+                    "created": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                    "kind": kind,
+                    "app_version": app_version,
+                    "hermes_version": hermes_version,
+                    "parts": parts,
+                    "encrypted": bool(passphrase),
+                    "secrets_included": bool(passphrase) or secrets_plain,
+                    "dropped_secrets": plan.dropped,
+                    "source": {
+                        "hermes_root": str(hermes_root) if hermes_root else "",
+                        "app_dir": str(app_dir) if app_dir else "",
+                        "second_brain": str(second_brain) if second_brain else "",
+                        "home": str(Path.home()),
+                        "user": getpass.getuser(),
+                    },
+                    "summary": {"profiles": _profiles(plan), "notes": _count_notes(plan), "files": len(files), "bytes": sum(f["size"] for f in files)},
+                    "files": files,
+                }
+                zf.writestr("manifest.json", json.dumps(manifest, indent=1))
+            if encryptor:
+                encryptor.close()
             out.flush()
             os.fsync(out.fileno())
+        heard = [time.monotonic()]
+
+        def still_working() -> None:  # reading it back can take minutes on a slow drive: full bar, but never silent
+            if progress and time.monotonic() - heard[0] >= 1:
+                heard[0] = time.monotonic()
+                progress(total, total)
+
+        if partial.stat().st_size != written.size or _sha256(partial, still_working) != written.digest.hexdigest():
+            raise BackupError("The backup didn't read back the way it was written, so it wasn't kept. Try again, or choose another folder.")
+        _verify_zip(partial, passphrase, still_working)
         os.replace(partial, final)
         return {
             "ok": True,
@@ -382,22 +515,33 @@ def create(
         partial.unlink(missing_ok=True)
         raise
     finally:
-        shutil.rmtree(work, ignore_errors=True)
+        if work:
+            shutil.rmtree(work, ignore_errors=True)
 
 
-def _verify_zip(path: Path) -> None:
-    with zipfile.ZipFile(path) as zf:
-        bad = zf.testzip()
-        if bad:
-            raise BackupError(f"The backup failed its own check ({bad}).")
-        manifest = json.loads(zf.read("manifest.json"))
-        for entry in manifest["files"]:
-            digest = hashlib.sha256()
-            with zf.open(entry["path"]) as handle:
-                for block in iter(lambda: handle.read(1 << 20), b""):
-                    digest.update(block)
-            if digest.hexdigest() != entry["sha256"]:
-                raise BackupError(f"The backup failed its own check ({entry['path']}).")
+def _verify_zip(path: Path, passphrase: str = "", tick: Callable[[], None] | None = None) -> None:
+    """The backup as written, read back: every entry (zipfile checks each one's CRC as it reaches its end) against the
+    manifest's SHA-256, and nothing else in it. An encrypted one is read through its own decryption, so every chunk's
+    tag is checked too."""
+    source = crypto.DecryptedView(path, passphrase) if passphrase else open(path, "rb")
+    try:
+        with zipfile.ZipFile(source) as zf:
+            manifest = json.loads(zf.read("manifest.json"))
+            if sorted(zf.namelist()) != sorted([entry["path"] for entry in manifest["files"]] + ["manifest.json"]):
+                raise BackupError("The backup failed its own check (its list of files).")
+            for entry in manifest["files"]:
+                digest = hashlib.sha256()
+                with zf.open(entry["path"]) as handle:
+                    for block in iter(lambda: handle.read(1 << 20), b""):
+                        digest.update(block)
+                        if tick:
+                            tick()
+                if digest.hexdigest() != entry["sha256"]:
+                    raise BackupError(f"The backup failed its own check ({entry['path']}).")
+    except (zipfile.BadZipFile, zlib.error, crypto.CorruptBackup):
+        raise BackupError("The backup failed its own check.") from None
+    finally:
+        source.close()
 
 
 def prune(dest_dir: Path, keep: int, kind: str = "auto") -> list[str]:
