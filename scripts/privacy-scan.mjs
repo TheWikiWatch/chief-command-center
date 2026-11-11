@@ -5,6 +5,8 @@
 // secret-looking tokens. Personal words (names, handles, private folder names) come from a list that
 // is never committed: `.privacy-denylist` next to this repo (one entry per line), or the
 // PRIVACY_DENYLIST environment variable (comma or newline separated) in CI.
+// It also refuses control characters in the files as they are now (not in history): a tool that turned the "\b" of
+// a Windows path into backspace bytes made a program at that path quietly never found.
 //
 //   node scripts/privacy-scan.mjs            scan the files git would publish (tracked + untracked, not ignored)
 //   node scripts/privacy-scan.mjs --history  also scan every commit's contents
@@ -75,6 +77,17 @@ function scanText(label, text, findings) {
   });
 }
 
+// Anything below a space but tab and line endings, and DEL. A file with a NUL byte in it is binary, not text.
+const CONTROL = /[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]/;
+
+function controlCharacters(label, text, findings) {
+  if (text.includes("\0")) return;
+  text.split(/\r?\n/).forEach((line, i) => {
+    const m = CONTROL.exec(line);
+    if (m) findings.push(`${label}:${i + 1}: control character U+${m[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+  });
+}
+
 const findings = [];
 const files = git("ls-files", "-z", "--cached", "--others", "--exclude-standard").split("\0").filter(Boolean);
 for (const file of files) {
@@ -82,7 +95,9 @@ for (const file of files) {
   if (SKIP.test(file) || file === ".privacy-denylist") continue;
   const full = path.join(root, file);
   if (!existsSync(full)) continue;
-  scanText(file, readFileSync(full, "utf8"), findings);
+  const text = readFileSync(full, "utf8");
+  scanText(file, text, findings);
+  controlCharacters(file, text, findings);
 }
 
 const rangeAt = process.argv.indexOf("--range");

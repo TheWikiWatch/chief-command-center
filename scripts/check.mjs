@@ -13,6 +13,8 @@ const steps = [
   "npm --prefix apps/desktop run check",
   "npm run lint:python",
   "npm run test:python",
+  // The release and repository tools (scripts/tests): Node's own test runner, which expands the pattern itself.
+  'node --test "scripts/tests/*.test.mjs"',
   "npm run privacy",
 ];
 

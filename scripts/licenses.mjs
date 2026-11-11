@@ -7,6 +7,8 @@
 //
 // Without --payload only the npm packages are covered (CI); the release passes the payload. GPL programs (ffmpeg,
 // Git) ship as separate executables with their source offered in the notices; GPL code may not be linked into the app.
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,6 +84,9 @@ function readLicenseText(dir) {
   }
 }
 
+// Development dependencies that ship all the same: electron-builder packs Electron itself as the app's runtime.
+const SHIPPED_DEV = { "apps/desktop": ["node_modules/electron"] };
+
 function npmPackages() {
   const out = [];
   for (const app of ["apps/web", "apps/desktop"]) {
@@ -89,16 +94,35 @@ function npmPackages() {
     if (!existsSync(lockFile)) continue;
     const lock = JSON.parse(readFileSync(lockFile, "utf8"));
     for (const [key, info] of Object.entries(lock.packages || {})) {
-      if (!key || info.dev || info.devOptional) continue;
+      if (!key || ((info.dev || info.devOptional) && !SHIPPED_DEV[app]?.includes(key))) continue;
       const name = key.replace(/^.*node_modules\//, "");
       const dir = path.join(repo, app, key);
       const text = readLicenseText(dir);
       let license = typeof info.license === "string" ? info.license : "";
       if (!license || /^SEE LICENSE/i.test(license)) license = guessFromText(text) || license || "UNKNOWN";
-      out.push({ kind: "npm", name, version: info.version || "", license: normalize(name, license), text });
+      out.push({ kind: "npm", name, version: info.version || "", license: normalize(name, license), integrity: info.integrity || "", text });
     }
   }
   return dedupe(out);
+}
+
+/** The lockfile's integrity values ("sha512-<base64>", space-separated) as CycloneDX hashes. */
+export function sriHashes(integrity) {
+  const algs = { sha1: "SHA-1", sha256: "SHA-256", sha384: "SHA-384", sha512: "SHA-512" };
+  return String(integrity || "")
+    .split(/\s+/)
+    .map((sri) => /^(sha\d+)-([A-Za-z0-9+/]+={0,2})$/.exec(sri))
+    .filter((m) => m && algs[m[1]])
+    .map((m) => ({ alg: algs[m[1]], content: Buffer.from(m[2], "base64").toString("hex") }));
+}
+
+/** The Chromium inside Electron, asked of the Electron binary itself; "" where it wasn't downloaded (as in CI). */
+function chromiumVersion() {
+  const exe = path.join(repo, "apps", "desktop", "node_modules", "electron", "dist", process.platform === "win32" ? "electron.exe" : "electron");
+  if (!existsSync(exe)) return "";
+  const r = spawnSync(exe, ["-p", "process.versions.chrome"], { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, encoding: "utf8", timeout: 30_000, windowsHide: true });
+  const version = String(r.stdout || "").trim();
+  return r.status === 0 && /^\d+(\.\d+){3}$/.test(version) ? version : "";
 }
 
 function pythonPackages(root) {
@@ -148,9 +172,11 @@ function dedupe(list) {
 }
 
 const npm = npmPackages();
-const py = payload ? pythonPackages(payload) : [];
+// Hermes itself is installed from its source as 0.0.0: it is listed once, below, at the version it is built from.
+const py = payload ? pythonPackages(payload).filter((p) => p.name.toLowerCase().replace(/_/g, "-") !== "hermes-agent") : [];
 const programs = payload ? tools(payload) : [];
-const hermes = payload ? [{ kind: "python", name: "hermes-agent", version: "", license: "MIT", text: readLicenseText(path.join(payload, "hermes-agent")) }] : [];
+const pin = JSON.parse(readFileSync(path.join(repo, "hermes", "pin.json"), "utf8"));
+const hermes = payload ? [{ kind: "python", name: "hermes-agent", version: pin.baseVersion || "", license: "MIT", text: readLicenseText(path.join(payload, "hermes-agent")) }] : [];
 const everything = [...npm, ...py, ...hermes];
 
 if (args.includes("--check")) {
@@ -168,22 +194,30 @@ if (sbomOut) {
     p.kind === "npm" ? `pkg:npm/${p.name.startsWith("@") ? "%40" + p.name.slice(1) : p.name}@${p.version}` : p.kind === "python" ? `pkg:pypi/${p.name.toLowerCase()}${p.version ? "@" + p.version : ""}` : `pkg:generic/${p.name}@${p.version}`;
   const license = (expr) => (allowed(expr) || /^[A-Za-z0-9.+-]+$/.test(expr) ? [{ expression: expr }] : [{ license: { name: expr } }]);
   const appVersion = JSON.parse(readFileSync(path.join(repo, "apps", "desktop", "package.json"), "utf8")).version;
+  const chromium = chromiumVersion();
   const bom = {
     bomFormat: "CycloneDX",
     specVersion: "1.5",
+    serialNumber: `urn:uuid:${randomUUID()}`,
     version: 1,
     metadata: {
       timestamp: new Date().toISOString(),
       component: { type: "application", name: "Chief Command Center", version: appVersion, licenses: [{ expression: "MIT" }] },
       tools: { components: [{ type: "application", name: "scripts/licenses.mjs" }] },
     },
-    components: [...programs, ...everything].map((p) => ({
-      type: p.kind === "program" ? "application" : "library",
-      name: p.name,
-      ...(p.version ? { version: p.version } : {}),
-      purl: purl(p),
-      licenses: license(p.license),
-    })),
+    components: [...programs, ...everything].map((p) => {
+      const hashes = sriHashes(p.integrity);
+      const inside = p.kind === "npm" && p.name === "electron" && chromium ? [{ type: "library", name: "chromium", version: chromium, purl: `pkg:generic/chromium@${chromium}`, licenses: [{ expression: "BSD-3-Clause" }] }] : [];
+      return {
+        type: p.kind === "program" ? "application" : "library",
+        name: p.name,
+        ...(p.version ? { version: p.version } : {}),
+        purl: purl(p),
+        licenses: license(p.license),
+        ...(hashes.length ? { hashes } : {}),
+        ...(inside.length ? { components: inside } : {}),
+      };
+    }),
   };
   mkdirSync(path.dirname(path.resolve(sbomOut)), { recursive: true });
   writeFileSync(sbomOut, JSON.stringify(bom, null, 2) + "\n");

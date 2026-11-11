@@ -1,7 +1,10 @@
 <# : Update Chief Command Center (double-click). Batch part: run the PowerShell below from this same file.
 @echo off
+setlocal
 title Update Chief Command Center
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "$f = '%~f0'; iex ([IO.File]::ReadAllText($f))"
+rem The file's own path reaches PowerShell in a variable: quoted into the command, an apostrophe in it broke the line.
+set "CHIEF_UPDATE_SCRIPT=%~f0"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "iex ([IO.File]::ReadAllText($env:CHIEF_UPDATE_SCRIPT))"
 echo.
 pause
 exit /b
@@ -178,7 +181,9 @@ try {
     $vol = Get-AppxVolume | Where-Object { $loc.ToUpperInvariant().StartsWith(([string]$_.PackageStorePath).ToUpperInvariant() + "\") } | Select-Object -First 1
     if ($vol) { $extra.Volume = $vol }
   }
-  Add-AppxPackage -Path $file -ForceApplicationShutdown -ForceUpdateFromAnyVersion @extra
+  # Only a forced run reinstalls the same version (or an older one over a newer): an ordinary update is always newer.
+  if ($Force) { $extra.ForceUpdateFromAnyVersion = $true }
+  Add-AppxPackage -Path $file -ForceApplicationShutdown @extra
   $now = Get-AppxPackage -Name $Identity | Sort-Object Version -Descending | Select-Object -First 1
   if (-not $now -or [version]$now.Version -lt [version]"$version.0") { Fail "Windows finished, but Chief is on $($now.Version) instead of $version." }
   Note "installed $($now.Version)"

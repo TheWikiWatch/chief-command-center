@@ -104,7 +104,7 @@ function hermesMismatch() {
 // The payload is the one this repository describes: its patches, its package selection, and no file changed since
 // the build (packaging/payload/provenance.py; about a minute for the whole payload). Returns the tree digest.
 function payloadProvenance() {
-  const r = spawnSync("python", ["packaging/payload/provenance.py", "--payload", local.payloadDir, "--check", "--json"], { cwd: repo, encoding: "utf8" });
+  const r = spawnSync("python", ["packaging/payload/provenance.py", "--payload", local.payloadDir, "--check", "--json"], { cwd: repo, encoding: "utf8", env: stepEnv });
   if (r.status !== 0) return { error: (r.stderr || r.stdout || "the provenance check failed").trim() };
   return { tree: JSON.parse(r.stdout).tree };
 }
@@ -168,13 +168,15 @@ process.on("exit", (code) => {
   if (code === 0) return;
   if (undo.draft) {
     console.error(`\n↩ Deleting the draft release v${version}…`);
-    spawnSync("node", ["packaging/release/release-tool.mjs", "drop-draft", "--version", version, "--repo", local.releasesRepo], { cwd: repo, stdio: "inherit" });
+    spawnSync("node", ["packaging/release/release-tool.mjs", "drop-draft", "--version", version, "--repo", local.releasesRepo], { cwd: repo, stdio: "inherit", env: stepEnv });
   }
   if (undo.files) {
     console.error("↩ Putting the version files back as committed.");
-    spawnSync("git", ["checkout", "--", ...versionFiles], { cwd: repo, stdio: "inherit" });
+    spawnSync("git", ["checkout", "--", ...versionFiles], { cwd: repo, stdio: "inherit", env: stepEnv });
   }
 });
+// Ctrl+C (Ctrl+Break, or a stop from outside) would end the run without the clean-up above: make it an ordinary exit.
+for (const signal of ["SIGINT", "SIGTERM", "SIGBREAK"]) process.on(signal, () => process.exit(130));
 
 step(`Version ${current} → ${version}`);
 const pkg = JSON.parse(readFileSync(desktopPkg, "utf8"));

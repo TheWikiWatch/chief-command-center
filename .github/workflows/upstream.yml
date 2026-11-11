@@ -9,11 +9,14 @@ name: Upstream Hermes
 # The look-ahead for patches that upstream's next code won't fit is upstream-drift.yml.
 #
 # Trust (security review 2026-10-12): the build job runs upstream's code (its builder and the Hermes gateway under
-# the compatibility suite), so it gets no write token, no secrets and no saved git credentials, and only restores the
-# shared cache (never saves it). The radar job holds only the model's key. The publish job starts on a fresh runner,
-# rebuilds what it needs from our own code (re-applying the patch queue is git, not upstream code) and treats the
-# build's report as text. Every value from upstream reaches a shell through `env:`, never `${{ }}` inside `run:`, and
-# candidate.py refuses a tag that isn't a plain version.
+# the compatibility suite), so it gets no write token, no secrets and no saved git credentials, and a cache token that
+# can only read (`cache-mode: read`; actions/cache/restore alone only stops that action from saving, and code in the
+# job could still save with the job's token). The other jobs get no cache access at all. The radar job holds only the
+# model's key. The publish job starts on a fresh runner, rebuilds what it needs from our own code (re-applying the
+# patch queue is git, not upstream code) and treats the build's report as text. Every value from upstream reaches a
+# shell through `env:`, never `${{ }}` inside `run:`, and candidate.py refuses a tag that isn't a plain version.
+# What the bot has already done is read only from its own PRs (its branch, in this repository) and its own issues
+# (opened by the Actions bot): anyone can open an issue or a fork's PR with any title.
 on:
   schedule:
     - cron: "17 6 * * *"
@@ -26,6 +29,9 @@ on:
 
 permissions:
   contents: read
+
+# No cache access unless a job says otherwise (only the build restores one).
+cache-mode: none
 
 concurrency:
   group: upstream-hermes
@@ -76,12 +82,14 @@ jobs:
           ATTEMPT: ${{ steps.check.outputs.attempt }}
         run: |
           key="attempt:$ATTEMPT"
+          # Only the bot's own count: a PR from its branch in this repository (a fork's PR can use the same branch name)
+          # and a blocked issue the Actions bot opened, with exactly its title.
           # An open or merged PR for the tag always counts (never two). A closed PR or a blocked issue counts only with
           # today's attempt key: once the patches or the bridge change, the tag is tried again.
-          prs=$(gh pr list --state all --search "Upgrade Hermes to $TAG in:title" --json state,body \
-            | jq --arg key "$key" 'map(select(.state != "CLOSED" or (.body | contains($key)))) | length')
-          issues=$(gh issue list --state all --search "Blocked Hermes upgrade: $TAG in:title" --json body \
-            | jq --arg key "$key" 'map(select(.body | contains($key))) | length')
+          prs=$(gh pr list --state all --head "upstream/hermes-$TAG" --json state,body,isCrossRepository \
+            | jq --arg key "$key" 'map(select((.isCrossRepository | not) and (.state != "CLOSED" or (.body | contains($key))))) | length')
+          issues=$(gh issue list --state all --author app/github-actions --search "Blocked Hermes upgrade: $TAG in:title" --json title,body \
+            | jq --arg key "$key" --arg title "Blocked Hermes upgrade: $TAG" 'map(select(.title == $title and (.body | contains($key)))) | length')
           echo "count=$((prs + issues))" >> "$GITHUB_OUTPUT"
       - name: Refused downgrade
         if: ${{ inputs.force && steps.check.outputs.newer != 'true' && steps.check.outputs.contains_pin != 'true' }}
@@ -90,7 +98,7 @@ jobs:
           DROPS: ${{ steps.check.outputs.drops }}
         run: echo "::warning::$TAG is not newer than the pin and doesn't contain the pinned commit; building it would drop $DROPS commits the app ships. Not forced."
 
-  # Runs upstream's code: read-only, no secrets, no saved credentials, cache restored but never saved.
+  # Runs upstream's code: read-only, no secrets, no saved credentials, a cache token that can't save.
   build:
     needs: candidate
     if: ${{ needs.candidate.outputs.newer == 'true' || (inputs.force && needs.candidate.outputs.forcible == 'true') }}
@@ -98,6 +106,7 @@ jobs:
     timeout-minutes: 150
     permissions:
       contents: read
+    cache-mode: read
     outputs:
       patches: ${{ steps.patches.outputs.code }}
       build: ${{ steps.build.outcome }}
@@ -117,7 +126,8 @@ jobs:
       - name: Python tools
         run: python -m pip install --disable-pip-version-check --require-hashes -r requirements-dev.txt
       # The builder's download cache (Python, Node, Git, packages), from hermes.yml's runs on main. Restored only:
-      # this job runs candidate code, which must never write a cache entry that main's builds would trust.
+      # this job runs candidate code, which must never write a cache entry that main's builds would trust. The job's
+      # `cache-mode: read` is what enforces that; this action's restore-only form just doesn't try.
       - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/uv-cache
@@ -158,10 +168,11 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-  # The feature radar: only the model's key, no write token. Its answer reaches the PR as checked data.
+  # The feature radar: only the model's key, no write token. Its answer reaches the PR as checked data. Only once the
+  # suite ran and passed: an output a skipped step never set is null, and null == '0' is true in an expression.
   radar:
     needs: [candidate, build]
-    if: ${{ needs.build.outputs.compat == '0' }}
+    if: ${{ needs.build.result == 'success' && needs.build.outputs.build == 'success' && needs.build.outputs.compat == '0' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -242,6 +253,11 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
           branch="upstream/hermes-$TAG"
+          # A candidate PR already open for the tag (only a forced run gets here then) is left as it is.
+          if [ -n "$(gh pr list --state open --head "$branch" --json isCrossRepository --jq '.[] | select(.isCrossRepository | not) | "open"')" ]; then
+            echo "::notice::A candidate PR for $TAG is already open; nothing was pushed."
+            exit 0
+          fi
           base=$(jq -r .commit hermes/pin.json)
           # The patch queue again, from our own code (git apply, no upstream code runs): which forms applied.
           python packaging/payload/prepare_source.py --dest "$RUNNER_TEMP/hermes-src" --commit "$COMMIT" --applied-out applied.json
@@ -251,7 +267,9 @@ jobs:
           python packaging/upstream/update_pin.py --commit "$COMMIT" --base-version "$TAG" --applied applied.json | tee pin.log
           git add -A hermes/pin.json hermes/patches
           git commit -m "Upgrade Hermes to $TAG (compatibility suite passed)"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
+          # The branch is the bot's own and no PR is open on it: a closed candidate PR leaves its branch behind, and a
+          # retry (a new attempt key) replaces it rather than failing to push.
+          git push --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "$branch"
           radar=()
           if [ -f report/radar.json ]; then radar=(--radar-in report/radar.json); fi
           python packaging/upstream/upgrade_notes.py --candidate "$TAG" --commit "$COMMIT" --base "$base" --src "$RUNNER_TEMP/hermes-src" \
@@ -262,7 +280,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for n in $(gh issue list --state open --search "Blocked Hermes upgrade: $TAG in:title" --json number,body --jq ".[] | select(.body | contains(\"attempt:$ATTEMPT\") | not) | .number"); do
+          # The bot's own issues for the tag only (exactly its title, opened by the Actions bot).
+          for n in $(gh issue list --state open --author app/github-actions --search "Blocked Hermes upgrade: $TAG in:title" --json number,title,body \
+              --jq ".[] | select(.title == \"Blocked Hermes upgrade: $TAG\" and (.body | contains(\"attempt:$ATTEMPT\") | not)) | .number"); do
             gh issue close "$n" --comment "Superseded by a new attempt (attempt key $ATTEMPT): $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
           done
       - name: Blocked-upgrade issue

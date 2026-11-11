@@ -14,6 +14,7 @@ import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { slimEnv } from "./slim-env.mjs";
 import { dropUserPathUnder } from "./user-path.mjs";
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -34,6 +35,9 @@ function localPayload() {
 }
 
 const payload = option("--payload") || process.env.CHIEF_PAYLOAD_DIR || localPayload();
+// Nothing of a live Chief reaches the app, its gateway or the model (scripts/slim-env.mjs: a shell opened from Chief's
+// terminal names the live profile and the live bridge).
+const clean = slimEnv();
 const work = option("--work") || mkdtempSync(path.join(tmpdir(), "chief-smoke-"));
 const data = path.join(work, "data");
 const results = [];
@@ -103,11 +107,11 @@ async function main() {
 
   // The scripted model, and the profile pointed at it (what onboarding does by hand).
   const modelPort = await freePort();
-  const fake = spawn("python", [path.join(repo, "hermes", "tests", "fixtures", "fake_model.py"), String(modelPort)], { stdio: "ignore", windowsHide: true });
+  const fake = spawn("python", [path.join(repo, "hermes", "tests", "fixtures", "fake_model.py"), String(modelPort)], { stdio: "ignore", windowsHide: true, env: clean });
   const profile = path.join(data, "hermes", "profiles", "chief");
   mkdirSync(profile, { recursive: true });
   const { python, pythonPath } = payloadPython();
-  const env = { ...process.env, HERMES_HOME: profile, PYTHONPATH: pythonPath, PYTHONIOENCODING: "utf-8" };
+  const env = { ...clean, HERMES_HOME: profile, PYTHONPATH: pythonPath, PYTHONIOENCODING: "utf-8" };
   const provision = spawnSync(python, ["-B", path.join(desktop, "python", "provision.py"), "--plugins-src", path.join(repo, "hermes", "plugins"), "--bridge-port", String(await freePort())], { env, encoding: "utf8" });
   check("throwaway profile prepared", provision.status === 0, provision.stdout?.slice(-300));
   const connect = [
@@ -128,7 +132,7 @@ async function main() {
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [desktop, `--user-data-dir=${path.join(data, "electron")}`],
-    env: { ...process.env, CHIEF_DESKTOP_DATA: data, CHIEF_PAYLOAD_DIR: payload },
+    env: { ...clean, CHIEF_DESKTOP_DATA: data, CHIEF_PAYLOAD_DIR: payload },
     timeout: 60_000,
   });
   let ok = true;

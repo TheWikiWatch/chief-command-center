@@ -11,6 +11,7 @@
 //       Copies the MSIX into the folder and writes release.json (versions, digests, data compatibility)
 //       plus release.json.sig (Ed25519 over the exact bytes of release.json).
 //   node release-tool.mjs verify --dir <release folder> --pub <base64 SPKI>
+//       The signature over release.json, then the package (and the bill of materials) beside it hashed again.
 //   node release-tool.mjs publish --dir <release folder> --repo <owner/releases-repo> [--draft (last)]
 //       Uploads release.json, its signature and the package as GitHub release v<version> (marked latest) in the
 //       releases repository the app's updater reads (public: no key needed). Uses the `gh` CLI's login.
@@ -105,13 +106,23 @@ function keygen() {
   console.log(publicKey.export({ type: "spki", format: "der" }).toString("base64"));
 }
 
-function verifyDir() {
+async function verifyDir() {
   const bytes = readFileSync(path.join(opts.dir, "release.json"));
   const sig = Buffer.from(readFileSync(path.join(opts.dir, "release.json.sig"), "utf8").trim(), "base64");
   const key = createPublicKey({ key: Buffer.from(opts.pub, "base64"), format: "der", type: "spki" });
   const ok = verify(null, bytes, key, sig);
   console.log(ok ? "signature ok" : "BAD SIGNATURE");
-  process.exit(ok ? 0 : 1);
+  if (!ok) process.exit(1);
+  // A good signature only vouches for release.json: the files it describes must be the ones beside it.
+  const release = JSON.parse(bytes.toString("utf8"));
+  for (const entry of [release.package, ...(release.sbom ? [release.sbom] : [])]) {
+    if (!entry?.file || path.basename(entry.file) !== entry.file) throw new Error("release.json names a file that isn't a plain file name.");
+    const file = path.join(opts.dir, entry.file);
+    if (!existsSync(file)) throw new Error(`${entry.file} isn't beside release.json.`);
+    if (entry.bytes !== undefined && statSync(file).size !== entry.bytes) throw new Error(`${entry.file} isn't the size release.json says (${entry.bytes} bytes).`);
+    if ((await sha256(file)) !== entry.sha256) throw new Error(`${entry.file} doesn't match release.json's sha256.`);
+    console.log(`${entry.file} matches`);
+  }
 }
 
 function publish() {
@@ -167,7 +178,7 @@ try {
   else if (command === "promote") promote();
   else if (command === "drop-draft") dropDraft();
   else if (command === "make") await make();
-  else if (command === "verify") verifyDir();
+  else if (command === "verify") await verifyDir();
   else throw new Error("commands: keygen | make | verify | publish");
 } catch (e) {
   console.error(e instanceof Error ? e.message : e);

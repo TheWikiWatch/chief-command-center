@@ -40,7 +40,7 @@ KEEP = ("skills", "optional-skills", "references", "scripts", "pyproject.toml", 
 
 def bash() -> str:
     """Git Bash on Windows (System32's `bash` is WSL), else the first bash on PATH."""
-    for cand in (os.environ.get("OSB_BASH", ""), r"C:\Program Files\Gitinash.exe"):
+    for cand in (os.environ.get("OSB_BASH", ""), r"C:\Program Files\Git\bin\bash.exe"):
         if cand and Path(cand).is_file():
             return cand
     return shutil.which("bash") or "bash"

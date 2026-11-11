@@ -44,7 +44,8 @@ jobs:
         run: |
           ok=$(jq -r .ok drift.json)
           { cat drift.md; echo; echo "_Checked $(date -u +%Y-%m-%dT%H:%MZ) by [this run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)._"; } > body.md
-          issue=$(gh issue list --state open --search "Upstream drift in:title" --json number,title --jq '.[] | select(.title == "Upstream drift") | .number' | head -n1)
+          # The bot's own issue only: anyone can open one with this title, and its author could edit what the bot wrote.
+          issue=$(gh issue list --state open --author app/github-actions --search "Upstream drift in:title" --json number,title --jq '.[] | select(.title == "Upstream drift") | .number' | head -n1)
           if [ "$ok" = "true" ]; then
             if [ -n "$issue" ]; then
               gh issue edit "$issue" --body-file body.md
