@@ -45,7 +45,7 @@ Before your first write to the Second Brain in a conversation, load the **`secon
 | a decision thought through | `obsidian-decide`, `obsidian-challenge` |
 | a weekly review | `obsidian-review` (template: `Templates/Weekly review.md`) |
 | patterns, links between notes | `obsidian-connect`, `obsidian-synthesize`, `obsidian-emerge` |
-| a source or article kept | `llm-wiki` into `40 Knowledge/` (raw sources are never edited) |
+| a source or article kept | `obsidian-save` into `40 Knowledge/`, or `llm-wiki` where it is installed (raw sources are never edited) |
 | a health check of the folder | `obsidian-health` |
 
 These skills read the Folder Map in `{{rules}}` to choose folders. The toolkit's own rules are in `{{toolkit}}/references/` (`ai-first-rules.md`, `write-rules.md`). This folder is already set up: never run `obsidian-init` on it.

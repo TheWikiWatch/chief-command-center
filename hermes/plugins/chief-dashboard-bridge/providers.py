@@ -195,6 +195,9 @@ def _plan(raw: Any, levels: Any) -> dict[str, Any] | None:
         "featured": [str(m) for m in (raw.get("featured_model_ids") or [])][:20],
         "large": [str(m) for m in (raw.get("top_tier_model_ids") or [])][:200],
         "free": [str(m) for m, level in levels.items() if level == "free"][:200],
+        # Billed by the subscription (Hermes 0.23): still `free` above, so never stopped by a full allowance, but
+        # "Free" would read as free of charge, so the pickers tag them nothing.
+        "subscription": [str(m) for m in (raw.get("subscription_model_ids") or [])][:200],
     }
 
 
@@ -681,6 +684,9 @@ def _explain(exc: Exception) -> dict[str, str]:
         return {"code": "timeout", "error": "The provider didn't answer in time."}
     if "Connection" in name or "ConnectError" in name:
         return {"code": "unreachable", "error": "Couldn't reach the provider. Check the internet connection or the endpoint address."}
+    # Hermes 0.23 explains a key that isn't set with a terminal command (hermes_cli/runtime_provider_missing_key.py).
+    if getattr(exc, "code", "") == "missing_api_key":
+        return {"code": "missing", "error": "No key is saved for this provider yet. Add it here, then test again."}
     return {"code": "other", "error": _plain(exc)}
 
 

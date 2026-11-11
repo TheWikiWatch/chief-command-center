@@ -196,11 +196,12 @@ class PickerFactsTests(CatalogTests):
                 {"label": "month", "left_fraction": 0.05, "resets_at_ms": None, "scope": "top_tier", "title": "Large models"},
             ],
             "top_tier_model_ids": ["nova-large"],
+            "subscription_model_ids": ["nova-sub"],
             "featured_model_ids": ["nova-small"],
             "paused_reason": None,
             "credits_pay": False,
         }
-        nova["usage_levels"] = {"nova-large": "top_tier", "nova-small": "medium", "nova-free": "free"}
+        nova["usage_levels"] = {"nova-large": "top_tier", "nova-small": "medium", "nova-free": "free", "nova-sub": "free"}
         group = providers.connected_models()["groups"][0]
         self.assertEqual(
             group["plan"],
@@ -215,7 +216,8 @@ class PickerFactsTests(CatalogTests):
                 "creditsPay": False,
                 "featured": ["nova-small"],
                 "large": ["nova-large"],
-                "free": ["nova-free"],
+                "free": ["nova-free", "nova-sub"],
+                "subscription": ["nova-sub"],
             },
         )
         self.assertIsNone(providers._plan({"kind": "credits"}, {}), "only window plans get gauges")
@@ -550,6 +552,7 @@ class EndpointAndErrorTests(ProviderTestCase):
             (error("APIStatusError", status_code=429), "rate"),
             (error("ReadTimeout"), "timeout"),
             (error("APIConnectionError"), "unreachable"),
+            (error("AuthError", code="missing_api_key"), "missing"),
             (error("Weird"), "other"),
         ]
         for exc, code in cases:

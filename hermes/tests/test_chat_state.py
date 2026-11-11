@@ -210,11 +210,52 @@ class ChatStateTests(unittest.TestCase):
             "⏳ Hermes is restarting — your message is saved and will be answered when it is back.",
             "⏳ Your message is saved and will be answered when the work running in this conversation finishes.",
             "⏳ Gateway restarting — queued for the next turn after it comes back.",
+            "⏳ Gateway shutting down — queued for the next turn after it comes back.",
+            "❌ The provider's safety filter refused this request: HTTP 400: blocked",
             "🗑️ Discarded 1 lost turn(s); they were not re-run. Your saved messages will be answered now.",
             refused,
             "Nothing to discard: this chat has no turn lost in a restart.",
         )
         self.assertEqual([n["text"] for n in chat_state.notices("session", since=0)], [refused, "Nothing to discard: this chat has no turn lost in a restart."])
+
+    def test_a_chat_switched_to_another_model_says_which(self):
+        sessions = self.home / "sessions"
+        sessions.mkdir(parents=True, exist_ok=True)
+        routes = {
+            "agent:main:command_center:dm:owner": {"session_id": "s", "model_override": {"model": "nova-small", "provider": "nous"}},
+            "agent:main:command_center:dm:owner.t-1": {"session_id": "t"},
+        }
+        (sessions / "sessions.json").write_text(json.dumps(routes), encoding="utf-8")
+        self.assertEqual(data.model_override("agent:main:command_center:dm:owner"), {"model": "nova-small", "provider": "nous"})
+        self.assertIsNone(data.model_override("agent:main:command_center:dm:owner.t-1"))
+        self.assertIsNone(data.model_override("unknown"))
+
+    def test_a_reply_sent_without_its_image_tags_is_still_the_reply(self):
+        # Hermes 0.23 sends a reply with its image tags taken out; the stored row keeps them.
+        with self.database() as conn:
+            conn.execute(
+                "INSERT INTO messages VALUES (1, 'assistant', ?, '100.0', NULL, 's', 1)",
+                ("Here is the chart: ![sales](https://example.com/chart.png) as asked.",),
+            )
+        self.write_outbox("Here is the chart: as asked.", "A real notice.")
+        self.assertEqual([n["text"] for n in chat_state.notices("session", since=0)], ["A real notice."])
+
+    def test_hermes_notices_that_name_its_commands_are_in_the_apps_words(self):
+        self.write_outbox(
+            "Nova's safety filter refused this request, so the model didn't answer. That message has been left out of this "
+            "conversation, so you're not stuck. Switching models with /model can also help.\n\nProvider said: blocked by policy",
+            "⚠️ Hermes did not answer this message (moved): the conversation it was queued for moved, so it was dropped. Send it again to continue.",
+            "⌛ Approval timed out after 5 minutes — the command was NOT run. Ask me to try again if you still want it, or raise "
+            "approvals.timeout in config.yaml.",
+        )
+        refusal, unanswered, timed_out = chat_state.notices("session", since=0)
+        self.assertEqual(timed_out["text"], "A command waited 5 minutes for your OK and wasn't run. Ask again if you still want it.")
+        self.assertTrue(refusal["refusal"])
+        self.assertTrue(refusal["text"].startswith("The model's safety filter refused that message"))
+        self.assertTrue(refusal["text"].endswith("The provider said: blocked by policy"))
+        self.assertNotIn("/model", refusal["text"])
+        self.assertEqual(unanswered["text"], "Your message wasn't answered: the conversation it was waiting for moved on. Send it again to continue.")
+        self.assertNotIn("refusal", unanswered)
 
     def test_a_paused_conversation_is_a_card(self):
         lost = (
@@ -313,6 +354,33 @@ class ChatStateTests(unittest.TestCase):
         self.assertEqual((rows[2].get("failedTurn"), rows[2].get("failedReason")), (True, "restart"))
         self.assertNotIn("steered", rows[0])
 
+    def test_a_refused_message_stays_in_the_chat_and_its_taken_back_turn_does_not(self):
+        conn = sqlite3.connect(self.home / "state.db")
+        self.addCleanup(conn.close)
+        conn.executescript("""
+            CREATE TABLE sessions (id TEXT, session_key TEXT, last_activity_at INTEGER, source TEXT);
+            INSERT INTO sessions VALUES ('s', 'session', 1, 'command_center');
+            CREATE TABLE messages (id INTEGER PRIMARY KEY, role TEXT, content TEXT, timestamp REAL, tool_calls TEXT, session_id TEXT,
+                                   active INTEGER, compacted INTEGER, display_kind TEXT, display_metadata TEXT);
+        """)
+        notice = "This message was refused by the model's safety filter — try a different query."
+        with conn:
+            conn.execute("INSERT INTO messages VALUES (1, 'user', 'Plan the week', 10, NULL, 's', 0, 1, NULL, NULL)")
+            conn.execute("INSERT INTO messages VALUES (2, 'assistant', 'Here is the plan.', 11, NULL, 's', 0, 1, NULL, NULL)")
+            # Hermes 0.23 archives a refused turn: the owner's message stays on display, its tool steps and answer don't.
+            meta = json.dumps(json.dumps({"content_refused": {"notice": notice}}))  # an older row's second string layer
+            conn.execute("INSERT INTO messages VALUES (3, 'user', 'something refused', 12, NULL, 's', 0, 1, 'content_refused', ?)", (meta,))
+            conn.execute("INSERT INTO messages VALUES (4, 'assistant', 'I cannot help with that.', 13, NULL, 's', 0, 0, NULL, NULL)")
+        page = data.transcript("session")
+        self.assertEqual([(m["id"], m.get("refused")) for m in page["messages"]], [(3, {"notice": notice})])
+        # The head counts the refused message, so a reader at it waits instead of being woken over and over.
+        self.assertEqual((data.head_id("session"), page["lastId"]), (3, 3))
+        self.assertEqual(data.transcript("session", after_id=3)["messages"], [])
+        # A reader at the taken-back answer reads the chat again from the top.
+        self.assertTrue(data.transcript("session", after_id=4)["reset"])
+        # Load earlier reads what compaction archived, never what was taken back.
+        self.assertEqual([m["id"] for m in data.transcript("session", before_id=5)["messages"]], [1, 2, 3])
+
     def test_a_rewritten_conversation_is_read_again_from_the_top(self):
         conn = sqlite3.connect(self.home / "state.db")
         self.addCleanup(conn.close)
@@ -371,7 +439,7 @@ class ChatStateTests(unittest.TestCase):
         found = chat_state.notices("session", since=0)
         self.assertEqual(
             [(n["text"], n["source"]) for n in found],
-            [("Connection error", "scheduled"), ("⌛ Approval timed out after 5 minutes — the command was NOT run.", "notice")],
+            [("Connection error", "scheduled"), ("A command waited 5 minutes for your OK and wasn't run. Ask again if you still want it.", "notice")],
         )
         self.assertEqual(found[0]["routine"], {"name": "Second Brain: morning", "jobId": "f78b53e73629", "profile": "chief"})
         self.assertEqual(found[0]["failure"]["streak"], 4)

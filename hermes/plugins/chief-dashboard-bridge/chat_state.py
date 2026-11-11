@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .data import _message_session_id, chief_home
+from .data import _message_session_id, _shown, chief_home
 from .util import subdict, sublist
 
 logger = logging.getLogger("chief-dashboard-bridge")
@@ -198,14 +198,19 @@ def choose(chat_id: str, cid: str, value: str, timeout: float = 45.0) -> dict[st
 # processed", "…not accepting new work…", "Nothing to discard…") still show: those didn't happen.
 _BUSY = re.compile(
     r"^\s*(?:⏳\s*(?:Working\b|Queued for the next turn|Subagent working|Compressing context"
-    r"|Hermes is restarting — your message is saved|Your message is saved and will be answered|Gateway \w+ — queued for the next turn)"
-    r"|⏩\s*(?:Steered into current run|Steer queued)|⚡\s*Interrupting current task|🗑️?\s*Discarded \d+ lost turn)"
+    r"|Hermes is restarting — your message is saved|Your message is saved and will be answered|Gateway [\w ]+? — queued for the next turn)"
+    r"|⏩\s*(?:Steered into current run|Steer queued)|⚡\s*Interrupting current task|🗑️?\s*Discarded \d+ lost turn"
+    # Hermes 0.23's first line about a refused message (agent/turn_recovery.py); its full reply follows as the refusal card.
+    r"|❌\s*The provider's safety filter refused this request)"
 )
 # Hermes 0.22.5 pauses a conversation whose turn a crash or a forced stop cut off: the next message is saved, not
 # answered, until the owner drops the lost turn (/discard) or starts fresh (gateway/session_ingress.pause_notice).
 _PAUSED = re.compile(r"^\s*⏸️?\s*This conversation is paused:")
 _LOST_TURN = "did not finish when Hermes restarted"
 _SPACE = re.compile(r"\s+")
+# Hermes 0.23 takes a reply's image tags out of the text it sends and hands the images over apart
+# (gateway/platforms/base.py extract_images); the stored reply keeps them, so both are compared without.
+_IMAGE_TAGS = re.compile(r"!\[[^\]]*\]\(https?://[^\s)]+\)|<img\s+src=[\"']?https?://[^\s\"'<>]+[\"']?\s*/?>\s*(?:</img>)?")
 
 
 def paused_conversation(text: str) -> dict[str, bool] | None:
@@ -220,6 +225,11 @@ def _norm(text: str) -> str:
     return _SPACE.sub(" ", str(text or "")).strip()
 
 
+def _reply_key(text: str) -> str:
+    """A reply's text as sends and stored rows are compared: normalized, without image tags (see _IMAGE_TAGS)."""
+    return _norm(_IMAGE_TAGS.sub(" ", str(text or "")))
+
+
 def _reply_texts(session_key: str, since: float) -> tuple[list[str], set[str]]:
     """Assistant texts of this session from `since` on (normalized), and the files they showed, to tell
     replies from notices."""
@@ -231,8 +241,13 @@ def _reply_texts(session_key: str, since: float) -> tuple[list[str], set[str]]:
         conn.row_factory = sqlite3.Row
         try:
             sid = _message_session_id(conn, session_key)
+            # Only what the chat shows: a reply Hermes took back (a refused turn's answer) is delivered as a notice.
+            # Hermes's timestamp is REAL, and comparing it as is keeps the index in use (a CAST made this a scan).
+            real = conn.execute("SELECT type FROM pragma_table_info('messages') WHERE name = 'timestamp'").fetchone()
+            stamp = "timestamp" if real and str(real[0]).upper() == "REAL" else "CAST(timestamp AS REAL)"
             rows = conn.execute(
-                "SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' AND CAST(timestamp AS REAL) >= ? ORDER BY id DESC LIMIT 400",
+                f"SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' AND {_shown(conn)} AND {stamp} >= ? "
+                f"ORDER BY {stamp} DESC, id DESC LIMIT 400",
                 (sid, since - 120),
             ).fetchall()
         finally:
@@ -246,8 +261,8 @@ def _reply_texts(session_key: str, since: float) -> tuple[list[str], set[str]]:
     files: set[str] = set()
     for row in rows:
         text, attachments = parse_message_content(row["content"])
-        if _norm(text):
-            texts.append(_norm(text))
+        if key := _reply_key(text):
+            texts.append(key)
         files.update(_file_key(a.get("path")) for a in attachments)
     return texts, files
 
@@ -396,6 +411,31 @@ def turn_failure(text: str, at: float) -> dict[str, Any] | None:
     return {"code": code, "resetsAt": resets, "detail": body.strip()}
 
 
+# Hermes 0.23's notices that tell the owner to type a command (agent/turn_failure_copy.py content_policy_copy,
+# gateway/session_ingress.py), which the app words its own way.
+_REFUSAL = re.compile(r"\A[^\n]+?'s safety filter refused this request, so the model didn't answer\.")
+_UNANSWERED = re.compile(r"\A⚠️ Hermes did not answer this message \([^)]*\): the conversation it was queued for moved")
+# gateway/platforms/base_exec_approval.py, APPROVAL_TIMED_OUT_NOTICE: its advice is to edit config.yaml.
+_APPROVAL_TIMED_OUT = re.compile(r"\A⌛ Approval timed out after (.+?) — the command was NOT run\.")
+
+
+def plain_notice(text: str) -> tuple[str, dict[str, Any]]:
+    """A notice in the app's words, and what marks it for the chat. A refusal is `refusal`: the message it answers
+    stays in the chat, greyed (data.py, `refused`); the turn itself is out of the conversation, so the chat goes on."""
+    if _REFUSAL.match(text):
+        said = text.split(_PROVIDER_SAID, 1)[1].strip() if _PROVIDER_SAID in text else ""
+        words = (
+            "The model's safety filter refused that message, so it wasn't answered. It's been left out of this "
+            "conversation, so you can keep going: ask something else, or put it another way."
+        )
+        return (f"{words}\n\nThe provider said: {said}" if said else words), {"refusal": True}
+    if _UNANSWERED.match(text):
+        return "Your message wasn't answered: the conversation it was waiting for moved on. Send it again to continue.", {}
+    if timed_out := _APPROVAL_TIMED_OUT.match(text):
+        return f"A command waited {timed_out.group(1)} for your OK and wasn't run. Ask again if you still want it.", {}
+    return text, {}
+
+
 _FAILED_TURN_FALLBACK = (
     "Your request was not processed. Send it again if you still want me to carry it out.",
     "This turn did not complete. Some actions may already have run; verify their effects before resending.",
@@ -471,9 +511,10 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
         # The adapter sends a reply's attachments after its text as "MEDIA:<path>" lines (adapter._send_media).
         stripped, attachments = parse_message_content(raw) if "MEDIA:" in raw else (raw, [])
         text = _norm(stripped)
+        key = _reply_key(stripped)
         attachments = [a for a in attachments if _file_key(a.get("path")) not in shown]
         # A long reply can reach the adapter in pieces: a piece of a reply is a reply too.
-        if not attachments and (not text or any(text == reply or text in reply for reply in replies)):
+        if not attachments and (not key or any(key == reply or key in reply for reply in replies)):
             continue
         # The approval itself rides the transcript (its sheet); Hermes's announcement of it would show twice.
         if text and approval_announcement(stripped):
@@ -487,6 +528,7 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
             body, routine = unwrap_cron(stripped)
             body, found, failure = unwrap_cron_failure(body)
             routine = routine or found
+        body, marks = plain_notice(body) if not routine else (body, {})
         item: dict[str, Any] = {
             "id": str(row.get("id") or ""),
             "at": float(row.get("at") or 0),
@@ -494,6 +536,7 @@ def notices(session_key: str, since: float = 0.0, limit: int = 30, chat_id: str 
             # Hermes delivers a scheduled job's answer as "Cronjob Response: <name>"; the app's own relays say "cron".
             "source": "scheduled" if row.get("source") == "cron" or raw.startswith("Cronjob Response:") or failure else "notice",
         }
+        item.update(marks)
         if routine:
             item["routine"] = routine
         if failure:

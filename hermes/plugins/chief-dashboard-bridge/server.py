@@ -315,6 +315,8 @@ class BridgeServer:
         payload["approval"] = data.pending_approval(sk)
         payload["clarify"] = chat_state.pending_clarify(sk)
         payload["choice"] = chat_state.pending_choice(draft_chat)
+        # A model this chat was switched to; the chat offers to go back to the usual one (`/model-reset`).
+        payload["modelOverride"] = data.model_override(sk)
         payload["activity"] = chat_state.activity(sk, payload["generating"], chat_state.vault_path(), chat_id=chat or identity.owner_id())
         # A draft outlives its turn only when the turn died without a final reply: it goes with the turn.
         if not payload["generating"] and chat_state.draft(draft_chat):
@@ -698,13 +700,14 @@ class BridgeServer:
         These are Hermes's own chat commands (`/stop`, `/steer <text>`, `/queue <text>`, `/retry`, `/discard`), sent
         into the chief's Command Center chat, so Hermes applies its own rules: a steer lands at the next safe point and
         falls back to the queue when the turn has already ended; nothing is lost. `/discard` (Hermes 0.22.5) drops a
-        turn a restart cut off, never re-running it, and the messages saved behind it then run.
+        turn a restart cut off, never re-running it, and the messages saved behind it then run. `/model reset`
+        (`model_reset`, 0.23) takes the chat off a model it was switched to, back to the one Settings → Models chose.
         """
         action = str(action or "").strip().lower()
         text = " ".join(str(text or "").split())
-        if action not in ("stop", "steer", "queue", "retry", "discard"):
+        if action not in ("stop", "steer", "queue", "retry", "discard", "model_reset"):
             return {"ok": False, "error": "Unknown control."}
-        if action not in ("stop", "retry", "discard") and not text:
+        if action not in ("stop", "retry", "discard", "model_reset") and not text:
             return {"ok": False, "error": "Message is empty."}
         if len(text) > 8000:
             return {"ok": False, "error": "That message is too long to add mid-turn; send it as a message instead."}
@@ -724,7 +727,7 @@ class BridgeServer:
             command = text
         else:
             # /retry: Hermes resends the conversation's last message itself (after a failed turn, e.g. a usage limit).
-            command = {"stop": "/stop", "retry": "/retry", "discard": "/discard"}.get(action) or f"/queue {text}"
+            command = {"stop": "/stop", "retry": "/retry", "discard": "/discard", "model_reset": "/model reset"}.get(action) or f"/queue {text}"
         try:
             accepted = _queue_inbound(cc, command, chat_id=chat)
         except Exception as exc:
@@ -966,7 +969,8 @@ def _make_handler(bridge: BridgeServer):
             # Header only: a token in the URL ends up in logs and history.
             header = self.headers.get("Authorization") or ""
             token = header[7:].strip() if header.lower().startswith("bearer ") else ""
-            return bool(token) and secrets.compare_digest(token, bridge.token)
+            # As bytes: compare_digest refuses non-ASCII text, and a header can carry any Latin-1 character.
+            return bool(token) and secrets.compare_digest(token.encode("latin-1", "replace"), bridge.token.encode("latin-1", "replace"))
 
         def _read_raw(self, limit: int) -> bytes | None:
             """The body's bytes, or None after a 4xx (no length, too large, or cut off)."""
@@ -1118,13 +1122,17 @@ def _make_handler(bridge: BridgeServer):
                         continue
                     # A burst of changes (a turn ending writes several rows) becomes one event.
                     time.sleep(0.15)
-                    seen = changes.version()
+                    previous, seen = seen, changes.version()
                     out = []
                     while pending:
                         out.append("data: " + json.dumps(pending.popleft(), default=str) + "\n\n")
-                    out.append(f"event: change\ndata: {json.dumps({'v': seen})}\n\n")
-                    self.wfile.write("".join(out).encode("utf-8"))
-                    self.wfile.flush()
+                    # A streamed reply's frames reach the chat through its own long-poll; announced here, every panel
+                    # (health, approvals, threads) would refetch with each one, about once a second.
+                    if changes.reasons(previous, seen) != {"draft"}:
+                        out.append(f"event: change\ndata: {json.dumps({'v': seen})}\n\n")
+                    if out:
+                        self.wfile.write("".join(out).encode("utf-8"))
+                        self.wfile.flush()
             except Exception:
                 pass
             finally:

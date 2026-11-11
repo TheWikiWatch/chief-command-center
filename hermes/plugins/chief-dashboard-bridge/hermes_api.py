@@ -50,6 +50,10 @@ CAPABILITIES: dict[str, dict[str, tuple[str, ...]]] = {
         # The copies of Hermes's node, npm and Python that commands run with in the installed app, made at start.
         "pm.user_facing": ("user_facing_path",),
     },
+    "fresh prompts": {
+        # A new personality reaches an open conversation at its next message (SessionDB.request_prompt_refresh, 0.23).
+        "hermes_state": ("SessionDB",),
+    },
     "profiles": {
         "hermes_constants": (
             "get_default_hermes_root",

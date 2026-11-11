@@ -101,6 +101,11 @@ class FakeJobs:
         self.calls.append(("remove", job_id))
         del self._store()[job_id]
 
+    def cancel_job_run(self, job_id, reason=None):
+        self.calls.append(("cancel", self.current.name, job_id))
+        live = self._store()[job_id].pop("live_execution", None)
+        return {"success": True, "cancelled": live is not None}
+
     def _job_output_dir(self, job_id):
         return self.current / "cron" / "output" / job_id
 
@@ -230,6 +235,17 @@ class RoutineTestCase(unittest.TestCase):
         outbox._cache.update(path="", offset=0, rows=[], times=[])
         self.jobs = FakeJobs()
         fake_module(self, "cron", jobs=self.jobs)
+        # Which profile's home each Hermes call ran as (Hermes 0.23 keeps a profile's runs under its home).
+        self.scoped: list[Path] = []
+        constants = sys.modules["hermes_constants"]
+        overrides = (
+            ("set_hermes_home_override", lambda home: self.scoped.append(Path(home)) or len(self.scoped)),
+            ("reset_hermes_home_override", lambda token: None),
+        )
+        for name, value in overrides:
+            p = patch.object(constants, name, value, create=True)
+            p.start()
+            self.addCleanup(p.stop)
 
     def thread(self) -> str:
         return threads.create("Research")["thread"]["id"]
@@ -374,6 +390,34 @@ class ListAndChangeTests(RoutineTestCase):
         self.assertEqual(len(rows["Papers"]["lastOutput"]), 1501)
         self.assertTrue(rows["Papers"]["lastOutput"].endswith("…"))
         self.assertEqual([b["id"] for b in result["bots"]], ["chief", "ada"])
+
+    def test_a_bots_running_routine_is_seen_and_stopped_as_that_bot(self):
+        self.bot["live_execution"] = {"id": "x1", "status": "running", "started_at": "2026-11-10T08:00:00+00:00"}
+        rows = {r["name"]: r for r in routines.list_routines()["routines"]}
+        self.assertEqual(rows["Papers"]["running"], {"since": "2026-11-10T08:00:00+00:00"})
+        self.assertIsNone(rows["Zen digest"]["running"])
+        self.scoped.clear()
+        self.assertEqual(routines.stop("ada", self.bot["id"]), {"ok": True, "stopped": True})
+        self.assertIn(("cancel", "ada", self.bot["id"]), self.jobs.calls)
+        self.assertIn(self.ada, self.scoped, "the bot's runs are kept under its own home")
+        self.assertEqual(routines.stop("ada", self.bot["id"])["stopped"], False)
+
+    def test_a_time_the_pc_was_off_runs_later_unless_skipped(self):
+        self.assertTrue(routines.list_routines()["routines"][0]["catchUp"])
+        made = routines.create("chief", "Brief", "Say hi", {"kind": "daily", "time": "07:00"}, catch_up=False)
+        self.assertEqual(self.jobs.extras[-1].get("catch_up"), False)
+        self.assertFalse(made["routine"]["catchUp"])
+        routines.update("chief", made["routine"]["id"], catch_up=True)
+        self.assertEqual(self.jobs.calls[-1], ("update", made["routine"]["id"], {"catch_up": None}))
+
+    def test_the_latest_report_is_the_answer_not_hermess_header(self):
+        out = self.chief / "cron" / "output" / self.daily["id"]
+        out.mkdir(parents=True)
+        (out / "2026-11-10_08-00-00.md").write_text(
+            "# Cron Job: Zen digest\n\n## Prompt\n\n[CURRENT RUN TIME: 08:00]\nSay hi\n\n## Response\n\nAll calm.", encoding="utf-8"
+        )
+        rows = {r["name"]: r for r in routines.list_routines()["routines"]}
+        self.assertEqual(rows["Zen digest"]["lastOutput"], "All calm.")
 
     def test_a_built_in_routine_keeps_its_name_and_prompt(self):
         result = routines.update(

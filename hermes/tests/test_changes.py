@@ -47,6 +47,18 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(changes.wait(now, 0.2), now)
         self.assertGreaterEqual(time.monotonic() - t0, 0.15)
 
+    def test_a_reader_can_tell_reply_frames_from_other_changes(self):
+        start = changes.version()
+        changes.bump("draft")
+        changes.bump("draft")
+        self.assertEqual(changes.reasons(start, changes.version()), {"draft"})
+        changes.bump("outbox")
+        self.assertEqual(changes.reasons(start, changes.version()), {"draft", "outbox"})
+        self.assertEqual(changes.reasons(changes.version(), changes.version()), set())
+        for _ in range(300):  # more than it remembers: unknown, so a reader treats it as a change
+            changes.bump("draft")
+        self.assertIsNone(changes.reasons(start, changes.version()))
+
     def test_watcher_sees_commits_from_another_connection_and_memory_changes(self):
         with tempfile.TemporaryDirectory() as tmp:
             db = Path(tmp) / "state.db"

@@ -390,5 +390,33 @@ class SaveTests(SettingsTestCase):
         self.assertEqual(written, [("tts.provider", "edge")])
 
 
+class TestImageTests(unittest.TestCase):
+    """A provider's image link is fetched only over https from the public internet, never from this PC or its network."""
+
+    def setUp(self):
+        self.tools_settings = importlib.import_module("test_settings_plugin.tools_settings")
+
+    def resolves_to(self, address):
+        return patch.object(self.tools_settings.socket, "getaddrinfo", return_value=[(2, 1, 6, "", (address, 443))])
+
+    def test_only_https_to_a_public_host_is_fetched(self):
+        ts = self.tools_settings
+        with self.resolves_to("203.0.113.7"):  # documentation range: not public
+            self.assertFalse(ts._public_https("https://images.example.com/a.png"))
+        for address in ("127.0.0.1", "10.0.0.5", "169.254.169.254", "::1"):
+            with self.subTest(address=address), self.resolves_to(address):
+                self.assertFalse(ts._public_https("https://images.example.com/a.png"))
+        with self.resolves_to("8.8.8.8"):
+            self.assertTrue(ts._public_https("https://images.example.com/a.png"))
+            self.assertFalse(ts._public_https("http://images.example.com/a.png"))
+
+    def test_a_refused_link_or_network_path_is_never_opened(self):
+        ts = self.tools_settings
+        with patch.object(ts.urllib.request, "build_opener", side_effect=AssertionError("fetched")), self.resolves_to("127.0.0.1"):
+            self.assertEqual(ts._local_image("https://images.example.com/a.png"), "")
+        with patch.object(ts.Path, "is_file", side_effect=AssertionError("touched")):
+            self.assertEqual(ts._local_image("\\\\203.0.113.9\\share\\a.png"), "")
+
+
 if __name__ == "__main__":
     unittest.main()

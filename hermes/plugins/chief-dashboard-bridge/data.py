@@ -521,6 +521,29 @@ def _cc_home() -> str:
     return owner_id()
 
 
+_routes_cache: dict[str, Any] = {"sig": None, "data": {}}
+
+
+def model_override(session_key: str) -> dict[str, str] | None:
+    """The model this chat was switched to (Hermes's `/model`, or a plan limit's one-tap switch). It outlasts any change
+    in Settings → Models until `/model reset`. Read from Hermes's sessions.json mirror of its chats, cached by size and
+    time."""
+    path = chief_home() / "sessions" / "sessions.json"
+    try:
+        stat = path.stat()
+        sig = (stat.st_mtime_ns, stat.st_size)
+        if _routes_cache["sig"] != sig:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            _routes_cache.update(sig=sig, data=loaded if isinstance(loaded, dict) else {})
+    except (OSError, ValueError):
+        return None
+    entry = _routes_cache["data"].get(session_key)
+    override = entry.get("model_override") if isinstance(entry, dict) else None
+    if not isinstance(override, dict) or not str(override.get("model") or "").strip():
+        return None
+    return {"model": str(override["model"]), "provider": str(override.get("provider") or "")}
+
+
 def _known_session_keys() -> list[str]:
     sessions_path = chief_home() / "sessions" / "sessions.json"
     keys: list[str] = []
@@ -669,6 +692,16 @@ def _lift_blocks(item: dict[str, Any]) -> list[dict[str, Any]]:
     return atts
 
 
+def _content_parts(value: Any) -> bool:
+    """Hermes's structured content, stored as JSON text: a part ({"type": …} or {"text": …}) or a list of parts and
+    strings. Anything else that merely looks like JSON is what someone typed."""
+    if isinstance(value, dict):
+        return "type" in value or "text" in value
+    if isinstance(value, list):
+        return bool(value) and all(isinstance(v, str) or (isinstance(v, dict) and ("type" in v or "text" in v)) for v in value)
+    return False
+
+
 def parse_message_content(content: Any) -> tuple[str, list[dict[str, Any]]]:
     attachments: list[dict[str, Any]] = []
     if content is None:
@@ -677,9 +710,11 @@ def parse_message_content(content: Any) -> tuple[str, list[dict[str, Any]]]:
         s = content.strip()
         if s.startswith("{") or s.startswith("["):
             try:
-                return parse_message_content(json.loads(s))
-            except Exception:
+                parsed = json.loads(s)
+            except ValueError:
                 return _extract_media_from_text(content)
+            if _content_parts(parsed):
+                return parse_message_content(parsed)
         return _extract_media_from_text(content)
     if isinstance(content, list):
         texts: list[str] = []
@@ -951,10 +986,18 @@ def _under_allowlist(resolved: Path) -> bool:
     return False
 
 
+def _network_path(raw: str) -> bool:
+    """A network (UNC) or NT-namespace path. Only resolving or testing one makes Windows connect to that host with the
+    owner's credentials, and a path in a chat reply may come from anyone's text; second_brain.local_folder and fleet
+    refuse them the same way."""
+    text = raw.strip().replace("/", "\\")
+    return text.startswith("\\\\") or text.startswith("\\??\\")
+
+
 def remember_media_path(raw: str) -> None:
     """A path a transcript shows as a file chip may be served even outside the allow-list roots, but only a
     media file (the chip's own extensions); the deny rules in ``file_is_allowed`` still apply."""
-    if not raw or raw.startswith(("http://", "https://", "data:")):
+    if not raw or raw.startswith(("http://", "https://", "data:")) or _network_path(raw):
         return
     if Path(raw).suffix.lower().lstrip(".") not in _MEDIA_EXTS:
         return
@@ -1002,7 +1045,7 @@ def _has_stream_colon(raw: str) -> bool:
 
 
 def file_is_allowed(raw: str) -> tuple[Path, str] | None:
-    if not raw or raw.startswith(("http://", "https://", "data:")):
+    if not raw or raw.startswith(("http://", "https://", "data:")) or _network_path(raw):
         return None
     # Streams would slip past the name denylist.
     if "\x00" in raw or _has_stream_colon(raw):
@@ -1089,7 +1132,7 @@ def _replay_window(conn: sqlite3.Connection, session_id: str) -> tuple[int, int 
 
 
 def head_id(session_key: str) -> int:
-    """The newest active row id of the session: a cheap "anything new?" for the long-poll."""
+    """The newest row the chat shows (see _shown): a cheap "anything new?" for the long-poll."""
     db_path = chief_home() / "state.db"
     if not session_key or not db_path.is_file():
         return 0
@@ -1098,7 +1141,7 @@ def head_id(session_key: str) -> int:
         conn.row_factory = sqlite3.Row
         try:
             sid = _message_session_id(conn, session_key)
-            row = conn.execute("SELECT MAX(id) AS id FROM messages WHERE session_id = ? AND active = 1", (sid,)).fetchone()
+            row = conn.execute(f"SELECT MAX(id) AS id FROM messages WHERE session_id = ? AND {_shown(conn)}", (sid,)).fetchone()
             return int(row["id"] or 0) if row else 0
         finally:
             conn.close()
@@ -1119,7 +1162,7 @@ def has_rows_before(session_key: str, before_id: int) -> bool:
         try:
             sid = _message_session_id(conn, session_key)
             row = conn.execute(
-                "SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND id < ? AND role IN ('user', 'assistant')) AS found",
+                f"SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = ? AND id < ? AND role IN ('user', 'assistant') AND {_displayed(conn)}) AS found",
                 (sid, before_id),
             ).fetchone()
             return bool(row and row["found"])
@@ -1152,11 +1195,42 @@ def _message_columns(conn: sqlite3.Connection) -> set[str]:
 
 
 def _message_rows(conn: sqlite3.Connection, where: str, params: tuple) -> list[sqlite3.Row]:
-    """Transcript rows with Hermes's `display_kind` (how its own viewers draw a row: `hidden`, `steer`, `failed_turn`…)
-    and `message_uid` (one message across the copies a rewrite or a compaction writes), NULL on a store too old for them."""
+    """Transcript rows with Hermes's `display_kind` (how its own viewers draw a row: `hidden`, `steer`, `failed_turn`…),
+    its `display_metadata`, and `message_uid` (one message across the copies a rewrite or a compaction writes), NULL on a
+    store too old for them."""
     have = _message_columns(conn)
-    extra = ", ".join(col if col in have else f"NULL AS {col}" for col in ("display_kind", "message_uid"))
+    extra = ", ".join(col if col in have else f"NULL AS {col}" for col in ("display_kind", "display_metadata", "message_uid"))
     return conn.execute(f"SELECT id, role, content, timestamp, tool_calls, {extra} FROM messages WHERE {where}", params).fetchall()
+
+
+_REFUSED = "content_refused"
+
+
+def _shown(conn: sqlite3.Connection) -> str:
+    """The rows the live chat shows: Hermes's live ones, and a message its safety filter refused. Hermes 0.23 takes a
+    refused turn out of the conversation (`active = 0`, so the model never sees it again) but keeps the owner's own
+    message on display (`compacted = 1`, `display_kind` content_refused)."""
+    return f"(active = 1 OR display_kind = '{_REFUSED}')" if "display_kind" in _message_columns(conn) else "active = 1"
+
+
+def _displayed(conn: sqlite3.Connection) -> str:
+    """What Load earlier reads: Hermes's display projection, live rows and the ones compaction archived. A row taken back
+    (a rewind, `/undo`, a refused turn's tool steps) is neither."""
+    return "(active = 1 OR compacted = 1)" if "compacted" in _message_columns(conn) else "1"
+
+
+def _refused_notice(raw: Any) -> str:
+    """The notice Hermes stores with a refused message (`display_metadata`; older rows carry a second string layer)."""
+    meta = raw
+    for _ in range(2):
+        if not isinstance(meta, str):
+            break
+        try:
+            meta = json.loads(meta)
+        except ValueError:
+            return ""
+    entry = meta.get(_REFUSED) if isinstance(meta, dict) else None
+    return str(entry.get("notice") or "").strip() if isinstance(entry, dict) else ""
 
 
 def _taken_back(conn: sqlite3.Connection, row_id: int) -> bool:
@@ -1215,14 +1289,14 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
         if after_id and not before_id and _taken_back(conn, after_id):
             reset, after_id, cursor = True, 0, 0
         if before_id:
-            rows = _message_rows(conn, "session_id = ? AND id < ? ORDER BY id DESC LIMIT ?", (sid, before_id, fetch))
+            rows = _message_rows(conn, f"session_id = ? AND id < ? AND {_displayed(conn)} ORDER BY id DESC LIMIT ?", (sid, before_id, fetch))
             rows = list(reversed(rows))
             older = len(rows) == fetch
             scanned_from = rows[0]["id"] if rows else before_id
         elif after_id:
-            rows = _message_rows(conn, "session_id = ? AND active = 1 AND id > ? ORDER BY id ASC LIMIT ?", (sid, after_id, fetch))
+            rows = _message_rows(conn, f"session_id = ? AND {_shown(conn)} AND id > ? ORDER BY id ASC LIMIT ?", (sid, after_id, fetch))
         else:
-            rows = _message_rows(conn, "session_id = ? AND active = 1 ORDER BY id DESC LIMIT ?", (sid, fetch))
+            rows = _message_rows(conn, f"session_id = ? AND {_shown(conn)} ORDER BY id DESC LIMIT ?", (sid, fetch))
             rows = list(reversed(rows))
         window = _replay_window(conn, sid)
         windows = _all_replay_windows(conn, sid) if before_id else ([window] if window else [])
@@ -1286,6 +1360,8 @@ def transcript(session_key: str, after_id: int = 0, limit: int = 120, before_id:
                 item["uid"] = row["message_uid"]
             if kind == "steer" and role == "user":
                 item["steered"] = True
+            if kind == _REFUSED and role == "user":
+                item["refused"] = {"notice": _refused_notice(row["display_metadata"])}
             # Hermes's closing line for a failed turn: the chat shows it as a quiet marker, never as a reply (nor reads
             # it aloud). 0.22.5 types it (`failed_turn`), and says why: a restart cut the turn off, or it didn't finish.
             if role == "assistant" and not names:

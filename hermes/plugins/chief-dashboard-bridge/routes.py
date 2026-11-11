@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import urllib.parse
 from dataclasses import dataclass, field
 from typing import Any
 from collections.abc import Callable
@@ -196,7 +197,9 @@ def build(bridge) -> list[Route]:
         start, end, partial = byte_range(h.headers.get("Range") or "", size)
         status = 206 if partial else 200
         length = (end - start + 1) if size else 0
-        safe_name = resolved.name.replace('"', "")
+        # Headers go out as Latin-1, so a name like "Gdańsk.png" goes as RFC 6266's UTF-8 form, with an ASCII fallback.
+        ascii_name = resolved.name.encode("ascii", "replace").decode("ascii").replace('"', "").replace("\\", "_") or "file"
+        utf8_name = urllib.parse.quote(resolved.name, safe="")
         h.send_response(status)
         h.send_header("Content-Type", mime)
         h.send_header("Content-Security-Policy", "sandbox; default-src 'none'; frame-ancestors 'none'")
@@ -204,7 +207,7 @@ def build(bridge) -> list[Route]:
         h.send_header("Content-Length", str(length))
         h.send_header("Accept-Ranges", "bytes")
         disposition = "attachment" if mime in ("image/svg+xml", "application/octet-stream", "text/html") else "inline"
-        h.send_header("Content-Disposition", f'{disposition}; filename="{safe_name}"')
+        h.send_header("Content-Disposition", f"{disposition}; filename=\"{ascii_name}\"; filename*=UTF-8''{utf8_name}")
         h.send_header("Cache-Control", f"private, max-age={3600 if req.path == '/thumb' else 60}")
         if status == 206:
             h.send_header("Content-Range", f"bytes {start}-{end}/{size}")
@@ -275,6 +278,7 @@ def build(bridge) -> list[Route]:
                 enabled=enabled if isinstance(enabled, bool) else None,
                 pin=b.get("pin") if isinstance(b.get("pin"), bool) else None,
                 alerts=b.get("alerts") if isinstance(b.get("alerts"), str) else None,
+                catch_up=b.get("catchUp") if isinstance(b.get("catchUp"), bool) else None,
             )
         )
 
@@ -339,6 +343,7 @@ def build(bridge) -> list[Route]:
         Route(P, "/retry", lambda r: bridge.control("retry", "", _thread_body(r.body)), **A),
         # A conversation Hermes paused after a restart cut a turn off: drop that turn and go on (Hermes's /discard).
         Route(P, "/discard", lambda r: bridge.control("discard", "", _thread_body(r.body)), **A),
+        Route(P, "/model-reset", lambda r: bridge.control("model_reset", "", _thread_body(r.body)), **A),
         # One helper (a delegated task) at a time: its live log, a note, or stop (chat_state.helper_*).
         Route(G, "/background/tail", lambda r: bridge.helper("tail", r.q("task"), thread=_thread_param(r.qs))),
         Route(P, "/background/steer", lambda r: bridge.helper("steer", r.b("task"), r.b("text"), _thread_body(r.body)), limit=8 * KB, **A),
@@ -376,12 +381,14 @@ def build(bridge) -> list[Route]:
                     paused=r.body.get("paused") is True,
                     pin=r.body.get("pin") is True,
                     alerts="muted" if r.body.get("alerts") == "muted" else "on",
+                    catch_up=r.body.get("catchUp") is not False,
                 )
             ),
             **A,
         ),
         Route(P, "/routines/update", routine_update, **A),
         Route(P, "/routines/run", lambda r: _guarded(lambda: routines.run_now(profile(r), r.b("id"))), **A),
+        Route(P, "/routines/stop", lambda r: _guarded(lambda: routines.stop(profile(r), r.b("id"))), **A),
         Route(P, "/routines/delete", lambda r: _guarded(lambda: routines.delete(profile(r), r.b("id"))), **A),
         # Files and pictures
         Route(G, "/file", file),

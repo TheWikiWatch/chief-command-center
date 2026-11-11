@@ -21,6 +21,8 @@ Run by the desktop app with the payload's Python, HERMES_HOME set to the profile
   `display.busy_input_mode: steer`, so a message sent while the chief works is added to that work instead of
   stopping it; Hermes's echo of that is off for the app's platform and its one-time `/busy` tip counts as seen.
 - Keeps Hermes 0.22.0's history clean-up (`sessions.auto_prune: true`) unless the owner chose.
+- Lets the chief's questions wait half an hour (`agent.clarify_timeout: 1800`; Hermes 0.23 gives up after 90 s)
+  unless the owner chose.
 
 Prints one JSON object: {"ok": true, "changed": [...]}.
 """
@@ -316,6 +318,13 @@ def main() -> int:
     if "auto_prune" not in sessions:
         save_config_value("sessions.auto_prune", True)
         changed.append("history: old conversations cleaned up")
+    # Hermes 0.23 drops a question nobody answered after 90 seconds (it was an hour) and lowers a stored hour to 90 s.
+    # The chat keeps the question on a card the owner can come back to, and writing anything instead answers it at once,
+    # so the app keeps half an hour, unless the owner chose (an hour was Hermes's default, never a choice).
+    agent = raw.get("agent") if isinstance(raw.get("agent"), dict) else {}
+    if agent.get("clarify_timeout", 3600) == 3600:
+        save_config_value("agent.clarify_timeout", 1800)
+        changed.append("questions: wait half an hour")
     # Replies show in the app as they're written: Hermes streams draft frames to the chat platform (the bridge
     # adapter opts in; `streaming.transport` stays "auto"). Hermes's master switch is global, so on an adopted
     # install every other platform the owner may run is pinned to today's behaviour (a per-platform value can
@@ -353,6 +362,18 @@ def main() -> int:
     if not env.get("COMMAND_CENTER_HOME_CHANNEL"):
         save_env_value("COMMAND_CENTER_HOME_CHANNEL", "owner")
         changed.append("COMMAND_CENTER_HOME_CHANNEL")
+
+    # New skills or a new bridge reach the open conversation at its next message, not only after a fresh start: Hermes
+    # 0.23 keeps a conversation on the system prompt it started with until asked to rebuild it once.
+    if any(item.startswith(("plugin ", "skill ", TOOLKIT)) for item in changed) and (home / "state.db").is_file():
+        try:
+            from hermes_state import SessionDB
+
+            with SessionDB(db_path=home / "state.db") as db:
+                db.request_prompt_refresh()
+            changed.append("open conversations: prompt refreshed")
+        except Exception:
+            pass
 
     print(json.dumps({"ok": True, "changed": changed}))
     return 0

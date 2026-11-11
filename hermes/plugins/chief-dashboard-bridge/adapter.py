@@ -196,6 +196,18 @@ class CommandCenterAdapter(BasePlatformAdapter):
     ) -> SendResult:
         return await self._send_media(chat_id, image_path, caption, metadata)
 
+    # Hermes 0.23 hands a streamed reply's linked images (its markdown image tags) over after the text. The reply's row
+    # in the chat already has them, and the base class would post each address again as a message and a phone alert.
+    async def send_image(
+        self, chat_id: str, image_url: str, caption: str | None = None, reply_to: str | None = None, metadata: dict[str, Any] | None = None, **kwargs
+    ) -> SendResult:
+        return SendResult(success=True, message_id=f"image-{time.time_ns()}")
+
+    async def send_animation(
+        self, chat_id: str, animation_url: str, caption: str | None = None, reply_to: str | None = None, metadata: dict[str, Any] | None = None, **kwargs
+    ) -> SendResult:
+        return SendResult(success=True, message_id=f"image-{time.time_ns()}")
+
     async def send_document(
         self,
         chat_id: str,

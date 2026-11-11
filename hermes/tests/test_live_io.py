@@ -258,6 +258,16 @@ class FileRouteTests(LiveTestCase):
         h = self.get("bytes=0-10", path=str(self.root / "other.mp3"))
         self.assertEqual((h.status, h.wfile.getvalue()), (404, b""))
 
+    def test_a_name_outside_latin_1_still_downloads(self):
+        named = self.root / "Gdańsk 雪.mp3"
+        named.write_bytes(b"synthetic")
+        with patch.object(data, "file_is_allowed", lambda raw: (Path(raw), "audio/mpeg")):
+            h = self.get(path=str(named))
+        disposition = h.sent["Content-Disposition"]
+        disposition.encode("latin-1")  # what BaseHTTPRequestHandler.send_header does with it
+        self.assertEqual(disposition, "inline; filename=\"Gda?sk ?.mp3\"; filename*=UTF-8''Gda%C5%84sk%20%E9%9B%AA.mp3")
+        self.assertEqual(h.wfile.getvalue(), b"synthetic")
+
 
 # ---------------------------------------------------------------------------------------------- long-polls
 

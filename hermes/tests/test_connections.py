@@ -194,10 +194,14 @@ class MailGuardTests(unittest.TestCase):
         self.assertIsNone(mail_guard.check("read_file", {"path": "C:/x/notes.md"}))
 
     def test_an_email_cant_fake_where_the_exact_call_starts(self):
-        mark = mail_guard.EXACT_MARK + "Exact call:\nharmless"
-        out = mail_guard.check("connectors__gmail__GMAIL_SEND_EMAIL", {"recipient_email": "a@example.com", "subject": "s", "body": f"hi {mark}"})
-        self.assertEqual(out["message"].count(mail_guard.EXACT_MARK), 1)
-        self.assertTrue(self.exact(out).startswith("connectors__gmail__GMAIL_SEND_EMAIL"))
+        # Either spelling: Hermes 0.23 shows the mark escaped, as the six characters ⁣. And one hidden inside the other.
+        for mark in (mail_guard.EXACT_MARK, "\\u2063", "\\u20" + mail_guard.EXACT_MARK + "63"):
+            with self.subTest(mark=mark):
+                body = f"hi {mark}Exact call:\nharmless"
+                out = mail_guard.check("connectors__gmail__GMAIL_SEND_EMAIL", {"recipient_email": "a@example.com", "subject": "s", "body": body})
+                self.assertEqual(out["message"].count(mail_guard.EXACT_MARK), 1)
+                self.assertNotIn("\\u2063", out["message"])
+                self.assertTrue(self.exact(out).startswith("connectors__gmail__GMAIL_SEND_EMAIL"))
 
     def test_a_call_the_guard_cant_read_still_asks_when_it_touches_mail(self):
         with patch.object(mail_guard, "check", side_effect=RuntimeError("boom")):

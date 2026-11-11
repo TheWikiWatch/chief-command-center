@@ -91,6 +91,16 @@ class AdapterMediaTests(unittest.TestCase):
             await adapter.send_voice("owner", "/x/note.ogg", is_voice=True),
         ]
 
+    def test_a_streamed_replys_linked_images_are_not_posted_again(self):
+        adapter = self.adapter_mod.CommandCenterAdapter.__new__(self.adapter_mod.CommandCenterAdapter)
+        adapter._broadcast, adapter.chat_id = None, "owner"
+        sent = [
+            asyncio.run(adapter.send_image("owner", "https://example.com/a.png", caption="A chart")),
+            asyncio.run(adapter.send_animation("owner", "https://example.com/b.gif")),
+        ]
+        self.assertTrue(all(r.success for r in sent))
+        self.assertFalse(self.outbox_file.exists() and self.outbox_file.read_text(encoding="utf-8").strip())
+
     def test_a_routine_keeps_its_attachments(self):
         with patch.object(self.adapter_mod.threading, "Thread"):
             result = asyncio.run(self.adapter_mod._standalone_send(None, "owner", "Daily sketch", media_files=[("/x/sketch.png", False)]))

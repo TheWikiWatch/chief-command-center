@@ -44,6 +44,9 @@ RULE_MAIL = "chief:mail-other"
 # stripped from both), so text inside an email can't fake where the exact call starts.
 EXACT_MARK = "⁣"
 _EXACT_HEAD = "\n\n" + EXACT_MARK + "Exact call:\n"
+# Hermes 0.23 shows an approval's invisible characters as escapes (agent/redact.py), so the mark reaches the sheet as the
+# six characters ⁣: neither spelling may come from the text the guard quotes.
+_MARK_SPELLINGS = (EXACT_MARK, "\\u2063")
 _EXACT_MAX = 4000
 
 # The services whose connector tools the guard reads (Nous Connectors slugs).
@@ -157,7 +160,13 @@ def _words(action: str) -> set[str]:
 
 
 def _clean(text: str) -> str:
-    return str(text).replace(EXACT_MARK, "")
+    # Until nothing changes: taking one spelling out can join the other ("\u20" + the mark + "63").
+    out, before = str(text), None
+    while out != before:
+        before = out
+        for spelling in _MARK_SPELLINGS:
+            out = out.replace(spelling, "")
+    return out
 
 
 def _flat(value: Any) -> str:

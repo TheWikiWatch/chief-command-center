@@ -16,6 +16,9 @@ Options (Hermes 0.22): a routine can be made paused (started later); it follows 
 is pinned to the model it has now (written as an explicit model and provider: Hermes's own `pinned=True` reads the
 process's config, which is the chief's even for a bot's store); and its failure alerts can be muted
 (`failure_deliver: local`, which the relay honours for a bot's routine too).
+
+Hermes 0.23: a run in progress can be stopped (`cancel_job_run`; the run's status is then `cancelled`), and a
+routine says what happens to a time the PC was off: one run when it's back (`catch_up`, Hermes's default) or none.
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ import json
 import logging
 import re
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -72,6 +77,17 @@ def _cron():
     from cron import jobs
 
     return jobs
+
+
+@contextmanager
+def _store(home: Path) -> Iterator[Any]:
+    """Hermes's cron as one profile: its jobs (`use_cron_store`) and, since 0.23, its runs, which Hermes keeps under the
+    profile's home (`cron/executions.db`): without that a bot's run in progress is neither seen nor stopped."""
+    from .persona import profile_scope
+
+    jobs = _cron()
+    with profile_scope(home), jobs.use_cron_store(home):
+        yield jobs
 
 
 def _bot_name(profile: str, home: Path) -> str:
@@ -211,6 +227,9 @@ def _last_output(jobs: Any, job_id: str, limit: int = 1500) -> str:
         if not files:
             return ""
         text = files[-1].read_text(encoding="utf-8", errors="replace").strip()
+        # The report itself, not Hermes's run header and prompt (which since 0.23 opens with the run's time).
+        if "## Response" in text:
+            text = text.rpartition("## Response")[2].strip()
         return text if len(text) <= limit else text[:limit].rstrip() + "…"
     except Exception:
         return ""
@@ -347,15 +366,24 @@ def _describe(profile: str, home: Path, job: dict[str, Any], jobs: Any) -> dict[
         "failureAlerts": "muted" if _muted(job) else ("elsewhere" if destination(job.get("failure_deliver"))[1] and job.get("failure_deliver") else "on"),
         "failureStreak": int(job.get("failure_streak") or 0),
         "lastFailure": (job.get("last_failure") or {}).get("at") if isinstance(job.get("last_failure"), dict) else None,
+        # A run in progress (Hermes 0.23 lists it with the job), which Stop ends.
+        "running": _running(job.get("live_execution")),
+        # A time the PC was off: one run when it's back (Hermes's default for a repeating routine) or none.
+        "catchUp": job.get("catch_up") is not False,
     }
 
 
+def _running(live: Any) -> dict[str, Any] | None:
+    if not isinstance(live, dict):
+        return None
+    return {"since": live.get("started_at") or live.get("claimed_at")}
+
+
 def list_routines() -> dict[str, Any]:
-    jobs = _cron()
     items = []
     for profile, home in _homes():
         try:
-            with jobs.use_cron_store(home):
+            with _store(home) as jobs:
                 for job in jobs.list_jobs(include_disabled=True):
                     items.append(_describe(profile, home, job, jobs))
         except Exception:
@@ -367,8 +395,7 @@ def list_routines() -> dict[str, Any]:
 
 def _find(profile: str, routine_id: str) -> tuple[Path, dict[str, Any]]:
     home = _home(profile)
-    jobs = _cron()
-    with jobs.use_cron_store(home):
+    with _store(home) as jobs:
         job = jobs.get_job(str(routine_id or ""))
     if not job:
         raise RoutineError("That routine no longer exists.")
@@ -398,6 +425,7 @@ def create(
     paused: bool = False,
     pin: bool = False,
     alerts: str = "on",
+    catch_up: bool = True,
 ) -> dict[str, Any]:
     home = _home(profile)
     name, prompt = " ".join(str(name or "").split()), str(prompt or "").strip()
@@ -417,8 +445,9 @@ def create(
         extra.update(paused=True, paused_reason="Made paused in the app: start it when you're ready.")
     if alerts == "muted":
         extra["failure_deliver"] = "local"
-    jobs = _cron()
-    with jobs.use_cron_store(home):
+    if not catch_up:
+        extra["catch_up"] = False
+    with _store(home) as jobs:
         job = jobs.create_job(prompt, expr, name=name, deliver=deliver if profile == "chief" else "local", **extra)
         if profile != "chief":
             _set_bot_thread(profile, job["id"], thread or threads.MAIN)
@@ -439,6 +468,7 @@ def update(
     enabled: bool | None = None,
     pin: bool | None = None,
     alerts: str | None = None,
+    catch_up: bool | None = None,
 ) -> dict[str, Any]:
     home, job = _find(profile, routine_id)
     profile = home.name if home != data.chief_home() else "chief"
@@ -470,8 +500,10 @@ def update(
             raise RoutineError("Failure alerts are on or muted.")
         # On: follow where results go (no override). Muted: Hermes's own opt-out.
         changes["failure_deliver"] = "local" if alerts == "muted" else None
-    jobs = _cron()
-    with jobs.use_cron_store(home):
+    if catch_up is not None:
+        # Running later is Hermes's default, so it's stored as no override.
+        changes["catch_up"] = None if catch_up else False
+    with _store(home) as jobs:
         if changes:
             jobs.update_job(job["id"], changes)
         if enabled is True:
@@ -486,8 +518,7 @@ def update(
 def run_now(profile: str, routine_id: str) -> dict[str, Any]:
     home, job = _find(profile, routine_id)
     profile = home.name if home != data.chief_home() else "chief"
-    jobs = _cron()
-    with jobs.use_cron_store(home):
+    with _store(home) as jobs:
         if not (job.get("enabled") and job.get("state") != "paused"):
             jobs.resume_job(job["id"])
         try:
@@ -499,12 +530,25 @@ def run_now(profile: str, routine_id: str) -> dict[str, Any]:
     return {"ok": True, "routine": described}
 
 
+def stop(profile: str, routine_id: str) -> dict[str, Any]:
+    """Stop the routine's run in progress; it keeps its schedule. Hermes ends the run at its next check."""
+    home, job = _find(profile, routine_id)
+    with _store(home) as jobs:
+        cancel = getattr(jobs, "cancel_job_run", None)
+        if cancel is None:
+            raise RoutineError("This version of Hermes can't stop a routine that's running.")
+        result = cancel(job["id"], reason="Stopped in the app.")
+    if not result.get("cancelled"):
+        return {"ok": True, "stopped": False, "message": "It had already finished."}
+    logger.info("routines: %s stopped for %s", job.get("name"), profile)
+    return {"ok": True, "stopped": True}
+
+
 def delete(profile: str, routine_id: str) -> dict[str, Any]:
     home, job = _find(profile, routine_id)
     if str(job.get("name") or "").startswith(BUILT_IN):
         raise RoutineError("The app's own routines can be switched off, not deleted.")
-    jobs = _cron()
-    with jobs.use_cron_store(home):
+    with _store(home) as jobs:
         jobs.remove_job(job["id"])
     if home != data.chief_home():
         _set_bot_thread(home.name, job["id"], None)
@@ -553,7 +597,6 @@ def _relay(limit: int) -> int:
 
     relayed = _read(_RELAYED_FILE)
     homes = dict(_homes())
-    jobs = _cron()
     posted = 0
     for key, thread in sorted(mapping.items()):
         profile, _, job_id = key.partition("/")
@@ -561,7 +604,7 @@ def _relay(limit: int) -> int:
         if home is None or not threads.valid(str(thread)):
             continue
         try:
-            with jobs.use_cron_store(home):
+            with _store(home) as jobs:
                 job = jobs.get_job(job_id)
                 folder = jobs._job_output_dir(job_id)
             files = sorted(p for p in folder.glob("*.md") if p.is_file()) if folder.is_dir() else []

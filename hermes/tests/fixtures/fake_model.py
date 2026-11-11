@@ -9,6 +9,7 @@ Behaviour, from the latest user message of a turn:
   refused before they start), twice (a third identical call trips Hermes's loop guard), so a steered message
   has safe points to land on and the live step line has a step to show.
   The final answer lists every `CTX-<word>` marker seen anywhere in the conversation of that turn.
+- contains "REFUSEME": a provider's safety filter refuses it (HTTP 400, `content_filter`), as Hermes 0.23 archives.
 - contains "QUIZME": calls Hermes's `clarify` tool ("Which colour?", Red / Blue; "QUIZME FREE" asks without
   choices), then answers "You picked: <the owner's answer>." from the tool's result.
 - contains "ENVCHECK": runs one harmless `terminal` command that reports whether the bridge token is in the
@@ -131,6 +132,17 @@ class Handler(BaseHTTPRequestHandler):
         opener, turn = _turn(messages)
         if "single word" in opener:
             self._reply({"role": "assistant", "content": "ready"}, "stop", stream)
+            return
+        if "REFUSEME" in opener:
+            # A provider's safety filter: Hermes reads "content_filter" as a refusal and never retries it.
+            body = json.dumps(
+                {"error": {"message": "The prompt triggered the content_filter policy.", "type": "invalid_request_error", "code": "content_filter"}}
+            ).encode()
+            self.send_response(400)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
             return
         if "QUIZME" in opener:
             answered = [m for m in turn if m.get("role") == "tool"]

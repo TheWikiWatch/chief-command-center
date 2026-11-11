@@ -125,6 +125,31 @@ class SoulTests(PersonaTestCase):
         self.assertEqual(saved["kind"], "saved")
         self.assertEqual(persona.read_version("chief", saved["id"])["text"], "You are Nova.")
 
+    def test_a_new_personality_reaches_the_open_conversation(self):
+        refreshed = []
+
+        class FakeSessionDB:
+            def __init__(self, db_path):
+                self.path = db_path
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def request_prompt_refresh(self):
+                refreshed.append(self.path)
+
+        self.soul().write_text("You are Nova.", encoding="utf-8")
+        hermes_api = importlib.import_module("test_persona_plugin.hermes_api")
+        with patch.object(hermes_api, "get", lambda module, name: FakeSessionDB):
+            persona.write_soul("chief", "You are Nova, the planner.", persona._hash("You are Nova."))  # no conversations yet
+            self.assertEqual(refreshed, [])
+            (self.soul().parent / "state.db").write_bytes(b"")
+            persona.write_soul("chief", "You are Nova, the planner too.", persona._hash("You are Nova, the planner."))
+        self.assertEqual(refreshed, [self.soul().parent / "state.db"])
+
     def test_the_first_write_keeps_no_empty_version(self):
         result = persona.write_soul("ada", "You are Ada.", persona._hash(""))
         self.assertEqual(result["history"], [])

@@ -145,7 +145,24 @@ def write_soul(profile: str, text: str, base_hash: str) -> dict[str, Any]:
 
     atomic_write_text(path, text)
     logger.info("persona: SOUL.md saved for %s (%d chars)", home.name, len(text))
+    request_prompt_refresh(home)
     return {"ok": True, "hash": _hash(text), "warnings": _soul_warnings(text), "history": _history(home)}
+
+
+def request_prompt_refresh(home: Path) -> None:
+    """Hermes 0.23 keeps an open conversation on the system prompt it started with (the provider's cache stays warm)
+    until asked to rebuild it once: so a new personality reaches the open chat at its next message, not only after a
+    fresh start. Best effort: the change still applies to every new conversation."""
+    if not (home / "state.db").is_file():
+        return
+    try:
+        from . import hermes_api
+
+        session_db = hermes_api.get("hermes_state", "SessionDB")
+        with session_db(db_path=home / "state.db") as db:
+            db.request_prompt_refresh()
+    except Exception:
+        logger.debug("prompt refresh request failed for %s", home.name, exc_info=True)
 
 
 def _keep_version(home: Path, text: str) -> None:

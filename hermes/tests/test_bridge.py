@@ -223,6 +223,25 @@ class BridgeTests(unittest.TestCase):
             self.assertIsNone(data.file_is_allowed(str(image) + "::$DATA"))
             self.assertIsNotNone(data.file_is_allowed(str(image)))
 
+    def test_network_paths_are_never_touched(self):
+        # Resolving one would connect to that host with the owner's credentials: refused before any file call.
+        paths = (
+            "\\\\203.0.113.9\\share\\x.png",
+            "//203.0.113.9/share/x.png",
+            "\\/203.0.113.9/share/x.png",
+            "\\\\?\\UNC\\h\\s\\x.png",
+            "\\??\\UNC\\h\\s\\x.png",
+        )
+        with (
+            patch.object(data.Path, "resolve", side_effect=AssertionError("resolved")),
+            patch.object(data.Path, "is_file", side_effect=AssertionError("tested")),
+        ):
+            for raw in paths:
+                with self.subTest(raw=raw):
+                    data.remember_media_path(raw)
+                    self.assertIsNone(data.file_is_allowed(raw))
+        self.assertNotIn(paths[0], data._recent_media_paths)
+
     def test_hermes_logs_sessions_and_config_are_never_served(self):
         root = self.home / "hermes-root"
         for rel in (
@@ -296,6 +315,16 @@ class BridgeTests(unittest.TestCase):
         self.assertFalse(h._authorized())
         h.headers = {"Authorization": "Bearer test"}
         self.assertTrue(h._authorized())
+        # A header carries Latin-1: a token outside ASCII is refused, not a crash.
+        h.headers = {"Authorization": "Bearer tést"}
+        self.assertFalse(h._authorized())
+
+    def test_text_that_looks_like_json_is_what_was_typed(self):
+        for typed in ('{"name": "x"}', '{"url": "https://example.com/a.png"}', "[1, 2]"):
+            with self.subTest(typed=typed):
+                self.assertEqual(data.parse_message_content(typed), (typed, []))
+        # Hermes's own structured content is still read as parts.
+        self.assertEqual(data.parse_message_content('[{"type": "text", "text": "hello"}]')[0], "hello")
 
     def test_failed_send_leaves_no_uploads_behind(self):
         image = "data:image/png;base64," + base64.b64encode(b"\x89PNG\r\n\x1a\n").decode("ascii")

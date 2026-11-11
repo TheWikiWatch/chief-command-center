@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from collections import deque
 from pathlib import Path
 from collections.abc import Callable
 
@@ -20,6 +21,8 @@ logger = logging.getLogger("chief-dashboard-bridge")
 
 _cond = threading.Condition()
 _version = 0
+# Why the signal moved lately (version, reason): a reader can tell a streamed reply's frames from everything else.
+_reasons: deque[tuple[int, str]] = deque(maxlen=256)
 
 
 def bump(reason: str = "") -> None:
@@ -27,12 +30,21 @@ def bump(reason: str = "") -> None:
     global _version
     with _cond:
         _version += 1
+        _reasons.append((_version, reason))
         _cond.notify_all()
 
 
 def version() -> int:
     with _cond:
         return _version
+
+
+def reasons(after: int, upto: int) -> set[str] | None:
+    """Why the signal moved from `after` to `upto`, or None when it moved too often since to know."""
+    with _cond:
+        if upto > after and (not _reasons or _reasons[0][0] > after + 1):
+            return None
+        return {reason for v, reason in _reasons if after < v <= upto}
 
 
 def wait(after: int, timeout: float) -> int:

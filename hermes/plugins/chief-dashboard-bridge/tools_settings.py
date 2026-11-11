@@ -7,16 +7,20 @@ through ``apply_provider_selection``, keys go to the chief's profile, and the te
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import logging
 import re
+import socket
 import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Any
 
-from .data import chief_config_scope, chief_home
+from .data import _network_path, chief_config_scope, chief_home
 from .util import subdict
 
 logger = logging.getLogger("chief-dashboard-bridge")
@@ -377,18 +381,43 @@ def _plain_error(error: Any) -> str:
     return said[:240]
 
 
+def _public_https(url: str) -> bool:
+    """An https address whose host resolves only to public internet addresses: all a provider's image link may be (a
+    link it sends is never fetched from this PC's own services or its network)."""
+    parts = urllib.parse.urlsplit(url)
+    if parts.scheme != "https" or not parts.hostname:
+        return False
+    try:
+        infos = socket.getaddrinfo(parts.hostname, parts.port or 443, proto=socket.IPPROTO_TCP)
+    except (OSError, ValueError):
+        return False
+    return bool(infos) and all(ipaddress.ip_address(str(info[4][0]).split("%")[0]).is_global for info in infos)
+
+
+class _PublicRedirects(urllib.request.HTTPRedirectHandler):
+    max_redirections = 3
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # type: ignore[no-untyped-def]
+        if not _public_https(newurl):
+            raise urllib.error.URLError("the image link redirected off the public internet")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
 def _local_image(image: str, name: str = "test-image") -> str:
     """A local file the dashboard can show: the tool's own path, or a hosted image saved to the chief's cache."""
     if not image:
         return ""
     if not image.startswith(("http://", "https://")):
-        return image if Path(image).is_file() else ""
+        return image if not _network_path(image) and Path(image).is_file() else ""
+    if not _public_https(image):
+        logger.debug("test image link refused: not https to a public host")
+        return ""
     folder = chief_home() / "cache" / "tool-tests"
     folder.mkdir(parents=True, exist_ok=True)
     suffix = Path(image.split("?")[0]).suffix.lower()
     target = folder / f"{name}-{int(time.time())}{suffix if suffix in ('.png', '.jpg', '.jpeg', '.webp') else '.png'}"
     try:
-        with urllib.request.urlopen(image, timeout=30) as resp:
+        with urllib.request.build_opener(_PublicRedirects).open(image, timeout=30) as resp:
             target.write_bytes(resp.read(25 * 1024 * 1024))
     except Exception:
         logger.debug("test image download failed", exc_info=True)
